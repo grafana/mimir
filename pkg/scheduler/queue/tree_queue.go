@@ -85,11 +85,11 @@ func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 }
 
 func (q *TreeQueue) Dequeue() any {
-	v, _ := q.dequeue()
+	v := q.dequeue()
 	return v
 }
 
-func (q *TreeQueue) dequeue() (any, bool) {
+func (q *TreeQueue) dequeue() any {
 	var v any
 	initialIndex := q.index // to check for when we have wrapped all the way around
 	for {
@@ -100,10 +100,9 @@ func (q *TreeQueue) dequeue() (any, bool) {
 			if childQueueName != removedQueueName {
 				childQueue := q.childQueueMap[childQueueName]
 
-				val, childQueueEmpty := childQueue.dequeue()
-				v = val
-
-				if childQueueEmpty {
+				v = childQueue.dequeue()
+				if v == nil {
+					// selected child tree was checked recursively and is empty
 					q.deleteChildQueue(childQueueName)
 					// incrementIndex will take care of resetting the index
 				}
@@ -112,7 +111,7 @@ func (q *TreeQueue) dequeue() (any, bool) {
 
 		q.incrementIndex()
 		if v != nil || q.index == initialIndex {
-			return v, q.isEmpty()
+			return v
 		}
 	}
 }
@@ -134,10 +133,6 @@ func (q *TreeQueue) incrementIndex() {
 	}
 }
 
-func (q *TreeQueue) isEmpty() bool {
-	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
-}
-
 func (q *TreeQueue) deleteChildQueue(name string) {
 	delete(q.childQueueMap, name)
 	q.childQueueOrder[q.index] = removedQueueName
@@ -145,9 +140,9 @@ func (q *TreeQueue) deleteChildQueue(name string) {
 	for i := len(q.childQueueOrder) - 1; i >= 0 && q.childQueueOrder[i] == removedQueueName; i-- {
 		sliceBoundary = i
 	}
-	// all elements after sliceBoundary are ""; truncate the slice.
-	// this does not clean up "" elements in the middle of the slice,
-	// but only truncating at the end of the slice is much more performant
+	// all elements after sliceBoundary are `removedQueueName`; truncate the slice.
+	// this does not clean up `removedQueueName` elements in the middle of the slice,
+	// but only truncating at the end of the slice is much more performant.
 	q.childQueueOrder = q.childQueueOrder[:sliceBoundary]
 }
 
