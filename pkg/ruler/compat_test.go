@@ -353,9 +353,14 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 		return promql.Vector{}, nil
 	}
 	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
-	_, _ = qf(context.Background(), "test", time.Now())
 
-	require.GreaterOrEqual(t, testutil.ToFloat64(queryTime.WithLabelValues("userID")), float64(1))
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
 // TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants

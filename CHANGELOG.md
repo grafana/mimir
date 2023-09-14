@@ -10,6 +10,7 @@
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request when not using the query-scheduler. #5879
 * [ENHANCEMENT] Expose `/sync/mutex/wait/total:seconds` Go runtime metric as `go_sync_mutex_wait_total_seconds_total` from all components. #5879
 * [ENHANCEMENT] Query-scheduler: improve latency with many concurrent queriers. #5880
+* [ENHANCEMENT] Ruler: add new per-tenant `cortex_ruler_queries_zero_fetched_series_total` metric to track rules that fetched no series. #5925
 * [ENHANCEMENT] Implement support for `limit`, `limit_per_metric` and `metric` parameters for `<Prometheus HTTP prefix>/api/v1/metadata` endpoint. #5890
 * [ENHANCEMENT] Go: updated to 1.21.1. #5955
 * [ENHANCEMENT] Distributor: add experimental support for storing metadata when ingesting metrics via OTLP. This makes metrics description and type available when ingesting metrics via OTLP. Enable with `-distributor.enable-otlp-metadata-storage=true`. #5693
