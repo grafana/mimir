@@ -300,7 +300,7 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 	return expr, false, nil
 }
 
-// shardSum attempts to shard the given GROUP aggregation expression.
+// shardGroup attempts to shard the given GROUP aggregation expression.
 func (summer *shardSummer) shardGroup(expr *parser.AggregateExpr) (result *parser.AggregateExpr, err error) {
 	/*
 		parallelizing a group using without(foo) is representable naively as
