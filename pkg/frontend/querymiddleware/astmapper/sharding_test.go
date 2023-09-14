@@ -503,6 +503,16 @@ func TestShardSummer(t *testing.T) {
 			out:                    `sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(3, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
 			expectedShardedQueries: 9,
 		},
+		{
+			in:                     `group by (a, b) (metric)`,
+			out:                    `group by (a, b) (` + concatShards(3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardedQueries: 3,
+		},
+		{
+			in:                     `count by (a) (group by (a, b) (metric))`,
+			out:                    `count by (a) (group by (a, b) (` + concatShards(3, `group by (a, b) (metric{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardedQueries: 3,
+		},
 	} {
 		tt := tt
 
