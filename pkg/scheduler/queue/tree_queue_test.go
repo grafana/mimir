@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"container/list"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,7 @@ func TestTreeQueue(t *testing.T) {
 
 	expectedTreeQueue := &TreeQueue{
 		name:       "root",
-		localQueue: []any{},
+		localQueue: list.New(),
 		currentIdx: -1,
 		childQueueIndices: map[string]int{
 			"0": 0,
@@ -20,14 +21,14 @@ func TestTreeQueue(t *testing.T) {
 		childQueues: []*TreeQueue{
 			{
 				name:              "0",
-				localQueue:        []any{},
+				localQueue:        list.New(),
 				currentIdx:        -1,
 				childQueueIndices: map[string]int{},
 				childQueues:       []*TreeQueue{},
 			},
 			{
 				name:       "1",
-				localQueue: []any{},
+				localQueue: list.New(),
 				currentIdx: -1,
 				childQueueIndices: map[string]int{
 					"0": 0,
@@ -35,7 +36,7 @@ func TestTreeQueue(t *testing.T) {
 				childQueues: []*TreeQueue{
 					{
 						name:              "0",
-						localQueue:        []any{},
+						localQueue:        list.New(),
 						currentIdx:        -1,
 						childQueueIndices: map[string]int{},
 						childQueues:       []*TreeQueue{},
@@ -44,7 +45,7 @@ func TestTreeQueue(t *testing.T) {
 			},
 			{
 				name:       "2",
-				localQueue: []any{},
+				localQueue: list.New(),
 				currentIdx: -1,
 				childQueueIndices: map[string]int{
 					"0": 0,
@@ -53,14 +54,14 @@ func TestTreeQueue(t *testing.T) {
 				childQueues: []*TreeQueue{
 					{
 						name:              "0",
-						localQueue:        []any{},
+						localQueue:        list.New(),
 						currentIdx:        -1,
 						childQueueIndices: map[string]int{},
 						childQueues:       []*TreeQueue{},
 					},
 					{
 						name:              "1",
-						localQueue:        []any{},
+						localQueue:        list.New(),
 						currentIdx:        -1,
 						childQueueIndices: map[string]int{},
 						childQueues:       []*TreeQueue{},

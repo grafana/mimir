@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"container/list"
 	"encoding/json"
 	"fmt"
 )
@@ -17,7 +18,7 @@ type TreeQueue struct {
 	// name of the queue
 	name string
 	// local queue
-	localQueue []any
+	localQueue *list.List
 	// index of where this item is located in the mapping
 	//pos QueueIndex
 	//index of the sub-queues
@@ -30,10 +31,40 @@ type TreeQueue struct {
 func NewTreeQueue(name string) *TreeQueue {
 	return &TreeQueue{
 		name:              name,
-		localQueue:        []any{},
+		localQueue:        list.New(),
 		currentIdx:        -1,
 		childQueueIndices: map[string]int{},
 		childQueues:       []*TreeQueue{},
+	}
+}
+
+func (q *TreeQueue) Enqueue(path QueuePath, v any) {
+	childQueue := q.getOrAddQueue(path)
+	childQueue.localQueue.PushBack(v)
+}
+
+func (q *TreeQueue) Dequeue() any {
+	if (q.currentIdx < localQueueIdx) || (q.currentIdx > len(q.childQueues)-1) {
+		// reset current index
+		q.currentIdx = localQueueIdx
+	}
+
+	var v any
+	initialIndex := q.currentIdx // to check for when we have wrapped all the way around
+	for {
+		if q.currentIdx == localQueueIdx {
+			v = q.dequeueLocal()
+
+		} else {
+			currentQueue := q.childQueues[q.currentIdx]
+			v = currentQueue.Dequeue()
+		}
+
+		q.incrementCurrentIndex()
+
+		if v != nil || q.currentIdx == initialIndex {
+			return v
+		}
 	}
 }
 
@@ -66,43 +97,13 @@ func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 	return newChildQueue
 }
 
-func (q *TreeQueue) Enqueue(path QueuePath, v any) {
-	childQueue := q.getOrAddQueue(path)
-	childQueue.localQueue = append(childQueue.localQueue, v)
-}
-
-func (q *TreeQueue) Dequeue() any {
-	if (q.currentIdx < localQueueIdx) || (q.currentIdx > len(q.childQueues)-1) {
-		// reset current index
-		q.currentIdx = localQueueIdx
-	}
-
-	var v any
-	initialIndex := q.currentIdx // to check for when we have wrapped all the way around
-	for {
-		if q.currentIdx == localQueueIdx {
-			v = q.dequeueLocal()
-
-		} else {
-			currentQueue := q.childQueues[q.currentIdx]
-			v = currentQueue.Dequeue()
-		}
-
-		q.incrementCurrentIndex()
-
-		if v != nil || q.currentIdx == initialIndex {
-			return v
-		}
-	}
-}
-
 func (q *TreeQueue) dequeueLocal() any {
-	if len(q.localQueue) == 0 {
+	if q.localQueue.Len() == 0 {
 		return nil
 	}
-	v := q.localQueue[0]
-	q.localQueue = q.localQueue[1:]
-	return v
+	elem := q.localQueue.Front()
+	q.localQueue.Remove(elem)
+	return elem.Value
 }
 
 func (q *TreeQueue) incrementCurrentIndex() {
