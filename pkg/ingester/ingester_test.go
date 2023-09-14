@@ -5868,6 +5868,8 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							assert.ErrorIs(t, err, testData.expectedErr)
 							var optional middleware.OptionalLogging
 							assert.ErrorAs(t, err, &optional)
+							var safe safeToWrap
+							assert.ErrorAs(t, err, &safe)
 							s, ok := status.FromError(err)
 							require.True(t, ok, "expected to be able to convert to gRPC status")
 							assert.Equal(t, codes.Unavailable, s.Code())
@@ -5998,10 +6000,13 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		time.Sleep(10 * time.Millisecond) // Give first goroutine a chance to start pushing...
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
-		var optional middleware.OptionalLogging
 
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsReached)
+		var safe safeToWrap
+		require.ErrorAs(t, err, &safe)
+
+		var optional middleware.OptionalLogging
 		require.ErrorAs(t, err, &optional)
 		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
 

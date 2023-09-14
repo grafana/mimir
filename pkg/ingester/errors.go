@@ -22,10 +22,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+const (
+	unavailable = int(codes.Unavailable)
+)
+
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
 	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,
 		"the ingester is currently too busy to process queries, try again later")
+
+	errMaxSeriesPerMetricLimitExceeded = safeToWrapError("per-metric series limit exceeded")
+	errMaxSeriesPerUserLimitExceeded   = safeToWrapError("per-user series limit exceeded")
 )
 
 type safeToWrap interface {

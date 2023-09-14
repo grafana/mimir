@@ -6,13 +6,11 @@
 package ingester
 
 import (
-	"context"
 	"flag"
-	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/util/log"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -32,31 +30,12 @@ var (
 	errMaxInflightRequestsReached = newInstanceLimitError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
 )
 
-type instanceLimitErr struct {
-	msg    string
-	status *status.Status
-}
-
 func newInstanceLimitError(msg string) error {
-	return &instanceLimitErr{
+	return newErrorWithStatus(
+		log.DoNotLogError{Err: safeToWrapError(msg)},
 		// Errors from hitting per-instance limits are always "unavailable" for gRPC
-		status: status.New(codes.Unavailable, msg),
-		msg:    msg,
-	}
-}
-
-func (e *instanceLimitErr) ShouldLog(context.Context, time.Duration) bool {
-	// We increment metrics when hitting per-instance limits and so there's no need to
-	// log them, the error doesn't contain any interesting information for us.
-	return false
-}
-
-func (e *instanceLimitErr) GRPCStatus() *status.Status {
-	return e.status
-}
-
-func (e *instanceLimitErr) Error() string {
-	return e.msg
+		unavailable,
+	)
 }
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return
