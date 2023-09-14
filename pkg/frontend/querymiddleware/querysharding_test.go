@@ -186,12 +186,12 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `group by (group_1) (metric_counter)`,
 			expectedShardedQueries: 1,
 		},
-		`group by (group1) (group by (group_1, group_2) (metric_counter))`: {
-			query:                  `group by (group1) (group by (group_1, group_2) (metric_counter))`,
+		`group by (group_1) (group by (group_1, group_2) (metric_counter))`: {
+			query:                  `group by (group_1) (group by (group_1, group_2) (metric_counter))`,
 			expectedShardedQueries: 1,
 		},
-		`count by (group1) (group by (group_1, group_2) (metric_counter))`: {
-			query:                  `count by (group1) (group by (group_1, group_2) (metric_counter))`,
+		`count by (group_1) (group by (group_1, group_2) (metric_counter))`: {
+			query:                  `count by (group_1) (group by (group_1, group_2) (metric_counter))`,
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping only 'by' le": {
