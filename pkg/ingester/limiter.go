@@ -8,17 +8,9 @@ package ingester
 import (
 	"math"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
-)
-
-var (
-	// These errors are only internal, to change the API error messages, see Limiter's methods below.
-	errMaxSeriesPerMetricLimitExceeded = errors.New("per-metric series limit exceeded")
-	errMaxSeriesPerUserLimitExceeded   = errors.New("per-user series limit exceeded")
 )
 
 // RingCount is the interface exposed by a ring implementation which allows
