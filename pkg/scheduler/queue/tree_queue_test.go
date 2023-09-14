@@ -72,10 +72,10 @@ func TestTreeQueue(t *testing.T) {
 
 	root := NewTreeQueue("root") // creates path: root
 
-	root.GetOrCreateChildQueue([]string{"0"})      // creates paths: root:0
-	root.GetOrCreateChildQueue([]string{"1", "0"}) // creates paths: root:1 and root:1:0
-	root.GetOrCreateChildQueue([]string{"2", "0"}) // creates paths: root:2 and root:2:0
-	root.GetOrCreateChildQueue([]string{"2", "1"}) // creates paths: root:2:1 only, as root:2 already exists
+	root.getOrAddQueue([]string{"0"})      // creates paths: root:0
+	root.getOrAddQueue([]string{"1", "0"}) // creates paths: root:1 and root:1:0
+	root.getOrAddQueue([]string{"2", "0"}) // creates paths: root:2 and root:2:0
+	root.getOrAddQueue([]string{"2", "1"}) // creates paths: root:2:1 only, as root:2 already exists
 
 	assert.Equal(t, expectedTreeQueue, root)
 

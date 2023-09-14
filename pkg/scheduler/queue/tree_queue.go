@@ -23,11 +23,8 @@ type TreeQueue struct {
 	//index of the sub-queues
 	currentIdx int
 	// mapping for sub-queues
-	//mapping *Mapping[*TreeQueue]
 	childQueueIndices map[string]int
 	childQueues       []*TreeQueue
-
-	// maximum queue size of the local queue
 }
 
 func NewTreeQueue(name string) *TreeQueue {
@@ -40,8 +37,8 @@ func NewTreeQueue(name string) *TreeQueue {
 	}
 }
 
-// GetOrCreateChildQueue recursively adds queues based on given path
-func (q *TreeQueue) GetOrCreateChildQueue(path QueuePath) *TreeQueue {
+// getOrAddQueue recursively adds queues based on given path
+func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 	if len(path) == 0 {
 		return q
 	}
@@ -49,7 +46,7 @@ func (q *TreeQueue) GetOrCreateChildQueue(path QueuePath) *TreeQueue {
 
 	if queueIdx, ok := q.childQueueIndices[currentPathSegment]; ok {
 		// this level of the tree already exists; recur
-		return q.childQueues[queueIdx].GetOrCreateChildQueue(remainingPath)
+		return q.childQueues[queueIdx].getOrAddQueue(remainingPath)
 	}
 
 	// add queue to childQueues
@@ -61,7 +58,7 @@ func (q *TreeQueue) GetOrCreateChildQueue(path QueuePath) *TreeQueue {
 
 	if len(remainingPath) > 0 {
 		// still further tree depth to create; recur
-		return newChildQueue.GetOrCreateChildQueue(remainingPath)
+		return newChildQueue.getOrAddQueue(remainingPath)
 	}
 
 	// recursion complete
@@ -70,7 +67,7 @@ func (q *TreeQueue) GetOrCreateChildQueue(path QueuePath) *TreeQueue {
 }
 
 func (q *TreeQueue) Enqueue(path QueuePath, v any) {
-	childQueue := q.GetOrCreateChildQueue(path)
+	childQueue := q.getOrAddQueue(path)
 	childQueue.localQueue = append(childQueue.localQueue, v)
 }
 
@@ -82,7 +79,6 @@ func (q *TreeQueue) Dequeue() any {
 
 	var v any
 	initialIndex := q.currentIdx // to check for when we have wrapped all the way around
-
 	for {
 		if q.currentIdx == localQueueIdx {
 			v = q.dequeueLocal()
