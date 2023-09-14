@@ -83,10 +83,13 @@ func wrapWithUser(err error, userID string) error {
 // wraps it with wrapWithUser. Otherwise, the error annotated with annotateWithUser
 // is returned.
 func wrapOrAnnotateWithUser(err error, userID string) error {
+	// If this is a safe error, we wrap it with userID and return it, because
+	// it might contain extra information for gRPC and our logging middleware.
 	var safe safeToWrap
 	if errors.As(err, &safe) {
 		return wrapWithUser(err, userID)
 	}
+	// Otherwise, we just annotate it with userID and return it.
 	return annotateWithUser(err, userID)
 }
 

@@ -809,10 +809,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		// If this is a safe error, we wrap it with userID and return it, because
-		// it might contain extra information for gRPC and our logging middleware.
-		errWithUser := wrapOrAnnotateWithUser(err, userID)
-		return nil, errWithUser
+		return nil, wrapOrAnnotateWithUser(err, userID)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
@@ -857,10 +854,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		// If this is a safe error, we wrap it with userID and return it, because
-		// it might contain extra information for gRPC and our logging middleware.
-		errWithUser := wrapOrAnnotateWithUser(err, userID)
-		return nil, errWithUser
+		return nil, wrapOrAnnotateWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
