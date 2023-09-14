@@ -22,10 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	unavailable = int(codes.Unavailable)
-)
-
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
 	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,

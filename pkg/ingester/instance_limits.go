@@ -8,6 +8,7 @@ package ingester
 import (
 	"flag"
 
+	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -33,7 +34,7 @@ func newInstanceLimitError(msg string) error {
 	return newErrorWithStatus(
 		log.DoNotLogError{Err: safeToWrapError(msg)},
 		// Errors from hitting per-instance limits are always "unavailable" for gRPC
-		unavailable,
+		int(codes.Unavailable),
 	)
 }
 
