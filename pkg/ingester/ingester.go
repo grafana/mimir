@@ -811,16 +811,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if err != nil {
 		// If this is a safe error, we wrap it with userID and return it, because
 		// it might contain extra information for gRPC and our logging middleware.
-		var safe safeToWrap
-		if errors.As(err, &safe) {
-			return nil, wrapWithUser(err, userID)
-		}
-		return nil, annotateWithUser(err, userID)
+		errWithUser := wrapOrAnnotateWithUser(err, userID)
+		return nil, errWithUser
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -862,11 +859,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 		// If this is a safe error, we wrap it with userID and return it, because
 		// it might contain extra information for gRPC and our logging middleware.
-		var safe safeToWrap
-		if errors.As(err, &safe) {
-			return nil, wrapWithUser(err, userID)
-		}
-		return nil, annotateWithUser(err, userID)
+		errWithUser := wrapOrAnnotateWithUser(err, userID)
+		return nil, errWithUser
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -882,7 +876,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return nil, annotateWithUser(err, userID)
+		return nil, wrapOrAnnotateWithUser(err, userID)
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -910,11 +904,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
-		var safe safeToWrap
-		if errors.As(firstPartialErr, &safe) {
-			return &mimirpb.WriteResponse{}, newErrorWithStatus(wrapWithUser(firstPartialErr, userID), code)
-		}
-		return &mimirpb.WriteResponse{}, newErrorWithStatus(annotateWithUser(firstPartialErr, userID), code)
+		errWithUser := wrapOrAnnotateWithUser(firstPartialErr, userID)
+		return &mimirpb.WriteResponse{}, newErrorWithStatus(errWithUser, code)
 	}
 
 	return &mimirpb.WriteResponse{}, nil

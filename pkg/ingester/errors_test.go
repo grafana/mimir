@@ -3,6 +3,7 @@
 package ingester
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -89,4 +90,19 @@ func TestWrapWithUser(t *testing.T) {
 	annotatedErr := wrapWithUser(err, "1")
 	require.Error(t, annotatedErr)
 	require.ErrorIs(t, annotatedErr, err)
+}
+
+func TestWrapOrAnnotateWithUser(t *testing.T) {
+	userID := "1"
+	unsafeErr := errors.New("this is an unsafe error")
+	safeErr := safeToWrapError("this is a safe error")
+
+	annotatedUnsafeErr := wrapOrAnnotateWithUser(unsafeErr, userID)
+	require.Error(t, annotatedUnsafeErr)
+	require.NotErrorIs(t, annotatedUnsafeErr, unsafeErr)
+	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
+
+	wrappedSafeErr := wrapOrAnnotateWithUser(safeErr, userID)
+	require.Error(t, wrappedSafeErr)
+	require.ErrorIs(t, wrappedSafeErr, safeErr)
 }

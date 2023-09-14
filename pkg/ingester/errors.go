@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -76,6 +77,17 @@ func annotateWithUser(err error, userID string) error {
 // wrapWithUser prepends the user to the error. It retains a reference to err.
 func wrapWithUser(err error, userID string) error {
 	return fmt.Errorf("user=%s: %w", userID, err)
+}
+
+// wrapOrAnnotateWithUser checks whether the given error is safe, and in that case
+// wraps it with wrapWithUser. Otherwise, the error annotated with annotateWithUser
+// is returned.
+func wrapOrAnnotateWithUser(err error, userID string) error {
+	var safe safeToWrap
+	if errors.As(err, &safe) {
+		return wrapWithUser(err, userID)
+	}
+	return annotateWithUser(err, userID)
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
