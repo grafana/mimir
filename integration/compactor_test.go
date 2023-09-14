@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -71,15 +70,15 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		spec := block.SeriesSpec{
 			Labels: labels.FromStrings("case", "native_histogram", "i", strconv.Itoa(i)),
 			Chunks: []chunks.Meta{
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{10, 0, test.GenerateTestHistogram(1), nil},
 					sample{20, 0, test.GenerateTestHistogram(2), nil},
 				})),
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{30, 0, test.GenerateTestHistogram(3), nil},
 					sample{40, 0, test.GenerateTestHistogram(4), nil},
 				})),
-				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
 					sample{50, 0, test.GenerateTestHistogram(5), nil},
 					sample{2*time.Hour.Milliseconds() - 1, 0, test.GenerateTestHistogram(6), nil},
 				})),
