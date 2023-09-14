@@ -274,6 +274,11 @@
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 
+## 2.9.1
+
+### Grafana Mimir
+* [ENHANCEMENT] Update alpine base image to 3.18.3. #6021
+
 ## 2.9.0
 
 ### Grafana Mimir
