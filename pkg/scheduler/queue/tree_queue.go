@@ -63,13 +63,12 @@ func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 		return nil
 	}
 
-	if directChildQueue, ok := q.childQueueMap[currentPathSegment]; ok {
+	if childQueue, ok := q.childQueueMap[currentPathSegment]; ok {
 		// this level of the tree already exists; recur
-		return directChildQueue.getOrAddQueue(remainingPath)
+		return childQueue.getOrAddQueue(remainingPath)
 	}
 
 	newChildQueue := NewTreeQueue(currentPathSegment)
-
 	// add new child queue to ordered list for round-robining
 	q.childQueueOrder = append(q.childQueueOrder, newChildQueue.name)
 	// attach new child queue to lookup map
@@ -79,8 +78,7 @@ func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 		// still further tree depth to create; recur
 		return newChildQueue.getOrAddQueue(remainingPath)
 	}
-
-	// recursion complete
+	// else: no further levels to create; recursion complete
 	return newChildQueue
 }
 
