@@ -69,28 +69,17 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 
-// annotateWithUser prepends the user to the error. It does not retain a reference to err.
-func annotateWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %s", userID, err)
-}
-
-// wrapWithUser prepends the user to the error. It retains a reference to err.
-func wrapWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %w", userID, err)
-}
-
-// wrapOrAnnotateWithUser checks whether the given error is safe, and in that case
-// wraps it with wrapWithUser. Otherwise, the error annotated with annotateWithUser
-// is returned.
+// wrapOrAnnotateWithUser prepends the given userID to the given error.
+// If the error is safe, the returned error retains a reference to the former.
 func wrapOrAnnotateWithUser(err error, userID string) error {
 	// If this is a safe error, we wrap it with userID and return it, because
 	// it might contain extra information for gRPC and our logging middleware.
 	var safe safeToWrap
 	if errors.As(err, &safe) {
-		return wrapWithUser(err, userID)
+		return fmt.Errorf("user=%s: %w", userID, err)
 	}
 	// Otherwise, we just annotate it with userID and return it.
-	return annotateWithUser(err, userID)
+	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {

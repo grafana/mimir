@@ -44,13 +44,13 @@ func TestInstanceLimitErr(t *testing.T) {
 	userID := "1"
 	limitErrors := []error{
 		errMaxIngestionRateReached,
-		wrapWithUser(errMaxIngestionRateReached, userID),
+		wrapOrAnnotateWithUser(errMaxIngestionRateReached, userID),
 		errMaxTenantsReached,
-		wrapWithUser(errMaxTenantsReached, userID),
+		wrapOrAnnotateWithUser(errMaxTenantsReached, userID),
 		errMaxInMemorySeriesReached,
-		wrapWithUser(errMaxInMemorySeriesReached, userID),
+		wrapOrAnnotateWithUser(errMaxInMemorySeriesReached, userID),
 		errMaxInflightRequestsReached,
-		wrapWithUser(errMaxInflightRequestsReached, userID),
+		wrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID),
 	}
 	for _, limitError := range limitErrors {
 		var safe safeToWrap
