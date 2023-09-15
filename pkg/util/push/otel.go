@@ -187,14 +187,16 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 
 	metadataLength := 0
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		metadataLength += resourceMetricsSlice.At(i).ScopeMetrics().Len()
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
+		}
 	}
+
 	var metadata = make([]*mimirpb.MetricMetadata, metadataLength)
 	var metaDataPos = 0
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		resourceMetrics := resourceMetricsSlice.At(i)
-		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
