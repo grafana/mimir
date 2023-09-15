@@ -93,6 +93,9 @@ type Limits interface {
 
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
 	ResultsCacheForUnalignedQueryEnabled(userID string) bool
+
+	// BlockedQueries returns the blocked queries.
+	BlockedQueries(userID string) []*validation.BlockedQuery
 }
 
 type limitsMiddleware struct {

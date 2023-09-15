@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -345,6 +346,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
+	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
+		return "blocked_queries_config...", true
 	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -425,6 +428,8 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
+	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
+		return "blocked_queries_config...", true
 	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -456,6 +461,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(map[string]string{})
 	case "relabel_config...":
 		return reflect.TypeOf([]*relabel.Config{})
+	case "blocked_queries_config...":
+		return reflect.TypeOf([]*validation.BlockedQuery{})
 	case "map of string to float64":
 		return reflect.TypeOf(map[string]float64{})
 	case "list of durations":

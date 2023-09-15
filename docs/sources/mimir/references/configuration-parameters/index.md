@@ -3016,6 +3016,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
 
+# (experimental) List of queries to block.
+[blocked_queries: <blocked_queries_config...> | default = ]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]

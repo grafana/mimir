@@ -3473,6 +3473,16 @@
         },
         {
           "kind": "field",
+          "name": "blocked_queries",
+          "required": false,
+          "desc": "List of queries to block.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "blocked_queries_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
