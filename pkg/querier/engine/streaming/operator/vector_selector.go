@@ -28,7 +28,8 @@ type VectorSelector struct {
 	Matchers      []*labels.Matcher
 	Pool          *Pool
 
-	querier                 storage.Querier
+	querier storage.Querier
+	// TODO: create separate type for linked list of SeriesBatches, use here and in MatrixSelectorWithTransformationOverRange
 	currentSeriesBatch      *SeriesBatch
 	currentSeriesBatchIndex int
 	chunkIterator           chunkenc.Iterator

@@ -138,6 +138,7 @@ func (p *Pool) PutBoolSlice(s []bool) {
 	}
 }
 
+// TODO: use vectorisation to make this faster
 func zeroFloatSlice(s []float64, size int) []float64 {
 	s = s[:size]
 
@@ -148,6 +149,7 @@ func zeroFloatSlice(s []float64, size int) []float64 {
 	return s[:0]
 }
 
+// TODO: use vectorisation to make this faster
 func zeroBoolSlice(s []bool, size int) []bool {
 	s = s[:size]
 
