@@ -131,7 +131,7 @@ func (b *globalMarkersBucket) IsObjNotFoundErr(err error) bool {
 	return b.parent.IsObjNotFoundErr(err)
 }
 
-// IsAccessDeniedError implements objstore.Bucket.
+// IsAccessDeniedErr implements objstore.Bucket.
 func (b *globalMarkersBucket) IsAccessDeniedErr(err error) bool {
 	return b.parent.IsAccessDeniedErr(err)
 }
