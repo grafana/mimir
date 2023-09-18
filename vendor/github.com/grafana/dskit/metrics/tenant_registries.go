@@ -110,19 +110,6 @@ func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
 		}
 		return res
 	})
-<<<<<<< HEAD
-}
-
-// MinGauges returns minimum of gauges or NaN if no gauge was found.
-func (mfm MetricFamilyMap) MinGauges(name string) float64 {
-	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
-		if val < res {
-			return val
-		}
-		return res
-	})
-=======
->>>>>>> a41d0d343 (add remote sampling test in local)
 }
 
 // MinGauges returns minimum of gauges or NaN if no gauge was found.
@@ -263,18 +250,9 @@ func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *
 	result := math.NaN()
 	for _, tenantEntry := range d {
 		value := valFn(tenantEntry.metrics)
-<<<<<<< HEAD
-<<<<<<< HEAD
 		if math.IsNaN(value) {
 			continue
 		}
-=======
->>>>>>> cad5a5183 (update dskit in mimir)
-=======
-		if math.IsNaN(value) {
-			continue
-		}
->>>>>>> a41d0d343 (add remote sampling test in local)
 		if math.IsNaN(result) {
 			result = value
 		} else {
@@ -288,24 +266,6 @@ func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *
 	}
 
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result)
-}
-
-func (d MetricFamiliesPerTenant) SendMinOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
-	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MinGauges(gauge) }, func(val, res float64) float64 {
-		if val < res {
-			return val
-		}
-		return res
-	})
-}
-
-func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
-	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MaxGauges(gauge) }, func(val, res float64) float64 {
-		if val > res {
-			return val
-		}
-		return res
-	})
 }
 
 func (d MetricFamiliesPerTenant) SendMinOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
@@ -502,54 +462,15 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 // fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns NaN.
-=======
-// max returns the maximum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-func max(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
-	return fold(mf, fn, func(val, res float64) float64 {
-		if val > res {
-			return val
-		}
-		return res
-	})
-}
-
-// min returns the minimum value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-func min(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
-	return fold(mf, fn, func(val, res float64) float64 {
-		if val < res {
-			return val
-		}
-		return res
-	})
-}
-
-// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns 0.
->>>>>>> cad5a5183 (update dskit in mimir)
-=======
-// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns NaN.
->>>>>>> a41d0d343 (add remote sampling test in local)
 func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()
 
 	for _, m := range mf.GetMetric() {
 		value := fn(m)
-<<<<<<< HEAD
-<<<<<<< HEAD
 		if math.IsNaN(value) {
 			continue
 		}
-=======
->>>>>>> cad5a5183 (update dskit in mimir)
-=======
-		if math.IsNaN(value) {
-			continue
-		}
->>>>>>> a41d0d343 (add remote sampling test in local)
 		if math.IsNaN(result) {
 			result = value
 		} else {

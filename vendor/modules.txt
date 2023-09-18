@@ -345,13 +345,14 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.0.0-20230906024226-6f6961f2c246
-## explicit; go 1.18
+# github.com/failsafe-go/failsafe-go v0.0.0-20230918014924-ee2f3b27e8d7
+## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/circuitbreaker
+github.com/failsafe-go/failsafe-go/common
 github.com/failsafe-go/failsafe-go/internal
 github.com/failsafe-go/failsafe-go/internal/util
-github.com/failsafe-go/failsafe-go/spi
+github.com/failsafe-go/failsafe-go/policy
 # github.com/fatih/color v1.15.0
 ## explicit; go 1.17
 github.com/fatih/color
@@ -566,19 +567,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-# github.com/grafana/dskit v0.0.0-20230829141140-06955c011ffd
-=======
-# github.com/grafana/dskit v0.0.0-20230828154006-24b117834dd4
->>>>>>> cad5a5183 (update dskit in mimir)
-=======
-# github.com/grafana/dskit v0.0.0-20230829145542-36fa07affa4d
->>>>>>> 527070d02 (update to just use opentracing)
-=======
 # github.com/grafana/dskit v0.0.0-20230918192945-7be5a6dda301
->>>>>>> a41d0d343 (add remote sampling test in local)
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -1138,16 +1127,13 @@ go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
 # go.opentelemetry.io/collector/semconv v0.84.0
 ## explicit; go 1.20
 go.opentelemetry.io/collector/semconv/v1.6.1
-# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.42.0
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.43.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
-<<<<<<< HEAD
-# go.opentelemetry.io/otel v1.17.0
-=======
 # go.opentelemetry.io/contrib/propagators/jaeger v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/propagators/jaeger
@@ -1156,8 +1142,7 @@ go.opentelemetry.io/contrib/propagators/jaeger
 go.opentelemetry.io/contrib/samplers/jaegerremote
 go.opentelemetry.io/contrib/samplers/jaegerremote/internal/proto-gen/jaeger-idl/proto/api_v2
 go.opentelemetry.io/contrib/samplers/jaegerremote/internal/utils
-# go.opentelemetry.io/otel v1.16.0
->>>>>>> cad5a5183 (update dskit in mimir)
+# go.opentelemetry.io/otel v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
@@ -1171,13 +1156,6 @@ go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv/internal/v2
 go.opentelemetry.io/otel/semconv/v1.17.0
 go.opentelemetry.io/otel/semconv/v1.17.0/httpconv
-<<<<<<< HEAD
-# go.opentelemetry.io/otel/metric v1.17.0
-## explicit; go 1.19
-go.opentelemetry.io/otel/metric
-go.opentelemetry.io/otel/metric/embedded
-# go.opentelemetry.io/otel/trace v1.17.0
-=======
 # go.opentelemetry.io/otel/bridge/opentracing v1.16.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/bridge/opentracing
@@ -1189,7 +1167,7 @@ go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/agent
 go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/jaeger
 go.opentelemetry.io/otel/exporters/jaeger/internal/gen-go/zipkincore
 go.opentelemetry.io/otel/exporters/jaeger/internal/third_party/thrift/lib/go/thrift
-# go.opentelemetry.io/otel/metric v1.16.0
+# go.opentelemetry.io/otel/metric v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
@@ -1201,8 +1179,7 @@ go.opentelemetry.io/otel/sdk/internal
 go.opentelemetry.io/otel/sdk/internal/env
 go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
-# go.opentelemetry.io/otel/trace v1.16.0
->>>>>>> cad5a5183 (update dskit in mimir)
+# go.opentelemetry.io/otel/trace v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/trace
 # go.uber.org/atomic v1.11.0
@@ -1293,12 +1270,8 @@ golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-<<<<<<< HEAD
-# golang.org/x/text v0.13.0
-=======
 golang.org/x/sys/windows/registry
-# golang.org/x/text v0.12.0
->>>>>>> cad5a5183 (update dskit in mimir)
+# golang.org/x/text v0.13.0
 ## explicit; go 1.17
 golang.org/x/text/cases
 golang.org/x/text/internal
