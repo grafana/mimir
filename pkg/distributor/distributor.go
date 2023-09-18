@@ -1264,7 +1264,7 @@ func handleIngesterPushError(err error) error {
 	stat, ok := status.FromError(err)
 	if ok {
 		statusCode := int(stat.Code())
-		if statusCode/100 == 2 || statusCode/100 == 4 || statusCode/100 == 5 {
+		if statusCode/100 == 4 || statusCode/100 == 5 {
 			return httpgrpc.Errorf(statusCode, "failed pushing to ingester: %s", stat.Message())
 		}
 	}
