@@ -36,7 +36,7 @@ func GenerateTestGaugeFloatHistogram(i int) *histogram.FloatHistogram {
 // explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
 func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	return &model.SampleHistogram{
-		Count: model.FloatString(12 + i*9),
+		Count: model.FloatString(10 + i*8),
 		Sum:   model.FloatString(18.4 * float64(i+1)),
 		Buckets: model.HistogramBuckets{
 			&model.HistogramBucket{
