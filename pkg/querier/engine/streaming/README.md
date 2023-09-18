@@ -1,5 +1,8 @@
 This directory contains a highly experimental, very limited and likely somewhat broken PromQL engine.
 
+In contrast to Prometheus' default PromQL engine, this PromQL engine evaluates queries as a stream of series. 
+Amongst other benefits, this allows it to evaluate queries with thousands of series with minimal memory utilisation.
+
 For more information about this engine, check out the 2023 PromCon talk ["Yet Another Streaming PromQL Engine"](https://promcon.io/2023-berlin/talks/yet-another-streaming-promql-engine).
 
 # Supported features
