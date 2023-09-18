@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type SeriesEntry struct {
@@ -43,7 +44,7 @@ func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return
 func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
-func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
+func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 	samplesS := Samples(samples(s))
 	return &SeriesEntry{
 		Lset: lset,
@@ -60,10 +61,10 @@ func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 // NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
 // NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
 // Use only for testing.
-func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sample) *ChunkSeriesEntry {
+func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
 	chksFromSamples := make([]chunks.Meta, 0, len(samples))
 	for _, s := range samples {
-		cfs, err := chunks.ChunkFromSamples(s)
+		cfs, err := tsdbutil.ChunkFromSamples(s)
 		if err != nil {
 			return &ChunkSeriesEntry{
 				Lset: lset,
@@ -100,14 +101,14 @@ type listSeriesIterator struct {
 	idx     int
 }
 
-type samples []chunks.Sample
+type samples []tsdbutil.Sample
 
-func (s samples) Get(i int) chunks.Sample { return s[i] }
-func (s samples) Len() int                { return len(s) }
+func (s samples) Get(i int) tsdbutil.Sample { return s[i] }
+func (s samples) Len() int                  { return len(s) }
 
-// Samples interface allows to work on arrays of types that are compatible with chunks.Sample.
+// Samples interface allows to work on arrays of types that are compatible with tsdbutil.Sample.
 type Samples interface {
-	Get(i int) chunks.Sample
+	Get(i int) tsdbutil.Sample
 	Len() int
 }
 
@@ -428,9 +429,9 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
 			switch {
 			case h != nil:
 				return hSample{t, h}
@@ -442,7 +443,7 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, 
 		}
 	}
 
-	var result []chunks.Sample
+	var result []tsdbutil.Sample
 	for {
 		switch iter.Next() {
 		case chunkenc.ValNone:

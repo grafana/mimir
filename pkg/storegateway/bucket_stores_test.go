@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -477,16 +478,16 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 		{
 			Labels: seriesWithOutOfOrderChunks,
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
 			},
 		},
 		// Series with out of order and overlapping chunks.
 		{
 			Labels: seriesWithOverlappingChunks,
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
 			},
 		},
 	}

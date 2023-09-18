@@ -505,7 +505,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 	// We do not reset oooHeadChunk because that is being replayed from a different WAL
 	// and has not been replayed here.
 	mSeries.nextAt = 0
-	mSeries.headChunks = nil
+	mSeries.headChunk = nil
 	mSeries.app = nil
 	return
 }
@@ -597,7 +597,6 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if _, chunkCreated := ms.append(s.T, s.V, 0, appendChunkOpts); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-				_ = ms.mmapChunks(h.chunkDiskMapper)
 			}
 			if s.T > maxt {
 				maxt = s.T
@@ -963,15 +962,15 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange but now unused.
 
 	s.Lock()
-	if s.headChunks == nil {
+	if s.headChunk == nil {
 		buf.PutUvarint(0)
 	} else {
-		enc := s.headChunks.chunk.Encoding()
+		enc := s.headChunk.chunk.Encoding()
 		buf.PutUvarint(1)
-		buf.PutBE64int64(s.headChunks.minTime)
-		buf.PutBE64int64(s.headChunks.maxTime)
+		buf.PutBE64int64(s.headChunk.minTime)
+		buf.PutBE64int64(s.headChunk.maxTime)
 		buf.PutByte(byte(enc))
-		buf.PutUvarintBytes(s.headChunks.chunk.Bytes())
+		buf.PutUvarintBytes(s.headChunk.chunk.Bytes())
 
 		switch enc {
 		case chunkenc.EncXOR:
@@ -1417,12 +1416,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					continue
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
-				series.headChunks = csr.mc
+				series.headChunk = csr.mc
 				series.lastValue = csr.lastValue
 				series.lastHistogramValue = csr.lastHistogramValue
 				series.lastFloatHistogramValue = csr.lastFloatHistogramValue
 
-				app, err := series.headChunks.chunk.Appender()
+				app, err := series.headChunk.chunk.Appender()
 				if err != nil {
 					errChan <- err
 					return
@@ -1519,7 +1518,7 @@ Outer:
 		default:
 			// This is a record type we don't understand. It is either and old format from earlier versions,
 			// or a new format and the code was rolled back to old version.
-			loopErr = errors.Errorf("unsupported snapshot record type 0b%b", rec[0])
+			loopErr = errors.Errorf("unsuported snapshot record type 0b%b", rec[0])
 			break Outer
 		}
 	}

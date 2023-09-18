@@ -455,7 +455,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `scalar(metric_counter{unique="1"})`, // Select a single metric.
 			expectedShardedQueries: 0,
 		},
-		"histogram_quantile no grouping": {
+		"histogram_quantile() no grouping": {
 			query:                  fmt.Sprintf(`histogram_quantile(0.99, metric_histogram_bucket{unique="%d"})`, numSeries+10), // Select a single histogram metric.
 			expectedShardedQueries: 0,
 		},
@@ -579,22 +579,6 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		`histogram_fraction(0, 0.5, sum(metric_native_histogram))`: {
 			query:                  `histogram_fraction(0, 0.5, sum(metric_native_histogram))`,
-			expectedShardedQueries: 1,
-		},
-		`histogram_stdvar`: {
-			query:                  `histogram_stdvar(metric_native_histogram)`,
-			expectedShardedQueries: 0,
-		},
-		`histogram_stdvar on sum of metrics`: {
-			query:                  `histogram_stdvar(sum(metric_native_histogram))`,
-			expectedShardedQueries: 1,
-		},
-		`histogram_stddev`: {
-			query:                  `histogram_stddev(metric_native_histogram)`,
-			expectedShardedQueries: 0,
-		},
-		`histogram_stddev on sum of metrics`: {
-			query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			expectedShardedQueries: 1,
 		},
 	}
@@ -948,8 +932,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "histogram_sum"},
 		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
 		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
-		{fn: "histogram_stdvar"},
-		{fn: "histogram_stddev"},
 	}
 	queryableFloats := storageSeriesQueryable([]*promql.StorageSeries{
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),

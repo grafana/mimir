@@ -14,7 +14,7 @@
 package tsdbutil
 
 import (
-	"math"
+	"math/rand"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -33,7 +33,7 @@ func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 // GenerateTestHistogram but it is up to the user to set any known counter reset hint.
 func GenerateTestHistogram(i int) *histogram.Histogram {
 	return &histogram.Histogram{
-		Count:         12 + uint64(i*9),
+		Count:         10 + uint64(i*8),
 		ZeroCount:     2 + uint64(i),
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
@@ -53,8 +53,7 @@ func GenerateTestHistogram(i int) *histogram.Histogram {
 
 func GenerateTestGaugeHistograms(n int) (r []*histogram.Histogram) {
 	for x := 0; x < n; x++ {
-		i := int(math.Sin(float64(x))*100) + 100
-		r = append(r, GenerateTestGaugeHistogram(i))
+		r = append(r, GenerateTestGaugeHistogram(rand.Intn(n)))
 	}
 	return r
 }
@@ -79,7 +78,7 @@ func GenerateTestFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 // GenerateTestFloatHistogram but it is up to the user to set any known counter reset hint.
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 	return &histogram.FloatHistogram{
-		Count:         12 + float64(i*9),
+		Count:         10 + float64(i*8),
 		ZeroCount:     2 + float64(i),
 		ZeroThreshold: 0.001,
 		Sum:           18.4 * float64(i+1),
@@ -99,8 +98,7 @@ func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
 
 func GenerateTestGaugeFloatHistograms(n int) (r []*histogram.FloatHistogram) {
 	for x := 0; x < n; x++ {
-		i := int(math.Sin(float64(x))*100) + 100
-		r = append(r, GenerateTestGaugeFloatHistogram(i))
+		r = append(r, GenerateTestGaugeFloatHistogram(rand.Intn(n)))
 	}
 	return r
 }

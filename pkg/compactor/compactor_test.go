@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1227,7 +1228,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		{
 			Labels: labels.FromStrings("case", "source_spec_1"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1000, 1000, nil, nil),
 					newSample(2000, 2000, nil, nil)})),
 			},
@@ -1238,7 +1239,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		{
 			Labels: labels.FromStrings("case", "source_spec_2"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1500, 1500, nil, nil),
 					newSample(2500, 2500, nil, nil)})),
 			},
@@ -1250,7 +1251,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		{
 			Labels: labels.FromStrings("case", "source_spec_3"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(0, 0, nil, nil),
 					newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
 			},
@@ -1262,7 +1263,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 		{
 			Labels: labels.FromStrings("case", "compacted_spec"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 					newSample(1250, 1250, nil, nil),
 					newSample(2250, 2250, nil, nil)})),
 			},
@@ -1454,7 +1455,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
 		Labels: labels.FromStrings(labels.MetricName, "series_1"),
-		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
+		Chunks: []chunks.Meta{must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
 			newSample(1574776800000, 0, nil, nil),
 			newSample(1574783999999, 0, nil, nil),
 		}))},
@@ -2186,10 +2187,10 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		{
 			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20, nil, nil), newSample(21, 21, nil, nil)})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10, nil, nil), newSample(11, 11, nil, nil)})),
 				// Extend block to cover 2h.
-				must(chunks.ChunkFromSamples([]chunks.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
+				must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0, nil, nil), newSample(2*time.Hour.Milliseconds()-1, 0, nil, nil)})),
 			},
 		},
 	}
@@ -2252,7 +2253,7 @@ type sample struct {
 	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
 	return sample{t, v, h, fh}
 }
 func (s sample) T() int64                      { return s.t }

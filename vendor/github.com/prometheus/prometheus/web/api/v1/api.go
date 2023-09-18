@@ -100,7 +100,6 @@ type ScrapePoolsRetriever interface {
 type TargetRetriever interface {
 	TargetsActive() map[string][]*scrape.Target
 	TargetsDropped() map[string][]*scrape.Target
-	TargetsDroppedCounts() map[string]int
 }
 
 // AlertmanagerRetriever provides a list of all/dropped AlertManager URLs.
@@ -899,9 +898,8 @@ type DroppedTarget struct {
 
 // TargetDiscovery has all the active targets.
 type TargetDiscovery struct {
-	ActiveTargets       []*Target        `json:"activeTargets"`
-	DroppedTargets      []*DroppedTarget `json:"droppedTargets"`
-	DroppedTargetCounts map[string]int   `json:"droppedTargetCounts"`
+	ActiveTargets  []*Target        `json:"activeTargets"`
+	DroppedTargets []*DroppedTarget `json:"droppedTargets"`
 }
 
 // GlobalURLOptions contains fields used for deriving the global URL for local targets.
@@ -1040,9 +1038,6 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		}
 	} else {
 		res.ActiveTargets = []*Target{}
-	}
-	if showDropped {
-		res.DroppedTargetCounts = api.targetRetriever(r.Context()).TargetsDroppedCounts()
 	}
 	if showDropped {
 		targetsDropped := api.targetRetriever(r.Context()).TargetsDropped()
