@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package util // TODO: find a better package name
 
 import "github.com/prometheus/prometheus/promql"
