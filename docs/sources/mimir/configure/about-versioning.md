@@ -120,6 +120,7 @@ The following features are currently experimental:
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
+  - Queries blocking defined on a per-tenant basis and configured via the limit `blocked_queries`
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
