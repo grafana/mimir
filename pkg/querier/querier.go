@@ -20,10 +20,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/streaming"
 	"github.com/prometheus/prometheus/storage"
 	thanosengine "github.com/thanos-io/promql-engine/engine"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/querier/engine/streaming"
 
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/engine"

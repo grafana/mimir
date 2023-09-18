@@ -9,9 +9,10 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/streaming/util"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/querier/engine/streaming/util"
 )
 
 // TODO: support transformations other than 'rate'

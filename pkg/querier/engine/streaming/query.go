@@ -9,9 +9,10 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/streaming/operator"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
+
+	"github.com/grafana/mimir/pkg/querier/engine/streaming/operator"
 )
 
 var globalPool = operator.NewPool()
