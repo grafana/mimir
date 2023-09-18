@@ -2,4 +2,4 @@
 
 set -euo pipefail
 
-go test -run=XXX -bench="BenchmarkQuery" -count=6 -benchmem -timeout=1h ../test
+go test -run=XXX -bench="BenchmarkQuery" -count=6 -benchmem -timeout=1h .
