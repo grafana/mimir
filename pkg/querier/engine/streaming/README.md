@@ -16,3 +16,8 @@ The following features are supported for float samples (ie. not native histogram
 * Combinations of `sum` and `rate` (eg. `sum by (group) (rate(some_metric[5m]))`)
 
 All other PromQL features and constructs are currently unsupported, including support for native histograms.
+
+# Tooling
+
+There are scripts that can be used to compare the performance of this engine, Prometheus' engine and Thanos' engine
+in `tools/query-engine-testing`.
