@@ -529,7 +529,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -624,7 +624,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -700,7 +700,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -771,7 +771,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -858,7 +858,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -935,7 +935,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1032,7 +1032,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1142,7 +1142,7 @@ spec:
           value: "off"
         - name: GOMEMLIMIT
           value: 1Gi
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1482,7 +1482,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: 2Gi
-        image: grafana/mimir:2.9.0
+        image: grafana/mimir:2.9.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
