@@ -41,6 +41,44 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
+func TestOtelMetricsToMetadata(t *testing.T) {
+	otelMetrics := pmetric.NewMetrics()
+	rs := otelMetrics.ResourceMetrics().AppendEmpty()
+	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
+
+	metricOne := metrics.AppendEmpty()
+	metricOne.SetName("name")
+	metricOne.SetUnit("Count")
+	gaugeMetricOne := metricOne.SetEmptyGauge()
+	gaugeDatapoint := gaugeMetricOne.DataPoints().AppendEmpty()
+	gaugeDatapoint.Attributes().PutStr("label1", "value1")
+
+	metricTwo := metrics.AppendEmpty()
+	metricTwo.SetName("test")
+	metricTwo.SetUnit("Count")
+	gaugeMetricTwo := metricTwo.SetEmptyGauge()
+	gaugeDatapointTwo := gaugeMetricTwo.DataPoints().AppendEmpty()
+	gaugeDatapointTwo.Attributes().PutStr("label1", "value2")
+
+	sampleMetadata := []*mimirpb.MetricMetadata{
+		{
+			Help:             "",
+			Unit:             "Count",
+			Type:             mimirpb.GAUGE,
+			MetricFamilyName: "name",
+		},
+		{
+			Help:             "",
+			Unit:             "Count",
+			Type:             mimirpb.GAUGE,
+			MetricFamilyName: "test",
+		},
+	}
+
+	res := otelMetricsToMetadata(otelMetrics)
+	assert.Equal(t, sampleMetadata, res)
+}
+
 func TestHandlerOTLPPush(t *testing.T) {
 	sampleSeries :=
 		[]prompb.TimeSeries{
