@@ -541,7 +541,10 @@ func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duratio
 	}
 	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
 
-	logClampEvent(ll, maxT, clampedT, "max", limitName)
+	if clampedT != maxT {
+		logClampEvent(ll, maxT, clampedT, "max", limitName)
+	}
+
 	return clampedT
 }
 
@@ -561,7 +564,10 @@ func clampMinTime(ll log.Logger, minT int64, refT int64, limitDelta time.Duratio
 	}
 	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
 
-	logClampEvent(ll, minT, clampedT, "min", limitName)
+	if clampedT != minT {
+		logClampEvent(ll, minT, clampedT, "min", limitName)
+	}
+
 	return clampedT
 }
 
