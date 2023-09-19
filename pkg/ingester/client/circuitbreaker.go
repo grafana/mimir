@@ -42,10 +42,10 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 	breaker := circuitbreaker.Builder[any]().
 		WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod).
 		WithDelay(cfg.CooldownPeriod).
-		OnFailure(func(event failsafe.ExecutionCompletedEvent[any]) {
+		OnFailure(func(event failsafe.ExecutionEvent[any]) {
 			metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()
 		}).
-		OnSuccess(func(event failsafe.ExecutionCompletedEvent[any]) {
+		OnSuccess(func(event failsafe.ExecutionEvent[any]) {
 			metrics.circuitBreakerResults.WithLabelValues(resultSuccess).Inc()
 		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
@@ -63,7 +63,7 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 		HandleIf(func(r any, err error) bool { return isFailure(err) }).
 		Build()
 
-	executor := failsafe.With[any](breaker)
+	executor := failsafe.NewExecutor[any](breaker)
 
 	// Initialize each of the known labels for circuit breaker metrics
 	metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.OpenState.String())

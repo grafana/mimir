@@ -30,6 +30,7 @@ import (
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/transport"
@@ -242,7 +243,9 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	}
 
 	grpcServer := grpc.NewServer(
-		grpc.StreamInterceptor(otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer())),
+		grpc.ChainStreamInterceptor(
+			otgrpc.OpenTracingStreamServerInterceptor(opentracing.GlobalTracer()),
+			otelgrpc.StreamServerInterceptor()),
 	)
 	defer grpcServer.GracefulStop()
 

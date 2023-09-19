@@ -4,16 +4,14 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go"
-	"github.com/failsafe-go/failsafe-go/internal/util"
 )
 
 // State of a CircuitBreaker.
 type circuitState[R any] interface {
 	getState() State
 	getStats() circuitStats
-	getRemainingDelay() time.Duration
 	tryAcquirePermit() bool
-	checkThresholdAndReleasePermit(exec *failsafe.Execution[R])
+	checkThresholdAndReleasePermit(exec failsafe.Execution[R])
 }
 
 type closedState[R any] struct {
@@ -42,16 +40,12 @@ func (s *closedState[R]) getStats() circuitStats {
 	return s.stats
 }
 
-func (s *closedState[R]) getRemainingDelay() time.Duration {
-	return 0
-}
-
 func (s *closedState[R]) tryAcquirePermit() bool {
 	return true
 }
 
 // Checks to see if the executions and failure thresholds have been exceeded, opening the circuit if so.
-func (s *closedState[R]) checkThresholdAndReleasePermit(exec *failsafe.Execution[R]) {
+func (s *closedState[R]) checkThresholdAndReleasePermit(exec failsafe.Execution[R]) {
 	// Execution threshold can only be set for time based thresholding
 	if s.stats.getExecutionCount() >= s.breaker.config.failureExecutionThreshold {
 		// Failure rate threshold can only be set for time based thresholding
@@ -87,11 +81,6 @@ func (s *openState[R]) getStats() circuitStats {
 	return s.stats
 }
 
-func (s *openState[R]) getRemainingDelay() time.Duration {
-	elapsedTime := s.breaker.config.clock.CurrentUnixNano() - s.startTime
-	return util.Max(0, s.delay-time.Duration(elapsedTime))
-}
-
 func (s *openState[R]) tryAcquirePermit() bool {
 	if s.breaker.config.clock.CurrentUnixNano()-s.startTime >= s.delay.Nanoseconds() {
 		s.breaker.halfOpen()
@@ -100,7 +89,7 @@ func (s *openState[R]) tryAcquirePermit() bool {
 	return false
 }
 
-func (s *openState[R]) checkThresholdAndReleasePermit(_ *failsafe.Execution[R]) {
+func (s *openState[R]) checkThresholdAndReleasePermit(_ failsafe.Execution[R]) {
 }
 
 type halfOpenState[R any] struct {
@@ -132,10 +121,6 @@ func (s *halfOpenState[R]) getStats() circuitStats {
 	return s.stats
 }
 
-func (s *halfOpenState[R]) getRemainingDelay() time.Duration {
-	return 0
-}
-
 func (s *halfOpenState[R]) tryAcquirePermit() bool {
 	if s.permittedExecutions > 0 {
 		s.permittedExecutions--
@@ -146,11 +131,12 @@ func (s *halfOpenState[R]) tryAcquirePermit() bool {
 
 /*
 Checks to determine if a threshold has been met and the circuit should be opened or closed.
-If a success threshold is configured, the circuit is opened or closed based on whether the ratio was exceeded.
-Else the circuit is opened or closed based on whether the failure threshold was exceeded.
+  - If a success threshold is configured, the circuit is opened or closed based on whether the ratio was exceeded.
+  - Else the circuit is opened or closed based on whether the failure threshold was exceeded.
+
 A permit is released before returning.
 */
-func (s *halfOpenState[R]) checkThresholdAndReleasePermit(exec *failsafe.Execution[R]) {
+func (s *halfOpenState[R]) checkThresholdAndReleasePermit(exec failsafe.Execution[R]) {
 	var successesExceeded bool
 	var failuresExceeded bool
 

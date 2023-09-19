@@ -27,6 +27,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -492,6 +493,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+		otelgrpc.UnaryClientInterceptor(),
 		middleware.ClientUserHeaderInterceptor},
 		nil)
 	if err != nil {
