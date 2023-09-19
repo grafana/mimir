@@ -89,29 +89,33 @@ func (q *TreeQueue) Dequeue() any {
 
 func (q *TreeQueue) dequeue() any {
 	var v any
-	initialIndex := q.index // to check for when we have wrapped all the way around
-	for {
+	initialLen := len(q.childQueueOrder)
+
+	for iters := 0; iters <= initialLen && v == nil; iters++ {
 		if q.index == localQueueIndex {
 			v = q.dequeueLocal()
+			if len(q.childQueueMap) > 0 {
+				q.index++
+			}
 		} else {
 			childQueueName := q.childQueueOrder[q.index]
-			if childQueueName != removedQueueName {
-				childQueue := q.childQueueMap[childQueueName]
+			childQueue := q.childQueueMap[childQueueName]
 
-				v = childQueue.dequeue()
-				if v == nil {
-					// selected child tree was checked recursively and is empty
-					q.deleteChildQueue(childQueueName)
-					// incrementIndex will take care of resetting the index
-				}
-			} // else: childQueue for this index was marked removed but not cleaned up yet
-		}
-
-		q.incrementIndex()
-		if v != nil || q.index == initialIndex {
-			return v
+			v = childQueue.dequeue()
+			if v != nil {
+				q.index++
+			} else {
+				// selected child tree was checked recursively and is empty
+				delete(q.childQueueMap, childQueueName)
+				q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
+				// no need to increment; remainder of the slice has moved left to be under q.index
+			}
+			if q.index == len(q.childQueueOrder) {
+				q.index = localQueueIndex
+			}
 		}
 	}
+	return v
 }
 
 func (q *TreeQueue) dequeueLocal() any {
@@ -131,18 +135,10 @@ func (q *TreeQueue) incrementIndex() {
 	}
 }
 
-func (q *TreeQueue) deleteChildQueue(name string) {
-	delete(q.childQueueMap, name)
-	q.childQueueOrder[q.index] = removedQueueName
-	sliceBoundary := len(q.childQueueOrder)
-	for i := len(q.childQueueOrder) - 1; i >= 0 && q.childQueueOrder[i] == removedQueueName; i-- {
-		sliceBoundary = i
-	}
-	// all elements after sliceBoundary are `removedQueueName`; truncate the slice.
-	// this does not clean up `removedQueueName` elements in the middle of the slice,
-	// but only truncating at the end of the slice is much more performant.
-	q.childQueueOrder = q.childQueueOrder[:sliceBoundary]
-}
+//func (q *TreeQueue) deleteChildQueue(name string) {
+//	delete(q.childQueueMap, name)
+//	q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
+//}
 
 // String makes the queue printable
 func (q *TreeQueue) String() string {

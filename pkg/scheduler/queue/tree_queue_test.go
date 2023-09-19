@@ -2,6 +2,7 @@ package queue
 
 import (
 	"container/list"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,6 +109,7 @@ func TestTreeQueue(t *testing.T) {
 			break
 		}
 		queueOutput = append(queueOutput, v)
+		fmt.Println(queueOutput)
 	}
 	assert.Equal(t, expectedQueueOutput, queueOutput)
 }
