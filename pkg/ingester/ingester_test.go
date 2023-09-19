@@ -6058,7 +6058,7 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 						require.NotErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
 						s, ok := status.FromError(err)
 						require.True(t, ok, "expected to be able to convert to gRPC status")
-						assert.Equal(t, codes.Unavailable, s.Code())
+						require.Equal(t, codes.Unavailable, s.Code())
 						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
 
 						// The second request causes a circuitbreaker.ErrCircuitBreakerOpen,
