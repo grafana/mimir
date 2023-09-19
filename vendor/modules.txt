@@ -345,13 +345,14 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.0.0-20230906024226-6f6961f2c246
-## explicit; go 1.18
+# github.com/failsafe-go/failsafe-go v0.0.0-20230918014924-ee2f3b27e8d7
+## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/circuitbreaker
+github.com/failsafe-go/failsafe-go/common
 github.com/failsafe-go/failsafe-go/internal
 github.com/failsafe-go/failsafe-go/internal/util
-github.com/failsafe-go/failsafe-go/spi
+github.com/failsafe-go/failsafe-go/policy
 # github.com/fatih/color v1.15.0
 ## explicit; go 1.17
 github.com/fatih/color
