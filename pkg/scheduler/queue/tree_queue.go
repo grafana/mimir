@@ -2,8 +2,6 @@ package queue
 
 import (
 	"container/list"
-	"encoding/json"
-	"fmt"
 )
 
 type QueuePath []string //nolint:revive
@@ -82,66 +80,49 @@ func (q *TreeQueue) getOrAddQueue(path QueuePath) *TreeQueue {
 	return newChildQueue
 }
 
-func (q *TreeQueue) Dequeue() any {
-	v := q.dequeue()
-	return v
+func (q *TreeQueue) Dequeue() (QueuePath, any) {
+	return q.dequeue()
 }
 
-func (q *TreeQueue) dequeue() any {
+func (q *TreeQueue) dequeue() ([]string, any) {
+	var childPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
+		increment := true
+
 		if q.index == localQueueIndex {
-			v = q.dequeueLocal()
-			if len(q.childQueueMap) > 0 {
-				q.index++
+			// base case
+			if elem := q.localQueue.Front(); elem != nil {
+				q.localQueue.Remove(elem)
+				v = elem.Value
 			}
 		} else {
+			// recur into the child tree
 			childQueueName := q.childQueueOrder[q.index]
 			childQueue := q.childQueueMap[childQueueName]
 
-			v = childQueue.dequeue()
-			if v != nil {
-				q.index++
-			} else {
+			childPath, v = childQueue.dequeue()
+			if childQueue.isEmpty() {
 				// selected child tree was checked recursively and is empty
 				delete(q.childQueueMap, childQueueName)
 				q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
 				// no need to increment; remainder of the slice has moved left to be under q.index
+				increment = false
 			}
-			if q.index == len(q.childQueueOrder) {
-				q.index = localQueueIndex
-			}
+
 		}
+		q.wrapIndex(increment)
 	}
-	return v
+	return append(QueuePath{q.name}, childPath...), v
 }
 
-func (q *TreeQueue) dequeueLocal() any {
-	if q.localQueue.Len() == 0 {
-		return nil
-	}
-	elem := q.localQueue.Front()
-	q.localQueue.Remove(elem)
-	return elem.Value
-}
-
-func (q *TreeQueue) incrementIndex() {
-	if q.index+1 >= len(q.childQueueOrder) {
-		q.index = localQueueIndex
-	} else {
+func (q *TreeQueue) wrapIndex(increment bool) {
+	if increment {
 		q.index++
 	}
-}
-
-//func (q *TreeQueue) deleteChildQueue(name string) {
-//	delete(q.childQueueMap, name)
-//	q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
-//}
-
-// String makes the queue printable
-func (q *TreeQueue) String() string {
-	bytes, _ := json.MarshalIndent(q, "\t", "\t")
-	return fmt.Sprintln(string(bytes))
+	if q.index >= len(q.childQueueOrder) {
+		q.index = localQueueIndex
+	}
 }

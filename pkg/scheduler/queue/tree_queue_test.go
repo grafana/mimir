@@ -102,14 +102,37 @@ func TestTreeQueue(t *testing.T) {
 		// back up to root; its local queue is done and all childQueueOrder are done, so the full tree is done
 	}
 
+	expectedQueuePaths := []QueuePath{
+		{"root", "0"},
+		{"root", "1"},
+		{"root", "2"},
+		{"root", "1", "0"},
+		{"root", "2", "0"},
+		{"root", "1"},
+		{"root", "2", "1"},
+		{"root", "1", "0"},
+		{"root", "2", "0"},
+		{"root", "2", "1"},
+		{"root", "2", "1"},
+	}
+
 	var queueOutput []any
+	var queuePaths []QueuePath
 	for {
-		v := root.Dequeue()
+		path, v := root.Dequeue()
 		if v == nil {
+			fmt.Println(path)
 			break
 		}
 		queueOutput = append(queueOutput, v)
-		fmt.Println(queueOutput)
+		queuePaths = append(queuePaths, path)
 	}
 	assert.Equal(t, expectedQueueOutput, queueOutput)
+	assert.Equal(t, expectedQueuePaths, queuePaths)
+
+	// dequeue one more time;
+	path, v := root.Dequeue()
+	assert.Nil(t, v)                         // assert we get nil back,
+	assert.Equal(t, path, QueuePath{"root"}) // assert only root existed to check
+	assert.True(t, root.isEmpty())           // assert nothing in local or child queues
 }
