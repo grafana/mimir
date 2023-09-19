@@ -71,11 +71,12 @@ type BucketStores struct {
 	stores   map[string]*BucketStore
 
 	// Metrics.
-	syncTimes         prometheus.Histogram
-	syncLastSuccess   prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	tenantsSynced     prometheus.Gauge
-	blocksLoaded      prometheus.GaugeFunc
+	syncTimes            prometheus.Histogram
+	syncLastSuccess      prometheus.Gauge
+	tenantsDiscovered    prometheus.Gauge
+	tenantsSynced        prometheus.Gauge
+	blocksLoaded           *prometheus.Desc
+	blocksLoadedByDuration *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores.
@@ -144,10 +145,16 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		Name: "cortex_bucket_stores_tenants_synced",
 		Help: "Number of tenants synced.",
 	})
-	u.blocksLoaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_bucket_store_blocks_loaded",
-		Help: "Number of currently loaded blocks.",
-	}, u.getBlocksLoadedMetric)
+	u.blocksLoaded = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded",
+		"Number of currently loaded blocks.",
+		nil, nil,
+	)
+	u.blocksLoadedByDuration = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded_by_duration",
+		"Number of currently loaded blocks, bucketed by block duration.",
+		[]string{"duration"}, nil,
+	)
 
 	// Init the index cache.
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
@@ -156,6 +163,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
+		reg.MustRegister(u)
 	}
 
 	return u, nil
@@ -551,17 +559,31 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// getBlocksLoadedMetric returns the number of blocks currently loaded across all bucket stores.
-func (u *BucketStores) getBlocksLoadedMetric() float64 {
-	count := 0
+func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
+	descs <- u.blocksLoaded
+	descs <- u.blocksLoadedByDuration
+}
+
+func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
+	loaded := make(map[time.Duration]int)
+	total := 0
 
 	u.storesMu.RLock()
+
 	for _, store := range u.stores {
-		count += store.Stats().BlocksLoaded
+		stats := store.Stats(u.cfg.TSDB.BlockRanges)
+		for d, n := range stats.BlocksLoaded {
+			loaded[d] += n
+			total += n
+		}
 	}
+
 	u.storesMu.RUnlock()
 
-	return float64(count)
+	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
+	for d, n := range loaded {
+		metrics <- prometheus.MustNewConstMetric(u.blocksLoadedByDuration, prometheus.GaugeValue, float64(n), d.String())
+	}
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
