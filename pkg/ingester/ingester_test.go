@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
@@ -5885,6 +5886,207 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					require.NotZero(t, rate)
 				}
 			}
+		})
+	}
+}
+
+func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
+	tests := map[string]struct {
+		limits      InstanceLimits
+		reqs        map[string][]*mimirpb.WriteRequest
+		expectedErr error
+	}{
+		"should fail creating two series": {
+			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
+
+			reqs: map[string][]*mimirpb.WriteRequest{
+				"test": {
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+				},
+			},
+			expectedErr: errMaxInMemorySeriesReached,
+		},
+		"should fail creating two users": {
+			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
+
+			reqs: map[string][]*mimirpb.WriteRequest{
+				"user1": {
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+				},
+
+				"user2": {
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+				},
+			},
+			expectedErr: errMaxTenantsReached,
+		},
+
+		"should fail pushing samples in two requests due to rate limit": {
+			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1, MaxIngestionRate: 0.001},
+
+			reqs: map[string][]*mimirpb.WriteRequest{
+				"user1": {
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+
+					mimirpb.ToWriteRequest(
+						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
+						nil,
+						nil,
+						mimirpb.API,
+					),
+				},
+			},
+			expectedErr: errMaxIngestionRateReached,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(t)
+			cfg.InstanceLimitsFn = func() *InstanceLimits {
+				return &testData.limits
+			}
+
+			registry := prometheus.NewRegistry()
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			var lvl dslog.Level
+			require.NoError(t, lvl.Set("info"))
+			logger := dslog.NewGoKitWithLevel(lvl, dslog.LogfmtFormat)
+			serverLog := middleware.GRPCServerLog{
+				Log: logger,
+			}
+			grpcOptions := []grpc.ServerOption{
+				grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+				grpc.ChainUnaryInterceptor(serverLog.UnaryServerInterceptor),
+			}
+
+			server := grpc.NewServer(grpcOptions...)
+			defer server.GracefulStop()
+			client.RegisterIngesterServer(server, i)
+
+			listener, err := net.Listen("tcp", "localhost:0")
+			require.NoError(t, err)
+
+			go func() {
+				require.NoError(t, server.Serve(listener))
+			}()
+
+			cbCfg := client.CircuitBreakerConfig{
+				Enabled:                   true,
+				FailureThreshold:          1,
+				FailureExecutionThreshold: 1,
+				ThresholdingPeriod:        60 * time.Second,
+				CooldownPeriod:            60 * time.Second,
+			}
+			clientCfg := defaultClientTestConfig()
+			clientCfg.CircuitBreaker = cbCfg
+
+			client, err := client.MakeIngesterClient(listener.Addr().String(), clientCfg, client.NewMetrics(registry), util_test.NewTestingLogger(t))
+			require.NoError(t, err)
+			defer client.Close()
+
+			// Iterate through users in sorted order (by username).
+			uids := []string{}
+			totalPushes := 0
+			for uid, requests := range testData.reqs {
+				uids = append(uids, uid)
+				totalPushes += len(requests)
+			}
+			slices.Sort(uids)
+
+			pushIdx := 0
+			for _, uid := range uids {
+				ctx := user.InjectOrgID(context.Background(), uid)
+
+				for _, req := range testData.reqs[uid] {
+					pushIdx++
+					// We expect no error on any request except the last one,
+					// which causes an instance limit error
+					if pushIdx < totalPushes {
+						_, err := client.Push(ctx, req)
+						require.NoError(t, err)
+					} else {
+						// We push the last request 2 times.
+						// The first request causes an instance limit error,
+						// and which opens the circuit breaker, but no
+						// circuitbreaker.ErrCircuitBreakerOpen is returned.
+						_, err := client.Push(ctx, req)
+						require.Error(t, err)
+						require.NotErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+						s, ok := status.FromError(err)
+						require.True(t, ok, "expected to be able to convert to gRPC status")
+						require.Equal(t, codes.Unavailable, s.Code())
+						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
+
+						// The second request causes a circuitbreaker.ErrCircuitBreakerOpen,
+						// since the circuit breaker is already open.
+						_, err = client.Push(ctx, req)
+						require.Error(t, err)
+						require.ErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+					}
+
+					// imitate time ticking between each push
+					i.ingestionRate.Tick()
+
+					rate := testutil.ToFloat64(i.metrics.ingestionRate)
+					require.NotZero(t, rate)
+				}
+			}
+			metricNames := []string{
+				"cortex_ingester_client_circuit_breaker_results_total",
+			}
+			expectedMetrics := `
+				# HELP cortex_ingester_client_circuit_breaker_results_total Results of executing requests via the circuit breaker
+				# TYPE cortex_ingester_client_circuit_breaker_results_total counter
+				cortex_ingester_client_circuit_breaker_results_total{result="circuit_breaker_open"} 1
+				cortex_ingester_client_circuit_breaker_results_total{result="success"} 1
+				cortex_ingester_client_circuit_breaker_results_total{result="error"} 1
+			`
+			err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
+			assert.NoError(t, err)
 		})
 	}
 }
