@@ -3,8 +3,6 @@
 package mimir
 
 import (
-	"sync"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -14,10 +12,9 @@ type pushReceiver interface {
 	FinishPushRequest()
 }
 
+// getPushReceiver function must be constant -- return same value on each call.
 func newGrpcInflightMethodLimiter(getIngester func() pushReceiver) *grpcInflightMethodLimiter {
-	once := sync.OnceValue(getIngester)
-
-	return &grpcInflightMethodLimiter{getIngester: once}
+	return &grpcInflightMethodLimiter{getIngester: getIngester}
 }
 
 // grpcInflightMethodLimiter implements gRPC TapHandle and gRPC stats.Handler.
@@ -27,12 +24,14 @@ type grpcInflightMethodLimiter struct {
 
 const ingesterPushMethod = "/cortex.Ingester/Push"
 
+var errNoIngester = status.Error(codes.Unavailable, "no ingester")
+
 func (g *grpcInflightMethodLimiter) RPCCallStarting(methodName string) error {
 	if methodName == ingesterPushMethod {
 		ing := g.getIngester()
 		if ing == nil {
 			// We return error here, to make sure that RPCCallFinished doesn't get called for this RPC call.
-			return status.Error(codes.Unavailable, "no ingester")
+			return errNoIngester
 		}
 
 		return ing.StartPushRequest()
