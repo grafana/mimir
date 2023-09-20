@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
@@ -25,8 +24,10 @@ import (
 
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,
-		"the ingester is currently too busy to process queries, try again later")
+	tooBusyError = newErrorWithStatus(
+		safeToWrapError("the ingester is currently too busy to process queries, try again later"),
+		http.StatusServiceUnavailable,
+	)
 
 	errMaxSeriesPerMetricLimitExceeded = safeToWrapError("per-metric series limit exceeded")
 	errMaxSeriesPerUserLimitExceeded   = safeToWrapError("per-user series limit exceeded")
