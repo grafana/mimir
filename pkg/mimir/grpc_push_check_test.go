@@ -78,7 +78,7 @@ func TestGrpcPushCheck(t *testing.T) {
 }
 
 func setupGrpcServerWithCheckAndClient(t *testing.T, ingServer *ingesterServer) ingester_client.IngesterClient {
-	g := newGrpcPushCheck(func() pushReceiver {
+	g := newGrpcInflightMethodLimiter(func() pushReceiver {
 		return ingServer
 	})
 
