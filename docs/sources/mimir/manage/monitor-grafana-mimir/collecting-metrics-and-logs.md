@@ -12,7 +12,7 @@ weight: 60
 
 You can collect logs and metrics from a Mimir or GEM cluster. To set up dashboards and alerts,
 see [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}})
-or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations-reference/integration-mimir/).
+or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integration-reference/integration-mimir/).
 
 It is easier and best to monitor a cluster if it was installed via the Grafana Mimir Helm chart.
 For more information, see the [documentation for the Grafana Mimir Helm chart](/docs/helm-charts/mimir-distributed/latest/).
