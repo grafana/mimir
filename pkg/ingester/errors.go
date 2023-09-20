@@ -50,10 +50,19 @@ type errorWithStatus struct {
 	status *status.Status
 }
 
-func newErrorWithStatus(err error, code int) errorWithStatus {
+func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 	return errorWithStatus{
 		err:    err,
-		status: status.New(codes.Code(code), err.Error()),
+		status: status.New(code, err.Error()),
+	}
+}
+
+func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
+	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
+	stat, _ := status.FromError(errWithHTTPStatus)
+	return errorWithStatus{
+		err:    err,
+		status: stat,
 	}
 }
 

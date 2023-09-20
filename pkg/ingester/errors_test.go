@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -68,12 +70,29 @@ func TestSafeToWrapError(t *testing.T) {
 func TestErrorWithStatus(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
-	validationErr := newErrorWithStatus(err, http.StatusBadRequest)
-	require.Error(t, validationErr)
-	stat, ok := status.FromError(validationErr)
+	errWithStatus := newErrorWithStatus(err, codes.Unavailable)
+	require.Error(t, errWithStatus)
+	stat, ok := status.FromError(errWithStatus)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, stat.Code())
+	require.Errorf(t, err, stat.Message())
+	require.Empty(t, stat.Details())
+}
+
+func TestErrorWithHTTPStatus(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	err := newIngestErrSampleTimestampTooOld(timestamp, metricLabelAdapters)
+	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
+	require.Error(t, errWithHTTPStatus)
+	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
 	require.Errorf(t, err, stat.Message())
+	require.NotEmpty(t, stat.Details())
+	resp, ok := httpgrpc.HTTPResponseFromError(errWithHTTPStatus)
+	require.True(t, ok)
+	require.Equal(t, int32(http.StatusBadRequest), resp.Code)
+	require.Errorf(t, err, errWithHTTPStatus.Error())
 }
 
 func TestWrapOrAnnotateWithUser(t *testing.T) {

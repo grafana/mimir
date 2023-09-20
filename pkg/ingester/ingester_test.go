@@ -431,7 +431,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
@@ -489,7 +489,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -548,7 +548,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -667,7 +667,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
@@ -726,7 +726,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
 					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
@@ -782,7 +782,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
@@ -846,7 +846,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -920,7 +920,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -979,7 +979,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
+			expectedErr:              newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -5657,7 +5657,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, newErrorWithStatus(wrapOrAnnotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
+	require.Equal(t, newErrorWithHTTPStatus(wrapOrAnnotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
 
 	// Ingestion is successful after a flush.
 	ok, _ = db.changeState(forceCompacting, active)
@@ -8089,8 +8089,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8122,8 +8122,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8156,8 +8156,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8193,8 +8193,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8227,8 +8227,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8255,8 +8255,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8286,8 +8286,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: false,
 		},
@@ -8309,8 +8309,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8343,8 +8343,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), http.StatusBadRequest),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: false,
 		},
