@@ -258,6 +258,19 @@ func TestDecodeFailedResponse(t *testing.T) {
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
 	})
+
+	t.Run("service unavailable", func(t *testing.T) {
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusServiceUnavailable), resp.Code)
+	})
 }
 
 func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
