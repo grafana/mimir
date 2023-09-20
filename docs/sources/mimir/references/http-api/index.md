@@ -1183,7 +1183,8 @@ This API endpoint is experimental and subject to change.
 POST /compactor/delete_tenant
 ```
 
-Request deletion of ALL tenant data.
+Request deletion of ALL tenant data for the tenant specified in the `X-Scope-OrgID` header. If authentication is disabled,
+then the default `anonymous` tenant is deleted (configurable by `-auth.no-auth-tenant`).
 
 Requires [authentication](#authentication).
 
