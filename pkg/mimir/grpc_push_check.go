@@ -3,10 +3,8 @@
 package mimir
 
 import (
-	"context"
-
-	"google.golang.org/grpc/stats"
-	"google.golang.org/grpc/tap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type pushReceiver interface {
@@ -14,62 +12,35 @@ type pushReceiver interface {
 	FinishPushRequest()
 }
 
-func newGrpcPushCheck(getIngester func() pushReceiver) *grpcPushCheck {
-	return &grpcPushCheck{getIngester: getIngester}
+// getPushReceiver function must be constant -- return same value on each call.
+func newGrpcInflightMethodLimiter(getIngester func() pushReceiver) *grpcInflightMethodLimiter {
+	return &grpcInflightMethodLimiter{getIngester: getIngester}
 }
 
-// grpcPushCheck implements gRPC TapHandle and gRPC stats.Handler.
-// grpcPushCheck can track push inflight requests, and reject requests before even reading them into memory.
-type grpcPushCheck struct {
+// grpcInflightMethodLimiter implements gRPC TapHandle and gRPC stats.Handler.
+type grpcInflightMethodLimiter struct {
 	getIngester func() pushReceiver
 }
 
-// Custom type to hide it from other packages.
-type grpcPushCheckContextKey int
+const ingesterPushMethod = "/cortex.Ingester/Push"
 
-const (
-	pushRequestStartedKey grpcPushCheckContextKey = 1
-)
+var errNoIngester = status.Error(codes.Unavailable, "no ingester")
 
-// TapHandle is called after receiving grpc request and headers, but before reading any request data yet.
-// If we reject request here, it won't be counted towards any metrics (eg. dskit middleware).
-// If we accept request (not return error), eventually HandleRPC with stats.End notification will be called.
-func (g *grpcPushCheck) TapHandle(ctx context.Context, info *tap.Info) (context.Context, error) {
-	pushRequestStarted := false
-
-	var err error
-	if info.FullMethodName == "/cortex.Ingester/Push" {
+func (g *grpcInflightMethodLimiter) RPCCallStarting(methodName string) error {
+	if methodName == ingesterPushMethod {
 		ing := g.getIngester()
-		if ing != nil {
-			// All errors returned by StartPushRequest can be converted to gRPC status.Status.
-			err = ing.StartPushRequest()
-			if err == nil {
-				pushRequestStarted = true
-			}
+		if ing == nil {
+			// We return error here, to make sure that RPCCallFinished doesn't get called for this RPC call.
+			return errNoIngester
 		}
+
+		return ing.StartPushRequest()
 	}
-
-	ctx = context.WithValue(ctx, pushRequestStartedKey, pushRequestStarted)
-	return ctx, err
+	return nil
 }
 
-func (g *grpcPushCheck) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
-	return ctx
-}
-
-func (g *grpcPushCheck) HandleRPC(ctx context.Context, rpcStats stats.RPCStats) {
-	// when request ends, and we started push request tracking for this request, finish it.
-	if _, ok := rpcStats.(*stats.End); ok {
-		if b, ok := ctx.Value(pushRequestStartedKey).(bool); ok && b {
-			g.getIngester().FinishPushRequest()
-		}
+func (g *grpcInflightMethodLimiter) RPCCallFinished(methodName string) {
+	if methodName == ingesterPushMethod {
+		g.getIngester().FinishPushRequest()
 	}
-}
-
-func (g *grpcPushCheck) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
-	return ctx
-}
-
-func (g *grpcPushCheck) HandleConn(_ context.Context, _ stats.ConnStats) {
-	// Not interested.
 }
