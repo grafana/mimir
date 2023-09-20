@@ -61,10 +61,7 @@ func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
-	stat, ok := status.FromError(errWithHTTPStatus)
-	if !ok {
-		stat = nil
-	}
+	stat, _ := status.FromError(errWithHTTPStatus)
 	return errorWithStatus{
 		err:    err,
 		status: stat,
@@ -72,9 +69,6 @@ func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 }
 
 func (e errorWithStatus) Error() string {
-	if e.status == nil {
-		return e.err.Error()
-	}
 	return e.status.String()
 }
 
