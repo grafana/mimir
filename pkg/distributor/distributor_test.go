@@ -4764,6 +4764,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	outputErrorMsgPrefix := "failed pushing to ingester"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
+	unavailableErr := status.New(codes.Unavailable, testErrorMsg).Err()
 	test := map[string]struct {
 		ingesterPushError   error
 		expectedOutputError error
@@ -4772,29 +4773,21 @@ func TestHandleIngesterPushError(t *testing.T) {
 			ingesterPushError:   nil,
 			expectedOutputError: nil,
 		},
-		"an http 400 error gives an http 400 error": {
+		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
 			ingesterPushError:   httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
 			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
 		},
-		"an http 500 error gives an http 500 error": {
-			ingesterPushError:   httpgrpc.Errorf(http.StatusInternalServerError, testErrorMsg),
-			expectedOutputError: httpgrpc.Errorf(http.StatusInternalServerError, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
+			ingesterPushError:   httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
+			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
 		},
 		"a random ingester error without status gives the same wrapped error": {
 			ingesterPushError:   errWithUserID,
 			expectedOutputError: errors.Wrap(errWithUserID, outputErrorMsgPrefix),
 		},
-		"an ingester error with status 5xx gives an http 5xx error": {
-			ingesterPushError:   newGRPCError(http.StatusServiceUnavailable, errWithUserID.Error()),
-			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
-		},
-		"an ingester error with status 4xx gives an http 4xx error": {
-			ingesterPushError:   newGRPCError(http.StatusBadRequest, errWithUserID.Error()),
-			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, errWithUserID.Error()),
-		},
 		"a gRPC unavailable error gives the same wrapped error": {
-			ingesterPushError:   newGRPCError(int(codes.Unavailable), errWithUserID.Error()),
-			expectedOutputError: errors.Wrap(newGRPCError(int(codes.Unavailable), errWithUserID.Error()), outputErrorMsgPrefix),
+			ingesterPushError:   unavailableErr,
+			expectedOutputError: errors.Wrap(unavailableErr, outputErrorMsgPrefix),
 		},
 		"a context cancel error gives the same wrapped error": {
 			ingesterPushError:   context.Canceled,
@@ -4810,11 +4803,6 @@ func TestHandleIngesterPushError(t *testing.T) {
 			require.ErrorContains(t, err, testData.expectedOutputError.Error())
 		}
 	}
-}
-
-func newGRPCError(statusCode int, msg string) error {
-	stat := status.New(codes.Code(statusCode), msg)
-	return stat.Err()
 }
 
 func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
