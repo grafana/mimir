@@ -247,7 +247,7 @@ func newIngesterMetrics(
 		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
 			Name:       "cortex_ingester_inflight_push_requests_summary",
 			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
-			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
 			MaxAge:     time.Minute,
 			AgeBuckets: 6,
 		}),
