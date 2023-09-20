@@ -205,14 +205,13 @@
       )[15m:]
     )
     +
-    max_over_time(
-      (
-        sum(
-          sum by (pod) (kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"})
-          and
-          max by (pod) (kube_pod_container_status_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
-        ) or vector(0)
-      )[15m:]
+    sum(
+      sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"}[15m]))
+      and
+      max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"}[15m]) > 0)
+      and
+      max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
+      or vector(0)
     )
   |||,
 
