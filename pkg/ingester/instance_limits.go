@@ -34,7 +34,7 @@ func newInstanceLimitError(msg string) error {
 	return newErrorWithStatus(
 		log.DoNotLogError{Err: safeToWrapError(msg)},
 		// Errors from hitting per-instance limits are always "unavailable" for gRPC
-		int(codes.Unavailable),
+		codes.Unavailable,
 	)
 }
 

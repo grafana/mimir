@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
@@ -24,7 +25,7 @@ import (
 
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	tooBusyError = newErrorWithStatus(
+	tooBusyError = newErrorWithHTTPStatus(
 		safeToWrapError("the ingester is currently too busy to process queries, try again later"),
 		http.StatusServiceUnavailable,
 	)
@@ -51,14 +52,29 @@ type errorWithStatus struct {
 	status *status.Status
 }
 
-func newErrorWithStatus(err error, code int) errorWithStatus {
+func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 	return errorWithStatus{
 		err:    err,
-		status: status.New(codes.Code(code), err.Error()),
+		status: status.New(code, err.Error()),
+	}
+}
+
+func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
+	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
+	stat, ok := status.FromError(errWithHTTPStatus)
+	if !ok {
+		stat = nil
+	}
+	return errorWithStatus{
+		err:    err,
+		status: stat,
 	}
 }
 
 func (e errorWithStatus) Error() string {
+	if e.status == nil {
+		return e.err.Error()
+	}
 	return e.status.String()
 }
 
