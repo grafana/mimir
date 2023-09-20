@@ -7,8 +7,8 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"golang.org/x/sync/semaphore"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
@@ -211,35 +212,9 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 	}
 }
 
-type subRequest struct {
-	req    Request
-	ctx    context.Context
-	result chan result
-}
-
-type result struct {
-	response Response
-	err      error
-}
-
-func newSubRequest(ctx context.Context, req Request) subRequest {
-	return subRequest{
-		req:    req,
-		ctx:    ctx,
-		result: make(chan result, 1),
-	}
-}
-
 func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	var (
-		wg           sync.WaitGroup
-		intermediate = make(chan subRequest)
-		ctx, cancel  = context.WithCancel(r.Context())
-	)
-	defer func() {
-		cancel()
-		wg.Wait()
-	}()
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
 	if err != nil {
@@ -254,45 +229,21 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Creates workers that will process the sub-requests in parallel for this query.
-	// The amount of workers is limited by the MaxQueryParallelism tenant setting.
+	// Limit the amount of parallel sub-requests according to the MaxQueryParallelism tenant setting.
 	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
-	for i := 0; i < parallelism; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case w := <-intermediate:
-					resp, err := rt.downstream.Do(w.ctx, w.req)
-					w.result <- result{response: resp, err: err}
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
-	}
+	sem := semaphore.NewWeighted(int64(parallelism))
 
-	// Wraps middlewares with a final handler, which will receive requests in
-	// parallel from upstream handlers. Then each requests gets scheduled to a
-	// different worker via the `intermediate` channel, so the maximum
-	// parallelism is limited. This worker will then call `Do` on the resulting
-	// handler.
+	// Wraps middlewares with a final handler, which will receive sub-requests in
+	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
+	// sub-requests run in parallel.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
-			s := newSubRequest(ctx, r)
-			select {
-			case intermediate <- s:
-			case <-ctx.Done():
-				return nil, ctx.Err()
+			if err := sem.Acquire(ctx, 1); err != nil {
+				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
+			defer sem.Release(1)
 
-			select {
-			case response := <-s.result:
-				return response.response, response.err
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			}
+			return rt.downstream.Do(ctx, r)
 		})).Do(ctx, request)
 	if err != nil {
 		return nil, err
