@@ -71,10 +71,10 @@ type BucketStores struct {
 	stores   map[string]*BucketStore
 
 	// Metrics.
-	syncTimes            prometheus.Histogram
-	syncLastSuccess      prometheus.Gauge
-	tenantsDiscovered    prometheus.Gauge
-	tenantsSynced        prometheus.Gauge
+	syncTimes              prometheus.Histogram
+	syncLastSuccess        prometheus.Gauge
+	tenantsDiscovered      prometheus.Gauge
+	tenantsSynced          prometheus.Gauge
 	blocksLoaded           *prometheus.Desc
 	blocksLoadedByDuration *prometheus.Desc
 }
