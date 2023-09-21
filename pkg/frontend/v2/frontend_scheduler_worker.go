@@ -53,6 +53,7 @@ type frontendSchedulerWorkers struct {
 	workers map[string]*frontendSchedulerWorker
 
 	enqueuedRequests *prometheus.CounterVec
+	enqueueDuration  prometheus.Histogram
 }
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
@@ -67,6 +68,10 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
 		}, []string{schedulerAddressLabel}),
+		enqueueDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_query_frontend_enqueue_duration_seconds",
+			Help: "Time spent by requests waiting to join the queue or be rejected.",
+		}),
 	}
 
 	var err error
@@ -135,7 +140,7 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	}
 
 	// No worker for this address yet, start a new one.
-	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.log)
+	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.enqueueDuration, f.log)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -229,9 +234,12 @@ type frontendSchedulerWorker struct {
 
 	// Number of queries sent to this scheduler.
 	enqueuedRequests prometheus.Counter
+
+	// How long it takes to enqueue a query.
+	enqueueDuration prometheus.Histogram
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, enqueueDuration prometheus.Histogram, log log.Logger) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
 		log:              log,
 		conn:             conn,
@@ -241,6 +249,7 @@ func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, fro
 		requestsCh:       requestsCh,
 		cancelCh:         make(chan uint64, schedulerWorkerCancelChanCapacity),
 		enqueuedRequests: enqueuedRequests,
+		enqueueDuration:  enqueueDuration,
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -365,6 +374,12 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
 	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
 	defer spanLogger.Span.Finish()
+
+	// Keep track of how long it takes to enqueue a request end-to-end.
+	start := time.Now()
+	defer func() {
+		w.enqueueDuration.Observe(time.Since(start).Seconds())
+	}()
 
 	err := loop.Send(&schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.ENQUEUE,
