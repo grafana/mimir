@@ -256,10 +256,10 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards].
 
 {{% docs/reference %}}
-[Migrate from Cortex]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/migrate/migrate-from-cortex"
-[mimirtool_rules]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#rules"
-[`mimirtool config convert`]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#convert"
-[convert]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/tools/mimirtool#convert"
-[Additional resources metrics]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/requirements#additional-resources-metrics"
-[monitoring mixin dashboards]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/operators-guide/monitor-grafana-mimir/dashboards"
+[Migrate from Cortex]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/set-up/migrate/migrate-from-cortex"
+[mimirtool_rules]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#rules"
+[`mimirtool config convert`]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#convert"
+[convert]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/tools/mimirtool#convert"
+[Additional resources metrics]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/requirements#additional-resources-metrics"
+[monitoring mixin dashboards]: "/ -> /docs/mimir/<MIMIR DOCS VERSION>/manage/monitor-grafana-mimir/dashboards"
 {{% /docs/reference %}}

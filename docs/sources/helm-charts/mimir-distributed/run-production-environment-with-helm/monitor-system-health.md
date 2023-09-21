@@ -140,6 +140,6 @@ metaMonitoring:
 ```
 
 {{% docs/reference %}}
-[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts"
-[Collect metrics and logs without the Helm chart]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs#collect-metrics-and-logs-without-the-helm-chart"
+[Installing Grafana Mimir dashboards and alerts]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/installing-dashboards-and-alerts"
+[Collect metrics and logs without the Helm chart]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/monitor-grafana-mimir/collecting-metrics-and-logs#collect-metrics-and-logs-without-the-helm-chart"
 {{% /docs/reference %}}
