@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 5.1.0
 
+* [ENHANCEMENT] Update Mimir image to 2.10.0 and GEM image to v2.10.1. #6077
 * [ENHANCEMENT] Make compactor podManagementPolicy configurable. #5902
 * [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
 * [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646
