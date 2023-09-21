@@ -14,12 +14,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
-	"github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/vault"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 func changeTargetConfig(c *Config) {
