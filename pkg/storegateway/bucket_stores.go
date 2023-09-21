@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
@@ -559,30 +560,38 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
+// countBlocksLoaded returns the total number of blocks loaded and the number of blocks
+// loaded bucketed by the configured block durations, summed for all users.
+func (u *BucketStores) countBlocksLoaded() (int, map[time.Duration]int) {
+	byDuration := make(map[time.Duration]int)
+	total := 0
+
+	u.storesMu.RLock()
+	defer u.storesMu.RUnlock()
+
+	for _, store := range u.stores {
+		stats := store.Stats(u.cfg.TSDB.BlockRanges)
+		for d, n := range stats.BlocksLoaded {
+			byDuration[d] += n
+			total += n
+		}
+	}
+
+	return total, byDuration
+}
+
 func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 	descs <- u.blocksLoaded
 	descs <- u.blocksLoadedByDuration
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	loaded := make(map[time.Duration]int)
-	total := 0
-
-	u.storesMu.RLock()
-
-	for _, store := range u.stores {
-		stats := store.Stats(u.cfg.TSDB.BlockRanges)
-		for d, n := range stats.BlocksLoaded {
-			loaded[d] += n
-			total += n
-		}
-	}
-
-	u.storesMu.RUnlock()
-
+	total, byDuration := u.countBlocksLoaded()
 	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
-	for d, n := range loaded {
-		metrics <- prometheus.MustNewConstMetric(u.blocksLoadedByDuration, prometheus.GaugeValue, float64(n), d.String())
+	for d, n := range byDuration {
+		// Convert time.Duration to model.Duration here since the string format is nicer
+		// to read for round numbers than the stdlib version. E.g. "2h" vs "2h0m0s"
+		metrics <- prometheus.MustNewConstMetric(u.blocksLoadedByDuration, prometheus.GaugeValue, float64(n), model.Duration(d).String())
 	}
 }
 
