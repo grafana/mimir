@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -134,7 +135,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	require.Equal(t, []byte(body), resp.Body)
 }
 
-func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
+func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	const (
 		body   = "all fine here"
 		userID = "test"
@@ -153,6 +154,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
+	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
 	expectedMetrics := fmt.Sprintf(`
 		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
 		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
@@ -160,11 +162,17 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	`, f.cfg.SchedulerAddress)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
+	// Assert on cortex_query_frontend_enqueue_duration_seconds.
+	metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(0), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
+
 	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
 
+	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
 	expectedMetrics = fmt.Sprintf(`
 		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
 		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
@@ -172,10 +180,20 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	`, f.cfg.SchedulerAddress)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
+	// Assert on cortex_query_frontend_enqueue_duration_seconds.
+	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
+
 	// Manually remove the address, check that label is removed.
 	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
 	expectedMetrics = ``
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
+
+	// Assert on cortex_query_frontend_enqueue_duration_seconds.
+	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
 }
 
 func TestFrontendRetryEnqueue(t *testing.T) {
