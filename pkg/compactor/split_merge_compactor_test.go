@@ -843,7 +843,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		require.NoError(t, err)
 
 		// Find all series in the block.
-		postings, err := indexReader.PostingsForMatchers(false, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+		postings, err := indexReader.PostingsForMatchers(ctx, false, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 		require.NoError(t, err)
 
 		builder := labels.NewScratchBuilder(1)

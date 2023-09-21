@@ -170,14 +170,14 @@ func (r *LazyBinaryReader) PostingsOffset(name, value string) (index.Range, erro
 }
 
 // LookupSymbol implements Reader.
-func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
+func (r *LazyBinaryReader) LookupSymbol(ctx context.Context, o uint32) (string, error) {
 	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return "", err
 	}
 	defer wg.Done()
 
-	return reader.LookupSymbol(o)
+	return reader.LookupSymbol(ctx, o)
 }
 
 // SymbolsReader implements Reader.

@@ -1535,6 +1535,8 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 	// will be then snapshotted to the input dir.
 	tempDir := t.TempDir()
 
+	ctx := context.Background()
+
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
 		MinBlockDuration:  2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:  2 * time.Hour.Milliseconds(),
@@ -1548,11 +1550,11 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 	addSample := func(i int) {
 		lbls := labels.FromStrings("series_id", strconv.Itoa(i))
 
-		app := db.Appender(context.Background())
+		app := db.Appender(ctx)
 		_, err := app.Append(0, lbls, minT+(step*int64(i)), float64(i))
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		require.NoError(t, db.Compact())
+		require.NoError(t, db.Compact(ctx))
 	}
 	if numBlocks > 0 {
 		i := 0
@@ -1577,6 +1579,8 @@ func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.L
 	// will be then snapshotted to the input dir.
 	tempDir := t.TempDir()
 
+	ctx := context.Background()
+
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
 		MinBlockDuration:  2 * time.Hour.Milliseconds(),
 		MaxBlockDuration:  2 * time.Hour.Milliseconds(),
@@ -1596,7 +1600,7 @@ func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.L
 		_, err := app.Append(0, lbls, timestamp, value)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
-		require.NoError(t, db.Compact())
+		require.NoError(t, db.Compact(ctx))
 	}
 
 	require.NoError(t, db.Snapshot(dir, true))

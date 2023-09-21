@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -208,6 +209,8 @@ func TestQuerier(t *testing.T) {
 	for _, query := range queries {
 		for _, iterators := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				ctx := context.Background()
+
 				// Generate TSDB head used to simulate querying the long-term storage.
 				db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), query.valueType)
 
@@ -221,7 +224,8 @@ func TestQuerier(t *testing.T) {
 				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 				require.NoError(t, err)
 
-				queryable, _, _ := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+				require.NoError(t, err)
 				testRangeQuery(t, queryable, through, query)
 			})
 		}
@@ -298,8 +302,9 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, logger, nil)
+	require.NoError(t, err)
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -384,8 +389,9 @@ func TestBatchMergeChunks(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
 	ctx := user.InjectOrgID(context.Background(), "user-1")
+	queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, logger, nil)
+	require.NoError(t, err)
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -446,7 +452,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	}
 
 	require.NoError(t, app.Commit())
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return tsdb.NewBlockQuerier(head, mint, maxt)
 	})
 
@@ -519,8 +525,9 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			// block storage will not be hit; provide nil querier
 			var storeQueryable storage.Queryable
 
-			queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable, _, _, err := New(ctx, cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
@@ -603,8 +610,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
 			require.NoError(t, err)
 
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -675,7 +683,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			// We don't need to query any data for this test, so an empty distributor is fine.
 			distributor := &emptyDistributor{}
-			queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			ctx := user.InjectOrgID(context.Background(), "test")
+			queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 
 			// Create the PromQL engine to execute the query.
 			engine := promql.NewEngine(promql.EngineOpts{
@@ -685,7 +695,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 				Timeout:            1 * time.Minute,
 			})
 
-			ctx := user.InjectOrgID(context.Background(), "test")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -796,7 +805,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -824,8 +833,9 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				require.NoError(t, err)
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				hints := &storage.SelectHints{
@@ -835,7 +845,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				}
 				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				set := q.Select(false, hints, matcher)
+				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
 				require.NoError(t, set.Err())
 
@@ -859,11 +869,12 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				require.NoError(t, err)
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelNames(matchers...)
+				_, _, err = q.LabelNames(ctx, matchers...)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -885,11 +896,12 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+				require.NoError(t, err)
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(labels.MetricName)
+				_, _, err = q.LabelValues(ctx, labels.MetricName)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -955,8 +967,9 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				queryable, _, _, err := New(ctx, cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
+				require.NoError(t, err)
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				hints := &storage.SelectHints{
@@ -966,7 +979,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 				}
 				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				set := q.Select(false, hints, matcher)
+				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
 				require.NoError(t, set.Err())
 
@@ -1151,8 +1164,9 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			queryable, _, _ := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
+			queryable, _, _, err := New(ctx, cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
@@ -1373,7 +1387,7 @@ func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQu
 }
 
 // Querier implements storage.Queryable.
-func (m *mockBlocksStorageQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (m *mockBlocksStorageQueryable) Querier(int64, int64) (storage.Querier, error) {
 	return m.querier, nil
 }
 
@@ -1381,19 +1395,19 @@ type mockBlocksStorageQuerier struct {
 	mock.Mock
 }
 
-func (m *mockBlocksStorageQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	args := m.Called(sortSeries, hints, matchers)
+func (m *mockBlocksStorageQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	args := m.Called(ctx, sortSeries, hints, matchers)
 	return args.Get(0).(storage.SeriesSet)
 }
 
-func (m *mockBlocksStorageQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	args := m.Called(name, matchers)
-	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, name, matchers)
+	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
-func (m *mockBlocksStorageQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	args := m.Called(matchers)
-	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
 func (m *mockBlocksStorageQuerier) Close() error {

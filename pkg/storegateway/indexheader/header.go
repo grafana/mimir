@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"context"
 	"flag"
 	"io"
 	"time"
@@ -45,7 +46,7 @@ type Reader interface {
 
 	// LookupSymbol returns string based on given reference.
 	// Error is return if the symbol can't be found.
-	LookupSymbol(o uint32) (string, error)
+	LookupSymbol(ctx context.Context, o uint32) (string, error)
 
 	SymbolsReader() (streamindex.SymbolsReader, error)
 

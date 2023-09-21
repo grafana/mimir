@@ -14,7 +14,7 @@ import (
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -94,7 +94,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings storage.Warnings, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storepb.Store_SeriesClient
@@ -136,7 +136,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		}
 
 		if res.GetWarning() != "" {
-			warnings = append(warnings, errors.New(res.GetWarning()))
+			warnings.Add(errors.New(res.GetWarning()))
 		}
 
 		if rawHints := res.GetHints(); rawHints != nil {

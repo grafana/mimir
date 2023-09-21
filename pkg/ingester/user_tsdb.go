@@ -128,12 +128,12 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return u.db.Querier(ctx, mint, maxt)
+func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
+	return u.db.Querier(mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.ChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.ChunkQuerier(mint, maxt)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -156,8 +156,8 @@ func (u *userTSDB) Close() error {
 	return u.db.Close()
 }
 
-func (u *userTSDB) Compact(_ context.Context) error {
-	return u.db.Compact()
+func (u *userTSDB) Compact(ctx context.Context) error {
+	return u.db.Compact(ctx)
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
@@ -196,7 +196,7 @@ func (u *userTSDB) changeStateToForcedCompaction(from tsdbState, forcedCompactio
 //
 // The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
 // in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
-func (u *userTSDB) compactHead(_ context.Context, blockDuration, forcedCompactionMaxTime int64) error {
+func (u *userTSDB) compactHead(ctx context.Context, blockDuration, forcedCompactionMaxTime int64) error {
 	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
@@ -227,7 +227,7 @@ func (u *userTSDB) compactHead(_ context.Context, blockDuration, forcedCompactio
 		}
 	}
 
-	return u.db.CompactOOOHead()
+	return u.db.CompactOOOHead(ctx)
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction

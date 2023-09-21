@@ -94,8 +94,9 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 			userID := "test"
 			ctx := user.InjectOrgID(context.Background(), userID)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
-			queryable := newDistributorQueryable(distributor, nil, configProvider, nil, log.NewNopLogger())
-			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
+			queryable, err := newDistributorQueryable(ctx, distributor, nil, configProvider, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			querier, err := queryable.Querier(testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
 			require.Len(t, configProvider.seenUserIDs, 1)
@@ -106,7 +107,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 				hints.Func = "series"
 			}
 
-			seriesSet := querier.Select(true, hints)
+			seriesSet := querier.Select(ctx, true, hints)
 			require.NoError(t, seriesSet.Err())
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
@@ -182,11 +183,12 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(ctx, mint, maxt)
+			queryable, err := newDistributorQueryable(ctx, d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+			require.NoError(t, err)
+			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt})
+			seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt})
 			require.NoError(t, seriesSet.Err())
 
 			require.True(t, seriesSet.Next())
@@ -291,11 +293,12 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
+	queryable, err := newDistributorQueryable(ctx, d, mergeChunks, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	require.NoError(t, err)
+	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
@@ -380,11 +383,12 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
+	queryable, err := newDistributorQueryable(ctx, d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
@@ -474,11 +478,12 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, mint, maxt)
+	queryable, err := newDistributorQueryable(ctx, d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
@@ -506,11 +511,12 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, nil, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(ctx, mint, maxt)
+			queryable, err := newDistributorQueryable(ctx, d, nil, newMockConfigProvider(0), nil, log.NewNopLogger())
+			require.NoError(t, err)
+			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			names, warnings, err := querier.LabelNames(someMatchers...)
+			names, warnings, err := querier.LabelNames(ctx, someMatchers...)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 			assert.Equal(t, labelNames, names)
@@ -561,15 +567,16 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+	queryable, err := newDistributorQueryable(ctx, d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
+	require.NoError(b, err)
+	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		seriesSet := querier.Select(true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
+		seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
 		if seriesSet.Err() != nil {
 			b.Fatal(seriesSet.Err())
 		}

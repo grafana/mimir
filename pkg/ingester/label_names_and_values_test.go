@@ -395,7 +395,7 @@ type mockIndex struct {
 	opDelay        time.Duration
 }
 
-func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
+func (i mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}
@@ -407,7 +407,7 @@ func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 	return l, nil
 }
 
-func (i mockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
+func (i mockIndex) LabelValues(_ context.Context, name string, _ ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}

@@ -1019,14 +1019,14 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 	return symbolizedSet, nil
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) stringifiedSet(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) stringifiedSet(ctx context.Context, symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	if len(symbolizedSet.series) > 256 {
 		// This approach comes with some overhead in data structures.
 		// It starts making more sense with more label values only.
 		return s.singlePassStringify(symbolizedSet)
 	}
 
-	return s.multiLookupStringify(symbolizedSet)
+	return s.multiLookupStringify(ctx, symbolizedSet)
 }
 
 // clampLastChunkLength checks the length of the last chunk in the last range of the last series.
@@ -1266,7 +1266,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	return set, nil
 }
 
-func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
+func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(ctx context.Context, symbolizedSet symbolizedSeriesChunkRefsSet) (seriesChunkRefsSet, error) {
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it after Next() is called again.
 	set := newSeriesChunkRefsSet(len(symbolizedSet.series), true)
 

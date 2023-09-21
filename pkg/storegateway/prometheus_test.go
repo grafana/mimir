@@ -3,6 +3,7 @@
 package storegateway
 
 import (
+	"context"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -25,6 +26,8 @@ func openPromBlocks(t testing.TB, dir string) []promtsdb.BlockReader {
 }
 
 func queryPromSeriesChunkMetas(t testing.TB, series labels.Labels, block promtsdb.BlockReader) []chunks.Meta {
+	ctx := context.Background()
+
 	promReader, err := block.Index()
 	require.NoError(t, err)
 	defer promReader.Close()
@@ -33,7 +36,7 @@ func queryPromSeriesChunkMetas(t testing.TB, series labels.Labels, block promtsd
 	series.Range(func(l labels.Label) {
 		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
 	})
-	postings, err := promReader.PostingsForMatchers(false, matchers...)
+	postings, err := promReader.PostingsForMatchers(ctx, false, matchers...)
 	require.NoError(t, err)
 
 	require.Truef(t, postings.Next(), "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))

@@ -34,7 +34,7 @@ func labelNamesAndValues(
 ) error {
 	ctx := server.Context()
 
-	labelNames, err := index.LabelNames(matchers...)
+	labelNames, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func labelNamesAndValues(
 			response.Items = response.Items[:0]
 			responseSizeBytes = len(labelName)
 		}
-		values, err := index.LabelValues(labelName, matchers...)
+		values, err := index.LabelValues(ctx, labelName, matchers...)
 		if err != nil {
 			return err
 		}
@@ -120,7 +120,7 @@ func labelValuesCardinality(
 		}
 
 		// Obtain all values for current label name.
-		lblValues, err := idxReader.LabelValues(lblName, matchers...)
+		lblValues, err := idxReader.LabelValues(ctx, lblName, matchers...)
 		if err != nil {
 			return err
 		}

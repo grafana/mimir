@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -40,14 +41,20 @@ type Distributor interface {
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
+func newDistributorQueryable(ctx context.Context, distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) (storage.Queryable, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return distributorQueryable{}, err
+	}
+
 	return distributorQueryable{
 		logger:       logger,
 		distributor:  distributor,
 		iteratorFn:   iteratorFn,
 		cfgProvider:  cfgProvider,
 		queryMetrics: queryMetrics,
-	}
+		tenantID:     tenantID,
+	}, nil
 }
 
 type distributorQueryableConfigProvider interface {
@@ -60,20 +67,15 @@ type distributorQueryable struct {
 	iteratorFn   chunkIteratorFunc
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
+	tenantID     string
 }
 
-func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(userID)
+func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	queryIngestersWithin := d.cfgProvider.QueryIngestersWithin(d.tenantID)
 
 	return &distributorQuerier{
 		logger:               d.logger,
 		distributor:          d.distributor,
-		ctx:                  ctx,
 		mint:                 mint,
 		maxt:                 maxt,
 		chunkIterFn:          d.iteratorFn,
@@ -85,7 +87,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 type distributorQuerier struct {
 	logger               log.Logger
 	distributor          Distributor
-	ctx                  context.Context
 	mint, maxt           int64
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
@@ -94,8 +95,8 @@ type distributorQuerier struct {
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
+func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.Select")
 	defer spanLog.Finish()
 
 	minT, maxT := q.mint, q.maxt
@@ -191,8 +192,8 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 }
 
-func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelValues")
+func (q *distributorQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
 	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {
@@ -208,8 +209,8 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
+func (q *distributorQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
 	if !ShouldQueryIngesters(q.queryIngestersWithin, time.Now(), q.maxt) {

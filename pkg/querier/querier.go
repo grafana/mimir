@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/batch"
@@ -152,17 +153,20 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(ctx context.Context, cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine, error) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
+	distributorQueryable, err := newDistributorQueryable(ctx, distributor, iteratorFunc, limits, queryMetrics, logger)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
-	queryable := NewQueryable(distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
+	queryable := NewQueryable(ctx, distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
-	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, minT int64, maxT int64) (storage.Querier, error) {
-		querier, err := queryable.Querier(ctx, minT, maxT)
+	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
+		querier, err := queryable.Querier(minT, maxT)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +174,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 	})
 
 	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
-	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
+	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine, nil
 }
 
 // NewSampleAndChunkQueryable creates a SampleAndChunkQueryable from a Queryable.
@@ -182,8 +186,8 @@ type sampleAndChunkQueryable struct {
 	storage.Queryable
 }
 
-func (q *sampleAndChunkQueryable) ChunkQuerier(ctx context.Context, minT, maxT int64) (storage.ChunkQuerier, error) {
-	qr, err := q.Queryable.Querier(ctx, minT, maxT)
+func (q *sampleAndChunkQueryable) ChunkQuerier(minT, maxT int64) (storage.ChunkQuerier, error) {
+	qr, err := q.Queryable.Querier(minT, maxT)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +198,13 @@ type chunkQuerier struct {
 	storage.Querier
 }
 
-func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
-	return storage.NewSeriesSetToChunkSet(q.Querier.Select(sortSeries, hints, matchers...))
+func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.ChunkSeriesSet {
+	return storage.NewSeriesSetToChunkSet(q.Querier.Select(ctx, sortSeries, hints, matchers...))
 }
 
 // NewQueryable creates a new Queryable for Mimir.
 func NewQueryable(
+	ctx context.Context,
 	distributor storage.Queryable,
 	blockStore storage.Queryable,
 	chunkIterFn chunkIteratorFunc,
@@ -208,7 +213,7 @@ func NewQueryable(
 	queryMetrics *stats.QueryMetrics,
 	logger log.Logger,
 ) storage.Queryable {
-	return storage.QueryableFunc(func(ctx context.Context, minT, maxT int64) (storage.Querier, error) {
+	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
 		now := time.Now()
 
 		userID, err := tenant.TenantID(ctx)
@@ -233,7 +238,7 @@ func NewQueryable(
 		// queriers may further apply stricter internal logic and decide no-op for a given query
 
 		if distributor != nil && ShouldQueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
-			q, err := distributor.Querier(ctx, minT, maxT)
+			q, err := distributor.Querier(minT, maxT)
 			if err != nil {
 				return nil, err
 			}
@@ -241,7 +246,7 @@ func NewQueryable(
 		}
 
 		if blockStore != nil && ShouldQueryBlockStore(cfg.QueryStoreAfter, now, minT) {
-			q, err := blockStore.Querier(ctx, minT, maxT)
+			q, err := blockStore.Querier(minT, maxT)
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +255,6 @@ func NewQueryable(
 
 		return multiQuerier{
 			queriers:           queriers,
-			ctx:                ctx,
 			minT:               minT,
 			maxT:               maxT,
 			chunkIterFn:        chunkIterFn,
@@ -267,7 +271,6 @@ type multiQuerier struct {
 	queriers []storage.Querier
 
 	chunkIterFn chunkIteratorFunc
-	ctx         context.Context
 	minT, maxT  int64
 
 	maxQueryIntoFuture time.Duration
@@ -278,8 +281,8 @@ type multiQuerier struct {
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(mq.ctx, mq.logger, "querier.Select")
+func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
 
 	if sp == nil {
@@ -330,13 +333,13 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 	}
 
 	if len(mq.queriers) == 1 {
-		return mq.queriers[0].Select(true, sp, matchers...)
+		return mq.queriers[0].Select(ctx, true, sp, matchers...)
 	}
 
 	sets := make(chan storage.SeriesSet, len(mq.queriers))
 	for _, querier := range mq.queriers {
 		go func(querier storage.Querier) {
-			sets <- querier.Select(true, sp, matchers...)
+			sets <- querier.Select(ctx, true, sp, matchers...)
 		}(querier)
 	}
 
@@ -357,15 +360,15 @@ func (mq multiQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labe
 }
 
 // LabelValues implements storage.Querier.
-func (mq multiQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if len(mq.queriers) == 1 {
-		return mq.queriers[0].LabelValues(name, matchers...)
+		return mq.queriers[0].LabelValues(ctx, name, matchers...)
 	}
 
 	var (
-		g, _     = errgroup.WithContext(mq.ctx)
+		g, _     = errgroup.WithContext(ctx)
 		sets     = [][]string{}
-		warnings = storage.Warnings(nil)
+		warnings annotations.Annotations
 
 		resMtx sync.Mutex
 	)
@@ -375,14 +378,14 @@ func (mq multiQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 		querier := querier
 		g.Go(func() error {
 			// NB: Values are sorted in Mimir already.
-			myValues, myWarnings, err := querier.LabelValues(name, matchers...)
+			myValues, myWarnings, err := querier.LabelValues(ctx, name, matchers...)
 			if err != nil {
 				return err
 			}
 
 			resMtx.Lock()
 			sets = append(sets, myValues)
-			warnings = append(warnings, myWarnings...)
+			warnings.Merge(myWarnings)
 			resMtx.Unlock()
 
 			return nil
@@ -397,15 +400,15 @@ func (mq multiQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mq multiQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if len(mq.queriers) == 1 {
-		return mq.queriers[0].LabelNames(matchers...)
+		return mq.queriers[0].LabelNames(ctx, matchers...)
 	}
 
 	var (
-		g, _     = errgroup.WithContext(mq.ctx)
+		g, _     = errgroup.WithContext(ctx)
 		sets     = [][]string{}
-		warnings = storage.Warnings(nil)
+		warnings annotations.Annotations
 
 		resMtx sync.Mutex
 	)
@@ -415,14 +418,14 @@ func (mq multiQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storag
 		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Mimir already.
-			myNames, myWarnings, err := querier.LabelNames(matchers...)
+			myNames, myWarnings, err := querier.LabelNames(ctx, matchers...)
 			if err != nil {
 				return err
 			}
 
 			resMtx.Lock()
 			sets = append(sets, myNames)
-			warnings = append(warnings, myWarnings...)
+			warnings.Merge(myWarnings)
 			resMtx.Unlock()
 
 			return nil
@@ -505,7 +508,7 @@ func (s *sliceSeriesSet) Err() error {
 	return nil
 }
 
-func (s *sliceSeriesSet) Warnings() storage.Warnings {
+func (s *sliceSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 

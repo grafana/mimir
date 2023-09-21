@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -57,7 +58,7 @@ func (c *ConcreteSeriesSet) Err() error {
 }
 
 // Warnings implements storage.SeriesSet.
-func (c *ConcreteSeriesSet) Warnings() storage.Warnings {
+func (c *ConcreteSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
@@ -307,10 +308,10 @@ func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i].Labels(), b[j
 
 type seriesSetWithWarnings struct {
 	wrapped  storage.SeriesSet
-	warnings storage.Warnings
+	warnings annotations.Annotations
 }
 
-func NewSeriesSetWithWarnings(wrapped storage.SeriesSet, warnings storage.Warnings) storage.SeriesSet {
+func NewSeriesSetWithWarnings(wrapped storage.SeriesSet, warnings annotations.Annotations) storage.SeriesSet {
 	return seriesSetWithWarnings{
 		wrapped:  wrapped,
 		warnings: warnings,
@@ -329,6 +330,6 @@ func (s seriesSetWithWarnings) Err() error {
 	return s.wrapped.Err()
 }
 
-func (s seriesSetWithWarnings) Warnings() storage.Warnings {
-	return append(s.wrapped.Warnings(), s.warnings...)
+func (s seriesSetWithWarnings) Warnings() annotations.Annotations {
+	return s.warnings.Merge(s.wrapped.Warnings())
 }

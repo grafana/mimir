@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
@@ -49,29 +50,24 @@ type mockTenantQueryableWithFilter struct {
 	// extraLabels are labels added to all series for all tenants.
 	extraLabels []string
 	// warningsByTenant are warnings that will be returned for queries of that tenant.
-	warningsByTenant map[string]storage.Warnings
+	warningsByTenant map[string]annotations.Annotations
 	// queryErrByTenant is an error that will be returne for queries of that tenant.
 	queryErrByTenant map[string]error
+	tenantIDs        []string
 }
 
 // Querier implements the storage.Queryable interface.
-func (m *mockTenantQueryableWithFilter) Querier(ctx context.Context, _, _ int64) (storage.Querier, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *mockTenantQueryableWithFilter) Querier(_, _ int64) (storage.Querier, error) {
 	q := mockTenantQuerier{
 		logger:      m.logger,
-		tenant:      tenantIDs[0],
+		tenant:      m.tenantIDs[0],
 		extraLabels: m.extraLabels,
-		ctx:         ctx,
 	}
 
 	// set warning if exists
 	if m.warningsByTenant != nil {
 		if w, ok := m.warningsByTenant[q.tenant]; ok {
-			q.warnings = append([]error(nil), w...)
+			q.warnings.Merge(w)
 		}
 	}
 
@@ -95,9 +91,8 @@ type mockTenantQuerier struct {
 	tenant      string
 	extraLabels []string
 
-	warnings storage.Warnings
+	warnings annotations.Annotations
 	queryErr error
-	ctx      context.Context
 	logger   log.Logger
 }
 
@@ -143,7 +138,7 @@ func metricMatches(m model.Metric, selector labels.Selector) bool {
 
 type mockSeriesSet struct {
 	upstream storage.SeriesSet
-	warnings storage.Warnings
+	warnings annotations.Annotations
 	queryErr error
 }
 
@@ -164,13 +159,13 @@ func (m *mockSeriesSet) Err() error {
 
 // Warnings implements the storage.SeriesSet interface. It returns a collection of warnings for the whole set.
 // Warnings could be returned even if iteration has not failed with error.
-func (m *mockSeriesSet) Warnings() storage.Warnings {
+func (m *mockSeriesSet) Warnings() annotations.Annotations {
 	return m.warnings
 }
 
 // Select implements the storage.Querier interface.
-func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mockTenantQuerier.select")
+func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	log, _ := spanlogger.NewWithLogger(ctx, m.logger, "mockTenantQuerier.select")
 	defer log.Span.Finish()
 	var matrix model.Matrix
 
@@ -189,9 +184,9 @@ func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*l
 
 // LabelValues implements the storage.LabelQuerier interface.
 // The mockTenantQuerier returns all a sorted slice of all label values and does not support reducing the result set with matchers.
-func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m mockTenantQuerier) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	if len(matchers) > 0 {
-		m.warnings = append(m.warnings, errors.New(mockMatchersNotImplemented))
+		m.warnings.Add(errors.New(mockMatchersNotImplemented))
 	}
 
 	if m.queryErr != nil {
@@ -218,7 +213,7 @@ func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 // It returns a sorted slice of all label names in the querier.
 // If only one matcher is provided with label Name=seriesWithLabelNames then the resulting set will have the values of that matchers pipe-split appended.
 // I.e. querying for {seriesWithLabelNames="foo|bar|baz"} will have as result [bar, baz, foo, <rest of label names from querier matrix> ]
-func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m mockTenantQuerier) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	var results []string
 
 	if len(matchers) == 1 && matchers[0].Name == seriesWithLabelNames {
@@ -227,7 +222,7 @@ func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, st
 		}
 		results = strings.Split(matchers[0].Value, "|")
 	} else if len(matchers) > 1 {
-		m.warnings = append(m.warnings, errors.New(mockMatchersNotImplemented))
+		m.warnings.Add(errors.New(mockMatchersNotImplemented))
 	}
 
 	if m.queryErr != nil {
@@ -265,17 +260,19 @@ type mergeQueryableScenario struct {
 }
 
 func (s *mergeQueryableScenario) init() (storage.Querier, error) {
-	// initialize with default tenant label
-	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
-
 	// inject tenants into context
 	ctx := context.Background()
 	if len(s.tenants) > 0 {
 		ctx = user.InjectOrgID(ctx, strings.Join(s.tenants, "|"))
 	}
+	// initialize with default tenant label
+	q, err := NewQueryable(ctx, &s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
+	if err != nil {
+		return nil, err
+	}
 
 	// retrieve querier
-	return q.Querier(ctx, mint, maxt)
+	return q.Querier(mint, maxt)
 }
 
 // selectTestCase is the inputs and expected outputs of a call to Select.
@@ -288,7 +285,7 @@ type selectTestCase struct {
 	expectedSeriesCount int
 	// expectedLabels is the expected label sets returned by a Select filtered by the Matchers in selector.
 	expectedLabels []labels.Labels
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
@@ -308,7 +305,7 @@ type labelNamesTestCase struct {
 	matchers []*labels.Matcher
 	// expectedLabelNames are the expected label names returned from the queryable.
 	expectedLabelNames []string
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
@@ -330,7 +327,7 @@ type labelValuesTestCase struct {
 	matchers []*labels.Matcher
 	// expectedLabelValues are the expected label values returned from the queryable.
 	expectedLabelValues []string
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
@@ -344,12 +341,15 @@ type labelValuesScenario struct {
 
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
-		queryable := &mockTenantQueryableWithFilter{logger: log.NewNopLogger()}
-		q := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
-		// Create a context with no tenant specified.
-		ctx := context.Background()
-
-		_, err := q.Querier(ctx, mint, maxt)
+		// No tenants specified
+		// FIXME
+		queryable := &mockTenantQueryableWithFilter{
+			logger:    log.NewNopLogger(),
+			tenantIDs: nil,
+		}
+		q, err := NewQueryable(context.Background(), queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
+		require.NoError(t, err)
+		_, err = q.Querier(mint, maxt)
 		require.EqualError(t, err, user.ErrNoOrgID.Error())
 	})
 }
@@ -383,9 +383,9 @@ var (
 		name:    "three tenants, two with warnings",
 		tenants: []string{"team-a", "team-b", "team-c"},
 		queryable: mockTenantQueryableWithFilter{
-			warningsByTenant: map[string]storage.Warnings{
-				"team-b": storage.Warnings([]error{errors.New("don't like them")}),
-				"team-c": storage.Warnings([]error{errors.New("out of office")}),
+			warningsByTenant: map[string]annotations.Annotations{
+				"team-b": annotations.Annotations(map[string]error{"don't like them": errors.New("don't like them")}),
+				"team-c": annotations.Annotations(map[string]error{"out of office": errors.New("out of office")}),
 			},
 		},
 	}
@@ -498,12 +498,13 @@ func TestMergeQueryable_Select(t *testing.T) {
 		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
+			ctx := context.Background()
 			querier, err := scenario.init()
 			require.NoError(t, err)
 
 			for _, tc := range scenario.selectTestCases {
 				t.Run(tc.name, func(t *testing.T) {
-					seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, tc.matchers...)
+					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, tc.matchers...)
 
 					if tc.expectedQueryErr != nil {
 						require.EqualError(t, seriesSet.Err(), tc.expectedQueryErr.Error())
@@ -651,7 +652,8 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Run(scenario.labelNamesTestCase.name, func(t *testing.T) {
-				labelNames, warnings, err := querier.LabelNames(scenario.labelNamesTestCase.matchers...)
+				ctx := context.Background()
+				labelNames, warnings, err := querier.LabelNames(ctx, scenario.labelNamesTestCase.matchers...)
 				if scenario.labelNamesTestCase.expectedQueryErr != nil {
 					require.EqualError(t, err, scenario.labelNamesTestCase.expectedQueryErr.Error())
 				} else {
@@ -827,7 +829,8 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 
 			for _, tc := range scenario.labelValuesTestCases {
 				t.Run(tc.name, func(t *testing.T) {
-					actLabelValues, warnings, err := querier.LabelValues(tc.labelName, tc.matchers...)
+					ctx := context.Background()
+					actLabelValues, warnings, err := querier.LabelValues(ctx, tc.labelName, tc.matchers...)
 					if tc.expectedQueryErr != nil {
 						require.EqualError(t, err, tc.expectedQueryErr.Error())
 					} else {
@@ -842,13 +845,13 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 }
 
 // assertEqualWarnings asserts that all the expected warning messages are present.
-func assertEqualWarnings(t *testing.T, exp []string, act storage.Warnings) {
+func assertEqualWarnings(t *testing.T, exp []string, act annotations.Annotations) {
 	if len(exp) == 0 && len(act) == 0 {
 		return
 	}
-	var actStrings = make([]string, len(act))
-	for pos := range act {
-		actStrings[pos] = act[pos].Error()
+	var actStrings = make([]string, 0, len(act))
+	for s := range act {
+		actStrings = append(actStrings, s)
 	}
 	assert.ElementsMatch(t, exp, actStrings)
 }
@@ -899,12 +902,13 @@ func TestTracingMergeQueryable(t *testing.T) {
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q := NewQueryable(&filter, false, defaultConcurrency, log.NewNopLogger())
+	q, err := NewQueryable(ctx, &filter, false, defaultConcurrency, log.NewNopLogger())
+	require.NoError(t, err)
 	// retrieve querier if set
-	querier, err := q.Querier(ctx, mint, maxt)
+	querier, err := q.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint,
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint,
 		End: maxt})
 
 	require.NoError(t, seriesSet.Err())
