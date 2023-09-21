@@ -1,16 +1,12 @@
 {
     "settings": {
         "go.formatTool": "goimports",
-        "go.formatFlags": [
-            "-local",
-            "github.com/grafana/mimir"
-        ],
-        "go.languageServerExperimentalFeatures": {
-            "format": false
+        "gopls": {
+            "formatting.local": "github.com/grafana/mimir"
         },
         "[go]": {
             "editor.codeActionsOnSave": {
-                "source.organizeImports": false
+                "source.organizeImports": true
             }
         },
         "editor.formatOnSave": true
