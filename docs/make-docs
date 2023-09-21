@@ -127,7 +127,7 @@ set -ef
 
 readonly DOCS_CONTAINER="${DOCS_CONTAINER:-make-docs}"
 readonly DOCS_HOST_PORT="${DOCS_HOST_PORT:-3002}"
-readonly DOCS_IMAGE="${DOCS_IMAGE:-grafana/docs-base:8275eebcf97}"
+readonly DOCS_IMAGE="${DOCS_IMAGE:-grafana/docs-base:latest}"
 
 readonly DOC_VALIDATOR_INCLUDE="${DOC_VALIDATOR_INCLUDE:-.+\.md$}"
 readonly DOC_VALIDATOR_SKIP_CHECKS="${DOC_VALIDATOR_SKIP_CHECKS:-^image-}"
