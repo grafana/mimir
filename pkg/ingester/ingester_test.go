@@ -2612,6 +2612,8 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 }
 
 func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNotActive(t *testing.T) {
+	ctx := context.Background()
+
 	tests := map[string]struct {
 		state       ring.InstanceState
 		expectedErr error
@@ -2660,7 +2662,7 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 				}
 			}
 
-			db, err := i.getOrCreateTSDB("test", false)
+			db, err := i.getOrCreateTSDB(ctx, "test", false)
 			assert.Equal(t, testData.expectedErr, err)
 
 			if testData.expectedErr != nil {
@@ -4219,6 +4221,8 @@ func getWALReplayConcurrencyFromTSDBHeadOptions(userTSDB *userTSDB) int {
 }
 
 func TestIngester_shipBlocks(t *testing.T) {
+	ctx := context.Background()
+
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 2
 
@@ -4236,7 +4240,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 	// Create the TSDB for 3 users and then replace the shipper with the mocked one
 	mocks := []*uploaderMock{}
 	for _, userID := range []string{"user-1", "user-2", "user-3"} {
-		userDB, err := i.getOrCreateTSDB(userID, false)
+		userDB, err := i.getOrCreateTSDB(ctx, userID, false)
 		require.NoError(t, err)
 		require.NotNil(t, userDB)
 
@@ -4407,7 +4411,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	_, err = i.getOrCreateTSDB(userID, false)
+	_, err = i.getOrCreateTSDB(ctx, userID, false)
 	require.NoError(t, err)
 
 	iterations := 5000
@@ -4420,7 +4424,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 			case <-quit:
 				return
 			default:
-				_, err = i.getOrCreateTSDB(userID, false)
+				_, err = i.getOrCreateTSDB(ctx, userID, false)
 				if err != nil {
 					chanErr <- err
 				}
@@ -4460,7 +4464,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	db, err := i.getOrCreateTSDB(userID, true)
+	db, err := i.getOrCreateTSDB(ctx, userID, true)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 
@@ -4476,7 +4480,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.Nil(t, db)
 
 	// And we can recreate it again, if needed.
-	db, err = i.getOrCreateTSDB(userID, true)
+	db, err = i.getOrCreateTSDB(ctx, userID, true)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 }
@@ -4915,7 +4919,7 @@ func TestIngester_ForFlush(t *testing.T) {
 
 func mockUserShipper(t *testing.T, i *Ingester) *uploaderMock {
 	m := &uploaderMock{}
-	userDB, err := i.getOrCreateTSDB(userID, false)
+	userDB, err := i.getOrCreateTSDB(context.Background(), userID, false)
 	require.NoError(t, err)
 	require.NotNil(t, userDB)
 
@@ -5411,7 +5415,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -5435,7 +5439,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -5467,7 +5471,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()
@@ -5524,7 +5528,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -5551,7 +5555,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	// Only the last two old blocks plus the one containing the newly added samples should remain.
 	newBlocks := db.Blocks()
@@ -5605,7 +5609,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	oldBlocks := db.Blocks()
 	require.Len(t, oldBlocks, 3)
@@ -5617,7 +5621,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
-	require.Nil(t, db.Compact())
+	require.NoError(t, db.Compact(ctx))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
@@ -8938,7 +8942,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	db, err := i.getOrCreateTSDB(userID, true)
+	db, err := i.getOrCreateTSDB(ctx, userID, true)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
@@ -8951,7 +8955,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	i.closeAllTSDB()
 
 	// and open it again (it must exist)
-	db, err = i.getOrCreateTSDB(userID, false)
+	db, err = i.getOrCreateTSDB(ctx, userID, false)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 

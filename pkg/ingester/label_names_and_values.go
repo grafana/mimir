@@ -105,7 +105,7 @@ func labelValuesCardinality(
 	lbNames []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
@@ -172,7 +172,7 @@ func computeLabelValuesSeriesCount(
 	lblValues []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) <-chan labelValueCountResult {
 	maxConcurrency := 16
 	if len(lblValues) < maxConcurrency {
@@ -216,7 +216,7 @@ func countLabelValueSeries(
 	lblValue string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) (uint64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -229,7 +229,7 @@ func countLabelValueSeries(
 
 	lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lblName, lblValue)
 
-	p, err := postingsForMatchersFn(idxReader, lblValMatchers...)
+	p, err := postingsForMatchersFn(ctx, idxReader, lblValMatchers...)
 	if err != nil {
 		return 0, err
 	}

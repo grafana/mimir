@@ -47,8 +47,8 @@ func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
 			return nil, nil, err
 		}
 
-		var queriers = make([]storage.Querier, len(tenantIDs))
-		for pos, tenantID := range tenantIDs {
+		var queriers = make([]storage.Querier, 0, len(tenantIDs))
+		for _, tenantID := range tenantIDs {
 			q, err := queryable.Querier(
 				user.InjectOrgID(ctx, tenantID),
 				mint,
@@ -57,7 +57,7 @@ func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
 			if err != nil {
 				return nil, nil, err
 			}
-			queriers[pos] = q
+			queriers = append(queriers, q)
 		}
 
 		return tenantIDs, queriers, nil
@@ -166,7 +166,7 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 		name = m.idLabelName
 	}
 
-	return m.mergeDistinctStringSliceWithTenants(func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
+	return m.mergeDistinctStringSliceWithTenants(m.ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
 		return q.LabelValues(name, filteredMatchers...)
 	}, matchedTenants)
 }
@@ -180,7 +180,7 @@ func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storag
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
-	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
+	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(m.ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
 		return q.LabelNames(filteredMatchers...)
 	}, matchedTenants)
 	if err != nil {
@@ -225,7 +225,7 @@ type stringSliceFuncJob struct {
 // provided, all queriers are used. It removes duplicates and sorts the result.
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
-func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, tenants map[string]struct{}) ([]string, storage.Warnings, error) {
+func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, f stringSliceFunc, tenants map[string]struct{}) ([]string, storage.Warnings, error) {
 	jobs := make([]*stringSliceFuncJob, 0, len(m.ids))
 	for pos, id := range m.ids {
 		if tenants != nil {
@@ -250,7 +250,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 		return nil
 	}
 
-	err := concurrency.ForEachJob(m.ctx, len(jobs), m.maxConcurrency, run)
+	err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run)
 	if err != nil {
 		return nil, nil, err
 	}

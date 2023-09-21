@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -53,8 +54,9 @@ func main() {
 		}
 	}
 
+	ctx := context.Background()
 	for _, blockDir := range args {
-		err := analyseSymbols(blockDir, uniqueSymbols, uniqueSymbolsPerShard)
+		err := analyseSymbols(ctx, blockDir, uniqueSymbols, uniqueSymbolsPerShard)
 		if err != nil {
 			log.Println("failed to analyse symbols for", blockDir, "due to error:", err)
 		}
@@ -87,7 +89,7 @@ func main() {
 	fmt.Println("Analysis complete in", time.Since(startTime))
 }
 
-func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
+func analyseSymbols(_ context.Context, blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
 	block, err := tsdb.OpenBlock(gokitlog.NewLogfmtLogger(os.Stderr), blockDir, nil)
 	if err != nil {
 		return fmt.Errorf("failed to open block: %v", err)
