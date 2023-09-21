@@ -5,10 +5,11 @@ package vault_test
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/vault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 func TestReadSecret(t *testing.T) {

@@ -5,9 +5,10 @@ package test
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/vault"
 	hashivault "github.com/hashicorp/vault/api"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 type mockKVStore struct {
