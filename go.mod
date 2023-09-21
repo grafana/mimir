@@ -242,13 +242,13 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.3 // indirect
-	k8s.io/kube-openapi v0.0.0-20230601164746-7562a1006961 // indirect
+	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
 	k8s.io/utils v0.0.0-20230711102312-30195339c3c7 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230922140437-a10cef685b49
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230921081126-320f0c9c4a88
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
