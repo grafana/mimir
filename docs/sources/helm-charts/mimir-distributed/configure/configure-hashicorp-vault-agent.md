@@ -68,5 +68,5 @@ For more information about Vault and Vault Agent, see [Injecting Vault Secrets I
 To configure TLS in Mimir, refer to [Securing Grafana Mimir communications with TLS].
 
 {{% docs/reference %}}
-[Injecting Vault Secrets Into Kubernetes Pods via a Sidecar]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/secure/securing-communications-with-tls"
+[Securing Grafana Mimir communications with TLS]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/manage/secure/securing-communications-with-tls"
 {{% /docs/reference %}}
