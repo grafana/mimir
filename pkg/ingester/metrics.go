@@ -6,6 +6,8 @@
 package ingester
 
 import (
+	"time"
+
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -49,6 +51,7 @@ type ingesterMetrics struct {
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
 	inflightRequests        prometheus.GaugeFunc
+	inflightRequestsSummary prometheus.Summary
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -239,6 +242,14 @@ func newIngesterMetrics(
 				return float64(inflightRequests.Load())
 			}
 			return 0
+		}),
+
+		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
+			Name:       "cortex_ingester_inflight_push_requests_summary",
+			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
 		}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.

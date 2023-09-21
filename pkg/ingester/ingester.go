@@ -510,6 +510,23 @@ func (i *Ingester) stopping(_ error) error {
 }
 
 func (i *Ingester) updateLoop(ctx context.Context) error {
+
+	// Launch a dedicated goroutine for inflightRequestsTicker
+	// to ensure it operates independently, unaffected by delays from other logics in updateLoop.
+	go func() {
+		inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
+		defer inflightRequestsTicker.Stop()
+
+		for {
+			select {
+			case <-inflightRequestsTicker.C:
+				i.metrics.inflightRequestsSummary.Observe(float64(i.inflightPushRequests.Load()))
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	rateUpdateTicker := time.NewTicker(i.cfg.RateUpdatePeriod)
 	defer rateUpdateTicker.Stop()
 
