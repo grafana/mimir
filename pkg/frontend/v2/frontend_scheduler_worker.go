@@ -376,10 +376,8 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	defer spanLogger.Span.Finish()
 
 	// Keep track of how long it takes to enqueue a request end-to-end.
-	start := time.Now()
-	defer func() {
-		w.enqueueDuration.Observe(time.Since(start).Seconds())
-	}()
+	durationTimer := prometheus.NewTimer(w.enqueueDuration)
+	defer durationTimer.ObserveDuration()
 
 	err := loop.Send(&schedulerpb.FrontendToScheduler{
 		Type:            schedulerpb.ENQUEUE,
