@@ -83,13 +83,10 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		// Put all the elements of the pseudo-set into a map of slices for marshalling.
 		metrics := map[string][]metricMetadata{}
 		for _, m := range resp {
+			ms, ok := metrics[m.Metric]
 			// We enforce this both here and in the ingesters. Doing it in the ingesters is
 			// more efficient as it is earlier in the process, but since that one is per user,
 			// we still need to do it here after all the results are merged.
-			if metric != "" && m.Metric != metric {
-				continue
-			}
-			ms, ok := metrics[m.Metric]
 			if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 				continue
 			}

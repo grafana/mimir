@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
-	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -221,11 +220,11 @@ func (t *Mimir) initSanityCheck() (services.Service, error) {
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
-	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcTapHandle {
-		// We can't inject t.Ingester directly, because it may not be set yet. However by the time when grpcPushCheck runs
+	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
+		// We can't inject t.Ingester directly, because it may not be set yet. However by the time when grpcInflightMethodLimiter runs
 		// t.Ingester will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 		// is started only after t.Ingester is set in initIngester.
-		g := newGrpcPushCheck(func() pushReceiver {
+		g := newGrpcInflightMethodLimiter(func() pushReceiver {
 			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
 			if t.Ingester == nil {
 				return nil
@@ -234,10 +233,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 		})
 
 		// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
-		t.Cfg.Server.GRPCOptions = append(t.Cfg.Server.GRPCOptions,
-			grpc.InTapHandle(g.TapHandle),
-			grpc.StatsHandler(g),
-		)
+		t.Cfg.Server.GrpcMethodLimiter = g
 	}
 
 	// Mimir handles signals on its own.

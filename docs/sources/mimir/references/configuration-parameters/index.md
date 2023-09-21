@@ -1039,9 +1039,9 @@ instance_limits:
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 
-# (experimental) Use experimental method of limiting push requests
-# CLI flag: -ingester.limit-inflight-requests-using-grpc-handlers
-[limit_inflight_requests_using_grpc_tap_handle: <boolean> | default = false]
+# (experimental) Use experimental method of limiting push requests.
+# CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
+[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
 
 # (experimental) Each error will be logged once in this many times. Use 0 to log
 # all of them.
@@ -3015,6 +3015,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # query.
 # CLI flag: -query-frontend.max-query-expression-size-bytes
 [max_query_expression_size_bytes: <int> | default = 0]
+
+# (experimental) List of queries to block.
+[blocked_queries: <blocked_queries_config...> | default = ]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

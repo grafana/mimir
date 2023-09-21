@@ -1279,8 +1279,8 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.limit-inflight-requests-using-grpc-handlers
-    	[experimental] Use experimental method of limiting push requests
+  -ingester.limit-inflight-requests-using-grpc-method-limiter
+    	[experimental] Use experimental method of limiting push requests.
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int

@@ -25,7 +25,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
@@ -49,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -348,7 +346,7 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
+	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -356,11 +354,10 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	{
-		// Clamp max time range.
-		startTime, endTime := model.Time(minT), model.Time(maxT)
-		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
+	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
+	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	if maxQueryLength != 0 {
+		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -369,8 +366,8 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 	)
 
-	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(spanCtx, clients, minT, maxT, convertedMatchers)
+	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
+		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -381,7 +378,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
+	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -390,7 +387,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
+	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -398,11 +395,10 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
-	{
-		// Clamp max time range.
-		startTime, endTime := model.Time(minT), model.Time(maxT)
-		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
+	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
+	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	if maxQueryLength != 0 {
+		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
 
 	var (
@@ -410,8 +406,8 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		resWarnings  = storage.Warnings(nil)
 	)
 
-	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(spanCtx, name, clients, minT, maxT, matchers...)
+	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
+		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, matchers...)
 		if err != nil {
 			return nil, err
 		}
@@ -422,7 +418,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
+	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -435,7 +431,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
+	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := sp.Start, sp.End
@@ -446,7 +442,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resWarnings       = storage.Warnings(nil)
 		streamStarters    []func()
 		chunkEstimators   []func() int
-		queryLimiter      = limiter.QueryLimiterFromContextWithFallback(spanCtx)
+		queryLimiter      = limiter.QueryLimiterFromContextWithFallback(ctx)
 	)
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -454,8 +450,8 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		return storage.ErrSeriesSet(err)
 	}
 
-	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, convertedMatchers)
+	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
+		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -468,7 +464,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		return queriedBlocks, nil
 	}
 
-	err = q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, shard, queryFunc)
+	err = q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, shard, queryF)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -504,27 +500,20 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resWarnings)
 }
 
-func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector,
-	queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)) error {
-	// If queryStoreAfter is enabled, we do manipulate the query maxt to query samples up until
-	// now - queryStoreAfter, because the most recent time range is covered by ingesters. This
-	// optimization is particularly important for the blocks storage because can be used to skip
-	// querying most recent not-compacted-yet blocks from the storage.
-	if q.queryStoreAfter > 0 {
-		now := time.Now()
-		origMaxT := maxT
-		maxT = math.Min(maxT, util.TimeToMillis(now.Add(-q.queryStoreAfter)))
+type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
 
-		if origMaxT != maxT {
-			level.Debug(logger).Log("msg", "the max time of the query to blocks storage has been manipulated", "original", origMaxT, "updated", maxT)
-		}
+func (q *blocksStoreQuerier) queryWithConsistencyCheck(
+	ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector, queryF queryFunc,
+) error {
+	now := time.Now()
 
-		if maxT < minT {
-			q.metrics.storesHit.Observe(0)
-			level.Debug(logger).Log("msg", "empty query time range after max time manipulation")
-			return nil
-		}
+	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
+		q.metrics.storesHit.Observe(0)
+		level.Debug(logger).Log("msg", "not querying block store; query time range begins after the query-store-after limit")
+		return nil
 	}
+
+	maxT = clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, maxT)
@@ -582,7 +571,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
-		queriedBlocks, err := queryFunc(clients, minT, maxT)
+		queriedBlocks, err := queryF(clients, minT, maxT)
 		if err != nil {
 			return err
 		}

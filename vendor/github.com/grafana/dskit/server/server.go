@@ -137,6 +137,9 @@ type Config struct {
 	Gatherer   prometheus.Gatherer   `yaml:"-"`
 
 	PathPrefix string `yaml:"http_path_prefix"`
+
+	// This limiter is called for every started and finished gRPC request.
+	GrpcMethodLimiter GrpcInflightMethodLimiter `yaml:"-"`
 }
 
 var infinty = time.Duration(math.MaxInt64)
@@ -375,12 +378,21 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		grpc.MaxRecvMsgSize(cfg.GPRCServerMaxRecvMsgSize),
 		grpc.MaxSendMsgSize(cfg.GRPCServerMaxSendMsgSize),
 		grpc.MaxConcurrentStreams(uint32(cfg.GPRCServerMaxConcurrentStreams)),
+	}
+
+	if cfg.GrpcMethodLimiter != nil {
+		grpcServerLimit := newGrpcInflightLimitCheck(cfg.GrpcMethodLimiter)
+		grpcOptions = append(grpcOptions, grpc.InTapHandle(grpcServerLimit.TapHandle), grpc.StatsHandler(grpcServerLimit))
+	}
+
+	grpcOptions = append(grpcOptions,
 		grpc.StatsHandler(middleware.NewStatsHandler(
 			metrics.ReceivedMessageSize,
 			metrics.SentMessageSize,
 			metrics.InflightRequests,
 		)),
-	}
+	)
+
 	grpcOptions = append(grpcOptions, cfg.GRPCOptions...)
 	if grpcTLSConfig != nil {
 		grpcCreds := credentials.NewTLS(grpcTLSConfig)

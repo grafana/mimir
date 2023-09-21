@@ -57,6 +57,7 @@ const (
 	RequestRateLimited          ID = "tenant-max-request-rate"
 	IngestionRateLimited        ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
+	QueryBlocked                ID = "query-blocked"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"
