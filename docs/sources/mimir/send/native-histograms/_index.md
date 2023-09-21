@@ -185,7 +185,7 @@ Native histogram samples have three different kind of buckets, for any observed 
 
   ![Positive bucket definition](pos-bucket-def.svg)
 
-  where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions bellow 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number choosen from the list in such way that
+  where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions bellow 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
 
   [//]: # "LaTeX equation source: 2^{\\left( 2^{-schema}\right)} <= factor"
 
