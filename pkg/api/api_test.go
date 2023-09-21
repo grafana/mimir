@@ -6,16 +6,24 @@
 package api
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
@@ -201,6 +209,7 @@ func getServerConfig(t *testing.T) server.Config {
 		GRPCListenPort:    grpcPortNum,
 
 		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxSendMsgSize: 1024,
 	}
 	require.NoError(t, cfg.LogLevel.Set("info"))
 	return cfg
@@ -217,4 +226,84 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
 	return host, portNum
+}
+
+func TestHTTPGRPCServer2(t *testing.T) {
+	cfg := Config{}
+
+	reg := prometheus.NewRegistry()
+
+	f := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(f)
+	cfg.RegisterDuplicateHTTPGRPCService = true
+
+	serverCfg := getServerConfig(t)
+	serverCfg.Registerer = reg
+	srv, err := server.New(serverCfg)
+	require.NoError(t, err)
+
+	api, err := New(cfg, serverCfg, srv, log.NewNopLogger())
+	require.NoError(t, err)
+
+	body := "hello world"
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	})
+
+	api.RegisterRoute("/hello", handler, false, false, http.MethodGet)
+
+	go func() { _ = srv.Run() }()
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", serverCfg.GRPCListenAddress, serverCfg.GRPCListenPort),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+
+	req := &httpgrpc.HTTPRequest{
+		Method: "GET",
+		Url:    "/hello",
+	}
+
+	{
+		hc := httpgrpc.NewHTTPClient(conn)
+		r, err := hc.Handle(context.Background(), req)
+		require.NoError(t, err)
+		require.Equal(t, int32(200), r.Code)
+		require.Equal(t, []byte(body), r.Body)
+	}
+
+	{
+		hc := NewHTTP2Client(conn)
+		r, err := hc.Handle(context.Background(), req)
+		require.NoError(t, err)
+		require.Equal(t, int32(200), r.Code)
+		require.Equal(t, []byte(body), r.Body)
+	}
+
+	// Double-check that both methods were called.
+	require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+		# HELP inflight_requests Current number of inflight requests.
+		# TYPE inflight_requests gauge
+		inflight_requests{method="gRPC",route="/httpgrpc.HTTP/Handle"} 0
+		inflight_requests{method="gRPC",route="/httpgrpc.HTTP2/Handle"} 0
+	`), "inflight_requests"))
+}
+
+type http2Client struct {
+	cc *grpc.ClientConn
+}
+
+func NewHTTP2Client(cc *grpc.ClientConn) httpgrpc.HTTPClient {
+	return &http2Client{cc: cc}
+}
+
+func (c *http2Client) Handle(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+	out := new(httpgrpc.HTTPResponse)
+	err := c.cc.Invoke(ctx, HTTPGRPC2FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

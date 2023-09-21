@@ -17,10 +17,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/httpgrpc"
+	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
+	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
@@ -64,12 +67,15 @@ type Config struct {
 	// initialized, the custom config handler will be used instead of
 	// DefaultConfigHandler.
 	CustomConfigHandler ConfigHandler `yaml:"-"`
+
+	RegisterDuplicateHTTPGRPCService bool `yaml:"register_duplicate_httpgrpc_service" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.enableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", false, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
+	f.BoolVar(&cfg.RegisterDuplicateHTTPGRPCService, "api.register-duplicate-httpgrpc-service", false, "If true, HTTP-GRPC translation service will be registered under "+httpgrpc2ServiceName+" service name.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -117,7 +123,47 @@ func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logge
 		api.AuthMiddleware = middleware.AuthenticateUser
 	}
 
+	if cfg.RegisterDuplicateHTTPGRPCService {
+		api.server.GRPC.RegisterService(&httpgrpcHTTPServiceDesc, httpgrpc_server.NewServer(api.server.HTTP))
+	}
+
 	return api, nil
+}
+
+const httpgrpc2ServiceName = "httpgrpc.HTTP2"
+const httpgrpc2MethodName = "Handle"
+const HTTPGRPC2FullMethodName = "/" + httpgrpc2ServiceName + "/" + httpgrpc2MethodName
+
+var httpgrpcHTTPServiceDesc = grpc.ServiceDesc{
+	ServiceName: httpgrpc2ServiceName,
+	HandlerType: (*httpgrpc.HTTPServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: httpgrpc2MethodName,
+			Handler:    httpgrpcHTTPHandleHandler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "httpgrpc.proto",
+}
+
+// This is a copy of httpgrpc._HTTP_Handle_Handler method, but using different service name.
+func httpgrpcHTTPHandleHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(httpgrpc.HTTPRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(httpgrpc.HTTPServer).Handle(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HTTPGRPC2FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(httpgrpc.HTTPServer).Handle(ctx, req.(*httpgrpc.HTTPRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 // RegisterDeprecatedRoute behaves in a similar way to RegisterRoute. RegisterDeprecatedRoute also logs warnings on

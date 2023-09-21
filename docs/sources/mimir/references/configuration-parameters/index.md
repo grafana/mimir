@@ -154,6 +154,11 @@ api:
   # CLI flag: -http.prometheus-http-prefix
   [prometheus_http_prefix: <string> | default = "/prometheus"]
 
+  # (experimental) If true, HTTP-GRPC translation service will be registered
+  # under httpgrpc.HTTP2 service name.
+  # CLI flag: -api.register-duplicate-httpgrpc-service
+  [register_duplicate_httpgrpc_service: <boolean> | default = false]
+
 # The server block configures the HTTP and gRPC server of the launched
 # service(s).
 [server: <server>]

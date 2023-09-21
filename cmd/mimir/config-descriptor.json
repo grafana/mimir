@@ -117,6 +117,17 @@
           "fieldFlag": "http.prometheus-http-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "register_duplicate_httpgrpc_service",
+          "required": false,
+          "desc": "If true, HTTP-GRPC translation service will be registered under httpgrpc.HTTP2 service name.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.register-duplicate-httpgrpc-service",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
