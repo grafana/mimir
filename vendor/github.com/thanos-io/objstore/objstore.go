@@ -85,8 +85,8 @@ type BucketReader interface {
 	// IsObjNotFoundErr returns true if error means that object is not found. Relevant to Get operations.
 	IsObjNotFoundErr(err error) bool
 
-	// IsCustomerManagedKeyError returns true if the permissions for key used to encrypt the object was revoked.
-	IsCustomerManagedKeyError(err error) bool
+	// IsAccessDeniedErr returns true if acces to object is denied.
+	IsAccessDeniedErr(err error) bool
 
 	// Attributes returns information about the specified object.
 	Attributes(ctx context.Context, name string) (ObjectAttributes, error)
@@ -315,7 +315,7 @@ func DownloadFile(ctx context.Context, logger log.Logger, bkt BucketReader, src,
 
 	f, err := os.Create(dst)
 	if err != nil {
-		return errors.Wrap(err, "create file")
+		return errors.Wrapf(err, "create file %s", dst)
 	}
 	defer func() {
 		if err != nil {
@@ -327,7 +327,7 @@ func DownloadFile(ctx context.Context, logger log.Logger, bkt BucketReader, src,
 	defer logerrcapture.Do(logger, f.Close, "close block's output file")
 
 	if _, err = io.Copy(f, rc); err != nil {
-		return errors.Wrap(err, "copy object to file")
+		return errors.Wrapf(err, "copy object to file %s", src)
 	}
 	return nil
 }
@@ -438,10 +438,11 @@ func WrapWithMetrics(b Bucket, reg prometheus.Registerer, name string) *metricBu
 			Buckets:     []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
 		}, []string{"operation"}),
 
-		lastSuccessfulUploadTime: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "objstore_bucket_last_successful_upload_time",
-			Help: "Second timestamp of the last successful upload to the bucket.",
-		}, []string{"bucket"}),
+		lastSuccessfulUploadTime: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "objstore_bucket_last_successful_upload_time",
+			Help:        "Second timestamp of the last successful upload to the bucket.",
+			ConstLabels: prometheus.Labels{"bucket": name},
+		}),
 	}
 	for _, op := range []string{
 		OpIter,
@@ -457,15 +458,15 @@ func WrapWithMetrics(b Bucket, reg prometheus.Registerer, name string) *metricBu
 		bkt.opsDuration.WithLabelValues(op)
 		bkt.opsFetchedBytes.WithLabelValues(op)
 	}
-	// fetched bytes only relevant for get and getrange
+
+	// fetched bytes only relevant for get, getrange and upload
 	for _, op := range []string{
 		OpGet,
 		OpGetRange,
-		// TODO: Add uploads
+		OpUpload,
 	} {
 		bkt.opsTransferredBytes.WithLabelValues(op)
 	}
-	bkt.lastSuccessfulUploadTime.WithLabelValues(b.Name())
 	return bkt
 }
 
@@ -479,7 +480,7 @@ type metricBucket struct {
 	opsFetchedBytes          *prometheus.CounterVec
 	opsTransferredBytes      *prometheus.HistogramVec
 	opsDuration              *prometheus.HistogramVec
-	lastSuccessfulUploadTime *prometheus.GaugeVec
+	lastSuccessfulUploadTime prometheus.Gauge
 }
 
 func (b *metricBucket) WithExpectedErrs(fn IsOpFailureExpectedFunc) Bucket {
@@ -592,15 +593,25 @@ func (b *metricBucket) Upload(ctx context.Context, name string, r io.Reader) err
 	const op = OpUpload
 	b.ops.WithLabelValues(op).Inc()
 
-	start := time.Now()
-	if err := b.bkt.Upload(ctx, name, r); err != nil {
+	trc := newTimingReadCloser(
+		NopCloserWithSize(r),
+		op,
+		b.opsDuration,
+		b.opsFailures,
+		b.isOpFailureExpected,
+		nil,
+		b.opsTransferredBytes,
+	)
+	defer trc.Close()
+	err := b.bkt.Upload(ctx, name, trc)
+	if err != nil {
 		if !b.isOpFailureExpected(err) && ctx.Err() != context.Canceled {
 			b.opsFailures.WithLabelValues(op).Inc()
 		}
 		return err
 	}
-	b.lastSuccessfulUploadTime.WithLabelValues(b.bkt.Name()).SetToCurrentTime()
-	b.opsDuration.WithLabelValues(op).Observe(time.Since(start).Seconds())
+	b.lastSuccessfulUploadTime.SetToCurrentTime()
+
 	return nil
 }
 
@@ -624,8 +635,8 @@ func (b *metricBucket) IsObjNotFoundErr(err error) bool {
 	return b.bkt.IsObjNotFoundErr(err)
 }
 
-func (b *metricBucket) IsCustomerManagedKeyError(err error) bool {
-	return b.bkt.IsCustomerManagedKeyError(err)
+func (b *metricBucket) IsAccessDeniedErr(err error) bool {
+	return b.bkt.IsAccessDeniedErr(err)
 }
 
 func (b *metricBucket) Close() error {
@@ -692,7 +703,10 @@ func (rc *timingReadCloser) Close() error {
 
 func (rc *timingReadCloser) Read(b []byte) (n int, err error) {
 	n, err = rc.ReadCloser.Read(b)
-	rc.fetchedBytes.WithLabelValues(rc.op).Add(float64(n))
+	if rc.fetchedBytes != nil {
+		rc.fetchedBytes.WithLabelValues(rc.op).Add(float64(n))
+	}
+
 	rc.readBytes += int64(n)
 	// Report metric just once.
 	if !rc.alreadyGotErr && err != nil && err != io.EOF {
