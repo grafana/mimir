@@ -217,3 +217,25 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterGracefulShutdown
 		require.Fail(t, "gave up waiting for GetNextRequestForQuerierToReturn")
 	}
 }
+
+func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierIsAlreadyShuttingDown(t *testing.T) {
+	const forgetDelay = 3 * time.Second
+	const querierID = "querier-1"
+
+	queue := NewRequestQueue(1, forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+	})
+
+	queue.RegisterQuerierConnection(querierID)
+	queue.NotifyQuerierShutdown(querierID)
+
+	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
+	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
+}
