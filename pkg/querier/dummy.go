@@ -26,7 +26,7 @@ func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
 }
 
-// TargetsDroppedCounts implements targetRetriever.
+// TargetsDroppedCounts implements TargetRetriever.
 func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
 	return map[string]int{}
 }
