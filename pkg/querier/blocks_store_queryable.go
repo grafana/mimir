@@ -342,7 +342,7 @@ type blocksStoreQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return q.selectSorted(sp, matchers...)
+	return q.selectSorted(q.ctx, sp, matchers...)
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -430,8 +430,8 @@ func (q *blocksStoreQuerier) Close() error {
 	return nil
 }
 
-func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
+func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := sp.Start, sp.End

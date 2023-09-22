@@ -290,7 +290,7 @@ func TestCountLabelValueSeries_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := countLabelValueSeries(ctx, "lblName", "lblVal", nil, nil, func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+	_, err := countLabelValueSeries(ctx, "lblName", "lblVal", nil, nil, func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error) {
 		return infinitePostings{}, nil
 	})
 
