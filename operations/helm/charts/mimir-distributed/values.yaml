@@ -850,6 +850,11 @@ ingester:
     # Useful if the volume's root directory is not empty
     subPath: ''
 
+    # -- Enable StatefulSetAutoDeletePVC feature
+    enableStatefulSetAutoDeletePVC: false
+    whenDeleted: Retain
+    whenScaled: Retain
+
 
     # Ingester data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
