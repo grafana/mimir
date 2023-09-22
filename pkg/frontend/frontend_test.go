@@ -196,7 +196,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 
 		client := http.Client{
 			// Here we need to use NewTransport to create a new transport with default http.DefaultTransport.
-			// Otherwise panic will happen.
+			// Otherwise it will panic
 			Transport: otelhttp.NewTransport(http.DefaultTransport),
 		}
 

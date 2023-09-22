@@ -73,17 +73,17 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 	}
 
 	k := generateCardinalityEstimationCacheKey(tenant.JoinTenantIDs(tenants), request, cardinalityEstimateBucketSize)
-	spanLog.AddEvent("", trace.WithAttributes(attribute.String("cache key", k)))
+	spanLog.AddEvent(fmt.Sprintf("cache key : %s", k))
 
 	estimatedCardinality, estimateAvailable := c.lookupCardinalityForKey(ctx, k)
 	if estimateAvailable {
 		request = request.WithEstimatedSeriesCountHint(estimatedCardinality)
-		spanLog.AddEvent("", trace.WithAttributes(
+		spanLog.AddEvent("estimations", trace.WithAttributes(
 			attribute.Bool("estimate available", true),
 			attribute.Int64("estimated cardinality", int64(estimatedCardinality))))
 
 	} else {
-		spanLog.AddEvent("", trace.WithAttributes(attribute.Bool("estimate available", false)))
+		spanLog.AddEvent("estimations", trace.WithAttributes(attribute.Bool("estimate available", false)))
 	}
 
 	res, err := c.next.Do(ctx, request)
@@ -104,7 +104,7 @@ func (c *cardinalityEstimation) Do(ctx context.Context, request Request) (Respon
 		estimationError := math.Abs(float64(actualCardinality) - float64(estimatedCardinality))
 		c.estimationError.Observe(estimationError)
 		statistics.AddEstimatedSeriesCount(estimatedCardinality)
-		spanLog.AddEvent("", trace.WithAttributes(attribute.Float64("estimation error", estimationError)))
+		spanLog.AddEvent(fmt.Sprintf("estimation error : %f", estimationError))
 	}
 
 	return res, nil

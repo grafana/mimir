@@ -263,7 +263,7 @@ func TestTracingContext(t *testing.T) {
 		FrontendAddress: "frontend-12345",
 	}
 
-	ctx, _ := otel.Tracer("").Start(context.Background(), "client")
+	ctx, _ := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
 	defer tp.Shutdown(ctx)
 
 	propagators := otel.GetTextMapPropagator()
@@ -370,7 +370,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	defer tp.Shutdown(context.Background())
 	otel.SetTracerProvider(tp)
 
-	ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+	ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
 
 	propagators := otel.GetTextMapPropagator()
 	propagators.Inject(ctx, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))

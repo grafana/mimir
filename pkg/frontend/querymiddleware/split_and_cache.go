@@ -578,7 +578,7 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			if recordSpan {
 				var span trace.Span
-				childCtx, span = otel.Tracer("").Start(childCtx, "doRequests")
+				childCtx, span = otel.Tracer("github.com/grafana/mimir").Start(childCtx, "doRequests")
 				req.LogToSpan(span)
 				defer span.End()
 			}

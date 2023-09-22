@@ -605,7 +605,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	// Wait for the query gate only after opening blocks. Opening blocks is usually fast (~1ms),
 	// but sometimes it can take minutes if the block isn't loaded and there is a surge in queries for unloaded blocks.
-	spanCtx, span := otel.Tracer("").Start(ctx, "store_query_gate_ismyturn")
+	spanCtx, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "store_query_gate_ismyturn")
 	err = s.queryGate.Start(spanCtx)
 	span.End()
 	if err != nil {
@@ -1263,7 +1263,7 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	// ignore the span context so that we can use the context for cancellation
-	_, span := otel.Tracer("").Start(ctx, "bucket_store_open_blocks_for_reading")
+	_, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.End()
 
 	s.blocksMx.RLock()

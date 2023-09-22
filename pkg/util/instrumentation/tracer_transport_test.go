@@ -69,7 +69,7 @@ func TestTracerTransportPropagatesTrace(t *testing.T) {
 			srv := httptest.NewServer(handler)
 			defer srv.Close()
 
-			ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+			ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
 			defer sp.End()
 
 			traceID, _ := tracing.ExtractOtelSampledTraceID(ctx)

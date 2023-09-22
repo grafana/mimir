@@ -170,7 +170,7 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
 			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(request.HttpRequest)
 			if trace.SpanFromContext(parentSpanContext).SpanContext().IsValid() {
-				_, queueSpan := otel.Tracer("").Start(parentSpanContext, "querier_processor_runRequest", []trace.SpanStartOption{
+				_, queueSpan := otel.Tracer("github.com/grafana/mimir").Start(parentSpanContext, "querier_processor_runRequest", []trace.SpanStartOption{
 					trace.WithLinks(trace.LinkFromContext(ctx)),
 				}...)
 

@@ -40,7 +40,7 @@ func TestActivityDescription(t *testing.T) {
 	defer tp.Shutdown(context.Background())
 	otel.SetTracerProvider(tp)
 
-	ctxWithTrace, _ := otel.Tracer("").Start(ctx, "operation")
+	ctxWithTrace, _ := otel.Tracer("github.com/grafana/mimir").Start(ctx, "operation")
 	{
 		activity := generateActivityDescription(ctxWithTrace, "query string")
 		assert.Contains(t, activity, "traceID=")

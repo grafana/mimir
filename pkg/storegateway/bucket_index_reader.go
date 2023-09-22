@@ -84,7 +84,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		cached  bool
 		promise expandedPostingsPromise
 	)
-	ctx, span := otel.Tracer("").Start(ctx, "ExpandedPostings()")
+	ctx, span := otel.Tracer("github.com/grafana/mimir").Start(ctx, "ExpandedPostings()")
 	defer func() {
 		span.SetAttributes(
 			attribute.Int("returned postings", len(returnRefs)),

@@ -182,7 +182,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), otel.Tracer(""))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg), otel.Tracer("github.com/grafana/mimir"))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {

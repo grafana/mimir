@@ -377,7 +377,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		log.Error(err)
 		return nil, err
 	}
-	log.AddEvent("", trace.WithAttributes(attribute.String("message", "ParseQueryRangeResponse"),
+	log.AddEvent("ParseQueryRangeResponse", trace.WithAttributes(
 		attribute.Int("status_code", r.StatusCode),
 		attribute.Int("bytes", len(buf))))
 
@@ -417,7 +417,7 @@ func findFormatter(contentType string) formatter {
 }
 
 func (c prometheusCodec) EncodeResponse(ctx context.Context, req *http.Request, res Response) (*http.Response, error) {
-	_, sp := otel.Tracer("").Start(ctx, "APIResponse.ToHTTPResponse")
+	_, sp := otel.Tracer("github.com/grafana/mimir").Start(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.End()
 
 	a, ok := res.(*PrometheusResponse)

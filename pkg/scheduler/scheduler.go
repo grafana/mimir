@@ -246,13 +246,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			// Extract tracing information from headers in HTTP request. FrontendContext doesn't have the correct tracing
 			// information, since that is a long-running request.
 			parentSpanContext := httpgrpcutil.GetParentSpanForRequest(msg.HttpRequest)
-			if err != nil {
-				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
-				break
-			}
 
 			// start span from the frontendCtx, then link it to parentSpanContext which comes from the HTTP request headers
-			_, enqueueSpan := otel.Tracer("").Start(
+			_, enqueueSpan := otel.Tracer("github.com/grafana/mimir").Start(
 				parentSpanContext, "enqueue",
 				[]trace.SpanStartOption{
 					trace.WithLinks(trace.LinkFromContext(frontendCtx)),
@@ -352,7 +348,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	now := time.Now()
 	req.parentSpanContext = requestContext
-	req.ctx, req.queueSpan = otel.Tracer("").Start(ctx, "queued")
+	req.ctx, req.queueSpan = otel.Tracer("github.com/grafana/mimir").Start(ctx, "queued")
 
 	req.enqueueTime = now
 	req.ctxCancel = cancel

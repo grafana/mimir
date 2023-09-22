@@ -744,8 +744,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupObjstoreTracing()
-
 	mimir.Cfg.Server.Router = mux.NewRouter()
 	middleware.InitHTTPGRPCMiddleware(mimir.Cfg.Server.Router)
 
@@ -776,11 +774,12 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	))
 }
 
-// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
-func (t *Mimir) setupObjstoreTracing() {
-	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
-}
+// // setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
+// // context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
+// func (t *Mimir) setupObjstoreTracing() {
+// 	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
+// 	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
+// }
 
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {

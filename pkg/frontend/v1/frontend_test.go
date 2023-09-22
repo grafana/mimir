@@ -81,7 +81,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 	}))
 
 	test := func(addr string, _ *Frontend) {
-		ctx, sp := otel.Tracer("").Start(context.Background(), "client")
+		ctx, sp := otel.Tracer("github.com/grafana/mimir").Start(context.Background(), "client")
 		defer sp.End()
 
 		traceID, _ := tracing.ExtractOtelTraceID(ctx)
