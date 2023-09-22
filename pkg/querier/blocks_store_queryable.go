@@ -142,7 +142,6 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 type BlocksStoreQueryable struct {
 	services.Service
 
-	tenantID                 string
 	stores                   BlocksStoreSet
 	finder                   BlocksFinder
 	consistency              *BlocksConsistencyChecker
@@ -158,7 +157,6 @@ type BlocksStoreQueryable struct {
 }
 
 func NewBlocksStoreQueryable(
-	ctx context.Context,
 	stores BlocksStoreSet,
 	finder BlocksFinder,
 	consistency *BlocksConsistencyChecker,
@@ -168,18 +166,12 @@ func NewBlocksStoreQueryable(
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlocksStoreQueryable, error) {
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	manager, err := services.NewManager(stores, finder)
 	if err != nil {
 		return nil, errors.Wrap(err, "register blocks storage queryable subservices")
 	}
 
 	q := &BlocksStoreQueryable{
-		tenantID:                 tenantID,
 		stores:                   stores,
 		finder:                   finder,
 		consistency:              consistency,
@@ -197,7 +189,7 @@ func NewBlocksStoreQueryable(
 	return q, nil
 }
 
-func NewBlocksStoreQueryableFromConfig(ctx context.Context, querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
+func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
 	var (
 		stores       BlocksStoreSet
 		bucketClient objstore.Bucket
@@ -276,7 +268,7 @@ func NewBlocksStoreQueryableFromConfig(ctx context.Context, querierCfg Config, g
 		streamingBufferSize = 0
 	}
 
-	return NewBlocksStoreQueryable(ctx, stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -313,7 +305,6 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 	return &blocksStoreQuerier{
 		minT:                     mint,
 		maxT:                     maxt,
-		userID:                   q.tenantID,
 		finder:                   q.finder,
 		stores:                   q.stores,
 		metrics:                  q.metrics,
@@ -327,7 +318,6 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 
 type blocksStoreQuerier struct {
 	minT, maxT               int64
-	userID                   string
 	finder                   BlocksFinder
 	stores                   BlocksStoreSet
 	metrics                  *blocksStoreQueryableMetrics
@@ -344,12 +334,22 @@ type blocksStoreQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return q.selectSorted(ctx, sp, matchers...)
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	return q.selectSorted(ctx, sp, tenantID, matchers...)
 }
 
 func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	minT, maxT := q.minT, q.maxT
 
@@ -357,7 +357,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
-	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
 		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
@@ -369,7 +369,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, convertedMatchers)
+		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, tenantID, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -380,8 +380,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
-	if err != nil {
+	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -392,13 +391,18 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	minT, maxT := q.minT, q.maxT
 
 	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
-	maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
 		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
 	}
@@ -409,7 +413,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, matchers...)
+		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, tenantID, matchers...)
 		if err != nil {
 			return nil, err
 		}
@@ -420,8 +424,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, nil, queryF)
-	if err != nil {
+	if err := q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, nil, queryF); err != nil {
 		return nil, nil, err
 	}
 
@@ -432,7 +435,7 @@ func (q *blocksStoreQuerier) Close() error {
 	return nil
 }
 
-func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.SelectHints, tenantID string, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
@@ -453,7 +456,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	}
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, convertedMatchers)
+		seriesSets, queriedBlocks, warnings, startStreamingChunks, chunkEstimator, err := q.fetchSeriesFromStores(ctx, sp, clients, minT, maxT, tenantID, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -466,7 +469,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		return queriedBlocks, nil
 	}
 
-	err = q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, shard, queryF)
+	err = q.queryWithConsistencyCheck(ctx, spanLog, minT, maxT, tenantID, shard, queryF)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -505,7 +508,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
-	ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector, queryF queryFunc,
+	ctx context.Context, logger log.Logger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
 ) error {
 	now := time.Now()
 
@@ -518,7 +521,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, q.userID, minT, maxT)
+	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -558,7 +561,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	for attempt := 1; attempt <= maxFetchSeriesAttempts; attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
 		// map of blocks queried so far, with the list of store-gateway addresses for each block.
-		clients, err := q.stores.GetClientsFor(q.userID, remainingBlocks, attemptedBlocks)
+		clients, err := q.stores.GetClientsFor(tenantID, remainingBlocks, attemptedBlocks)
 		if err != nil {
 			// If it's a retry and we get an error, it means there are no more store-gateways left
 			// from which running another attempt, so we're just stopping retrying.
@@ -708,9 +711,9 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // In case of a successful run, fetchSeriesFromStores returns a startStreamingChunks function to start streaming
 // chunks for the fetched series iff it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
-func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
+func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		seriesSets    = []storage.SeriesSet(nil)
@@ -940,10 +943,11 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	clients map[BlocksStoreClient][]ulid.ULID,
 	minT int64,
 	maxT int64,
+	tenantID string,
 	matchers []storepb.LabelMatcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		nameSets      = [][]string{}
@@ -1022,10 +1026,11 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	clients map[BlocksStoreClient][]ulid.ULID,
 	minT int64,
 	maxT int64,
+	tenantID string,
 	matchers ...*labels.Matcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		valueSets     = [][]string{}

@@ -855,10 +855,11 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
+					const tenantID = "user-1"
+					ctx = user.InjectOrgID(ctx, tenantID)
 					q := &blocksStoreQuerier{
 						minT:        minT,
 						maxT:        maxT,
-						userID:      "user-1",
 						finder:      finder,
 						stores:      stores,
 						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -991,6 +992,9 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
 			reg := prometheus.NewPedanticRegistry()
 
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
+
 			storeGateway := &cancelerStoreGatewayClientMock{
 				remoteAddr:    "1.1.1.1",
 				produceSeries: testData,
@@ -1010,7 +1014,6 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:        minT,
 				maxT:        maxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      stores,
 				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1511,7 +1514,6 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
 					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1580,10 +1582,11 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					{ID: block1},
 				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
+				const tenantID = "user-1"
+				ctx = user.InjectOrgID(ctx, tenantID)
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
 					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1653,10 +1656,11 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
 			q := &blocksStoreQuerier{
 				minT:            testData.queryMinT,
 				maxT:            testData.queryMaxT,
-				userID:          "user-1",
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
 				consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1671,7 +1675,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				End:   testData.queryMaxT,
 			}
 
-			set := q.selectSorted(ctx, sp)
+			set := q.selectSorted(ctx, sp, tenantID)
 			require.NoError(t, set.Err())
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
@@ -1731,7 +1735,6 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			q := &blocksStoreQuerier{
 				minT:        testData.queryMinT,
 				maxT:        testData.queryMaxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
 				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1864,7 +1867,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(ctx, stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck

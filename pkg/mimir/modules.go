@@ -592,9 +592,8 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
-	// FIXME: Don't pass context here
 	q, err := querier.NewBlocksStoreQueryableFromConfig(
-		context.TODO(), t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
+		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
