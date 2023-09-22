@@ -164,6 +164,10 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
 			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="get"} 30
 
+			# HELP cortex_ingester_tsdb_mmap_chunks_total Total number of chunks that were memory-mapped.
+			# TYPE cortex_ingester_tsdb_mmap_chunks_total counter
+			cortex_ingester_tsdb_mmap_chunks_total 2973930
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 15
@@ -368,6 +372,10 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_head_chunks_removed_total counter
 			cortex_ingester_tsdb_head_chunks_removed_total{user="user1"} 296280
 			cortex_ingester_tsdb_head_chunks_removed_total{user="user2"} 2058888
+
+			# HELP cortex_ingester_tsdb_mmap_chunks_total Total number of chunks that were memory-mapped.
+			# TYPE cortex_ingester_tsdb_mmap_chunks_total counter
+			cortex_ingester_tsdb_mmap_chunks_total 2973930
 
 			# HELP cortex_ingester_tsdb_wal_truncate_duration_seconds Duration of TSDB WAL truncation.
 			# TYPE cortex_ingester_tsdb_wal_truncate_duration_seconds summary
@@ -700,6 +708,12 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of appended out-of-order samples.",
 	})
 	outOfOrderSamplesAppendedTotal.Add(3)
+
+	chunksMmappedTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_mmap_chunks_total",
+		Help: "Total number of chunks that were memory-mapped.",
+	})
+	chunksMmappedTotal.Add(30 * base)
 
 	return r
 }
