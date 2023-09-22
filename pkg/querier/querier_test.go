@@ -1156,13 +1156,14 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			require.NoError(t, err)
 
+			ctx := user.InjectOrgID(context.Background(), "0")
+
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
 			// it was hit or not).
 			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
 			querier := &mockBlocksStorageQuerier{}
-			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
+			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			queryable, _, _, err := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
@@ -1185,9 +1186,9 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			time.Sleep(30 * time.Millisecond) // NOTE: Since this is a lazy querier there is a race condition between the response and chunk store being called
 
 			if c.expectedHitStorage {
-				querier.AssertCalled(t, "Select", true, mock.Anything, expectedMatchers)
+				querier.AssertCalled(t, "Select", mock.Anything, true, mock.Anything, expectedMatchers)
 			} else {
-				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything)
+				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			}
 		})
 	}

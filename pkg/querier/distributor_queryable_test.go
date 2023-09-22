@@ -91,15 +91,12 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			userID := "test"
-			ctx := user.InjectOrgID(context.Background(), userID)
+			const tenantID = "test"
+			ctx := user.InjectOrgID(context.Background(), tenantID)
 			configProvider := newMockConfigProvider(testData.queryIngestersWithin)
 			queryable := newDistributorQueryable(distributor, nil, configProvider, nil, log.NewNopLogger())
 			querier, err := queryable.Querier(testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
-
-			require.Len(t, configProvider.seenUserIDs, 1)
-			require.Equal(t, configProvider.seenUserIDs[0], userID)
 
 			hints := &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
 			if testData.querySeries {
@@ -108,6 +105,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 
 			seriesSet := querier.Select(ctx, true, hints)
 			require.NoError(t, seriesSet.Err())
+			require.Equal(t, []string{tenantID}, configProvider.seenUserIDs)
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
 				assert.Len(t, distributor.Calls, 0)
