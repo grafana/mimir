@@ -227,9 +227,9 @@ const (
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
-		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(addr, clientConfig, clientMetrics, log)
-		}
+		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+		})
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
@@ -1236,7 +1236,7 @@ func copyString(s string) string {
 }
 
 func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
-	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
 	}
@@ -1267,7 +1267,7 @@ func handleIngesterPushError(err error) error {
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
 func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (T, error)) ([]T, error) {
 	wrappedF := func(ctx context.Context, ing *ring.InstanceDesc) (T, error) {
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
+		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
 			var empty T
 			return empty, err
@@ -1498,7 +1498,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	}
 
 	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
-		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return struct{}{}, err
 		}
@@ -1788,7 +1788,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 		CountMethod: ingesterCountMethod,
 	}
 	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
-		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return zonedUserStatsResponse{}, err
 		}
@@ -1849,7 +1849,7 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 		return nil, err
 	}
 	for _, ingester := range replicationSet.Instances {
-		client, err := d.ingesterPool.GetClientFor(ingester.Addr)
+		client, err := d.ingesterPool.GetClientForInstance(ingester)
 		if err != nil {
 			return nil, err
 		}

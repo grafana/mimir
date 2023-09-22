@@ -567,7 +567,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230925094553-c4a1874aadb0
+# github.com/grafana/dskit v0.0.0-20230925094553-c4a1874aadb0 => github.com/grafana/dskit v0.0.0-20230929174118-a9900ef2c26b
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -1497,6 +1497,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20230929174118-a9900ef2c26b
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230929133245-5e1fe508c771
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094

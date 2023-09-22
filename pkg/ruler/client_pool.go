@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -22,16 +23,16 @@ import (
 // ClientsPool is the interface used to get the client from the pool for a specified address.
 type ClientsPool interface {
 	services.Service
-	// GetClientFor returns the ruler client for the given address.
-	GetClientFor(addr string) (RulerClient, error)
+	// GetClientForInstance returns the ruler client for the ring instance.
+	GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error)
 }
 
 type rulerClientsPool struct {
 	*client.Pool
 }
 
-func (p *rulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
-	c, err := p.Pool.GetClientFor(addr)
+func (p *rulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
+	c, err := p.Pool.GetClientForInstance(inst)
 	if err != nil {
 		return nil, err
 	}
@@ -63,9 +64,9 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
-	return func(addr string) (client.PoolClient, error) {
+	return client.PoolAddrFunc(func(addr string) (client.PoolClient, error) {
 		return dialRulerClient(clientCfg, addr, requestDuration)
-	}
+	})
 }
 
 func dialRulerClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {

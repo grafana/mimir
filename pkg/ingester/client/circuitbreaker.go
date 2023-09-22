@@ -10,6 +10,7 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -38,27 +39,27 @@ var (
 	}
 )
 
-func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
+func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	breaker := circuitbreaker.Builder[any]().
 		WithFailureRateThreshold(cfg.FailureThreshold, cfg.FailureExecutionThreshold, cfg.ThresholdingPeriod).
 		WithDelay(cfg.CooldownPeriod).
 		OnFailure(func(event failsafe.ExecutionEvent[any]) {
-			metrics.circuitBreakerResults.WithLabelValues(resultError).Inc()
+			metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultError).Inc()
 		}).
 		OnSuccess(func(event failsafe.ExecutionEvent[any]) {
-			metrics.circuitBreakerResults.WithLabelValues(resultSuccess).Inc()
+			metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultSuccess).Inc()
 		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
-			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.ClosedState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is closed", "addr", addr, "previous", event.OldState, "current", circuitbreaker.ClosedState)
+			metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, event.NewState.String()).Inc()
+			level.Info(logger).Log("msg", "circuit breaker is closed", "ingester", inst.Id, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
-			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.OpenState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is open", "addr", addr, "previous", event.OldState, "current", circuitbreaker.OpenState)
+			metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, event.NewState.String()).Inc()
+			level.Info(logger).Log("msg", "circuit breaker is open", "ingester", inst.Id, "previous", event.OldState, "current", event.NewState)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
-			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.HalfOpenState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is half-open", "addr", addr, "previous", event.OldState, "current", circuitbreaker.HalfOpenState)
+			metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, event.NewState.String()).Inc()
+			level.Info(logger).Log("msg", "circuit breaker is half-open", "ingester", inst.Id, "previous", event.OldState, "current", event.NewState)
 		}).
 		HandleIf(func(r any, err error) bool { return isFailure(err) }).
 		Build()
@@ -66,12 +67,12 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 	executor := failsafe.NewExecutor[any](breaker)
 
 	// Initialize each of the known labels for circuit breaker metrics
-	metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.OpenState.String())
-	metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.HalfOpenState.String())
-	metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.ClosedState.String())
-	metrics.circuitBreakerResults.WithLabelValues(resultSuccess)
-	metrics.circuitBreakerResults.WithLabelValues(resultError)
-	metrics.circuitBreakerResults.WithLabelValues(resultOpen)
+	metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, circuitbreaker.OpenState.String())
+	metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, circuitbreaker.HalfOpenState.String())
+	metrics.circuitBreakerTransitions.WithLabelValues(inst.Id, circuitbreaker.ClosedState.String())
+	metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultSuccess)
+	metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultError)
+	metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultOpen)
 
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		// Don't circuit break non-ingester things like health check endpoints
@@ -84,7 +85,7 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 		})
 
 		if err != nil && errors.Is(err, circuitbreaker.ErrCircuitBreakerOpen) {
-			metrics.circuitBreakerResults.WithLabelValues(resultOpen).Inc()
+			metrics.circuitBreakerResults.WithLabelValues(inst.Id, resultOpen).Inc()
 		}
 
 		return err

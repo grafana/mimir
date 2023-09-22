@@ -876,6 +876,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 			if tc.expectedStatusCode != 0 {
 				require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 			} else {
+				t.Log("BODY: ", string(body))
 				require.Equal(t, http.StatusOK, resp.StatusCode)
 			}
 
