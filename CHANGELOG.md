@@ -18,6 +18,7 @@
 * [ENHANCEMENT] Ingester: added support for sampling errors, which can be enabled by setting `-ingester.error-sample-rate`. This way each error will be logged once in the configured number of times. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. #5584 #6014
 * [ENHANCEMENT] Ruler: Fetch secrets used to configure TLS on the Alertmanager client from Vault when `-vault.enabled` is true. #5239
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
+* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100
 
 ### Mixin
 
