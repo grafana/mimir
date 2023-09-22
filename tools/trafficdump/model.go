@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -42,7 +43,9 @@ type request struct {
 	Form    url.Values `json:"form,omitempty"`
 	RawBody string     `json:"raw_body,omitempty"`
 
-	PushRequest *pushRequest `json:"push,omitempty"`
+	PushRequest any `json:"push,omitempty"`
+
+	cleanup func()
 }
 
 type requestURL struct {
@@ -59,6 +62,11 @@ type pushRequest struct {
 	Error string `json:"error,omitempty"`
 
 	cleanup func()
+}
+
+type otlpPushRequest struct {
+	pmetricotlp.ExportRequest
+	Error string `json:"error,omitempty"`
 }
 
 type timeseries struct {
