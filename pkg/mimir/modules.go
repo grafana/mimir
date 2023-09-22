@@ -451,12 +451,9 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, querierRegisterer, util_log.Logger, t.ActivityTracker,
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
@@ -778,10 +775,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, t.Registerer)
 
-		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
-		if err != nil {
-			return nil, err
-		}
+		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
 
 		if t.Cfg.Ruler.TenantFederation.Enabled {
