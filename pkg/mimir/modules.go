@@ -27,6 +27,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
@@ -176,11 +177,11 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	vault, err := vault.NewVault(t.Cfg.Vault)
+	v, err := vault.NewVault(t.Cfg.Vault)
 	if err != nil {
 		return nil, err
 	}
-	t.Vault = vault
+	t.Vault = v
 
 	// Update Configs - KVStore
 	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
@@ -209,6 +210,49 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
 	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+
+	// Update the Server
+	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
+		cert, err := vault.ReadSecret(tlsConfig.TLSCertPath)
+		if err != nil {
+			return err
+		}
+		tlsConfig.TLSCert = string(cert)
+		tlsConfig.TLSCertPath = ""
+
+		key, err := vault.ReadSecret(tlsConfig.TLSKeyPath)
+		if err != nil {
+			return err
+		}
+		tlsConfig.TLSKey = config.Secret(key)
+		tlsConfig.TLSKeyPath = ""
+
+		var ca []byte
+		if tlsConfig.ClientCAs != "" {
+			ca, err = vault.ReadSecret(tlsConfig.ClientCAs)
+			if err != nil {
+				return err
+			}
+			tlsConfig.ClientCAsText = string(ca)
+			tlsConfig.ClientCAs = ""
+		}
+
+		return nil
+	}
+
+	if len(t.Cfg.Server.HTTPTLSConfig.TLSCertPath) > 0 && len(t.Cfg.Server.HTTPTLSConfig.TLSKeyPath) > 0 {
+		err := updateServerTLSCfgFunc(t.Vault, &t.Cfg.Server.HTTPTLSConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(t.Cfg.Server.GRPCTLSConfig.TLSCertPath) > 0 && len(t.Cfg.Server.GRPCTLSConfig.TLSKeyPath) > 0 {
+		err := updateServerTLSCfgFunc(t.Vault, &t.Cfg.Server.GRPCTLSConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	return nil, nil
 }
