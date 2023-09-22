@@ -36,8 +36,8 @@ import (
 // If the label "__tenant_id__" is already existing, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(ctx context.Context, upstream storage.Queryable, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
-	return NewMergeQueryable(ctx, defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, maxConcurrency, logger)
+func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
+	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, maxConcurrency, logger)
 }
 
 func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
@@ -76,19 +76,13 @@ type MergeQuerierCallback func(ids []string, mint int64, maxt int64) (queriers [
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(ctx context.Context, idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
 	return &mergeQueryable{
 		logger:                  logger,
 		idLabelName:             idLabelName,
 		callback:                callback,
 		bypassWithSingleQuerier: byPassWithSingleQuerier,
 		maxConcurrency:          maxConcurrency,
-		tenantIDs:               tenantIDs,
 	}, nil
 }
 
@@ -98,31 +92,19 @@ type mergeQueryable struct {
 	bypassWithSingleQuerier bool
 	callback                MergeQuerierCallback
 	maxConcurrency          int
-	tenantIDs               []string
 }
 
 // Querier returns a new mergeQuerier, which aggregates results from multiple
 // underlying queriers into a single result.
 func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error) {
-	// TODO: it's necessary to think how to override context inside querier
-	//  to mark spans created inside querier as child of a span created inside
-	//  methods of merged querier.
-	queriers, err := m.callback(m.tenantIDs, mint, maxt)
-	if err != nil {
-		return nil, err
-	}
-
-	// by pass when only single querier is returned
-	if m.bypassWithSingleQuerier && len(queriers) == 1 {
-		return queriers[0], nil
-	}
-
 	return &mergeQuerier{
-		logger:         m.logger,
-		idLabelName:    m.idLabelName,
-		queriers:       queriers,
-		ids:            m.tenantIDs,
-		maxConcurrency: m.maxConcurrency,
+		logger:                  m.logger,
+		idLabelName:             m.idLabelName,
+		maxConcurrency:          m.maxConcurrency,
+		bypassWithSingleQuerier: m.bypassWithSingleQuerier,
+		callback:                m.callback,
+		mint:                    mint,
+		maxt:                    maxt,
 	}, nil
 }
 
@@ -133,11 +115,28 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
-	logger         log.Logger
-	queriers       []storage.Querier
-	idLabelName    string
-	ids            []string
-	maxConcurrency int
+	logger                  log.Logger
+	idLabelName             string
+	ids                     []string
+	maxConcurrency          int
+	bypassWithSingleQuerier bool
+	callback                MergeQuerierCallback
+	mint                    int64
+	maxt                    int64
+	queriers                []storage.Querier
+}
+
+func (m *mergeQuerier) initQueriers(ctx context.Context) error {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return err
+	}
+
+	// TODO: it's necessary to think how to override context inside querier
+	//  to mark spans created inside querier as child of a span created inside
+	//  methods of merged querier.
+	m.queriers, err = m.callback(tenantIDs, m.mint, m.maxt)
+	return err
 }
 
 // LabelValues returns all potential values for a label name.  It is not safe
@@ -146,6 +145,15 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	if err := m.initQueriers(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	// bypass when only single querier is returned
+	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
+		return m.queriers[0].LabelValues(ctx, name, matchers...)
+	}
+
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
@@ -176,6 +184,15 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	if err := m.initQueriers(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	// bypass when only single querier is returned
+	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
+		return m.queriers[0].LabelNames(ctx, matchers...)
+	}
+
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
@@ -296,6 +313,15 @@ type selectJob struct {
 // matching. The forwarded labelSelector is not containing those that operate
 // on `idLabelName`.
 func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	if err := m.initQueriers(ctx); err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	// bypass when only single querier is returned
+	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
+		return m.queriers[0].Select(ctx, sortSeries, hints, matchers...)
+	}
+
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 

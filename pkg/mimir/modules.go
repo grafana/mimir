@@ -474,8 +474,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
 		const bypassForSingleQuerier = true
-		// FIXME: Don't pass context here
-		q, err := tenantfederation.NewQueryable(context.TODO(), t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
+		q, err := tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 		if err != nil {
 			return nil, err
 		}
@@ -795,8 +794,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			// This makes this label more consistent and hopefully less confusing to users.
 			const bypassForSingleQuerier = false
 
-			// FIXME: Don't pass context here
-			federatedQueryable, err = tenantfederation.NewQueryable(context.TODO(), queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
+			federatedQueryable, err = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 			if err != nil {
 				return nil, err
 			}

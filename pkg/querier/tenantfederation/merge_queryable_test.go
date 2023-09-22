@@ -259,20 +259,20 @@ type mergeQueryableScenario struct {
 	doNotByPassSingleQuerier bool
 }
 
-func (s *mergeQueryableScenario) init() (storage.Querier, error) {
+func (s *mergeQueryableScenario) init(t *testing.T) (context.Context, storage.Querier) {
 	// inject tenants into context
 	ctx := context.Background()
 	if len(s.tenants) > 0 {
 		ctx = user.InjectOrgID(ctx, strings.Join(s.tenants, "|"))
 	}
 	// initialize with default tenant label
-	q, err := NewQueryable(ctx, &s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
-	if err != nil {
-		return nil, err
-	}
+	q, err := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
+	require.NoError(t, err)
 
 	// retrieve querier
-	return q.Querier(mint, maxt)
+	querier, err := q.Querier(mint, maxt)
+	require.NoError(t, err)
+	return ctx, querier
 }
 
 // selectTestCase is the inputs and expected outputs of a call to Select.
@@ -347,7 +347,7 @@ func TestMergeQueryable_Querier(t *testing.T) {
 			logger:    log.NewNopLogger(),
 			tenantIDs: nil,
 		}
-		q, err := NewQueryable(context.Background(), queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
+		q, err := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
 		require.NoError(t, err)
 		_, err = q.Querier(mint, maxt)
 		require.EqualError(t, err, user.ErrNoOrgID.Error())
@@ -498,12 +498,9 @@ func TestMergeQueryable_Select(t *testing.T) {
 		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			ctx := context.Background()
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			for _, tc := range scenario.selectTestCases {
 				t.Run(tc.name, func(t *testing.T) {
+					ctx, querier := scenario.init(t)
 					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, tc.matchers...)
 
 					if tc.expectedQueryErr != nil {
@@ -648,11 +645,8 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 		},
 	} {
 		t.Run(scenario.mergeQueryableScenario.name, func(t *testing.T) {
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			t.Run(scenario.labelNamesTestCase.name, func(t *testing.T) {
-				ctx := context.Background()
+				ctx, querier := scenario.init(t)
 				labelNames, warnings, err := querier.LabelNames(ctx, scenario.labelNamesTestCase.matchers...)
 				if scenario.labelNamesTestCase.expectedQueryErr != nil {
 					require.EqualError(t, err, scenario.labelNamesTestCase.expectedQueryErr.Error())
@@ -824,12 +818,9 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			for _, tc := range scenario.labelValuesTestCases {
 				t.Run(tc.name, func(t *testing.T) {
-					ctx := context.Background()
+					ctx, querier := scenario.init(t)
 					actLabelValues, warnings, err := querier.LabelValues(ctx, tc.labelName, tc.matchers...)
 					if tc.expectedQueryErr != nil {
 						require.EqualError(t, err, tc.expectedQueryErr.Error())
@@ -902,7 +893,7 @@ func TestTracingMergeQueryable(t *testing.T) {
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q, err := NewQueryable(ctx, &filter, false, defaultConcurrency, log.NewNopLogger())
+	q, err := NewQueryable(&filter, false, defaultConcurrency, log.NewNopLogger())
 	require.NoError(t, err)
 	// retrieve querier if set
 	querier, err := q.Querier(mint, maxt)
