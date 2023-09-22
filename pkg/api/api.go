@@ -311,6 +311,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHan
 		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.CreateRuleGroup), true, true, "POST")
 		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}/{groupName}"), http.HandlerFunc(r.DeleteRuleGroup), true, true, "DELETE")
 		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v1/rules/{namespace}"), http.HandlerFunc(r.DeleteNamespace), true, true, "DELETE")
+		a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/config/v0/groups"), http.HandlerFunc(r.ListGroups), true, true, "GET")
 	}
 }
 

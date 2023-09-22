@@ -450,6 +450,36 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	marshalAndSend(formatted, w, logger)
 }
 
+func (a *API) ListGroups(w http.ResponseWriter, req *http.Request) {
+	logger := util_log.WithContext(req.Context(), a.logger)
+	userID, namespace, _, err := parseRequest(req, false, false)
+	if err != nil {
+		respondServerError(logger, w, err.Error())
+		return
+	}
+
+	level.Debug(logger).Log("msg", "retrieving rule groups with namespace", "userID", userID, "namespace", namespace)
+	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, namespace)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(rgs) == 0 {
+		level.Info(logger).Log("msg", "no rule groups found", "userID", userID)
+		// No rule groups, short-circuit and just return an empty map with HTTP 200
+		marshalAndSend(map[string]interface{}{}, w, logger)
+		return
+	}
+
+	// remove rules from the response to make sure we don't send large amounts of data to the user
+	for _, rg := range rgs {
+		rg.Rules = nil
+	}
+
+	marshalAndSend(rgs, w, logger)
+}
+
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 	logger := util_log.WithContext(req.Context(), a.logger)
 	userID, namespace, groupName, err := parseRequest(req, true, true)
