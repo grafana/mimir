@@ -3006,7 +3006,8 @@ func TestIngester_QueryStream(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -3273,7 +3274,8 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -3360,7 +3362,8 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	}()
 
 	// Query back the series using GRPC streaming.
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -3549,7 +3552,8 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	c, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -6026,7 +6030,8 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 			clientCfg := defaultClientTestConfig()
 			clientCfg.CircuitBreaker = cbCfg
 
-			client, err := client.MakeIngesterClient(listener.Addr().String(), clientCfg, client.NewMetrics(registry), util_test.NewTestingLogger(t))
+			inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+			client, err := client.MakeIngesterClient(inst, clientCfg, client.NewMetrics(registry), util_test.NewTestingLogger(t))
 			require.NoError(t, err)
 			defer client.Close()
 
@@ -6083,9 +6088,9 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 			expectedMetrics := `
 				# HELP cortex_ingester_client_circuit_breaker_results_total Results of executing requests via the circuit breaker
 				# TYPE cortex_ingester_client_circuit_breaker_results_total counter
-				cortex_ingester_client_circuit_breaker_results_total{result="circuit_breaker_open"} 1
-				cortex_ingester_client_circuit_breaker_results_total{result="success"} 1
-				cortex_ingester_client_circuit_breaker_results_total{result="error"} 1
+				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="circuit_breaker_open"} 1
+				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="success"} 1
+				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="error"} 1
 			`
 			err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
 			assert.NoError(t, err)
@@ -8595,7 +8600,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				require.NoError(t, server.Serve(listener))
 			}()
 
-			client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+			inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+			client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 			require.NoError(t, err)
 			defer client.Close()
 
@@ -8698,7 +8704,8 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 		require.NoError(t, server.Serve(listener))
 	}()
 
-	client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -8801,7 +8808,8 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 		require.NoError(t, server.Serve(listener))
 	}()
 
-	client, err := client.MakeIngesterClient(listener.Addr().String(), defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 	defer client.Close()
 
