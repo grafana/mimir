@@ -725,18 +725,39 @@ func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
 func TestHandler_ErrorTranslation(t *testing.T) {
 	testCases := []struct {
 		name               string
+		parserError        bool
 		err                error
 		expectedHTTPStatus int
 	}{
 		{
-			name:               "a generic error gets an HTTP 400",
-			err:                fmt.Errorf("something's wrong"),
+			name:               "a generic error during request parsing gets an HTTP 400",
+			parserError:        true,
+			err:                fmt.Errorf("something went wrong during the request parsing"),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "an gRPC error with a status gets translated into HTTP error",
+			name:               "a gRPC error with a status during request parsing gets translated into HTTP error",
+			parserError:        true,
 			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
 			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:               "a generic error during push gets a HTTP 500",
+			parserError:        false,
+			err:                fmt.Errorf("something went wrong during the push"),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a gRPC error with a status during push gets translated into HTTP error",
+			parserError:        false,
+			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
+			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:               "a context.Canceled error during push gets translated into a HTTP 499",
+			parserError:        false,
+			err:                context.Canceled,
+			expectedHTTPStatus: statusClientClosedRequest,
 		},
 	}
 
@@ -744,11 +765,17 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
-				return nil, tc.err
+				if tc.parserError {
+					return nil, tc.err
+				}
+				return nil, nil
 			}
 			pushFunc := func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
-				return nil, err
+				if err != nil {
+					return nil, err
+				}
+				return nil, tc.err
 			}
 
 			h := handler(10, nil, false, pushFunc, parserFunc)
