@@ -172,14 +172,12 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 	}), nil
 }
 
-var NewVault = vault.NewVault
-
 func (t *Mimir) initVault() (services.Service, error) {
 	if !t.Cfg.Vault.Enabled {
 		return nil, nil
 	}
 
-	v, err := NewVault(t.Cfg.Vault)
+	v, err := vault.NewVault(t.Cfg.Vault)
 	if err != nil {
 		return nil, err
 	}
@@ -1004,7 +1002,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck, UsageStats, Vault},
+		Server:                   {ActivityTracker, SanityCheck, UsageStats},
 		API:                      {Server},
 		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},

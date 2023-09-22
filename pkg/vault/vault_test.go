@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package vault_test
+package vault
 
 import (
+	"context"
+	"errors"
 	"testing"
 
+	hashivault "github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/test"
-	"github.com/grafana/mimir/pkg/vault"
 )
 
 func TestReadSecret(t *testing.T) {
-	mimirVaultClient, _ := test.NewMockVault(vault.Config{})
+	mockKVStore := newMockKVStore()
+	mimirVaultClient := Vault{
+		KVStore: mockKVStore,
+	}
 
 	tests := map[string]struct {
 		path          string
@@ -65,4 +68,64 @@ func TestReadSecret(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockKVStore struct {
+	values map[string]mockValue
+}
+
+type mockValue struct {
+	secret *hashivault.KVSecret
+	err    error
+}
+
+func newMockKVStore() *mockKVStore {
+	return &mockKVStore{
+		values: map[string]mockValue{
+			"test/secret1": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo1",
+					},
+				},
+				err: nil,
+			},
+			"test/secret2": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo2",
+					},
+				},
+				err: nil,
+			},
+			"test/secret3": {
+				secret: nil,
+				err:    errors.New("non-existent path"),
+			},
+			"test/secret4": {
+				secret: nil,
+				err:    nil,
+			},
+			"test/secret5": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": 123,
+					},
+				},
+				err: nil,
+			},
+			"test/secret6": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": nil,
+					},
+				},
+				err: nil,
+			},
+		},
+	}
+}
+
+func (m *mockKVStore) Get(_ context.Context, path string) (*hashivault.KVSecret, error) {
+	return m.values[path].secret, m.values[path].err
 }

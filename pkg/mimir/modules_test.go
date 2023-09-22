@@ -6,6 +6,7 @@
 package mimir
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -14,12 +15,12 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
+	hashivault "github.com/hashicorp/vault/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/vault"
 )
 
@@ -247,22 +248,67 @@ func TestMultiKVSetup(t *testing.T) {
 	}
 }
 
+type mockKVStore struct {
+	values map[string]mockValue
+}
+
+type mockValue struct {
+	secret *hashivault.KVSecret
+	err    error
+}
+
+func newMockKVStore() *mockKVStore {
+	return &mockKVStore{
+		values: map[string]mockValue{
+			"test/secret1": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo1",
+					},
+				},
+				err: nil,
+			},
+			"test/secret2": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo2",
+					},
+				},
+				err: nil,
+			},
+			"test/secret3": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo3",
+					},
+				},
+				err: nil,
+			},
+		},
+	}
+}
+
+func (m *mockKVStore) Get(_ context.Context, path string) (*hashivault.KVSecret, error) {
+	return m.values[path].secret, m.values[path].err
+}
+
 func TestInitVault(t *testing.T) {
 	cfg := Config{
 		Server: server.Config{
 			HTTPTLSConfig: server.TLSConfig{
 				TLSCertPath: "test/secret1",
 				TLSKeyPath:  "test/secret2",
-				ClientCAs:   "test/secret1",
+				ClientCAs:   "test/secret3",
 			},
 			GRPCTLSConfig: server.TLSConfig{
 				TLSCertPath: "test/secret1",
 				TLSKeyPath:  "test/secret2",
-				ClientCAs:   "test/secret1",
+				ClientCAs:   "test/secret3",
 			},
 		},
 		Vault: vault.Config{
 			Enabled: true,
+			Mock:    newMockKVStore(),
 		},
 	}
 
@@ -270,12 +316,6 @@ func TestInitVault(t *testing.T) {
 		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 		Cfg:    cfg,
 	}
-
-	oldFunc := NewVault
-	defer func() {
-		NewVault = oldFunc
-	}()
-	NewVault = test.NewMockVault
 
 	_, err := mimir.initVault()
 	require.NoError(t, err)
@@ -319,10 +359,9 @@ func TestInitVault(t *testing.T) {
 
 	require.Equal(t, "foo1", mimir.Cfg.Server.HTTPTLSConfig.TLSCert)
 	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.HTTPTLSConfig.TLSKey)
-	require.Equal(t, "foo1", mimir.Cfg.Server.HTTPTLSConfig.ClientCAsText)
+	require.Equal(t, "foo3", mimir.Cfg.Server.HTTPTLSConfig.ClientCAsText)
 
 	require.Equal(t, "foo1", mimir.Cfg.Server.GRPCTLSConfig.TLSCert)
 	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.GRPCTLSConfig.TLSKey)
-	require.Equal(t, "foo1", mimir.Cfg.Server.GRPCTLSConfig.ClientCAsText)
-
+	require.Equal(t, "foo3", mimir.Cfg.Server.GRPCTLSConfig.ClientCAsText)
 }
