@@ -451,9 +451,8 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	// FIXME: Don't pass context here
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
-		context.TODO(), t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, querierRegisterer, util_log.Logger, t.ActivityTracker,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, querierRegisterer, util_log.Logger, t.ActivityTracker,
 	)
 	if err != nil {
 		return nil, err
@@ -781,8 +780,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, t.Registerer)
 
-		// FIXME: Don't pass context here
-		queryable, _, eng, err := querier.New(context.TODO(), t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		if err != nil {
 			return nil, err
 		}

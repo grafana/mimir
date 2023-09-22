@@ -153,13 +153,13 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(ctx context.Context, cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine, error) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine, error) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
-	queryable := NewQueryable(ctx, distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
+	queryable := NewQueryable(distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -201,7 +201,6 @@ func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 
 // NewQueryable creates a new Queryable for Mimir.
 func NewQueryable(
-	ctx context.Context,
 	distributor storage.Queryable,
 	blockStore storage.Queryable,
 	chunkIterFn chunkIteratorFunc,
@@ -211,47 +210,11 @@ func NewQueryable(
 	logger log.Logger,
 ) storage.Queryable {
 	return storage.QueryableFunc(func(minT, maxT int64) (storage.Querier, error) {
-		now := time.Now()
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID), limits.MaxEstimatedChunksPerQuery(userID), queryMetrics))
-
-		minT, maxT, err = validateQueryTimeRange(userID, minT, maxT, now.UnixMilli(), limits, cfg.MaxQueryIntoFuture, logger)
-		if errors.Is(err, errEmptyTimeRange) {
-			return storage.NoopQuerier(), nil
-		} else if err != nil {
-			return nil, err
-		}
-
-		var queriers []storage.Querier
-		// distributor or blockStore queryables passed into NewQueryable should only be nil in tests;
-		// the decision of whether to construct the ingesters or block store queryables
-		// should be made here, not by the caller of NewQueryable
-		//
-		// queriers may further apply stricter internal logic and decide no-op for a given query
-
-		if distributor != nil && ShouldQueryIngesters(limits.QueryIngestersWithin(userID), now, maxT) {
-			q, err := distributor.Querier(minT, maxT)
-			if err != nil {
-				return nil, err
-			}
-			queriers = append(queriers, q)
-		}
-
-		if blockStore != nil && ShouldQueryBlockStore(cfg.QueryStoreAfter, now, minT) {
-			q, err := blockStore.Querier(minT, maxT)
-			if err != nil {
-				return nil, err
-			}
-			queriers = append(queriers, q)
-		}
-
 		return multiQuerier{
-			queriers:           queriers,
+			distributor:        distributor,
+			blockStore:         blockStore,
+			queryMetrics:       queryMetrics,
+			cfg:                cfg,
 			minT:               minT,
 			maxT:               maxT,
 			chunkIterFn:        chunkIterFn,
@@ -265,10 +228,12 @@ func NewQueryable(
 
 // multiQuerier implements storage.Querier, orchestrating requests across a set of queriers.
 type multiQuerier struct {
-	queriers []storage.Querier
-
-	chunkIterFn chunkIteratorFunc
-	minT, maxT  int64
+	distributor  storage.Queryable
+	blockStore   storage.Queryable
+	queryMetrics *stats.QueryMetrics
+	cfg          Config
+	chunkIterFn  chunkIteratorFunc
+	minT, maxT   int64
 
 	maxQueryIntoFuture time.Duration
 	limits             *validation.Overrides
@@ -276,11 +241,65 @@ type multiQuerier struct {
 	logger log.Logger
 }
 
+func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []storage.Querier, error) {
+	now := time.Now()
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(
+		mq.limits.MaxFetchedSeriesPerQuery(tenantID),
+		mq.limits.MaxFetchedChunkBytesPerQuery(tenantID),
+		mq.limits.MaxChunksPerQuery(tenantID),
+		mq.limits.MaxEstimatedChunksPerQuery(tenantID),
+		mq.queryMetrics,
+	))
+
+	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, mq.cfg.MaxQueryIntoFuture, mq.logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var queriers []storage.Querier
+	// distributor or blockStore queryables passed into NewQueryable should only be nil in tests;
+	// the decision of whether to construct the ingesters or block store queryables
+	// should be made here, not by the caller of NewQueryable
+	//
+	// queriers may further apply stricter internal logic and decide no-op for a given query
+
+	if mq.distributor != nil && ShouldQueryIngesters(mq.limits.QueryIngestersWithin(tenantID), now, mq.maxT) {
+		q, err := mq.distributor.Querier(mq.minT, mq.maxT)
+		if err != nil {
+			return nil, nil, err
+		}
+		queriers = append(queriers, q)
+	}
+
+	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, mq.minT) {
+		q, err := mq.blockStore.Querier(mq.minT, mq.maxT)
+		if err != nil {
+			return nil, nil, err
+		}
+		queriers = append(queriers, q)
+	}
+
+	return ctx, queriers, nil
+}
+
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
+
+	ctx, queriers, err := mq.getQueriers(ctx)
+	if errors.Is(err, errEmptyTimeRange) {
+		return storage.EmptySeriesSet()
+	} else if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
 
 	if sp == nil {
 		sp = &storage.SelectHints{
@@ -329,19 +348,19 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 		return storage.ErrSeriesSet(validation.NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
 
-	if len(mq.queriers) == 1 {
-		return mq.queriers[0].Select(ctx, true, sp, matchers...)
+	if len(queriers) == 1 {
+		return queriers[0].Select(ctx, true, sp, matchers...)
 	}
 
-	sets := make(chan storage.SeriesSet, len(mq.queriers))
-	for _, querier := range mq.queriers {
+	sets := make(chan storage.SeriesSet, len(queriers))
+	for _, querier := range queriers {
 		go func(querier storage.Querier) {
 			sets <- querier.Select(ctx, true, sp, matchers...)
 		}(querier)
 	}
 
 	var result []storage.SeriesSet
-	for range mq.queriers {
+	for range queriers {
 		select {
 		case set := <-sets:
 			result = append(result, set)
@@ -358,8 +377,15 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 
 // LabelValues implements storage.Querier.
 func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if len(mq.queriers) == 1 {
-		return mq.queriers[0].LabelValues(ctx, name, matchers...)
+	ctx, queriers, err := mq.getQueriers(ctx)
+	if errors.Is(err, errEmptyTimeRange) {
+		return nil, nil, nil
+	} else if err != nil {
+		return nil, nil, err
+	}
+
+	if len(queriers) == 1 {
+		return queriers[0].LabelValues(ctx, name, matchers...)
 	}
 
 	var (
@@ -370,7 +396,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		resMtx sync.Mutex
 	)
 
-	for _, querier := range mq.queriers {
+	for _, querier := range queriers {
 		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
 		querier := querier
 		g.Go(func() error {
@@ -389,8 +415,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		})
 	}
 
-	err := g.Wait()
-	if err != nil {
+	if err := g.Wait(); err != nil {
 		return nil, nil, err
 	}
 
@@ -398,8 +423,15 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 }
 
 func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if len(mq.queriers) == 1 {
-		return mq.queriers[0].LabelNames(ctx, matchers...)
+	ctx, queriers, err := mq.getQueriers(ctx)
+	if errors.Is(err, errEmptyTimeRange) {
+		return nil, nil, nil
+	} else if err != nil {
+		return nil, nil, err
+	}
+
+	if len(queriers) == 1 {
+		return queriers[0].LabelNames(ctx, matchers...)
 	}
 
 	var (
@@ -410,7 +442,7 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 		resMtx sync.Mutex
 	)
 
-	for _, querier := range mq.queriers {
+	for _, querier := range queriers {
 		// Need to reassign as the original variable will change and can't be relied on in a goroutine.
 		querier := querier
 		g.Go(func() error {
@@ -429,8 +461,7 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 		})
 	}
 
-	err := g.Wait()
-	if err != nil {
+	if err := g.Wait(); err != nil {
 		return nil, nil, err
 	}
 
