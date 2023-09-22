@@ -6,6 +6,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -82,7 +84,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 
 	return ring.BasicLifecyclerConfig{
 		ID:                              c.Common.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		HeartbeatPeriod:                 c.Common.HeartbeatPeriod,
 		HeartbeatTimeout:                c.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,

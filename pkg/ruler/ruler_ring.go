@@ -7,7 +7,8 @@ package ruler
 
 import (
 	"flag"
-	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
@@ -70,7 +71,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 
 	return ring.BasicLifecyclerConfig{
 		ID:                  cfg.Common.InstanceID,
-		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		HeartbeatPeriod:     cfg.Common.HeartbeatPeriod,
 		HeartbeatTimeout:    cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod: 0,
