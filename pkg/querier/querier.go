@@ -157,10 +157,7 @@ func New(ctx context.Context, cfg Config, limits *validation.Overrides, distribu
 	iteratorFunc := getChunksIteratorFunction(cfg)
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable, err := newDistributorQueryable(ctx, distributor, iteratorFunc, limits, queryMetrics, logger)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
 	queryable := NewQueryable(ctx, distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
