@@ -4229,8 +4229,8 @@ func TestIngester_shipBlocks(t *testing.T) {
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
+	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
 	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
@@ -4252,7 +4252,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 	}
 
 	// Ship blocks and assert on the mocked shipper
-	i.shipBlocks(context.Background(), nil)
+	i.shipBlocks(ctx, nil)
 
 	for _, m := range mocks {
 		m.AssertNumberOfCalls(t, "Sync", 1)
@@ -4469,8 +4469,8 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NotNil(t, db)
 
 	// Run compaction and shipping.
-	i.compactBlocks(context.Background(), true, math.MaxInt64, nil)
-	i.shipBlocks(context.Background(), nil)
+	i.compactBlocks(ctx, true, math.MaxInt64, nil)
+	i.shipBlocks(ctx, nil)
 
 	// Make sure we can close completely empty TSDB without problems.
 	require.Equal(t, tsdbIdleClosed, i.closeAndDeleteUserTSDBIfIdle(userID))

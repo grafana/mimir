@@ -145,7 +145,7 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
+	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
@@ -166,7 +166,7 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 		name = m.idLabelName
 	}
 
-	return m.mergeDistinctStringSliceWithTenants(m.ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
+	return m.mergeDistinctStringSliceWithTenants(ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
 		return q.LabelValues(name, filteredMatchers...)
 	}, matchedTenants)
 }
@@ -175,12 +175,12 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanlog, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
+	spanlog, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 
-	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(m.ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
+	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
 		return q.LabelNames(filteredMatchers...)
 	}, matchedTenants)
 	if err != nil {
