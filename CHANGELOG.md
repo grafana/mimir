@@ -41,6 +41,8 @@
 
 ### Tools
 
+* [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
+
 ## 2.10.0
 
 ### Grafana Mimir
