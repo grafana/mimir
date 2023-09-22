@@ -463,7 +463,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	p := FromHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountInt{18},
+		Count:          &Histogram_CountInt{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
@@ -511,7 +511,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p := FromFloatHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountFloat{18},
+		Count:          &Histogram_CountFloat{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
