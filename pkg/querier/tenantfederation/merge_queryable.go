@@ -13,11 +13,11 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/exp/slices"
 
@@ -36,38 +36,18 @@ import (
 // If the label "__tenant_id__" is already existing, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
-	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, maxConcurrency, logger)
-}
-
-func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
-	return func(tenantIDs []string, mint int64, maxt int64) ([]storage.Querier, error) {
-		var queriers = make([]storage.Querier, 0, len(tenantIDs))
-		for range tenantIDs {
-			// FIXME
-			q, err := queryable.Querier(
-				//user.InjectOrgID(ctx, tenantID),
-				mint,
-				maxt,
-			)
-			if err != nil {
-				return nil, err
-			}
-			queriers = append(queriers, q)
-		}
-
-		return queriers, nil
-	}
+func NewQueryable(upstream storage.Queryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
+	return newMergeQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, maxConcurrency, logger)
 }
 
 // MergeQuerierCallback returns the underlying queriers and their IDs relevant
 // for the query.
 type MergeQuerierCallback func(ids []string, mint int64, maxt int64) (queriers []storage.Querier, err error)
 
-// NewMergeQueryable returns a queryable that merges results from multiple
+// newMergeQueryable returns a queryable that merges results from multiple
 // underlying Queryables. The underlying queryables and its label values to be
 // considered are returned by a MergeQuerierCallback.
-// By setting bypassWithSingleQuerier to true the mergeQuerier gets bypassed
+// By setting bypassWithSingleTenant to true the mergeQuerier gets bypassed
 // and results for request with a single querier will not contain the id label.
 // This allows a smoother transition, when enabling tenant federation in a
 // cluster.
@@ -76,35 +56,37 @@ type MergeQuerierCallback func(ids []string, mint int64, maxt int64) (queriers [
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
+func newMergeQueryable(idLabelName string, upstream storage.Queryable, bypassWithSingleTenant bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
 	return &mergeQueryable{
-		logger:                  logger,
-		idLabelName:             idLabelName,
-		callback:                callback,
-		bypassWithSingleQuerier: byPassWithSingleQuerier,
-		maxConcurrency:          maxConcurrency,
+		logger:                 logger,
+		idLabelName:            idLabelName,
+		upstream:               upstream,
+		bypassWithSingleTenant: bypassWithSingleTenant,
+		maxConcurrency:         maxConcurrency,
 	}, nil
 }
 
 type mergeQueryable struct {
-	logger                  log.Logger
-	idLabelName             string
-	bypassWithSingleQuerier bool
-	callback                MergeQuerierCallback
-	maxConcurrency          int
+	logger                 log.Logger
+	idLabelName            string
+	bypassWithSingleTenant bool
+	upstream               storage.Queryable
+	maxConcurrency         int
 }
 
 // Querier returns a new mergeQuerier, which aggregates results from multiple
 // underlying queriers into a single result.
 func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error) {
+	q, err := m.upstream.Querier(mint, maxt)
+	if err != nil {
+		return nil, errors.Wrap(err, "create querier")
+	}
 	return &mergeQuerier{
-		logger:                  m.logger,
-		idLabelName:             m.idLabelName,
-		maxConcurrency:          m.maxConcurrency,
-		bypassWithSingleQuerier: m.bypassWithSingleQuerier,
-		callback:                m.callback,
-		mint:                    mint,
-		maxt:                    maxt,
+		logger:                 m.logger,
+		idLabelName:            m.idLabelName,
+		maxConcurrency:         m.maxConcurrency,
+		bypassWithSingleTenant: m.bypassWithSingleTenant,
+		upstream:               q,
 	}, nil
 }
 
@@ -115,28 +97,11 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
-	logger                  log.Logger
-	idLabelName             string
-	ids                     []string
-	maxConcurrency          int
-	bypassWithSingleQuerier bool
-	callback                MergeQuerierCallback
-	mint                    int64
-	maxt                    int64
-	queriers                []storage.Querier
-}
-
-func (m *mergeQuerier) initQueriers(ctx context.Context) error {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return err
-	}
-
-	// TODO: it's necessary to think how to override context inside querier
-	//  to mark spans created inside querier as child of a span created inside
-	//  methods of merged querier.
-	m.queriers, err = m.callback(tenantIDs, m.mint, m.maxt)
-	return err
+	logger                 log.Logger
+	idLabelName            string
+	maxConcurrency         int
+	bypassWithSingleTenant bool
+	upstream               storage.Querier
 }
 
 // LabelValues returns all potential values for a label name.  It is not safe
@@ -145,23 +110,23 @@ func (m *mergeQuerier) initQueriers(ctx context.Context) error {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if err := m.initQueriers(ctx); err != nil {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	// bypass when only single querier is returned
-	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
-		return m.queriers[0].LabelValues(ctx, name, matchers...)
+	if m.bypassWithSingleTenant && len(tenantIDs) == 1 {
+		return m.upstream.LabelValues(ctx, name, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
-	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
+	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, tenantIDs, matchers...)
 
 	if name == m.idLabelName {
 		var labelValues = make([]string, 0, len(matchedTenants))
-		for _, id := range m.ids {
+		for _, id := range tenantIDs {
 			if _, matched := matchedTenants[id]; matched {
 				labelValues = append(labelValues, id)
 			}
@@ -175,8 +140,8 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		name = m.idLabelName
 	}
 
-	return m.mergeDistinctStringSliceWithTenants(ctx, func(ctx context.Context, q storage.Querier) ([]string, annotations.Annotations, error) {
-		return q.LabelValues(ctx, name, filteredMatchers...)
+	return m.mergeDistinctStringSliceWithTenants(ctx, tenantIDs, func(ctx context.Context) ([]string, annotations.Annotations, error) {
+		return m.upstream.LabelValues(ctx, name, filteredMatchers...)
 	}, matchedTenants)
 }
 
@@ -184,22 +149,22 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if err := m.initQueriers(ctx); err != nil {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
 		return nil, nil, err
 	}
 
-	// bypass when only single querier is returned
-	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
-		return m.queriers[0].LabelNames(ctx, matchers...)
+	if m.bypassWithSingleTenant && len(tenantIDs) == 1 {
+		return m.upstream.LabelNames(ctx, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
-	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
+	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, tenantIDs, matchers...)
 
-	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, func(ctx context.Context, q storage.Querier) ([]string, annotations.Annotations, error) {
-		return q.LabelNames(ctx, filteredMatchers...)
+	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, tenantIDs, func(ctx context.Context) ([]string, annotations.Annotations, error) {
+		return m.upstream.LabelNames(ctx, filteredMatchers...)
 	}, matchedTenants)
 	if err != nil {
 		return nil, nil, err
@@ -229,10 +194,9 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	return labelNames, warnings, nil
 }
 
-type stringSliceFunc func(context.Context, storage.Querier) ([]string, annotations.Annotations, error)
+type stringSliceFunc func(context.Context) ([]string, annotations.Annotations, error)
 
 type stringSliceFuncJob struct {
-	querier  storage.Querier
 	id       string
 	result   []string
 	warnings annotations.Annotations
@@ -243,9 +207,9 @@ type stringSliceFuncJob struct {
 // provided, all queriers are used. It removes duplicates and sorts the result.
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
-func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, f stringSliceFunc, tenants map[string]struct{}) ([]string, annotations.Annotations, error) {
-	jobs := make([]*stringSliceFuncJob, 0, len(m.ids))
-	for pos, id := range m.ids {
+func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, tenantIDs []string, f stringSliceFunc, tenants map[string]struct{}) ([]string, annotations.Annotations, error) {
+	jobs := make([]*stringSliceFuncJob, 0, len(tenantIDs))
+	for _, id := range tenantIDs {
 		if tenants != nil {
 			if _, matched := tenants[id]; !matched {
 				continue
@@ -253,14 +217,14 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, 
 		}
 
 		jobs = append(jobs, &stringSliceFuncJob{
-			querier: m.queriers[pos],
-			id:      m.ids[pos],
+			id: id,
 		})
 	}
 
 	run := func(ctx context.Context, idx int) (err error) {
 		job := jobs[idx]
-		job.result, job.warnings, err = f(ctx, job.querier)
+		ctx = user.InjectOrgID(ctx, job.id)
+		job.result, job.warnings, err = f(ctx)
 		if err != nil {
 			return errors.Wrapf(err, "error querying %s %s", rewriteLabelName(m.idLabelName), job.id)
 		}
@@ -296,16 +260,11 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, 
 
 // Close releases the resources of the Querier.
 func (m *mergeQuerier) Close() error {
-	errs := tsdb_errors.NewMulti()
-	for pos, id := range m.ids {
-		errs.Add(errors.Wrapf(m.queriers[pos].Close(), "failed to close querier for %s %s", rewriteLabelName(m.idLabelName), id))
-	}
-	return errs.Err()
+	return errors.Wrap(m.upstream.Close(), "failed to close upstream querier")
 }
 
 type selectJob struct {
-	querier storage.Querier
-	id      string
+	id string
 }
 
 // Select returns a set of series that matches the given label matchers. If the
@@ -313,38 +272,36 @@ type selectJob struct {
 // matching. The forwarded labelSelector is not containing those that operate
 // on `idLabelName`.
 func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	if err := m.initQueriers(ctx); err != nil {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	// bypass when only single querier is returned
-	if m.bypassWithSingleQuerier && len(m.queriers) == 1 {
-		return m.queriers[0].Select(ctx, sortSeries, hints, matchers...)
+	if m.bypassWithSingleTenant && len(tenantIDs) == 1 {
+		return m.upstream.Select(ctx, sortSeries, hints, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
-	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
+	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, tenantIDs, matchers...)
 
-	var jobs = make([]*selectJob, len(matchedValues))
+	var jobs = make([]*selectJob, 0, len(matchedValues))
 	var seriesSets = make([]storage.SeriesSet, len(matchedValues))
-	var jobPos int
-	for labelPos := range m.ids {
-		if _, matched := matchedValues[m.ids[labelPos]]; !matched {
+	for _, tenantID := range tenantIDs {
+		if _, matched := matchedValues[tenantID]; !matched {
 			continue
 		}
-		jobs[jobPos] = &selectJob{
-			querier: m.queriers[labelPos],
-			id:      m.ids[labelPos],
-		}
-		jobPos++
+		jobs = append(jobs, &selectJob{
+			id: tenantID,
+		})
 	}
 
 	run := func(ctx context.Context, idx int) error {
 		job := jobs[idx]
+		ctx = user.InjectOrgID(ctx, job.id)
 		seriesSets[idx] = &addLabelsSeriesSet{
-			upstream: job.querier.Select(ctx, sortSeries, hints, filteredMatchers...),
+			upstream: m.upstream.Select(ctx, sortSeries, hints, filteredMatchers...),
 			labels: []labels.Label{
 				{
 					Name:  m.idLabelName,
@@ -355,8 +312,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		return nil
 	}
 
-	err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run)
-	if err != nil {
+	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 

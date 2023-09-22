@@ -53,31 +53,16 @@ type mockTenantQueryableWithFilter struct {
 	warningsByTenant map[string]annotations.Annotations
 	// queryErrByTenant is an error that will be returne for queries of that tenant.
 	queryErrByTenant map[string]error
-	tenantIDs        []string
 }
 
 // Querier implements the storage.Queryable interface.
 func (m *mockTenantQueryableWithFilter) Querier(_, _ int64) (storage.Querier, error) {
 	q := mockTenantQuerier{
-		logger:      m.logger,
-		tenant:      m.tenantIDs[0],
-		extraLabels: m.extraLabels,
+		logger:           m.logger,
+		extraLabels:      m.extraLabels,
+		warningsByTenant: m.warningsByTenant,
+		queryErrByTenant: m.queryErrByTenant,
 	}
-
-	// set warning if exists
-	if m.warningsByTenant != nil {
-		if w, ok := m.warningsByTenant[q.tenant]; ok {
-			q.warnings.Merge(w)
-		}
-	}
-
-	// set queryErr if exists
-	if m.queryErrByTenant != nil {
-		if err, ok := m.queryErrByTenant[q.tenant]; ok {
-			q.queryErr = err
-		}
-	}
-
 	return q, nil
 }
 
@@ -88,25 +73,24 @@ func (m *mockTenantQueryableWithFilter) UseQueryable(_ time.Time, _, _ int64) bo
 }
 
 type mockTenantQuerier struct {
-	tenant      string
 	extraLabels []string
 
-	warnings annotations.Annotations
-	queryErr error
-	logger   log.Logger
+	warningsByTenant map[string]annotations.Annotations
+	queryErrByTenant map[string]error
+	logger           log.Logger
 }
 
-func (m mockTenantQuerier) matrix() model.Matrix {
+func (m mockTenantQuerier) matrix(tenantID string) model.Matrix {
 	matrix := model.Matrix{
 		&model.SampleStream{
 			Metric: model.Metric{
 				"instance":                            "host1",
-				"tenant-" + model.LabelName(m.tenant): "static",
+				"tenant-" + model.LabelName(tenantID): "static",
 			},
 		},
 		&model.SampleStream{
 			Metric: model.Metric{
-				"instance": "host2." + model.LabelValue(m.tenant),
+				"instance": "host2." + model.LabelValue(tenantID),
 			},
 		},
 	}
@@ -169,7 +153,27 @@ func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.Select
 	defer log.Span.Finish()
 	var matrix model.Matrix
 
-	for _, s := range m.matrix() {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	var warnings annotations.Annotations
+	if m.warningsByTenant != nil {
+		if w, ok := m.warningsByTenant[tenantID]; ok {
+			warnings = w
+		}
+	}
+
+	// set queryErr if exists
+	var queryErr error
+	if m.queryErrByTenant != nil {
+		if err, ok := m.queryErrByTenant[tenantID]; ok {
+			queryErr = err
+		}
+	}
+
+	for _, s := range m.matrix(tenantID) {
 		if metricMatches(s.Metric, matchers) {
 			matrix = append(matrix, s)
 		}
@@ -177,24 +181,31 @@ func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.Select
 
 	return &mockSeriesSet{
 		upstream: series.MatrixToSeriesSet(matrix),
-		warnings: m.warnings,
-		queryErr: m.queryErr,
+		warnings: warnings,
+		queryErr: queryErr,
 	}
 }
 
 // LabelValues implements the storage.LabelQuerier interface.
 // The mockTenantQuerier returns all a sorted slice of all label values and does not support reducing the result set with matchers.
-func (m mockTenantQuerier) LabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	if len(matchers) > 0 {
-		m.warnings.Add(errors.New(mockMatchersNotImplemented))
+func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if m.queryErr != nil {
-		return nil, nil, m.queryErr
+	warnings := m.warningsByTenant[tenantID]
+	if len(matchers) > 0 {
+		warnings.Add(errors.New(mockMatchersNotImplemented))
+	}
+
+	queryErr := m.queryErrByTenant[tenantID]
+	if queryErr != nil {
+		return nil, nil, queryErr
 	}
 
 	labelValues := make(map[string]struct{})
-	for _, s := range m.matrix() {
+	for _, s := range m.matrix(tenantID) {
 		for k, v := range s.Metric {
 			if k == model.LabelName(name) {
 				labelValues[string(v)] = struct{}{}
@@ -206,31 +217,37 @@ func (m mockTenantQuerier) LabelValues(_ context.Context, name string, matchers 
 		results = append(results, k)
 	}
 	slices.Sort(results)
-	return results, m.warnings, nil
+	return results, warnings, nil
 }
 
 // LabelNames implements the storage.LabelQuerier interface.
 // It returns a sorted slice of all label names in the querier.
 // If only one matcher is provided with label Name=seriesWithLabelNames then the resulting set will have the values of that matchers pipe-split appended.
 // I.e. querying for {seriesWithLabelNames="foo|bar|baz"} will have as result [bar, baz, foo, <rest of label names from querier matrix> ]
-func (m mockTenantQuerier) LabelNames(_ context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	var results []string
+func (m mockTenantQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
+	var results []string
+	warnings := m.warningsByTenant[tenantID]
 	if len(matchers) == 1 && matchers[0].Name == seriesWithLabelNames {
 		if matchers[0].Value == "" {
-			return nil, m.warnings, nil
+			return nil, warnings, nil
 		}
 		results = strings.Split(matchers[0].Value, "|")
 	} else if len(matchers) > 1 {
-		m.warnings.Add(errors.New(mockMatchersNotImplemented))
+		warnings.Add(errors.New(mockMatchersNotImplemented))
 	}
 
-	if m.queryErr != nil {
-		return nil, nil, m.queryErr
+	queryErr := m.queryErrByTenant[tenantID]
+	if queryErr != nil {
+		return nil, nil, queryErr
 	}
 
 	labelValues := make(map[string]struct{})
-	for _, s := range m.matrix() {
+	for _, s := range m.matrix(tenantID) {
 		for k := range s.Metric {
 			labelValues[string(k)] = struct{}{}
 		}
@@ -240,7 +257,7 @@ func (m mockTenantQuerier) LabelNames(_ context.Context, matchers ...*labels.Mat
 		results = append(results, k)
 	}
 	slices.Sort(results)
-	return results, m.warnings, nil
+	return results, warnings, nil
 }
 
 // Close implements the storage.LabelQuerier interface.
@@ -341,16 +358,20 @@ type labelValuesScenario struct {
 
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
-		// No tenants specified
-		// FIXME
 		queryable := &mockTenantQueryableWithFilter{
-			logger:    log.NewNopLogger(),
-			tenantIDs: nil,
+			logger: log.NewNopLogger(),
 		}
-		q, err := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
+		qable, err := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
 		require.NoError(t, err)
-		_, err = q.Querier(mint, maxt)
-		require.EqualError(t, err, user.ErrNoOrgID.Error())
+		q, err := qable.Querier(mint, maxt)
+		require.NoError(t, err)
+
+		// No tenants specified
+		ctx := context.Background()
+		t.Run("select", func(t *testing.T) {
+			set := q.Select(ctx, true, nil)
+			require.EqualError(t, set.Err(), user.ErrNoOrgID.Error())
+		})
 	})
 }
 
