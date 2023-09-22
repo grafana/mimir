@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -24,8 +25,13 @@ import (
 
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	tooBusyError = httpgrpc.Errorf(http.StatusServiceUnavailable,
-		"the ingester is currently too busy to process queries, try again later")
+	tooBusyError = newErrorWithHTTPStatus(
+		safeToWrapError("the ingester is currently too busy to process queries, try again later"),
+		http.StatusServiceUnavailable,
+	)
+
+	errMaxSeriesPerMetricLimitExceeded = safeToWrapError("per-metric series limit exceeded")
+	errMaxSeriesPerUserLimitExceeded   = safeToWrapError("per-user series limit exceeded")
 )
 
 type safeToWrap interface {
@@ -46,10 +52,19 @@ type errorWithStatus struct {
 	status *status.Status
 }
 
-func newErrorWithStatus(err error, code int) errorWithStatus {
+func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 	return errorWithStatus{
 		err:    err,
-		status: status.New(codes.Code(code), err.Error()),
+		status: status.New(code, err.Error()),
+	}
+}
+
+func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
+	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
+	stat, _ := status.FromError(errWithHTTPStatus)
+	return errorWithStatus{
+		err:    err,
+		status: stat,
 	}
 }
 
@@ -65,14 +80,17 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 
-// annotateWithUser prepends the user to the error. It does not retain a reference to err.
-func annotateWithUser(err error, userID string) error {
+// wrapOrAnnotateWithUser prepends the given userID to the given error.
+// If the error is safe, the returned error retains a reference to the former.
+func wrapOrAnnotateWithUser(err error, userID string) error {
+	// If this is a safe error, we wrap it with userID and return it, because
+	// it might contain extra information for gRPC and our logging middleware.
+	var safe safeToWrap
+	if errors.As(err, &safe) {
+		return fmt.Errorf("user=%s: %w", userID, err)
+	}
+	// Otherwise, we just annotate it with userID and return it.
 	return fmt.Errorf("user=%s: %s", userID, err)
-}
-
-// wrapWithUser prepends the user to the error. It retains a reference to err.
-func wrapWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %w", userID, err)
 }
 
 func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {

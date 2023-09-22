@@ -158,30 +158,6 @@ func TestMetadataHandler_Success(t *testing.T) {
 				}
 			`,
 		},
-		"metric": {
-			queryParams: url.Values{
-				"metric": {"go_gc_duration_seconds"},
-			},
-			expectedJSON: `
-				{
-					"status": "success",
-					"data": {
-						"go_gc_duration_seconds": [
-							{
-								"help": "A summary of the pause duration of garbage collection cycles",
-								"type": "summary",
-								"unit": ""
-							},
-							{
-								"help": "A summary of the pause duration of garbage collection cycles 2",
-								"type": "summary",
-								"unit": ""
-							}
-						]
-					}
-				}
-			`,
-		},
 	}
 
 	for name, tc := range testCases {

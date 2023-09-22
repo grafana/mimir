@@ -2895,12 +2895,12 @@
         },
         {
           "kind": "field",
-          "name": "limit_inflight_requests_using_grpc_tap_handle",
+          "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests",
+          "desc": "Use experimental method of limiting push requests.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "ingester.limit-inflight-requests-using-grpc-handlers",
+          "fieldFlag": "ingester.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
@@ -3470,6 +3470,16 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.max-query-expression-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "blocked_queries",
+          "required": false,
+          "desc": "List of queries to block.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "blocked_queries_config...",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

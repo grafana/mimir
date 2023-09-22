@@ -98,23 +98,31 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 		rCap = req.Limit
 	}
 	r := make([]*mimirpb.MetricMetadata, 0, rCap)
-	var numMetrics int32
-	for metric, set := range mm.metricToMetadata {
-		if req.Limit >= 0 && numMetrics >= req.Limit {
-			break
-		}
-		if req.Metric != "" && metric != req.Metric {
-			continue
-		}
+	addMetricMetadataSet := func(set metricMetadataSet) {
 		var lengthPerMetric int32
 		for m := range set {
 			if req.LimitPerMetric > 0 && lengthPerMetric >= req.LimitPerMetric {
-				continue
+				break
 			}
 			m := m
 			r = append(r, &m)
 			lengthPerMetric++
 		}
+	}
+	if req.Limit == 0 {
+		return r
+	}
+	if req.Metric != "" {
+		set := mm.metricToMetadata[req.Metric]
+		addMetricMetadataSet(set)
+		return r
+	}
+	var numMetrics int32
+	for _, set := range mm.metricToMetadata {
+		if req.Limit > 0 && numMetrics >= req.Limit {
+			break
+		}
+		addMetricMetadataSet(set)
 		numMetrics++
 	}
 	return r

@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -42,29 +41,28 @@ max_tenants: 50000
 }
 
 func TestInstanceLimitErr(t *testing.T) {
-	t.Run("bare error implements ShouldLog()", func(t *testing.T) {
+	userID := "1"
+	limitErrors := []error{
+		errMaxIngestionRateReached,
+		wrapOrAnnotateWithUser(errMaxIngestionRateReached, userID),
+		errMaxTenantsReached,
+		wrapOrAnnotateWithUser(errMaxTenantsReached, userID),
+		errMaxInMemorySeriesReached,
+		wrapOrAnnotateWithUser(errMaxInMemorySeriesReached, userID),
+		errMaxInflightRequestsReached,
+		wrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID),
+	}
+	for _, limitError := range limitErrors {
+		var safe safeToWrap
+		require.ErrorAs(t, limitError, &safe)
+
 		var optional middleware.OptionalLogging
-		require.ErrorAs(t, errMaxInflightRequestsReached, &optional)
+		require.ErrorAs(t, limitError, &optional)
 		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
-	})
 
-	t.Run("wrapped error implements ShouldLog()", func(t *testing.T) {
-		err := fmt.Errorf("%w: oh no", errMaxTenantsReached)
-		var optional middleware.OptionalLogging
-		require.ErrorAs(t, err, &optional)
-		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
-	})
-
-	t.Run("bare error implements GRPCStatus()", func(t *testing.T) {
-		s, ok := status.FromError(errMaxInMemorySeriesReached)
+		stat, ok := status.FromError(limitError)
 		require.True(t, ok, "expected to be able to convert to gRPC status")
-		require.Equal(t, codes.Unavailable, s.Code())
-	})
-
-	t.Run("wrapped error implements GRPCStatus()", func(t *testing.T) {
-		err := fmt.Errorf("%w: oh no", errMaxIngestionRateReached)
-		s, ok := status.FromError(err)
-		require.True(t, ok, "expected to be able to convert to gRPC status")
-		require.Equal(t, codes.Unavailable, s.Code())
-	})
+		require.Equal(t, codes.Unavailable, stat.Code())
+		require.ErrorContains(t, stat.Err(), limitError.Error())
+	}
 }

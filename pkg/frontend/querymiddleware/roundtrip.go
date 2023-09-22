@@ -199,11 +199,13 @@ func newQueryTripperware(
 
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		newQueryStatsMiddleware(registerer),
 		newLimitsMiddleware(limits, log),
+		queryBlockerMiddleware,
 	}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics), newStepAlignMiddleware())
@@ -251,6 +253,7 @@ func newQueryTripperware(
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
+		queryBlockerMiddleware,
 	)
 
 	if cfg.ShardedQueries {
