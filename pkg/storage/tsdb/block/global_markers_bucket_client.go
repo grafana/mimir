@@ -131,9 +131,9 @@ func (b *globalMarkersBucket) IsObjNotFoundErr(err error) bool {
 	return b.parent.IsObjNotFoundErr(err)
 }
 
-// IsCustomerManagedKeyError implements objstore.Bucket.
-func (b *globalMarkersBucket) IsCustomerManagedKeyError(err error) bool {
-	return b.parent.IsCustomerManagedKeyError(err)
+// IsAccessDeniedErr implements objstore.Bucket.
+func (b *globalMarkersBucket) IsAccessDeniedErr(err error) bool {
+	return b.parent.IsAccessDeniedErr(err)
 }
 
 // Attributes implements objstore.Bucket.
