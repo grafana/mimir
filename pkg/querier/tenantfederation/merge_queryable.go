@@ -264,7 +264,8 @@ func (m *mergeQuerier) Close() error {
 }
 
 type selectJob struct {
-	id string
+	ctx context.Context
+	id  string
 }
 
 // Select returns a set of series that matches the given label matchers. If the
@@ -293,15 +294,15 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 			continue
 		}
 		jobs = append(jobs, &selectJob{
-			id: tenantID,
+			ctx: user.InjectOrgID(ctx, tenantID),
+			id:  tenantID,
 		})
 	}
 
 	run := func(ctx context.Context, idx int) error {
 		job := jobs[idx]
-		ctx = user.InjectOrgID(ctx, job.id)
 		seriesSets[idx] = &addLabelsSeriesSet{
-			upstream: m.upstream.Select(ctx, sortSeries, hints, filteredMatchers...),
+			upstream: m.upstream.Select(job.ctx, sortSeries, hints, filteredMatchers...),
 			labels: []labels.Label{
 				{
 					Name:  m.idLabelName,
