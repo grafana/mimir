@@ -189,8 +189,9 @@
 * [ENHANCEMENT] Add _config.commonConfig to allow adding common configuration parameters for all Mimir components. #5703
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
+* [ENHANCEMENT] Add autoscaling on memory for ruler-queriers. #5739
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
-* [ENHANCEMENT] Autoscaling: treat OOMing containers as though they are using their full memory request. #5739
+* [BUGFIX] Autoscaling: treat OOMing containers as though they are using their full memory request. #5739
 
 ### Mimirtool
 
