@@ -645,5 +645,13 @@
 
     // Used to add additional services to dashboards that support it.
     extraServiceNames: [],
+
+    // When using rejecting inflight requests in ingesters early (using -ingester.limit-inflight-requests-using-grpc-method-limiter option),
+    // rejected requests will not count towards standard Mimir metrics like cortex_request_duration_seconds_count.
+    // Enabling this will make them visible on the dashboard again.
+    //
+    // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter is not used (default), then rejected requests
+    // are already counted as failures.
+    show_rejected_requests_on_writes_dashboard: false,
   },
 }
