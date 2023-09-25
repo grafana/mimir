@@ -28,6 +28,12 @@ type querier struct {
 	disconnectedAt time.Time
 }
 
+type queueUser struct {
+	// Seed for shuffle sharding of queriers. This seed is computed from userID only,
+	// and is therefore consistent between different frontends.
+	shuffleShardSeed int64
+}
+
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
 // and mapping between users and queriers.
 type queues struct {
@@ -37,6 +43,8 @@ type queues struct {
 	// Users removed from the middle are replaced with "". To avoid skipping users during iteration, we only shrink
 	// this list when there are ""'s at the end of it.
 	users []string
+
+	usersByID map[string]*queueUser
 
 	maxUserQueueSize int
 
@@ -59,10 +67,6 @@ type userQueue struct {
 	queriers    map[string]struct{}
 	maxQueriers int
 
-	// Seed for shuffle sharding of queriers. This seed is based on userID only and is therefore consistent
-	// between different frontends.
-	seed int64
-
 	// Points back to 'users' field in queues. Enables quick cleanup.
 	index int
 }
@@ -71,6 +75,7 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
 		userQueues:       map[string]*userQueue{},
 		users:            nil,
+		usersByID:        map[string]*queueUser{},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
 		queriers:         map[string]*querier{},
@@ -114,9 +119,13 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	uq := q.userQueues[userID]
 
 	if uq == nil {
+		u := &queueUser{
+			shuffleShardSeed: util.ShuffleShardSeed(userID, ""),
+		}
+		q.usersByID[userID] = u
+
 		uq = &userQueue{
 			requests: list.New(),
-			seed:     util.ShuffleShardSeed(userID, ""),
 			index:    -1,
 		}
 		q.userQueues[userID] = uq
@@ -139,7 +148,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if uq.maxQueriers != maxQueriers {
 		uq.maxQueriers = maxQueriers
-		uq.queriers = shuffleQueriersForUser(uq.seed, maxQueriers, q.sortedQueriers, nil)
+		uq.queriers = shuffleQueriersForUser(q.usersByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
 	}
 
 	return uq.requests
@@ -289,12 +298,14 @@ func (q *queues) recomputeUserQueriers() {
 	// If shuffle-sharding is disabled, we never need this.
 	var scratchpad []string
 
-	for _, uq := range q.userQueues {
+	for uid, u := range q.usersByID {
+		uq := q.userQueues[uid]
+
 		if uq.maxQueriers > 0 && uq.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
 			scratchpad = make([]string, 0, len(q.sortedQueriers))
 		}
 
-		uq.queriers = shuffleQueriersForUser(uq.seed, uq.maxQueriers, q.sortedQueriers, scratchpad)
+		uq.queriers = shuffleQueriersForUser(u.shuffleShardSeed, uq.maxQueriers, q.sortedQueriers, scratchpad)
 	}
 }
 
