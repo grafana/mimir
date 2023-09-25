@@ -567,7 +567,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230920092933-98f431c981b2
+# github.com/grafana/dskit v0.0.0-20230925094553-c4a1874aadb0
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -979,9 +979,9 @@ github.com/sean-/seed
 # github.com/segmentio/fasthash v1.0.3
 ## explicit; go 1.11
 github.com/segmentio/fasthash/fnv1a
-# github.com/sercand/kuberesolver/v4 v4.0.0
-## explicit; go 1.14
-github.com/sercand/kuberesolver/v4
+# github.com/sercand/kuberesolver/v5 v5.1.1
+## explicit; go 1.18
+github.com/sercand/kuberesolver/v5
 # github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 ## explicit; go 1.19
 github.com/shurcooL/httpfs/filter
