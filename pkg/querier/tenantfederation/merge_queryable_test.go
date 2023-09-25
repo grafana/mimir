@@ -283,8 +283,7 @@ func (s *mergeQueryableScenario) init(t *testing.T) (context.Context, storage.Qu
 		ctx = user.InjectOrgID(ctx, strings.Join(s.tenants, "|"))
 	}
 	// initialize with default tenant label
-	q, err := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
-	require.NoError(t, err)
+	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
 
 	// retrieve querier
 	querier, err := q.Querier(mint, maxt)
@@ -361,8 +360,7 @@ func TestMergeQueryable_Querier(t *testing.T) {
 		queryable := &mockTenantQueryableWithFilter{
 			logger: log.NewNopLogger(),
 		}
-		qable, err := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
-		require.NoError(t, err)
+		qable := NewQueryable(queryable, false /* bypassWithSingleQuerier */, defaultConcurrency, log.NewNopLogger())
 		q, err := qable.Querier(mint, maxt)
 		require.NoError(t, err)
 
@@ -914,8 +912,7 @@ func TestTracingMergeQueryable(t *testing.T) {
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q, err := NewQueryable(&filter, false, defaultConcurrency, log.NewNopLogger())
-	require.NoError(t, err)
+	q := NewQueryable(&filter, false, defaultConcurrency, log.NewNopLogger())
 	// retrieve querier if set
 	querier, err := q.Querier(mint, maxt)
 	require.NoError(t, err)

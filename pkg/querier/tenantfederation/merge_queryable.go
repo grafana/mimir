@@ -36,7 +36,7 @@ import (
 // If the label "__tenant_id__" is already existing, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(upstream storage.Queryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
+func NewQueryable(upstream storage.Queryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.Queryable {
 	return newMergeQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, maxConcurrency, logger)
 }
 
@@ -56,14 +56,14 @@ type MergeQuerierCallback func(ids []string, mint int64, maxt int64) (queriers [
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func newMergeQueryable(idLabelName string, upstream storage.Queryable, bypassWithSingleTenant bool, maxConcurrency int, logger log.Logger) (storage.Queryable, error) {
+func newMergeQueryable(idLabelName string, upstream storage.Queryable, bypassWithSingleTenant bool, maxConcurrency int, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
 		logger:                 logger,
 		idLabelName:            idLabelName,
 		upstream:               upstream,
 		bypassWithSingleTenant: bypassWithSingleTenant,
 		maxConcurrency:         maxConcurrency,
-	}, nil
+	}
 }
 
 type mergeQueryable struct {
