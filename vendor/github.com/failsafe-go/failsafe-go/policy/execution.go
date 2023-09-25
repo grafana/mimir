@@ -14,9 +14,6 @@ type ExecutionInternal[R any] interface {
 	// recorded result.
 	Result() *common.PolicyResult[R]
 
-	// Context returns any context configured for the execution, else nil.
-	Context() context.Context
-
 	// InitializeAttempt prepares a new execution attempt. Returns false if the attempt could not be initialized since it was
 	// canceled by an external Context or a timeout.Timeout composed outside the Executor.
 	InitializeAttempt(policyIndex int) bool
@@ -37,6 +34,9 @@ type ExecutionInternal[R any] interface {
 	// Copy returns a copy of the failsafe.Execution.
 	Copy() failsafe.Execution[R]
 
-	// CopyWithResult returns a copy of the failsafe.Execution for the result.
+	// CopyWithResult returns a copy of the failsafe.Execution with the result.
 	CopyWithResult(result *common.PolicyResult[R]) failsafe.Execution[R]
+
+	// CopyWithContext returns a copy of the failsafe.Execution with the context.
+	CopyWithContext(ctx context.Context) failsafe.Execution[R]
 }
