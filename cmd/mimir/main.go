@@ -56,7 +56,7 @@ type mainFlags struct {
 	ballastBytes                  int     `category:"advanced"`
 	mutexProfileFraction          int     `category:"advanced"`
 	blockProfileRate              int     `category:"advanced"`
-	useBufferedLogger             bool    `category:"advanced"`
+	useBufferedLogger             bool    `category:"deprecated"` // Deprecated: deprecated in Mimir 2.11, remove it in 2.13.
 	rateLimitedLogsEnabled        bool    `category:"experimental"`
 	rateLimitedLogsPerSecond      float64 `category:"experimental"`
 	rateLimitedLogsPerSecondBurst int     `category:"experimental"`
