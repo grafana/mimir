@@ -263,11 +263,6 @@ func (m *mergeQuerier) Close() error {
 	return errors.Wrap(m.upstream.Close(), "failed to close upstream querier")
 }
 
-type selectJob struct {
-	ctx context.Context
-	id  string
-}
-
 // Select returns a set of series that matches the given label matchers. If the
 // `idLabelName` is matched on, it only considers those queriers
 // matching. The forwarded labelSelector is not containing those that operate
@@ -287,26 +282,26 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, tenantIDs, matchers...)
 
-	var jobs = make([]*selectJob, 0, len(matchedValues))
+	var jobs = make([]string, 0, len(matchedValues))
 	var seriesSets = make([]storage.SeriesSet, len(matchedValues))
 	for _, tenantID := range tenantIDs {
 		if _, matched := matchedValues[tenantID]; !matched {
 			continue
 		}
-		jobs = append(jobs, &selectJob{
-			ctx: user.InjectOrgID(ctx, tenantID),
-			id:  tenantID,
-		})
+		jobs = append(jobs, tenantID)
 	}
 
-	run := func(ctx context.Context, idx int) error {
-		job := jobs[idx]
+	run := func(_ context.Context, idx int) error {
+		tenantID := jobs[idx]
+		// We don't use the context passed to this function, since the context has to live longer
+		// than the call to ForEachJob (i.e. as long as seriesSets)
+		ctx := user.InjectOrgID(ctx, tenantID)
 		seriesSets[idx] = &addLabelsSeriesSet{
-			upstream: m.upstream.Select(job.ctx, sortSeries, hints, filteredMatchers...),
+			upstream: m.upstream.Select(ctx, sortSeries, hints, filteredMatchers...),
 			labels: []labels.Label{
 				{
 					Name:  m.idLabelName,
-					Value: job.id,
+					Value: tenantID,
 				},
 			},
 		}
