@@ -3655,7 +3655,7 @@ tsdb:
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
-  [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
+  [series_hash_cache_max_size_bytes: <int> | default = 367001600]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.
