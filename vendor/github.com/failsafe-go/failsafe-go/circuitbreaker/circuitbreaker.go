@@ -102,19 +102,19 @@ type CircuitBreaker[R any] interface {
 }
 
 type Metrics interface {
-	// ExecutionCount returns the number of executions recorded in the current state when the state is ClosedState or
+	// Executions returns the number of executions recorded in the current state when the state is ClosedState or
 	// HalfOpenState. When the state is OpenState, this returns the executions recorded during the previous ClosedState.
 	//
 	// For count based thresholding, the max number of executions is limited to the execution threshold. For time based
 	// thresholds, the number of executions may vary within the thresholding period.
-	ExecutionCount() uint
+	Executions() uint
 
-	// FailureCount returns the number of failures recorded in the current state when in a ClosedState or HalfOpenState. When
+	// Failures returns the number of failures recorded in the current state when in a ClosedState or HalfOpenState. When
 	// in OpenState, this returns the failures recorded during the previous ClosedState.
 	//
 	// For count based thresholds, the max number of failures is based on the failure threshold. For time based thresholds,
 	// the number of failures may vary within the failure thresholding period.
-	FailureCount() uint
+	Failures() uint
 
 	// FailureRate returns the percentage rate of failed executions, from 0 to 100, in the current state when in a
 	// ClosedState or HalfOpenState. When in OpenState, this returns the rate recorded during the previous ClosedState.
@@ -122,11 +122,11 @@ type Metrics interface {
 	// The rate is based on the configured failure thresholding capacity.
 	FailureRate() uint
 
-	// SuccessCount returns the number of successes recorded in the current state when in a ClosedState or HalfOpenState.
+	// Successes returns the number of successes recorded in the current state when in a ClosedState or HalfOpenState.
 	// When in OpenState, this returns the successes recorded during the previous ClosedState.
 	//
 	// The max number of successes is based on the success threshold.
-	SuccessCount() uint
+	Successes() uint
 
 	// SuccessRate returns percentage rate of successful executions, from 0 to 100, in the current state when in a
 	// ClosedState or HalfOpenState. When in OpenState, this returns the successes recorded during the previous ClosedState.
@@ -137,8 +137,8 @@ type Metrics interface {
 
 // StateChangedEvent indicates a CircuitBreaker's state has changed.
 type StateChangedEvent struct {
-	PreviousState State
-	CurrentState  State
+	OldState State
+	NewState State
 }
 
 type circuitBreaker[R any] struct {
@@ -196,13 +196,13 @@ func (cb *circuitBreaker[R]) IsClosed() bool {
 	return cb.State() == ClosedState
 }
 
-func (cb *circuitBreaker[R]) ExecutionCount() uint {
+func (cb *circuitBreaker[R]) Executions() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
 	return cb.state.getStats().getExecutionCount()
 }
 
-func (cb *circuitBreaker[R]) FailureCount() uint {
+func (cb *circuitBreaker[R]) Failures() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
 	return cb.state.getStats().getFailureCount()
@@ -214,7 +214,7 @@ func (cb *circuitBreaker[R]) FailureRate() uint {
 	return cb.state.getStats().getFailureRate()
 }
 
-func (cb *circuitBreaker[R]) SuccessCount() uint {
+func (cb *circuitBreaker[R]) Successes() uint {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
 	return cb.state.getStats().getSuccessCount()
@@ -286,8 +286,8 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 
 	if transitioned {
 		event := StateChangedEvent{
-			PreviousState: currentState,
-			CurrentState:  newState,
+			OldState: currentState,
+			NewState: newState,
 		}
 		if cb.config.stateChangedListener != nil {
 			cb.config.stateChangedListener(event)

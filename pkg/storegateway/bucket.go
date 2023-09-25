@@ -259,14 +259,14 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 }
 
 // Stats returns statistics about the BucketStore instance.
-func (s *BucketStore) Stats(durations tsdb.DurationList) BucketStoreStats {
+func (s *BucketStore) Stats(durations []time.Duration) BucketStoreStats {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
 	return buildStoreStats(durations, s.blocks)
 }
 
-func buildStoreStats(durations tsdb.DurationList, blocks map[ulid.ULID]*bucketBlock) BucketStoreStats {
+func buildStoreStats(durations []time.Duration, blocks map[ulid.ULID]*bucketBlock) BucketStoreStats {
 	stats := BucketStoreStats{}
 	stats.BlocksLoaded = make(map[time.Duration]int)
 

@@ -7,11 +7,12 @@
 * [CHANGE] Store-gateway: enable sparse index headers by default. Sparse index headers reduce the time to load an index header up to 90%. #6005
 * [CHANGE] Store-gateway: lazy-loading concurrency limit default value is now 4. #6004
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
+* [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879 #6087
-* [ENHANCEMENT] Store-gateway: add metric `cortex_bucket_store_blocks_loaded_by_duration` for counting the loaded number of blocks based on their duration. #6074
+* [ENHANCEMENT] Store-gateway: add metric `cortex_bucket_store_blocks_loaded_by_duration` for counting the loaded number of blocks based on their duration. #6074 #6129
 * [ENHANCEMENT] Expose `/sync/mutex/wait/total:seconds` Go runtime metric as `go_sync_mutex_wait_total_seconds_total` from all components. #5879
 * [ENHANCEMENT] Query-scheduler: improve latency with many concurrent queriers. #5880
 * [ENHANCEMENT] Implement support for `limit`, `limit_per_metric` and `metric` parameters for `<Prometheus HTTP prefix>/api/v1/metadata` endpoint. #5890

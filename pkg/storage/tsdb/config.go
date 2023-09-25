@@ -263,7 +263,13 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.Retention, "blocks-storage.tsdb.retention-period", 13*time.Hour, "TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.")
 	f.DurationVar(&cfg.ShipInterval, "blocks-storage.tsdb.ship-interval", 1*time.Minute, "How frequently the TSDB blocks are scanned and new ones are shipped to the storage. 0 means shipping is disabled.")
 	f.IntVar(&cfg.ShipConcurrency, "blocks-storage.tsdb.ship-concurrency", 10, "Maximum number of tenants concurrently shipping blocks to the storage.")
-	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.tsdb.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
+
+	// This cache is only used when querying compacted blocks. The default cache size is enough to store the hashes for
+	// all series in all queryable blocks, assuming 2M series per ingester (and default retention):
+	//
+	// ceil(13h retention - 2h head) / 2h blocks * 2M series * 28 bytes = 320MB, rounded to 350M
+	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.tsdb.series-hash-cache-max-size-bytes", uint64(350*units.Mebibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
+
 	f.DurationVar(&cfg.HeadCompactionInterval, headCompactionIntervalFlag, 1*time.Minute, "How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes.")
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 1, "Maximum number of tenants concurrently compacting TSDB head into a new block")
 	f.DurationVar(&cfg.HeadCompactionIdleTimeout, "blocks-storage.tsdb.head-compaction-idle-timeout", 1*time.Hour, "If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled.")

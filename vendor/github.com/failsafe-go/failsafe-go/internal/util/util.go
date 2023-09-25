@@ -18,22 +18,6 @@ func AppliesToAny[A any, B any](biPredicates []func(A, B) bool, value1 A, value2
 	return false
 }
 
-// Min returns the min of a and b.
-func Min[T number](a, b T) T {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// Max returns the max of a and b.
-func Max[T number](a, b T) T {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // RoundDown returns the input rounded down to the nearest interval.
 func RoundDown(input time.Duration, interval time.Duration) time.Duration {
 	return (input / interval) * interval
@@ -87,7 +71,7 @@ func NewStopwatch() Stopwatch {
 }
 
 func (s *wallClockStopwatch) ElapsedTime() time.Duration {
-	return time.Now().Sub(s.startTime)
+	return time.Since(s.startTime)
 }
 
 func (s *wallClockStopwatch) Reset() {
