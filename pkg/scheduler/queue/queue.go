@@ -154,6 +154,9 @@ func (q *RequestQueue) dispatcherLoop() {
 				needToDispatchQueries = true
 
 				// Tell any waiting GetNextRequestForQuerier calls for this querier that nothing is coming.
+				// If the querier shuts down without notifying us, this is OK: we'll never mark it as shutting down, so
+				// Scheduler.QuerierLoop will try to send a query request to it later. This will fail because the connection is
+				// broken, and GetNextRequestForQuerier won't be called again.
 				q.cancelWaitingConnectionsForQuerier(qe.querierID, waitingQuerierConnections)
 			case forgetDisconnected:
 				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
@@ -235,6 +238,8 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
+	// If this querier has told us it's shutting down, don't bother trying to find a query request for it.
+	// Terminate GetNextRequestForQuerier with an error now.
 	queue, userID, idx, err := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
 	if err != nil {
 		querierConn.sendError(err)
