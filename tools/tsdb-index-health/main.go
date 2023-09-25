@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -39,6 +40,8 @@ func main() {
 		return
 	}
 
+	ctx := context.Background()
+
 	for _, b := range args {
 		meta, err := block.ReadMetaFromDir(b)
 		if err != nil {
@@ -46,7 +49,7 @@ func main() {
 			continue
 		}
 
-		stats, err := block.GatherBlockHealthStats(logger, b, meta.MinTime, meta.MaxTime, *verifyChunks)
+		stats, err := block.GatherBlockHealthStats(ctx, logger, b, meta.MinTime, meta.MaxTime, *verifyChunks)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to gather health stats from block dir", b, "error:", err)
 			continue

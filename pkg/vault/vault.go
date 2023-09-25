@@ -18,6 +18,8 @@ type Config struct {
 	URL       string `yaml:"url" category:"experimental"`
 	Token     string `yaml:"token" category:"experimental"`
 	MountPath string `yaml:"mount_path" category:"experimental"`
+
+	Mock SecretsEngine `yaml:"-"`
 }
 
 func (cfg *Config) Validate() error {
@@ -56,6 +58,12 @@ type Vault struct {
 }
 
 func NewVault(cfg Config) (*Vault, error) {
+	if cfg.Mock != nil {
+		return &Vault{
+			KVStore: cfg.Mock,
+		}, nil
+	}
+
 	config := hashivault.DefaultConfig()
 	config.Address = cfg.URL
 

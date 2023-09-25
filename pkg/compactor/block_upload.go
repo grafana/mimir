@@ -577,7 +577,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 
 	// validate block
 	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
-	err = block.VerifyBlock(c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
+	err = block.VerifyBlock(ctx, c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
 	if err != nil {
 		return errors.Wrap(err, "error validating block")
 	}

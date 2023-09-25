@@ -718,7 +718,7 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
+func (r *bucketIndexReader) LookupLabelsSymbols(_ context.Context, symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
 	builder.Reset()
 	for _, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)

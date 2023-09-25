@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"path"
 	"testing"
 
@@ -51,7 +52,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
-	stats, err := block.GatherBlockHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
+	stats, err := block.GatherBlockHealthStats(context.Background(), log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), stats.TotalSeries)

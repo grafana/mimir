@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -58,12 +59,13 @@ func main() {
 		level.Error(logger).Log(matchersStr...)
 	}
 
+	ctx := context.Background()
 	for _, blockDir := range args {
-		printBlockIndex(blockDir, *printChunks, matchers)
+		printBlockIndex(ctx, blockDir, *printChunks, matchers)
 	}
 }
 
-func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Matcher) {
+func printBlockIndex(_ context.Context, blockDir string, printChunks bool, matchers []*labels.Matcher) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)

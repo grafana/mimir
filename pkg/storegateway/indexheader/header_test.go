@@ -152,7 +152,6 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, iter.Err())
 		_, err := headerReader.LookupSymbol(uint32(i))
 		require.Error(t, err)
-
 	} else {
 		// For v1 symbols refs are actual offsets in the index.
 		symbols, err := getSymbolTable(indexByteSlice)
