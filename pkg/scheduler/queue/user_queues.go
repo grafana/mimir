@@ -94,6 +94,7 @@ func (q *queues) deleteQueue(userID string) {
 	}
 
 	delete(q.userQueues, userID)
+	delete(q.usersByID, userID)
 	q.users[uq.index] = ""
 
 	// Shrink users list size if possible. This is safe, and no users will be skipped during iteration.
