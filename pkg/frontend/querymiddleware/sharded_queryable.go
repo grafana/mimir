@@ -100,16 +100,16 @@ func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...
 		return storage.ErrSeriesSet(err)
 	}
 
-	return q.handleEmbeddedQueries(queries, hints)
+	return q.handleEmbeddedQueries(q.ctx, queries, hints)
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
+func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []string, hints *storage.SelectHints) storage.SeriesSet {
 	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
-	err := concurrency.ForEachJob(q.ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
+	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
 		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
 		if err != nil {
 			return err

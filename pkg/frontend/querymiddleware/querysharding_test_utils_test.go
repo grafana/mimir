@@ -273,7 +273,7 @@ func TestNewMockShardedQueryable(t *testing.T) {
 				}.LabelValue(),
 			})
 
-			require.Nil(t, set.Err())
+			require.NoError(t, set.Err())
 
 			var iter chunkenc.Iterator
 			for set.Next() {

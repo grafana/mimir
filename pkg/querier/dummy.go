@@ -12,18 +12,23 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 )
 
-// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.targetRetriever.
+// DummyTargetRetriever implements github.com/prometheus/prometheus/web/api/v1.TargetRetriever.
 // and v1.ScrapePoolsRetriever
 type DummyTargetRetriever struct{}
 
-// TargetsActive implements targetRetriever.
+// TargetsActive implements TargetRetriever.
 func (DummyTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
 }
 
-// TargetsDropped implements targetRetriever.
+// TargetsDropped implements TargetRetriever.
 func (DummyTargetRetriever) TargetsDropped() map[string][]*scrape.Target {
 	return map[string][]*scrape.Target{}
+}
+
+// TargetsDroppedCounts implements targetRetriever.
+func (DummyTargetRetriever) TargetsDroppedCounts() map[string]int {
+	return map[string]int{}
 }
 
 func (DummyTargetRetriever) ScrapePools() []string { return nil }

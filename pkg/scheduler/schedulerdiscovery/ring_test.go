@@ -3,7 +3,6 @@
 package schedulerdiscovery
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -22,7 +21,7 @@ func TestRingConfig_DefaultConfigToBasicLifecyclerConfig(t *testing.T) {
 
 	expected := ring.BasicLifecyclerConfig{
 		ID:                              cfg.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", cfg.InstanceAddr, cfg.InstancePort),
+		Addr:                            "127.0.0.1:9095",
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.HeartbeatTimeout,
 		TokensObservePeriod:             0,
@@ -61,4 +60,27 @@ func TestRingConfig_CustomConfigToBasicLifecyclerConfig(t *testing.T) {
 	actual, err := cfg.ToBasicLifecyclerConfig(log.NewNopLogger())
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
+}
+
+func TestRingConfig_AddressFamilies(t *testing.T) {
+	cfg := RingConfig{}
+	flagext.DefaultValues(&cfg)
+
+	t.Run("IPv4", func(t *testing.T) {
+		cfg.InstanceAddr = "1.2.3.4"
+		cfg.InstancePort = 10
+
+		actual, err := cfg.ToBasicLifecyclerConfig(log.NewNopLogger())
+		require.NoError(t, err)
+		assert.Equal(t, "1.2.3.4:10", actual.Addr)
+	})
+
+	t.Run("IPv6", func(t *testing.T) {
+		cfg.InstanceAddr = "::1"
+		cfg.InstancePort = 10
+
+		actual, err := cfg.ToBasicLifecyclerConfig(log.NewNopLogger())
+		require.NoError(t, err)
+		assert.Equal(t, "[::1]:10", actual.Addr)
+	})
 }
