@@ -263,6 +263,12 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 // shardAggregate attempts to shard the given aggregation expression.
 func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped parser.Expr, finished bool, err error) {
 	switch expr.Op {
+	case parser.GROUP:
+		mapped, err = summer.shardGroup(expr)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
 	case parser.SUM:
 		mapped, err = summer.shardSum(expr)
 		if err != nil {
@@ -292,6 +298,44 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 	// If the aggregation operation is not shardable, we have to return the input
 	// expr as is.
 	return expr, false, nil
+}
+
+// shardGroup attempts to shard the given GROUP aggregation expression.
+func (summer *shardSummer) shardGroup(expr *parser.AggregateExpr) (result *parser.AggregateExpr, err error) {
+	/*
+		parallelizing a group using without(foo) is representable naively as
+		group without(foo) (
+		  group without(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  group without(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
+
+		parallelizing a group using by(foo) is representable as
+		group by(foo) (
+		  group by(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  group by(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
+
+		parallelizing a non-parameterized group is representable as
+		group (
+		  group (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  group (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
+	*/
+
+	// Create a GROUP sub-query for each shard and squash it into a CONCAT expression.
+	sharded, err := summer.shardAndSquashAggregateExpr(expr, parser.GROUP)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the parent expression. We need to preserve the grouping as it was in the original one.
+	return &parser.AggregateExpr{
+		Op:       parser.GROUP,
+		Expr:     sharded,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
+	}, nil
 }
 
 // shardSum attempts to shard the given SUM aggregation expression.

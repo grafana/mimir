@@ -37,6 +37,21 @@ func TestCanParallel(t *testing.T) {
 			},
 			true,
 		},
+		// simple group
+		{
+			&parser.AggregateExpr{
+				Op:      parser.GROUP,
+				Without: true,
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
+					},
+				},
+				Grouping: []string{"foo"},
+			},
+			true,
+		},
 		/*
 			  sum(
 				  sum by (foo) bar1{baz=”blip”}[1m])
