@@ -20,6 +20,7 @@
 * [ENHANCEMENT] Fetch secrets used to configure server-side TLS from Vault when `-vault.enabled` is true. #6052.
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
+* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100
 
 ### Mixin
 
