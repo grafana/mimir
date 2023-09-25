@@ -155,3 +155,8 @@ The following features or configuration parameters are currently deprecated and 
   - `-blocks-storage.bucket-store.bucket-index.enabled`
 - Querier
   - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)
+
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
+
+- Logging
+  - `-log.buffered`
