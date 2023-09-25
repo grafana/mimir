@@ -34,15 +34,15 @@ type FailurePolicyBuilder[S any, R any] interface {
 	HandleIf(predicate func(R, error) bool) S
 
 	// OnSuccess registers the listener to be called when the policy determines an execution attempt was a success.
-	OnSuccess(func(event ExecutionEvent[R])) S
+	OnSuccess(listener func(ExecutionEvent[R])) S
 
 	// OnFailure registers the listener to be called when the policy determines an execution attempt was a failure, and may
 	// be handled.
-	OnFailure(func(event ExecutionEvent[R])) S
+	OnFailure(listener func(ExecutionEvent[R])) S
 }
 
-// DelayFunction returns a duration to delay for given the Execution.
-type DelayFunction[R any] func(exec Execution[R]) time.Duration
+// DelayFunction returns a duration to delay for given the ExecutionAttempt.
+type DelayFunction[R any] func(exec ExecutionAttempt[R]) time.Duration
 
 // DelayablePolicyBuilder builds policies that can be delayed between executions.
 type DelayablePolicyBuilder[S any, R any] interface {

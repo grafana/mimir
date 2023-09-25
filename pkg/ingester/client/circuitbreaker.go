@@ -50,15 +50,15 @@ func NewCircuitBreaker(addr string, cfg CircuitBreakerConfig, metrics *Metrics, 
 		}).
 		OnClose(func(event circuitbreaker.StateChangedEvent) {
 			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.ClosedState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is closed", "addr", addr, "previous", event.PreviousState, "current", circuitbreaker.ClosedState)
+			level.Info(logger).Log("msg", "circuit breaker is closed", "addr", addr, "previous", event.OldState, "current", circuitbreaker.ClosedState)
 		}).
 		OnOpen(func(event circuitbreaker.StateChangedEvent) {
 			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.OpenState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is open", "addr", addr, "previous", event.PreviousState, "current", circuitbreaker.OpenState)
+			level.Info(logger).Log("msg", "circuit breaker is open", "addr", addr, "previous", event.OldState, "current", circuitbreaker.OpenState)
 		}).
 		OnHalfOpen(func(event circuitbreaker.StateChangedEvent) {
 			metrics.circuitBreakerTransitions.WithLabelValues(circuitbreaker.HalfOpenState.String()).Inc()
-			level.Info(logger).Log("msg", "circuit breaker is half-open", "addr", addr, "previous", event.PreviousState, "current", circuitbreaker.HalfOpenState)
+			level.Info(logger).Log("msg", "circuit breaker is half-open", "addr", addr, "previous", event.OldState, "current", circuitbreaker.HalfOpenState)
 		}).
 		HandleIf(func(r any, err error) bool { return isFailure(err) }).
 		Build()

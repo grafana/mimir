@@ -1,10 +1,15 @@
 package failsafe
 
 import (
+	"errors"
+	"math"
 	"sync/atomic"
 
 	"github.com/failsafe-go/failsafe-go/common"
 )
+
+// ErrExecutionCanceled indicates that an execution was canceled by ExecutionResult.Cancel.
+var ErrExecutionCanceled = errors.New("execution canceled")
 
 // ExecutionResult provides the result of an asynchronous execution.
 type ExecutionResult[R any] interface {
@@ -22,12 +27,18 @@ type ExecutionResult[R any] interface {
 
 	// Error returns the execution error else nil, blocking until the execution is done.
 	Error() error
+
+	// Cancel cancels the execution if it is not already done, with ErrExecutionCanceled as the error. If a Context was
+	// configured with the execution, a child context will be created for the execution and canceled as well.
+	Cancel()
 }
 
 type executionResult[R any] struct {
-	doneChan chan any
-	done     atomic.Bool
-	result   atomic.Pointer[*common.PolicyResult[R]]
+	*execution[R]
+	cancelFunc func()
+	doneChan   chan any
+	done       atomic.Bool
+	result     atomic.Pointer[*common.PolicyResult[R]]
 }
 
 func (e *executionResult[R]) record(result *common.PolicyResult[R]) {
@@ -45,9 +56,7 @@ func (e *executionResult[R]) IsDone() bool {
 }
 
 func (e *executionResult[R]) Get() (R, error) {
-	select {
-	case <-e.doneChan:
-	}
+	<-e.doneChan
 	result := e.result.Load()
 	if result != nil {
 		return (*result).Result, (*result).Error
@@ -63,4 +72,15 @@ func (e *executionResult[R]) Result() R {
 func (e *executionResult[R]) Error() error {
 	_, err := e.Get()
 	return err
+}
+
+func (e *executionResult[R]) Cancel() {
+	// Propagate cancelation to contexts
+	if e.cancelFunc != nil {
+		e.cancelFunc()
+	}
+	e.execution.Cancel(math.MaxInt, &common.PolicyResult[R]{
+		Error: ErrExecutionCanceled,
+		Done:  true,
+	})
 }
