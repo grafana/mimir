@@ -297,7 +297,8 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
-	} else if err != nil {
+	}
+	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
@@ -380,7 +381,8 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -426,7 +428,8 @@ func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return nil, nil, err
 	}
 
