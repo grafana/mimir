@@ -10,7 +10,7 @@
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879 #6087
-* [ENHANCEMENT] Store-gateway: add metric `cortex_bucket_store_blocks_loaded_by_duration` for counting the loaded number of blocks based on their duration. #6074
+* [ENHANCEMENT] Store-gateway: add metric `cortex_bucket_store_blocks_loaded_by_duration` for counting the loaded number of blocks based on their duration. #6074 #6129
 * [ENHANCEMENT] Expose `/sync/mutex/wait/total:seconds` Go runtime metric as `go_sync_mutex_wait_total_seconds_total` from all components. #5879
 * [ENHANCEMENT] Query-scheduler: improve latency with many concurrent queriers. #5880
 * [ENHANCEMENT] Implement support for `limit`, `limit_per_metric` and `metric` parameters for `<Prometheus HTTP prefix>/api/v1/metadata` endpoint. #5890
