@@ -143,14 +143,14 @@ func (q *RequestQueue) dispatcherLoop() {
 			switch qe.operation {
 			case registerConnection:
 				q.connectedQuerierWorkers.Inc()
-				queues.addQuerierConnection(qe.querierID)
+				queues.tenantQuerierState.addQuerierConnection(qe.querierID)
 				needToDispatchQueries = true
 			case unregisterConnection:
 				q.connectedQuerierWorkers.Dec()
 				queues.tenantQuerierState.removeQuerierConnection(qe.querierID, time.Now())
 				needToDispatchQueries = true
 			case notifyShutdown:
-				queues.notifyQuerierShutdown(qe.querierID)
+				queues.tenantQuerierState.notifyQuerierShutdown(qe.querierID)
 				needToDispatchQueries = true
 
 				// Tell any waiting GetNextRequestForQuerier calls for this querier that nothing is coming.
@@ -159,7 +159,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				// later. This will fail because the connection is broken, and GetNextRequestForQuerier won't be called again.
 				q.cancelWaitingConnectionsForQuerier(qe.querierID, waitingQuerierConnections)
 			case forgetDisconnected:
-				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
+				if queues.tenantQuerierState.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
 					needToDispatchQueries = true
 				}
