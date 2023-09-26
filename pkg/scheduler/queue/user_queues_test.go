@@ -266,7 +266,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	uq.notifyQuerierShutdown("querier-1")
 
 	// We expect querier-1 has been removed.
-	assert.NotContains(t, uq.queriers, "querier-1")
+	assert.NotContains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect querier-1 users have been shuffled to other queriers.
@@ -290,7 +290,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, uq.queriers, "querier-1")
+	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -303,7 +303,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
 	uq.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
-	assert.Contains(t, uq.queriers, "querier-1")
+	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
@@ -315,7 +315,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	// Try to forget disconnected queriers. This time querier-1 forget delay has passed.
 	uq.forgetDisconnectedQueriers(now.Add(105 * time.Second))
 
-	assert.NotContains(t, uq.queriers, "querier-1")
+	assert.NotContains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect querier-1 users have been shuffled to other queriers.
@@ -357,7 +357,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, uq.queriers, "querier-1")
+	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -374,7 +374,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	uq.addQuerierConnection("querier-1")
 	uq.addQuerierConnection("querier-1")
 
-	assert.Contains(t, uq.queriers, "querier-1")
+	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -387,7 +387,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	// Try to forget disconnected queriers far in the future, but there's no disconnected querier.
 	uq.forgetDisconnectedQueriers(now.Add(200 * time.Second))
 
-	assert.Contains(t, uq.queriers, "querier-1")
+	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
@@ -426,7 +426,7 @@ func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIn
 }
 
 func isConsistent(q *queues) error {
-	if len(q.sortedQueriers) != len(q.queriers) {
+	if len(q.tenantQuerierState.querierIDsSorted) != len(q.tenantQuerierState.queriersByID) {
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 
@@ -455,11 +455,11 @@ func isConsistent(q *queues) error {
 			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.sortedQueriers) <= user.maxQueriers && querierSet != nil {
+		if user.maxQueriers > 0 && len(q.tenantQuerierState.querierIDsSorted) <= user.maxQueriers && querierSet != nil {
 			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.sortedQueriers) > user.maxQueriers && len(querierSet) != user.maxQueriers {
+		if user.maxQueriers > 0 && len(q.tenantQuerierState.querierIDsSorted) > user.maxQueriers && len(querierSet) != user.maxQueriers {
 			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), user.maxQueriers)
 		}
 	}

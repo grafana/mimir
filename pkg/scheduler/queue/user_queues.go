@@ -42,7 +42,10 @@ type tenantQuerierState struct {
 	//  - a querier connection is added or removed
 	//  - it is detected during request enqueueing that a tenant's queriers
 	//    were calculated from an outdated max-queriers-per-tenant value
-	queriersByID       map[string]*querierConn
+
+	// Tracks queriers registered to the queue
+	queriersByID map[string]*querierConn
+	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
 	querierIDsSorted   []string
 	querierForgetDelay time.Duration
 
@@ -79,12 +82,6 @@ type queues struct {
 	// but hasn't notified about a graceful shutdown.
 	forgetDelay time.Duration
 
-	// Tracks queriers registered to the queue.
-	queriers map[string]*querierConn
-
-	// Sorted list of querier names, used when creating per-user shard.
-	sortedQueriers []string
-
 	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
 	// We set this to nil if number of available queriers <= maxQueriers.
 	userQueriers map[string]map[string]struct{}
@@ -98,13 +95,14 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
 		userQueues: map[string]*userQueue{},
 		tenantQuerierState: tenantQuerierState{
+			queriersByID:     map[string]*querierConn{},
+			querierIDsSorted: nil,
+
 			tenantIDOrder: nil,
 			tenantsByID:   map[string]*queueUser{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
-		queriers:         map[string]*querierConn{},
-		sortedQueriers:   nil,
 		userQueriers:     map[string]map[string]struct{}{},
 	}
 }
@@ -178,7 +176,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if u.maxQueriers != maxQueriers {
 		u.maxQueriers = maxQueriers
-		q.userQueriers[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
+		q.userQueriers[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.tenantQuerierState.querierIDsSorted, nil)
 	}
 
 	return uq.requests
@@ -192,7 +190,7 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 
 	// Ensure the querier is not shutting down. If the querier is shutting down, we shouldn't forward
 	// any more queries to it.
-	if info := q.queriers[querierID]; info == nil || info.shuttingDown {
+	if info := q.tenantQuerierState.queriersByID[querierID]; info == nil || info.shuttingDown {
 		return nil, "", userIndex, ErrQuerierShuttingDown
 	}
 
@@ -225,7 +223,7 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 }
 
 func (q *queues) addQuerierConnection(querierID string) {
-	info := q.queriers[querierID]
+	info := q.tenantQuerierState.queriersByID[querierID]
 	if info != nil {
 		info.connections++
 
@@ -237,15 +235,15 @@ func (q *queues) addQuerierConnection(querierID string) {
 	}
 
 	// First connection from this querier.
-	q.queriers[querierID] = &querierConn{connections: 1}
-	q.sortedQueriers = append(q.sortedQueriers, querierID)
-	slices.Sort(q.sortedQueriers)
+	q.tenantQuerierState.queriersByID[querierID] = &querierConn{connections: 1}
+	q.tenantQuerierState.querierIDsSorted = append(q.tenantQuerierState.querierIDsSorted, querierID)
+	slices.Sort(q.tenantQuerierState.querierIDsSorted)
 
 	q.recomputeUserQueriers()
 }
 
 func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
-	info := q.queriers[querierID]
+	info := q.tenantQuerierState.queriersByID[querierID]
 	if info == nil || info.connections <= 0 {
 		panic("unexpected number of connections for querier")
 	}
@@ -270,21 +268,21 @@ func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
 }
 
 func (q *queues) removeQuerier(querierID string) {
-	delete(q.queriers, querierID)
+	delete(q.tenantQuerierState.queriersByID, querierID)
 
-	ix := sort.SearchStrings(q.sortedQueriers, querierID)
-	if ix >= len(q.sortedQueriers) || q.sortedQueriers[ix] != querierID {
+	ix := sort.SearchStrings(q.tenantQuerierState.querierIDsSorted, querierID)
+	if ix >= len(q.tenantQuerierState.querierIDsSorted) || q.tenantQuerierState.querierIDsSorted[ix] != querierID {
 		panic("incorrect state of sorted queriers")
 	}
 
-	q.sortedQueriers = append(q.sortedQueriers[:ix], q.sortedQueriers[ix+1:]...)
+	q.tenantQuerierState.querierIDsSorted = append(q.tenantQuerierState.querierIDsSorted[:ix], q.tenantQuerierState.querierIDsSorted[ix+1:]...)
 
 	q.recomputeUserQueriers()
 }
 
 // notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
 func (q *queues) notifyQuerierShutdown(querierID string) {
-	info := q.queriers[querierID]
+	info := q.tenantQuerierState.queriersByID[querierID]
 	if info == nil {
 		// The querier may have already been removed, so we just ignore it.
 		return
@@ -313,8 +311,8 @@ func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 	threshold := now.Add(-q.forgetDelay)
 	forgotten := 0
 
-	for querierID := range q.queriers {
-		if info := q.queriers[querierID]; info.connections == 0 && info.disconnectedAt.Before(threshold) {
+	for querierID := range q.tenantQuerierState.queriersByID {
+		if info := q.tenantQuerierState.queriersByID[querierID]; info.connections == 0 && info.disconnectedAt.Before(threshold) {
 			q.removeQuerier(querierID)
 			forgotten++
 		}
@@ -329,11 +327,11 @@ func (q *queues) recomputeUserQueriers() {
 	var scratchpad []string
 
 	for uid, u := range q.tenantQuerierState.tenantsByID {
-		if u.maxQueriers > 0 && u.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
-			scratchpad = make([]string, 0, len(q.sortedQueriers))
+		if u.maxQueriers > 0 && u.maxQueriers < len(q.tenantQuerierState.querierIDsSorted) && scratchpad == nil {
+			scratchpad = make([]string, 0, len(q.tenantQuerierState.querierIDsSorted))
 		}
 
-		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.sortedQueriers, scratchpad)
+		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.tenantQuerierState.querierIDsSorted, scratchpad)
 	}
 }
 
