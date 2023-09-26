@@ -277,13 +277,14 @@ type mergeQueryableScenario struct {
 }
 
 func (s *mergeQueryableScenario) init(t *testing.T) (context.Context, storage.Querier) {
+	// initialize with default tenant label
+	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
+
 	// inject tenants into context
 	ctx := context.Background()
 	if len(s.tenants) > 0 {
 		ctx = user.InjectOrgID(ctx, strings.Join(s.tenants, "|"))
 	}
-	// initialize with default tenant label
-	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, log.NewNopLogger())
 
 	// retrieve querier
 	querier, err := q.Querier(mint, maxt)

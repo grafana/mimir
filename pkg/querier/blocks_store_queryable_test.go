@@ -1562,7 +1562,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 	t.Run("canceled request", func(t *testing.T) {
 		for _, testFunc := range []string{"LabelNames", "LabelValues"} {
 			t.Run(testFunc, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "user-1"))
 				defer cancel()
 
 				reg := prometheus.NewPedanticRegistry()
@@ -1582,8 +1582,6 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					{ID: block1},
 				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
-				const tenantID = "user-1"
-				ctx = user.InjectOrgID(ctx, tenantID)
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
