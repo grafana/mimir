@@ -108,7 +108,7 @@ mimirtool alertmanager load <config_file> <template_files>...
 ##### Example
 
 ```bash
-mimirtool alertmanager load ./example_alertmanager_config.yaml example_alertmanager_template.tpl
+mimirtool alertmanager load ./example_alertmanager_config.yaml ./example_alertmanager_template.tpl
 ```
 
 `./example_alertmanager_config.yaml`:
@@ -121,7 +121,7 @@ receivers:
   - name: "example_receiver"
 ```
 
-`example_alertmanager_template.tpl`:
+`./example_alertmanager_template.tpl`:
 
 ```gotemplate
 {{ define "alert_customer_env_message" }}
