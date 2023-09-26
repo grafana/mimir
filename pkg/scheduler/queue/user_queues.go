@@ -60,14 +60,15 @@ type queues struct {
 
 	// Sorted list of querier names, used when creating per-user shard.
 	sortedQueriers []string
+
+	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
+	// We set this to nil if number of available queriers <= maxQueriers.
+	userQueriers map[string]map[string]struct{}
 }
 
 type userQueue struct {
 	requests *list.List
 
-	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
-	// We set this to nil if number of available queriers <= maxQueriers.
-	queriers    map[string]struct{}
 	maxQueriers int
 }
 
@@ -80,6 +81,7 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 		forgetDelay:      forgetDelay,
 		queriers:         map[string]*querier{},
 		sortedQueriers:   nil,
+		userQueriers:     map[string]map[string]struct{}{},
 	}
 }
 
@@ -126,6 +128,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 			orderIndex:       -1,
 		}
 		q.usersByID[userID] = u
+		q.userQueriers[userID] = nil
 
 		uq = &userQueue{
 			requests: list.New(),
@@ -150,7 +153,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if uq.maxQueriers != maxQueriers {
 		uq.maxQueriers = maxQueriers
-		uq.queriers = shuffleQueriersForUser(q.usersByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
+		q.userQueriers[userID] = shuffleQueriersForUser(q.usersByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
 	}
 
 	return uq.requests
@@ -160,40 +163,40 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 // to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
 func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
-	uid := lastUserIndex
+	userIndex := lastUserIndex
 
 	// Ensure the querier is not shutting down. If the querier is shutting down, we shouldn't forward
 	// any more queries to it.
 	if info := q.queriers[querierID]; info == nil || info.shuttingDown {
-		return nil, "", uid, ErrQuerierShuttingDown
+		return nil, "", userIndex, ErrQuerierShuttingDown
 	}
 
 	for iters := 0; iters < len(q.users); iters++ {
-		uid = uid + 1
+		userIndex = userIndex + 1
 
 		// Don't use "mod len(q.users)", as that could skip users at the beginning of the list
 		// for example when q.users has shrunk since last call.
-		if uid >= len(q.users) {
-			uid = 0
+		if userIndex >= len(q.users) {
+			userIndex = 0
 		}
 
-		u := q.users[uid]
-		if u == "" {
+		userID := q.users[userIndex]
+		if userID == "" {
 			continue
 		}
 
-		userQueue := q.userQueues[u]
+		userQueue := q.userQueues[userID]
 
-		if userQueue.queriers != nil {
-			if _, ok := userQueue.queriers[querierID]; !ok {
+		if querierSet := q.userQueriers[userID]; querierSet != nil {
+			if _, ok := querierSet[querierID]; !ok {
 				// This querier is not handling the user.
 				continue
 			}
 		}
 
-		return userQueue.requests, u, uid, nil
+		return userQueue.requests, userID, userIndex, nil
 	}
-	return nil, "", uid, nil
+	return nil, "", userIndex, nil
 }
 
 func (q *queues) addQuerierConnection(querierID string) {
@@ -307,7 +310,7 @@ func (q *queues) recomputeUserQueriers() {
 			scratchpad = make([]string, 0, len(q.sortedQueriers))
 		}
 
-		uq.queriers = shuffleQueriersForUser(u.shuffleShardSeed, uq.maxQueriers, q.sortedQueriers, scratchpad)
+		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, uq.maxQueriers, q.sortedQueriers, scratchpad)
 	}
 }
 

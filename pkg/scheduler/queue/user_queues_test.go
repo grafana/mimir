@@ -140,7 +140,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 		getOrAdd(t, uq, uid, maxQueriersPerUser)
 
 		// Verify it has maxQueriersPerUser queriers assigned now.
-		qs := uq.userQueues[uid].queriers
+		qs := uq.userQueriers[uid]
 		assert.Equal(t, maxQueriersPerUser, len(qs))
 	}
 
@@ -444,21 +444,23 @@ func isConsistent(q *queues) error {
 		}
 		userCount++
 
-		u := q.usersByID[userID]
-		if u.orderIndex != ix {
-			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, u.orderIndex)
+		user := q.usersByID[userID]
+		querierSet := q.userQueriers[userID]
+
+		if user.orderIndex != ix {
+			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, user.orderIndex)
 		}
 
-		if uq.maxQueriers == 0 && uq.queriers != nil {
+		if uq.maxQueriers == 0 && querierSet != nil {
 			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if uq.maxQueriers > 0 && len(q.sortedQueriers) <= uq.maxQueriers && uq.queriers != nil {
+		if uq.maxQueriers > 0 && len(q.sortedQueriers) <= uq.maxQueriers && querierSet != nil {
 			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if uq.maxQueriers > 0 && len(q.sortedQueriers) > uq.maxQueriers && len(uq.queriers) != uq.maxQueriers {
-			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(uq.queriers), uq.maxQueriers)
+		if uq.maxQueriers > 0 && len(q.sortedQueriers) > uq.maxQueriers && len(querierSet) != uq.maxQueriers {
+			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), uq.maxQueriers)
 		}
 	}
 
@@ -472,13 +474,14 @@ func isConsistent(q *queues) error {
 // getUsersByQuerier returns the list of users handled by the provided querierID.
 func getUsersByQuerier(queues *queues, querierID string) []string {
 	var userIDs []string
-	for userID, q := range queues.userQueues {
-		if q.queriers == nil {
+	for userID := range queues.userQueues {
+		querierSet := queues.userQueriers[userID]
+		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
 			userIDs = append(userIDs, userID)
 			continue
 		}
-		if _, ok := q.queriers[querierID]; ok {
+		if _, ok := querierSet[querierID]; ok {
 			userIDs = append(userIDs, userID)
 		}
 	}
