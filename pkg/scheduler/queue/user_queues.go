@@ -55,7 +55,7 @@ type tenantQuerierState struct {
 	// Tenants removed from the middle are replaced with "". To avoid skipping users during iteration,
 	// we only shrink this list when there are ""'s at the end of it.
 	tenantIDOrder []string
-	tenantsByID   map[string]*queueUser
+	tenantsByID   map[string]*queueTenant
 
 	// Tenant assigned querier ID set as determined by shuffle sharding.
 	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
@@ -63,7 +63,7 @@ type tenantQuerierState struct {
 	tenantQuerierIDs map[string]map[string]struct{}
 }
 
-type queueUser struct {
+type queueTenant struct {
 	// seed for shuffle sharding of queriers; computed from userID only,
 	// and is therefore consistent between different frontends.
 	shuffleShardSeed int64
@@ -77,7 +77,7 @@ type queueUser struct {
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
 // and mapping between users and queriers.
 type queues struct {
-	userQueues map[string]*userQueue
+	tenantQueues map[string]*userQueue
 
 	tenantQuerierState tenantQuerierState
 
@@ -90,13 +90,13 @@ type userQueue struct {
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
-		userQueues: map[string]*userQueue{},
+		tenantQueues: map[string]*userQueue{},
 		tenantQuerierState: tenantQuerierState{
 			queriersByID:       map[string]*querierConn{},
 			querierIDsSorted:   nil,
 			querierForgetDelay: forgetDelay,
 			tenantIDOrder:      nil,
-			tenantsByID:        map[string]*queueUser{},
+			tenantsByID:        map[string]*queueTenant{},
 			tenantQuerierIDs:   map[string]map[string]struct{}{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
@@ -104,17 +104,17 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 }
 
 func (q *queues) len() int {
-	return len(q.userQueues)
+	return len(q.tenantQueues)
 }
 
 func (q *queues) deleteQueue(userID string) {
-	uq := q.userQueues[userID]
+	uq := q.tenantQueues[userID]
 	if uq == nil {
 		return
 	}
 	u := q.tenantQuerierState.tenantsByID[userID]
 
-	delete(q.userQueues, userID)
+	delete(q.tenantQueues, userID)
 	delete(q.tenantQuerierState.tenantsByID, userID)
 	q.tenantQuerierState.tenantIDOrder[u.orderIndex] = ""
 
@@ -128,54 +128,21 @@ func (q *queues) deleteQueue(userID string) {
 // MaxQueriers is used to compute which queriers should handle requests for this user.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
-	// Empty user is not allowed, as that would break our users list ("" is used for free spot).
-	if userID == "" {
+func (q *queues) getOrAddTenantQueue(tenantID string, maxQueriers int) *list.List {
+	tenant := q.tenantQuerierState.getOrAddTenant(tenantID, maxQueriers)
+	if tenant == nil {
 		return nil
 	}
+	queue := q.tenantQueues[tenantID]
 
-	if maxQueriers < 0 {
-		maxQueriers = 0
-	}
-
-	uq := q.userQueues[userID]
-	u := q.tenantQuerierState.tenantsByID[userID]
-
-	if uq == nil {
-		u = &queueUser{
-			shuffleShardSeed: util.ShuffleShardSeed(userID, ""),
-			orderIndex:       -1,
-		}
-		q.tenantQuerierState.tenantsByID[userID] = u
-		q.tenantQuerierState.tenantQuerierIDs[userID] = nil
-
-		uq = &userQueue{
+	if queue == nil {
+		queue = &userQueue{
 			requests: list.New(),
 		}
-		q.userQueues[userID] = uq
-
-		// Add user to the list of users... find first free spot, and put it there.
-		for ix, user := range q.tenantQuerierState.tenantIDOrder {
-			if user == "" {
-				u.orderIndex = ix
-				q.tenantQuerierState.tenantIDOrder[ix] = userID
-				break
-			}
-		}
-
-		// ... or add to the end.
-		if u.orderIndex < 0 {
-			u.orderIndex = len(q.tenantQuerierState.tenantIDOrder)
-			q.tenantQuerierState.tenantIDOrder = append(q.tenantQuerierState.tenantIDOrder, userID)
-		}
+		q.tenantQueues[tenantID] = queue
 	}
 
-	if u.maxQueriers != maxQueriers {
-		u.maxQueriers = maxQueriers
-		q.tenantQuerierState.shuffleTenantQueriers(userID, nil)
-	}
-
-	return uq.requests
+	return queue.requests
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
@@ -204,7 +171,7 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 			continue
 		}
 
-		userQueue := q.userQueues[userID]
+		userQueue := q.tenantQueues[userID]
 
 		if querierSet := q.tenantQuerierState.tenantQuerierIDs[userID]; querierSet != nil {
 			if _, ok := querierSet[querierID]; !ok {
@@ -216,6 +183,52 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 		return userQueue.requests, userID, userIndex, nil
 	}
 	return nil, "", userIndex, nil
+}
+
+func (tqs *tenantQuerierState) getOrAddTenant(tenantID string, maxQueriers int) *queueTenant {
+	// empty tenantID is not allowed; "" is used for free spot
+	if tenantID == "" {
+		return nil
+	}
+
+	if maxQueriers < 0 {
+		maxQueriers = 0
+	}
+
+	tenant := tqs.tenantsByID[tenantID]
+
+	if tenant == nil {
+		tenant = &queueTenant{
+			shuffleShardSeed: util.ShuffleShardSeed(tenantID, ""),
+			orderIndex:       -1,
+			maxQueriers:      0,
+		}
+		for i, id := range tqs.tenantIDOrder {
+			if id == "" {
+				// previously removed tenant not yet cleaned up; take its place
+				tenant.orderIndex = i
+				tqs.tenantIDOrder[i] = tenantID
+				tqs.tenantsByID[tenantID] = tenant
+				break
+			}
+		}
+
+		if tenant.orderIndex < 0 {
+			// no empty spaces in tenant order; append
+			tenant.orderIndex = len(tqs.tenantIDOrder)
+			tqs.tenantIDOrder = append(tqs.tenantIDOrder, tenantID)
+			tqs.tenantsByID[tenantID] = tenant
+		}
+	}
+
+	// tenant now either retrieved or created;
+	// tenant queriers need computed for new tenant if sharding enabled,
+	// or if the tenant already existed but its maxQueriers has changed
+	if tenant.maxQueriers != maxQueriers {
+		tenant.maxQueriers = maxQueriers
+		tqs.shuffleTenantQueriers(tenantID, nil)
+	}
+	return tenant
 }
 
 func (tqs *tenantQuerierState) addQuerierConnection(querierID string) {

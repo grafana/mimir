@@ -204,7 +204,7 @@ func TestQueuesConsistency(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				switch r.Int() % 6 {
 				case 0:
-					assert.NotNil(t, uq.getOrAddQueue(generateTenant(r), 3))
+					assert.NotNil(t, uq.getOrAddTenantQueue(generateTenant(r), 3))
 				case 1:
 					qid := generateQuerier(r)
 					_, _, luid, _ := uq.getNextQueueForQuerier(lastUserIndexes[qid], qid)
@@ -406,10 +406,10 @@ func generateQuerier(r *rand.Rand) string {
 }
 
 func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) *list.List {
-	q := uq.getOrAddQueue(tenant, maxQueriers)
+	q := uq.getOrAddTenantQueue(tenant, maxQueriers)
 	assert.NotNil(t, q)
 	assert.NoError(t, isConsistent(uq))
-	assert.Equal(t, q, uq.getOrAddQueue(tenant, maxQueriers))
+	assert.Equal(t, q, uq.getOrAddTenantQueue(tenant, maxQueriers))
 	return q
 }
 
@@ -432,7 +432,7 @@ func isConsistent(q *queues) error {
 
 	userCount := 0
 	for ix, userID := range q.tenantQuerierState.tenantIDOrder {
-		uq := q.userQueues[userID]
+		uq := q.tenantQueues[userID]
 		if userID != "" && uq == nil {
 			return fmt.Errorf("user %s doesn't have queue", userID)
 		}
@@ -464,7 +464,7 @@ func isConsistent(q *queues) error {
 		}
 	}
 
-	if userCount != len(q.userQueues) {
+	if userCount != len(q.tenantQueues) {
 		return fmt.Errorf("inconsistent number of users list and user queues")
 	}
 
@@ -474,7 +474,7 @@ func isConsistent(q *queues) error {
 // getUsersByQuerier returns the list of users handled by the provided querierID.
 func getUsersByQuerier(queues *queues, querierID string) []string {
 	var userIDs []string
-	for userID := range queues.userQueues {
+	for userID := range queues.tenantQueues {
 		querierSet := queues.tenantQuerierState.tenantQuerierIDs[userID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
@@ -492,7 +492,7 @@ func TestShuffleQueriers(t *testing.T) {
 	allQueriers := []string{"a", "b", "c", "d", "e"}
 	tqs := tenantQuerierState{
 		querierIDsSorted: allQueriers,
-		tenantsByID: map[string]*queueUser{
+		tenantsByID: map[string]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},
@@ -531,7 +531,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 
 	tqs := tenantQuerierState{
 		querierIDsSorted: allSortedQueriers,
-		tenantsByID: map[string]*queueUser{
+		tenantsByID: map[string]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},

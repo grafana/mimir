@@ -213,7 +213,7 @@ func (q *RequestQueue) dispatcherLoop() {
 }
 
 func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
-	queue := queues.getOrAddQueue(r.userID, r.maxQueriers)
+	queue := queues.getOrAddTenantQueue(r.userID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if userID is "".
 		return errors.New("no queue found")
