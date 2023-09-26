@@ -53,7 +53,7 @@ type frontendSchedulerWorkers struct {
 	workers map[string]*frontendSchedulerWorker
 
 	enqueuedRequests *prometheus.CounterVec
-	enqueueDuration  prometheus.Histogram
+	enqueueDuration  *prometheus.HistogramVec
 }
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
@@ -68,10 +68,13 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
 		}, []string{schedulerAddressLabel}),
-		enqueueDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		enqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name: "cortex_query_frontend_enqueue_duration_seconds",
 			Help: "Time spent by requests waiting to join the queue or be rejected.",
-		}),
+			// We expect the enqueue operation to be very fast, so we're using custom buckets to
+			// track 1ms latency too and removing any bucket bigger than 1s.
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
+		}, []string{schedulerAddressLabel}),
 	}
 
 	var err error
@@ -140,7 +143,7 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	}
 
 	// No worker for this address yet, start a new one.
-	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.enqueueDuration, f.log)
+	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.enqueueDuration.WithLabelValues(address), f.log)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -175,6 +178,7 @@ func (f *frontendSchedulerWorkers) removeScheduler(address string) {
 		w.stop()
 	}
 	f.enqueuedRequests.Delete(prometheus.Labels{schedulerAddressLabel: address})
+	f.enqueueDuration.Delete(prometheus.Labels{schedulerAddressLabel: address})
 }
 
 func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Instance) {
@@ -236,10 +240,10 @@ type frontendSchedulerWorker struct {
 	enqueuedRequests prometheus.Counter
 
 	// How long it takes to enqueue a query.
-	enqueueDuration prometheus.Histogram
+	enqueueDuration prometheus.Observer
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, enqueueDuration prometheus.Histogram, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, enqueueDuration prometheus.Observer, log log.Logger) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
 		log:              log,
 		conn:             conn,
