@@ -976,9 +976,11 @@ Requires [authentication](#authentication).
 POST /api/v1/alerts
 ```
 
-Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage.
+Stores or updates the Alertmanager configuration for the authenticated tenant. The Alertmanager configuration is stored in the configured backend object storage and shared between Alertmanager instances.
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
+
+The names of the templates in `template_files` must be valid file names and not be relative or absolute paths. For example, both `/templates/my-template.tpl` and `./my-template.tpl` are invalid, whereas `my-template.tpl` is valid.
 
 This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
