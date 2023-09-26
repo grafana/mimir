@@ -39,6 +39,7 @@
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 * [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
 * [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6009
+* [BUGFIX] Fix template files full path being sent in `mimirtool alertmanager load` command. #6137
 
 ### Mimir Continuous Test
 
