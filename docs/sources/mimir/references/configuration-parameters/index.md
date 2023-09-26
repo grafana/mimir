@@ -1283,6 +1283,9 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
 [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
+# (advanced)
+[instance_enable_ipv6: <boolean> | default = ]
+
 # (advanced) IP address to advertise to the querier (via scheduler) (default is
 # auto-detected from network interfaces).
 # CLI flag: -query-frontend.instance-addr

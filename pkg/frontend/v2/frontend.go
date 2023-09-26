@@ -45,7 +45,8 @@ type Config struct {
 	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the query-frontends and the query-schedulers."`
 
 	// Used to find local IP address, that is sent to scheduler and querier-worker.
-	InfNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
+	InfNames   []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
+	EnableIPv6 bool     `yaml:"instance_enable_ipv6" category:"advanced"`
 
 	// If set, address is not computed from interfaces.
 	Addr string `yaml:"address" category:"advanced"`
