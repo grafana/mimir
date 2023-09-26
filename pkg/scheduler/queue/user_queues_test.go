@@ -218,7 +218,7 @@ func TestQueuesConsistency(t *testing.T) {
 				case 4:
 					q := generateQuerier(r)
 					if conns[q] > 0 {
-						uq.removeQuerierConnection(q, time.Now())
+						uq.tenantQuerierState.removeQuerierConnection(q, time.Now())
 						conns[q]--
 					}
 				case 5:
@@ -261,8 +261,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	require.NotEmpty(t, querier1Users)
 
 	// Gracefully shutdown querier-1.
-	uq.removeQuerierConnection("querier-1", now.Add(20*time.Second))
-	uq.removeQuerierConnection("querier-1", now.Add(21*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(20*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(21*time.Second))
 	uq.notifyQuerierShutdown("querier-1")
 
 	// We expect querier-1 has been removed.
@@ -286,8 +286,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	}
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
-	uq.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(40*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
 	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
@@ -353,8 +353,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	require.NotEmpty(t, querier1Users)
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
-	uq.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(40*time.Second))
+	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
 	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")

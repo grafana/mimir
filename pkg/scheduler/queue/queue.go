@@ -147,7 +147,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				needToDispatchQueries = true
 			case unregisterConnection:
 				q.connectedQuerierWorkers.Dec()
-				queues.removeQuerierConnection(qe.querierID, time.Now())
+				queues.tenantQuerierState.removeQuerierConnection(qe.querierID, time.Now())
 				needToDispatchQueries = true
 			case notifyShutdown:
 				queues.notifyQuerierShutdown(qe.querierID)

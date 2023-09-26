@@ -238,29 +238,29 @@ func (q *queues) addQuerierConnection(querierID string) {
 	q.tenantQuerierState.recomputeTenantQueriers()
 }
 
-func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
-	info := q.tenantQuerierState.queriersByID[querierID]
-	if info == nil || info.connections <= 0 {
+func (tqs *tenantQuerierState) removeQuerierConnection(querierID string, now time.Time) {
+	querier := tqs.queriersByID[querierID]
+	if querier == nil || querier.connections <= 0 {
 		panic("unexpected number of connections for querier")
 	}
 
 	// Decrease the number of active connections.
-	info.connections--
-	if info.connections > 0 {
+	querier.connections--
+	if querier.connections > 0 {
 		return
 	}
 
 	// There no more active connections. If the forget delay is configured then
 	// we can remove it only if querier has announced a graceful shutdown.
-	if info.shuttingDown || q.tenantQuerierState.querierForgetDelay == 0 {
-		q.tenantQuerierState.removeQuerier(querierID)
+	if querier.shuttingDown || tqs.querierForgetDelay == 0 {
+		tqs.removeQuerier(querierID)
 		return
 	}
 
 	// No graceful shutdown has been notified yet, so we should track the current time
 	// so that we'll remove the querier as soon as we receive the graceful shutdown
 	// notification (if any) or once the threshold expires.
-	info.disconnectedAt = now
+	querier.disconnectedAt = now
 }
 
 func (tqs *tenantQuerierState) removeQuerier(querierID string) {
