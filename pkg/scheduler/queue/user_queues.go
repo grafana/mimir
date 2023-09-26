@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-type queueQuerier struct {
+type querierConn struct {
 	// Number of active connections.
 	connections int
 
@@ -57,7 +57,7 @@ type queues struct {
 	forgetDelay time.Duration
 
 	// Tracks queriers registered to the queue.
-	queriers map[string]*queueQuerier
+	queriers map[string]*querierConn
 
 	// Sorted list of querier names, used when creating per-user shard.
 	sortedQueriers []string
@@ -78,7 +78,7 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 		usersByID:        map[string]*queueUser{},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
-		queriers:         map[string]*queueQuerier{},
+		queriers:         map[string]*querierConn{},
 		sortedQueriers:   nil,
 		userQueriers:     map[string]map[string]struct{}{},
 	}
@@ -212,7 +212,7 @@ func (q *queues) addQuerierConnection(querierID string) {
 	}
 
 	// First connection from this querier.
-	q.queriers[querierID] = &queueQuerier{connections: 1}
+	q.queriers[querierID] = &querierConn{connections: 1}
 	q.sortedQueriers = append(q.sortedQueriers, querierID)
 	slices.Sort(q.sortedQueriers)
 
