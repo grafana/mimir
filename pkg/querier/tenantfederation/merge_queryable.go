@@ -206,7 +206,7 @@ type stringSliceFuncJob struct {
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
 func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, tenantIDs []string, f stringSliceFunc, tenants map[string]struct{}) ([]string, annotations.Annotations, error) {
-	jobs := make([]stringSliceFuncJob, 0, len(tenantIDs))
+	jobs := make([]*stringSliceFuncJob, 0, len(tenantIDs))
 	for _, id := range tenantIDs {
 		if tenants != nil {
 			if _, matched := tenants[id]; !matched {
@@ -214,7 +214,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, 
 			}
 		}
 
-		jobs = append(jobs, stringSliceFuncJob{
+		jobs = append(jobs, &stringSliceFuncJob{
 			id: id,
 		})
 	}
