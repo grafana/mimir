@@ -45,7 +45,10 @@ type tenantQuerierState struct {
 
 	queriersByID map[string]*querierConn
 	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
-	querierIDsSorted   []string
+	querierIDsSorted []string
+
+	// How long to wait before removing a querier which has got disconnected
+	// but hasn't notified about a graceful shutdown.
 	querierForgetDelay time.Duration
 
 	// List of all tenants with queues, used for iteration when searching for next queue to handle.
@@ -79,14 +82,6 @@ type queues struct {
 	tenantQuerierState tenantQuerierState
 
 	maxUserQueueSize int
-
-	// How long to wait before removing a querier which has got disconnected
-	// but hasn't notified about a graceful shutdown.
-	forgetDelay time.Duration
-
-	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
-	// We set this to nil if number of available queriers <= maxQueriers.
-	//userQueriers map[string]map[string]struct{}
 }
 
 type userQueue struct {
@@ -97,15 +92,14 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
 		userQueues: map[string]*userQueue{},
 		tenantQuerierState: tenantQuerierState{
-			queriersByID:     map[string]*querierConn{},
-			querierIDsSorted: nil,
-
-			tenantIDOrder:    nil,
-			tenantsByID:      map[string]*queueUser{},
-			tenantQuerierIDs: map[string]map[string]struct{}{},
+			queriersByID:       map[string]*querierConn{},
+			querierIDsSorted:   nil,
+			querierForgetDelay: forgetDelay,
+			tenantIDOrder:      nil,
+			tenantsByID:        map[string]*queueUser{},
+			tenantQuerierIDs:   map[string]map[string]struct{}{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
-		forgetDelay:      forgetDelay,
 	}
 }
 
@@ -258,7 +252,7 @@ func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
 
 	// There no more active connections. If the forget delay is configured then
 	// we can remove it only if querier has announced a graceful shutdown.
-	if info.shuttingDown || q.forgetDelay == 0 {
+	if info.shuttingDown || q.tenantQuerierState.querierForgetDelay == 0 {
 		q.removeQuerier(querierID)
 		return
 	}
@@ -305,12 +299,12 @@ func (q *queues) notifyQuerierShutdown(querierID string) {
 // the forget delay. Returns the number of forgotten queriers.
 func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 	// Nothing to do if the forget delay is disabled.
-	if q.forgetDelay == 0 {
+	if q.tenantQuerierState.querierForgetDelay == 0 {
 		return 0
 	}
 
 	// Remove all queriers with no connections that have gone since at least the forget delay.
-	threshold := now.Add(-q.forgetDelay)
+	threshold := now.Add(-q.tenantQuerierState.querierForgetDelay)
 	forgotten := 0
 
 	for querierID := range q.tenantQuerierState.queriersByID {
