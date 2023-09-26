@@ -35,6 +35,8 @@ type queueUser struct {
 
 	// points up to user order to enable efficient removal
 	orderIndex int
+
+	maxQueriers int
 }
 
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
@@ -68,8 +70,6 @@ type queues struct {
 
 type userQueue struct {
 	requests *list.List
-
-	maxQueriers int
 }
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
@@ -121,9 +121,10 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	}
 
 	uq := q.userQueues[userID]
+	u := q.usersByID[userID]
 
 	if uq == nil {
-		u := &queueUser{
+		u = &queueUser{
 			shuffleShardSeed: util.ShuffleShardSeed(userID, ""),
 			orderIndex:       -1,
 		}
@@ -151,8 +152,8 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 		}
 	}
 
-	if uq.maxQueriers != maxQueriers {
-		uq.maxQueriers = maxQueriers
+	if u.maxQueriers != maxQueriers {
+		u.maxQueriers = maxQueriers
 		q.userQueriers[userID] = shuffleQueriersForUser(q.usersByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
 	}
 
@@ -304,13 +305,11 @@ func (q *queues) recomputeUserQueriers() {
 	var scratchpad []string
 
 	for uid, u := range q.usersByID {
-		uq := q.userQueues[uid]
-
-		if uq.maxQueriers > 0 && uq.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
+		if u.maxQueriers > 0 && u.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
 			scratchpad = make([]string, 0, len(q.sortedQueriers))
 		}
 
-		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, uq.maxQueriers, q.sortedQueriers, scratchpad)
+		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.sortedQueriers, scratchpad)
 	}
 }
 

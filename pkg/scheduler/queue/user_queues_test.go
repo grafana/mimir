@@ -451,16 +451,16 @@ func isConsistent(q *queues) error {
 			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, user.orderIndex)
 		}
 
-		if uq.maxQueriers == 0 && querierSet != nil {
+		if user.maxQueriers == 0 && querierSet != nil {
 			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if uq.maxQueriers > 0 && len(q.sortedQueriers) <= uq.maxQueriers && querierSet != nil {
+		if user.maxQueriers > 0 && len(q.sortedQueriers) <= user.maxQueriers && querierSet != nil {
 			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if uq.maxQueriers > 0 && len(q.sortedQueriers) > uq.maxQueriers && len(querierSet) != uq.maxQueriers {
-			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), uq.maxQueriers)
+		if user.maxQueriers > 0 && len(q.sortedQueriers) > user.maxQueriers && len(querierSet) != user.maxQueriers {
+			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), user.maxQueriers)
 		}
 	}
 
