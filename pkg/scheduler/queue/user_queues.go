@@ -43,7 +43,6 @@ type tenantQuerierState struct {
 	//  - it is detected during request enqueueing that a tenant's queriers
 	//    were calculated from an outdated max-queriers-per-tenant value
 
-	// Tracks queriers registered to the queue
 	queriersByID map[string]*querierConn
 	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
 	querierIDsSorted   []string
@@ -55,6 +54,9 @@ type tenantQuerierState struct {
 	tenantIDOrder []string
 	tenantsByID   map[string]*queueUser
 
+	// Tenant assigned querier ID set as determined by shuffle sharding.
+	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
+	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
 	tenantQuerierIDs map[string]map[string]struct{}
 }
 
@@ -84,7 +86,7 @@ type queues struct {
 
 	// If not nil, only these queriers can handle user requests. If nil, all queriers can.
 	// We set this to nil if number of available queriers <= maxQueriers.
-	userQueriers map[string]map[string]struct{}
+	//userQueriers map[string]map[string]struct{}
 }
 
 type userQueue struct {
@@ -98,12 +100,12 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 			queriersByID:     map[string]*querierConn{},
 			querierIDsSorted: nil,
 
-			tenantIDOrder: nil,
-			tenantsByID:   map[string]*queueUser{},
+			tenantIDOrder:    nil,
+			tenantsByID:      map[string]*queueUser{},
+			tenantQuerierIDs: map[string]map[string]struct{}{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
-		userQueriers:     map[string]map[string]struct{}{},
 	}
 }
 
@@ -151,7 +153,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 			orderIndex:       -1,
 		}
 		q.tenantQuerierState.tenantsByID[userID] = u
-		q.userQueriers[userID] = nil
+		q.tenantQuerierState.tenantQuerierIDs[userID] = nil
 
 		uq = &userQueue{
 			requests: list.New(),
@@ -176,7 +178,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if u.maxQueriers != maxQueriers {
 		u.maxQueriers = maxQueriers
-		q.userQueriers[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.tenantQuerierState.querierIDsSorted, nil)
+		q.tenantQuerierState.tenantQuerierIDs[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.tenantQuerierState.querierIDsSorted, nil)
 	}
 
 	return uq.requests
@@ -210,7 +212,7 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 
 		userQueue := q.userQueues[userID]
 
-		if querierSet := q.userQueriers[userID]; querierSet != nil {
+		if querierSet := q.tenantQuerierState.tenantQuerierIDs[userID]; querierSet != nil {
 			if _, ok := querierSet[querierID]; !ok {
 				// This querier is not handling the user.
 				continue
@@ -331,7 +333,7 @@ func (q *queues) recomputeUserQueriers() {
 			scratchpad = make([]string, 0, len(q.tenantQuerierState.querierIDsSorted))
 		}
 
-		q.userQueriers[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.tenantQuerierState.querierIDsSorted, scratchpad)
+		q.tenantQuerierState.tenantQuerierIDs[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.tenantQuerierState.querierIDsSorted, scratchpad)
 	}
 }
 

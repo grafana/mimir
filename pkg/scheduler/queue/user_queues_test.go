@@ -140,7 +140,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 		getOrAdd(t, uq, uid, maxQueriersPerUser)
 
 		// Verify it has maxQueriersPerUser queriers assigned now.
-		qs := uq.userQueriers[uid]
+		qs := uq.tenantQuerierState.tenantQuerierIDs[uid]
 		assert.Equal(t, maxQueriersPerUser, len(qs))
 	}
 
@@ -445,7 +445,7 @@ func isConsistent(q *queues) error {
 		userCount++
 
 		user := q.tenantQuerierState.tenantsByID[userID]
-		querierSet := q.userQueriers[userID]
+		querierSet := q.tenantQuerierState.tenantQuerierIDs[userID]
 
 		if user.orderIndex != ix {
 			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, user.orderIndex)
@@ -475,7 +475,7 @@ func isConsistent(q *queues) error {
 func getUsersByQuerier(queues *queues, querierID string) []string {
 	var userIDs []string
 	for userID := range queues.userQueues {
-		querierSet := queues.userQueriers[userID]
+		querierSet := queues.tenantQuerierState.tenantQuerierIDs[userID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
 			userIDs = append(userIDs, userID)
