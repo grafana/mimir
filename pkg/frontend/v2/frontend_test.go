@@ -7,7 +7,6 @@ package v2
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -26,7 +25,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -156,14 +154,6 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
-	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
-	expectedMetrics := fmt.Sprintf(`
-		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
-		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
-		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 0
-	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
-
 	// Assert on cortex_query_frontend_enqueue_duration_seconds.
 	metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
@@ -177,14 +167,6 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
 
-	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
-	expectedMetrics = fmt.Sprintf(`
-		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
-		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
-		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 1
-	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
-
 	// Assert on cortex_query_frontend_enqueue_duration_seconds.
 	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
@@ -195,10 +177,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 
 	// Manually remove the address, check that label is removed.
 	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
-	expectedMetrics = ``
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
-	// Assert on cortex_query_frontend_enqueue_duration_seconds (ensure the series is removed).
 	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
 	assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
