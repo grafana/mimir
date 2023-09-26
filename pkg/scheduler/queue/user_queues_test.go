@@ -425,44 +425,44 @@ func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIn
 	return lastUserIndex
 }
 
-func isConsistent(uq *queues) error {
-	if len(uq.sortedQueriers) != len(uq.queriers) {
+func isConsistent(q *queues) error {
+	if len(q.sortedQueriers) != len(q.queriers) {
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 
-	uc := 0
-	for ix, u := range uq.users {
-		q := uq.userQueues[u]
-		if u != "" && q == nil {
-			return fmt.Errorf("user %s doesn't have queue", u)
+	userCount := 0
+	for ix, userID := range q.users {
+		uq := q.userQueues[userID]
+		if userID != "" && uq == nil {
+			return fmt.Errorf("user %s doesn't have queue", userID)
 		}
-		if u == "" && q != nil {
-			return fmt.Errorf("user %s shouldn't have queue", u)
+		if userID == "" && uq != nil {
+			return fmt.Errorf("user %s shouldn't have queue", userID)
 		}
-		if u == "" {
+		if userID == "" {
 			continue
 		}
+		userCount++
 
-		uc++
-
-		if q.index != ix {
-			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, q.index)
+		u := q.usersByID[userID]
+		if u.orderIndex != ix {
+			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, u.orderIndex)
 		}
 
-		if q.maxQueriers == 0 && q.queriers != nil {
-			return fmt.Errorf("user %s has queriers, but maxQueriers=0", u)
+		if uq.maxQueriers == 0 && uq.queriers != nil {
+			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if q.maxQueriers > 0 && len(uq.sortedQueriers) <= q.maxQueriers && q.queriers != nil {
-			return fmt.Errorf("user %s has queriers set despite not enough queriers available", u)
+		if uq.maxQueriers > 0 && len(q.sortedQueriers) <= uq.maxQueriers && uq.queriers != nil {
+			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if q.maxQueriers > 0 && len(uq.sortedQueriers) > q.maxQueriers && len(q.queriers) != q.maxQueriers {
-			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", u, len(q.queriers), q.maxQueriers)
+		if uq.maxQueriers > 0 && len(q.sortedQueriers) > uq.maxQueriers && len(uq.queriers) != uq.maxQueriers {
+			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(uq.queriers), uq.maxQueriers)
 		}
 	}
 
-	if uc != len(uq.userQueues) {
+	if userCount != len(q.userQueues) {
 		return fmt.Errorf("inconsistent number of users list and user queues")
 	}
 

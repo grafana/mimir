@@ -29,9 +29,12 @@ type querier struct {
 }
 
 type queueUser struct {
-	// Seed for shuffle sharding of queriers. This seed is computed from userID only,
+	// seed for shuffle sharding of queriers; computed from userID only,
 	// and is therefore consistent between different frontends.
 	shuffleShardSeed int64
+
+	// points up to user order to enable efficient removal
+	orderIndex int
 }
 
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
@@ -66,9 +69,6 @@ type userQueue struct {
 	// We set this to nil if number of available queriers <= maxQueriers.
 	queriers    map[string]struct{}
 	maxQueriers int
-
-	// Points back to 'users' field in queues. Enables quick cleanup.
-	index int
 }
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
@@ -92,10 +92,11 @@ func (q *queues) deleteQueue(userID string) {
 	if uq == nil {
 		return
 	}
+	u := q.usersByID[userID]
 
 	delete(q.userQueues, userID)
 	delete(q.usersByID, userID)
-	q.users[uq.index] = ""
+	q.users[u.orderIndex] = ""
 
 	// Shrink users list size if possible. This is safe, and no users will be skipped during iteration.
 	for ix := len(q.users) - 1; ix >= 0 && q.users[ix] == ""; ix-- {
@@ -122,27 +123,27 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	if uq == nil {
 		u := &queueUser{
 			shuffleShardSeed: util.ShuffleShardSeed(userID, ""),
+			orderIndex:       -1,
 		}
 		q.usersByID[userID] = u
 
 		uq = &userQueue{
 			requests: list.New(),
-			index:    -1,
 		}
 		q.userQueues[userID] = uq
 
 		// Add user to the list of users... find first free spot, and put it there.
-		for ix, u := range q.users {
-			if u == "" {
-				uq.index = ix
+		for ix, user := range q.users {
+			if user == "" {
+				u.orderIndex = ix
 				q.users[ix] = userID
 				break
 			}
 		}
 
 		// ... or add to the end.
-		if uq.index < 0 {
-			uq.index = len(q.users)
+		if u.orderIndex < 0 {
+			u.orderIndex = len(q.users)
 			q.users = append(q.users, userID)
 		}
 	}
