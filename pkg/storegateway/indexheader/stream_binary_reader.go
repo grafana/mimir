@@ -327,7 +327,7 @@ func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, er
 	return rng, nil
 }
 
-func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
+func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
 		// of the header length difference between two files.

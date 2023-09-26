@@ -59,7 +59,9 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: block.indexHeaderReader.LookupSymbol,
+			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(o)
+			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
 	}

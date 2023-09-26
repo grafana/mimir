@@ -145,14 +145,14 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		iter := indexReader.Symbols()
 		i := 0
 		for iter.Next() {
-			r, err := headerReader.LookupSymbol(ctx, uint32(i))
+			r, err := headerReader.LookupSymbol(uint32(i))
 			require.NoError(t, err)
 			require.Equal(t, iter.At(), r)
 
 			i++
 		}
 		require.NoError(t, iter.Err())
-		_, err := headerReader.LookupSymbol(ctx, uint32(i))
+		_, err := headerReader.LookupSymbol(uint32(i))
 		require.Error(t, err)
 	} else {
 		// For v1 symbols refs are actual offsets in the index.
@@ -160,11 +160,11 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, err)
 
 		for refs, sym := range symbols {
-			r, err := headerReader.LookupSymbol(ctx, refs)
+			r, err := headerReader.LookupSymbol(refs)
 			require.NoError(t, err)
 			require.Equal(t, sym, r)
 		}
-		_, err = headerReader.LookupSymbol(ctx, 200000)
+		_, err = headerReader.LookupSymbol(200000)
 		require.Error(t, err)
 	}
 
