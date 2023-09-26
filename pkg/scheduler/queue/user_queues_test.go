@@ -431,7 +431,7 @@ func isConsistent(q *queues) error {
 	}
 
 	userCount := 0
-	for ix, userID := range q.users {
+	for ix, userID := range q.tenantQuerierState.tenantIDOrder {
 		uq := q.userQueues[userID]
 		if userID != "" && uq == nil {
 			return fmt.Errorf("user %s doesn't have queue", userID)
@@ -444,7 +444,7 @@ func isConsistent(q *queues) error {
 		}
 		userCount++
 
-		user := q.usersByID[userID]
+		user := q.tenantQuerierState.tenantsByID[userID]
 		querierSet := q.userQueriers[userID]
 
 		if user.orderIndex != ix {

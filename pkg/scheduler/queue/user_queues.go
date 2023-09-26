@@ -46,11 +46,11 @@ type tenantQuerierState struct {
 	querierIDsSorted   []string
 	querierForgetDelay time.Duration
 
-	tenantsByID map[string]*queueUser
 	// List of all tenants with queues, used for iteration when searching for next queue to handle.
 	// Tenants removed from the middle are replaced with "". To avoid skipping users during iteration,
 	// we only shrink this list when there are ""'s at the end of it.
 	tenantIDOrder []string
+	tenantsByID   map[string]*queueUser
 
 	tenantQuerierIDs map[string]map[string]struct{}
 }
@@ -72,8 +72,6 @@ type queues struct {
 	userQueues map[string]*userQueue
 
 	tenantQuerierState tenantQuerierState
-
-	usersByID map[string]*queueUser
 
 	maxUserQueueSize int
 
@@ -101,8 +99,8 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 		userQueues: map[string]*userQueue{},
 		tenantQuerierState: tenantQuerierState{
 			tenantIDOrder: nil,
+			tenantsByID:   map[string]*queueUser{},
 		},
-		usersByID:        map[string]*queueUser{},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
 		queriers:         map[string]*querierConn{},
@@ -120,10 +118,10 @@ func (q *queues) deleteQueue(userID string) {
 	if uq == nil {
 		return
 	}
-	u := q.usersByID[userID]
+	u := q.tenantQuerierState.tenantsByID[userID]
 
 	delete(q.userQueues, userID)
-	delete(q.usersByID, userID)
+	delete(q.tenantQuerierState.tenantsByID, userID)
 	q.tenantQuerierState.tenantIDOrder[u.orderIndex] = ""
 
 	// Shrink users list size if possible. This is safe, and no users will be skipped during iteration.
@@ -147,14 +145,14 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 	}
 
 	uq := q.userQueues[userID]
-	u := q.usersByID[userID]
+	u := q.tenantQuerierState.tenantsByID[userID]
 
 	if uq == nil {
 		u = &queueUser{
 			shuffleShardSeed: util.ShuffleShardSeed(userID, ""),
 			orderIndex:       -1,
 		}
-		q.usersByID[userID] = u
+		q.tenantQuerierState.tenantsByID[userID] = u
 		q.userQueriers[userID] = nil
 
 		uq = &userQueue{
@@ -180,7 +178,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if u.maxQueriers != maxQueriers {
 		u.maxQueriers = maxQueriers
-		q.userQueriers[userID] = shuffleQueriersForUser(q.usersByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
+		q.userQueriers[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.sortedQueriers, nil)
 	}
 
 	return uq.requests
@@ -330,7 +328,7 @@ func (q *queues) recomputeUserQueriers() {
 	// If shuffle-sharding is disabled, we never need this.
 	var scratchpad []string
 
-	for uid, u := range q.usersByID {
+	for uid, u := range q.tenantQuerierState.tenantsByID {
 		if u.maxQueriers > 0 && u.maxQueriers < len(q.sortedQueriers) && scratchpad == nil {
 			scratchpad = make([]string, 0, len(q.sortedQueriers))
 		}
