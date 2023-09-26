@@ -830,7 +830,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return &mimirpb.WriteResponse{}, nil
 	}
 
-	db, err := i.getOrCreateTSDB(ctx, userID, false)
+	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
 		return nil, wrapOrAnnotateWithUser(err, userID)
 	}
@@ -2102,7 +2102,7 @@ func (i *Ingester) getTSDBUsers() []string {
 	return ids
 }
 
-func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force bool) (*userTSDB, error) {
+func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error) {
 	db := i.getTSDB(userID)
 	if db != nil {
 		return db, nil
@@ -2137,7 +2137,7 @@ func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force boo
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(ctx, userID, 0)
+	db, err := i.createTSDB(userID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -2150,7 +2150,7 @@ func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force boo
 }
 
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(ctx context.Context, userID string, walReplayConcurrency int) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -2212,7 +2212,9 @@ func (i *Ingester) createTSDB(ctx context.Context, userID string, walReplayConcu
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
-	err = db.Compact(ctx)
+	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
+	// so passing an independent context here
+	err = db.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
@@ -2320,7 +2322,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
-				db, err := i.createTSDB(ctx, userID, tsdbWALReplayConcurrency)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
