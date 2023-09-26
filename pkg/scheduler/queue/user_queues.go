@@ -27,6 +27,34 @@ type querierConn struct {
 	disconnectedAt time.Time
 }
 
+type tenantQuerierState struct {
+	// a tenant has many queriers
+	// a tenant has *all* queriers if:
+	//  - sharding is disabled (max-queriers-per-tenant=0)
+	//  - or if max-queriers-per-tenant >= the number of queriers
+	//
+	// Tenant -> Queriers is the core relationship randomized from the shuffle shard seed.
+	// The shuffle shard seed is itself consistently hashed from the tenant ID.
+	// However, the most common operation is the querier asking for its next request,
+	// which requires a relatively efficient lookup or check of Querier -> Tenant.
+	//
+	// Reshuffling is done when:
+	//  - a querier connection is added or removed
+	//  - it is detected during request enqueueing that a tenant's queriers
+	//    were calculated from an outdated max-queriers-per-tenant value
+	queriersByID       map[string]*querierConn
+	querierIDsSorted   []string
+	querierForgetDelay time.Duration
+
+	tenantsByID map[string]*queueUser
+	// List of all tenants with queues, used for iteration when searching for next queue to handle.
+	// Tenants removed from the middle are replaced with "". To avoid skipping users during iteration,
+	// we only shrink this list when there are ""'s at the end of it.
+	tenantIDOrder []string
+
+	tenantQuerierIDs map[string]map[string]struct{}
+}
+
 type queueUser struct {
 	// seed for shuffle sharding of queriers; computed from userID only,
 	// and is therefore consistent between different frontends.
@@ -43,10 +71,7 @@ type queueUser struct {
 type queues struct {
 	userQueues map[string]*userQueue
 
-	// List of all users with queues, used for iteration when searching for next queue to handle.
-	// Users removed from the middle are replaced with "". To avoid skipping users during iteration, we only shrink
-	// this list when there are ""'s at the end of it.
-	users []string
+	tenantQuerierState tenantQuerierState
 
 	usersByID map[string]*queueUser
 
@@ -73,8 +98,10 @@ type userQueue struct {
 
 func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	return &queues{
-		userQueues:       map[string]*userQueue{},
-		users:            nil,
+		userQueues: map[string]*userQueue{},
+		tenantQuerierState: tenantQuerierState{
+			tenantIDOrder: nil,
+		},
 		usersByID:        map[string]*queueUser{},
 		maxUserQueueSize: maxUserQueueSize,
 		forgetDelay:      forgetDelay,
@@ -97,11 +124,11 @@ func (q *queues) deleteQueue(userID string) {
 
 	delete(q.userQueues, userID)
 	delete(q.usersByID, userID)
-	q.users[u.orderIndex] = ""
+	q.tenantQuerierState.tenantIDOrder[u.orderIndex] = ""
 
 	// Shrink users list size if possible. This is safe, and no users will be skipped during iteration.
-	for ix := len(q.users) - 1; ix >= 0 && q.users[ix] == ""; ix-- {
-		q.users = q.users[:ix]
+	for ix := len(q.tenantQuerierState.tenantIDOrder) - 1; ix >= 0 && q.tenantQuerierState.tenantIDOrder[ix] == ""; ix-- {
+		q.tenantQuerierState.tenantIDOrder = q.tenantQuerierState.tenantIDOrder[:ix]
 	}
 }
 
@@ -136,18 +163,18 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 		q.userQueues[userID] = uq
 
 		// Add user to the list of users... find first free spot, and put it there.
-		for ix, user := range q.users {
+		for ix, user := range q.tenantQuerierState.tenantIDOrder {
 			if user == "" {
 				u.orderIndex = ix
-				q.users[ix] = userID
+				q.tenantQuerierState.tenantIDOrder[ix] = userID
 				break
 			}
 		}
 
 		// ... or add to the end.
 		if u.orderIndex < 0 {
-			u.orderIndex = len(q.users)
-			q.users = append(q.users, userID)
+			u.orderIndex = len(q.tenantQuerierState.tenantIDOrder)
+			q.tenantQuerierState.tenantIDOrder = append(q.tenantQuerierState.tenantIDOrder, userID)
 		}
 	}
 
@@ -171,16 +198,16 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 		return nil, "", userIndex, ErrQuerierShuttingDown
 	}
 
-	for iters := 0; iters < len(q.users); iters++ {
+	for iters := 0; iters < len(q.tenantQuerierState.tenantIDOrder); iters++ {
 		userIndex = userIndex + 1
 
-		// Don't use "mod len(q.users)", as that could skip users at the beginning of the list
-		// for example when q.users has shrunk since last call.
-		if userIndex >= len(q.users) {
+		// Don't use "mod len(q.tenantQuerierState.tenantIDOrder)", as that could skip users at the beginning of the list
+		// for example when q.tenantQuerierState.tenantIDOrder has shrunk since last call.
+		if userIndex >= len(q.tenantQuerierState.tenantIDOrder) {
 			userIndex = 0
 		}
 
-		userID := q.users[userIndex]
+		userID := q.tenantQuerierState.tenantIDOrder[userIndex]
 		if userID == "" {
 			continue
 		}
