@@ -10,13 +10,13 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func TestQueues(t *testing.T) {
@@ -490,15 +490,32 @@ func getUsersByQuerier(queues *queues, querierID string) []string {
 
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := []string{"a", "b", "c", "d", "e"}
+	tqs := tenantQuerierState{
+		querierIDsSorted: allQueriers,
+		tenantsByID: map[string]*queueUser{
+			"team-a": {
+				shuffleShardSeed: 12345,
+			},
+		},
+		tenantQuerierIDs: map[string]map[string]struct{}{},
+	}
 
-	require.Nil(t, shuffleQueriersForUser(12345, 10, allQueriers, nil))
-	require.Nil(t, shuffleQueriersForUser(12345, len(allQueriers), allQueriers, nil))
+	tqs.shuffleTenantQueriers("team-a", nil)
+	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
 
-	r1 := shuffleQueriersForUser(12345, 3, allQueriers, nil)
+	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers)
+	tqs.shuffleTenantQueriers("team-a", nil)
+	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
+
+	tqs.tenantsByID["team-a"].maxQueriers = 3
+	tqs.shuffleTenantQueriers("team-a", nil)
+	r1 := tqs.tenantQuerierIDs["team-a"]
 	require.Equal(t, 3, len(r1))
 
 	// Same input produces same output.
-	r2 := shuffleQueriersForUser(12345, 3, allQueriers, nil)
+	tqs.shuffleTenantQueriers("team-a", nil)
+	r2 := tqs.tenantQuerierIDs["team-a"]
+
 	require.Equal(t, 3, len(r2))
 	require.Equal(t, r1, r2)
 }
@@ -512,6 +529,16 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 	}
 	slices.Sort(allSortedQueriers)
 
+	tqs := tenantQuerierState{
+		querierIDsSorted: allSortedQueriers,
+		tenantsByID: map[string]*queueUser{
+			"team-a": {
+				shuffleShardSeed: 12345,
+			},
+		},
+		tenantQuerierIDs: map[string]map[string]struct{}{},
+	}
+
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	const tests = 1000
 	for i := 0; i < tests; i++ {
@@ -520,9 +547,12 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 			toSelect = 3
 		}
 
-		selected := shuffleQueriersForUser(r.Int63(), toSelect, allSortedQueriers, nil)
+		tqs.tenantsByID["team-a"].maxQueriers = toSelect
+		tqs.tenantsByID["team-a"].shuffleShardSeed = r.Int63()
 
-		require.Equal(t, toSelect, len(selected))
+		tqs.shuffleTenantQueriers("team-a", nil)
+		selectedQueriers := tqs.tenantQuerierIDs["team-a"]
+		require.Equal(t, toSelect, len(selectedQueriers))
 
 		slices.Sort(allSortedQueriers)
 		prevQuerier := ""

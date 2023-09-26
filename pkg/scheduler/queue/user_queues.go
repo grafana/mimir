@@ -172,7 +172,7 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 
 	if u.maxQueriers != maxQueriers {
 		u.maxQueriers = maxQueriers
-		q.tenantQuerierState.tenantQuerierIDs[userID] = shuffleQueriersForUser(q.tenantQuerierState.tenantsByID[userID].shuffleShardSeed, maxQueriers, q.tenantQuerierState.querierIDsSorted, nil)
+		q.tenantQuerierState.shuffleTenantQueriers(userID, nil)
 	}
 
 	return uq.requests
@@ -235,7 +235,7 @@ func (q *queues) addQuerierConnection(querierID string) {
 	q.tenantQuerierState.querierIDsSorted = append(q.tenantQuerierState.querierIDsSorted, querierID)
 	slices.Sort(q.tenantQuerierState.querierIDsSorted)
 
-	q.recomputeUserQueriers()
+	q.tenantQuerierState.recomputeTenantQueriers()
 }
 
 func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
@@ -273,7 +273,7 @@ func (q *queues) removeQuerier(querierID string) {
 
 	q.tenantQuerierState.querierIDsSorted = append(q.tenantQuerierState.querierIDsSorted[:ix], q.tenantQuerierState.querierIDsSorted[ix+1:]...)
 
-	q.recomputeUserQueriers()
+	q.tenantQuerierState.recomputeTenantQueriers()
 }
 
 // notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
@@ -317,42 +317,44 @@ func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 	return forgotten
 }
 
-func (q *queues) recomputeUserQueriers() {
+func (tqs *tenantQuerierState) recomputeTenantQueriers() {
 	// Only allocate the scratchpad the first time we need it.
-	// If shuffle-sharding is disabled, we never need this.
+	// If shuffle-sharding is disabled, it will not be used.
 	var scratchpad []string
 
-	for uid, u := range q.tenantQuerierState.tenantsByID {
-		if u.maxQueriers > 0 && u.maxQueriers < len(q.tenantQuerierState.querierIDsSorted) && scratchpad == nil {
-			scratchpad = make([]string, 0, len(q.tenantQuerierState.querierIDsSorted))
+	for tenantID, tenant := range tqs.tenantsByID {
+		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqs.querierIDsSorted) && scratchpad == nil {
+			scratchpad = make([]string, 0, len(tqs.querierIDsSorted))
 		}
 
-		q.tenantQuerierState.tenantQuerierIDs[uid] = shuffleQueriersForUser(u.shuffleShardSeed, u.maxQueriers, q.tenantQuerierState.querierIDsSorted, scratchpad)
+		tqs.shuffleTenantQueriers(tenantID, scratchpad)
 	}
 }
 
-// shuffleQueriersForUser returns nil if queriersToSelect is 0 or there are not enough queriers to select from.
-// In that case *all* queriers should be used.
-// Scratchpad is used for shuffling, to avoid new allocations. If nil, new slice is allocated.
-func shuffleQueriersForUser(userSeed int64, queriersToSelect int, allSortedQueriers []string, scratchpad []string) map[string]struct{} {
-	if queriersToSelect == 0 || len(allSortedQueriers) <= queriersToSelect {
-		return nil
+func (tqs *tenantQuerierState) shuffleTenantQueriers(tenantID string, scratchpad []string) {
+	tenant := tqs.tenantsByID[tenantID]
+	if tenant == nil {
+		return
 	}
 
-	result := make(map[string]struct{}, queriersToSelect)
-	rnd := rand.New(rand.NewSource(userSeed))
+	if tenant.maxQueriers == 0 || len(tqs.querierIDsSorted) <= tenant.maxQueriers {
+		// shuffle shard is either disabled or calculation is unnecessary
+		tqs.tenantQuerierIDs[tenantID] = nil
+		return
+	}
 
-	scratchpad = scratchpad[:0]
-	scratchpad = append(scratchpad, allSortedQueriers...)
+	querierIDSet := make(map[string]struct{}, tenant.maxQueriers)
+	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed))
+
+	scratchpad = append(scratchpad[:0], tqs.querierIDsSorted...)
 
 	last := len(scratchpad) - 1
-	for i := 0; i < queriersToSelect; i++ {
+	for i := 0; i < tenant.maxQueriers; i++ {
 		r := rnd.Intn(last + 1)
-		result[scratchpad[r]] = struct{}{}
+		querierIDSet[scratchpad[r]] = struct{}{}
 		// move selected item to the end, it won't be selected anymore.
 		scratchpad[r], scratchpad[last] = scratchpad[last], scratchpad[r]
 		last--
 	}
-
-	return result
+	tqs.tenantQuerierIDs[tenantID] = querierIDSet
 }
