@@ -104,7 +104,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	confirmOrderForQuerier(t, uq, "querier-1", -1, qOne, qTwo, qOne, qTwo)
 
 	// After disconnecting querier-2, it's expected to own no queue.
-	uq.removeQuerier("querier-2")
+	uq.tenantQuerierState.removeQuerier("querier-2")
 	q, u, _, err = uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)

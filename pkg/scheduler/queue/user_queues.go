@@ -253,7 +253,7 @@ func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
 	// There no more active connections. If the forget delay is configured then
 	// we can remove it only if querier has announced a graceful shutdown.
 	if info.shuttingDown || q.tenantQuerierState.querierForgetDelay == 0 {
-		q.removeQuerier(querierID)
+		q.tenantQuerierState.removeQuerier(querierID)
 		return
 	}
 
@@ -263,17 +263,17 @@ func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
 	info.disconnectedAt = now
 }
 
-func (q *queues) removeQuerier(querierID string) {
-	delete(q.tenantQuerierState.queriersByID, querierID)
+func (tqs *tenantQuerierState) removeQuerier(querierID string) {
+	delete(tqs.queriersByID, querierID)
 
-	ix := sort.SearchStrings(q.tenantQuerierState.querierIDsSorted, querierID)
-	if ix >= len(q.tenantQuerierState.querierIDsSorted) || q.tenantQuerierState.querierIDsSorted[ix] != querierID {
+	ix := sort.SearchStrings(tqs.querierIDsSorted, querierID)
+	if ix >= len(tqs.querierIDsSorted) || tqs.querierIDsSorted[ix] != querierID {
 		panic("incorrect state of sorted queriers")
 	}
 
-	q.tenantQuerierState.querierIDsSorted = append(q.tenantQuerierState.querierIDsSorted[:ix], q.tenantQuerierState.querierIDsSorted[ix+1:]...)
+	tqs.querierIDsSorted = append(tqs.querierIDsSorted[:ix], tqs.querierIDsSorted[ix+1:]...)
 
-	q.tenantQuerierState.recomputeTenantQueriers()
+	tqs.recomputeTenantQueriers()
 }
 
 // notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
@@ -286,7 +286,7 @@ func (q *queues) notifyQuerierShutdown(querierID string) {
 
 	// If there are no more connections, we should remove the querier.
 	if info.connections == 0 {
-		q.removeQuerier(querierID)
+		q.tenantQuerierState.removeQuerier(querierID)
 		return
 	}
 
@@ -309,7 +309,7 @@ func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
 
 	for querierID := range q.tenantQuerierState.queriersByID {
 		if info := q.tenantQuerierState.queriersByID[querierID]; info.connections == 0 && info.disconnectedAt.Before(threshold) {
-			q.removeQuerier(querierID)
+			q.tenantQuerierState.removeQuerier(querierID)
 			forgotten++
 		}
 	}
