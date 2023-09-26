@@ -774,7 +774,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 13h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
-    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
+    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 367001600)
   -blocks-storage.tsdb.ship-concurrency int
     	Maximum number of tenants concurrently shipping blocks to the storage. (default 10)
   -blocks-storage.tsdb.ship-interval duration
@@ -1404,7 +1404,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
   -log.buffered
-    	Use a buffered logger to reduce write contention.
+    	[deprecated] Use a buffered logger to reduce write contention. (default true)
   -log.format string
     	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value

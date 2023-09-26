@@ -41,6 +41,11 @@ import (
 // (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
 const GrpcContextMetadataTenantID = "__org_id__"
 
+// defaultBlockDurations is the expected duration of blocks the compactor generates. This is used for
+// metrics emitted by the store-gateway, so it's fine to hardcode it here instead of using the durations
+// that are actually configured to avoid coupling to compactor configuration.
+var defaultBlockDurations = []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
+
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
 	logger             log.Logger
@@ -561,8 +566,8 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 }
 
 // countBlocksLoaded returns the total number of blocks loaded and the number of blocks
-// loaded bucketed by the configured block durations, summed for all users.
-func (u *BucketStores) countBlocksLoaded() (int, map[time.Duration]int) {
+// loaded bucketed by the provided block durations, summed for all users.
+func (u *BucketStores) countBlocksLoaded(durations []time.Duration) (int, map[time.Duration]int) {
 	byDuration := make(map[time.Duration]int)
 	total := 0
 
@@ -570,7 +575,7 @@ func (u *BucketStores) countBlocksLoaded() (int, map[time.Duration]int) {
 	defer u.storesMu.RUnlock()
 
 	for _, store := range u.stores {
-		stats := store.Stats(u.cfg.TSDB.BlockRanges)
+		stats := store.Stats(durations)
 		for d, n := range stats.BlocksLoaded {
 			byDuration[d] += n
 			total += n
@@ -586,7 +591,7 @@ func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total, byDuration := u.countBlocksLoaded()
+	total, byDuration := u.countBlocksLoaded(defaultBlockDurations)
 	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
 	for d, n := range byDuration {
 		// Convert time.Duration to model.Duration here since the string format is nicer
