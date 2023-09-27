@@ -24,8 +24,8 @@ func TestQueues(t *testing.T) {
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
-	uq.tenantQuerierState.addQuerierConnection("querier-2")
+	uq.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-2")
 
 	q, u, lastUserIndex, err := uq.getNextQueueForQuerier(-1, "querier-1")
 	assert.Nil(t, q)
@@ -84,8 +84,8 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
-	uq.tenantQuerierState.addQuerierConnection("querier-2")
+	uq.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-2")
 
 	// Add queues: [one, two]
 	qOne := getOrAdd(t, uq, "one", 0)
@@ -94,7 +94,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	confirmOrderForQuerier(t, uq, "querier-2", -1, qOne, qTwo, qOne, qTwo)
 
 	// After notify shutdown for querier-2, it's expected to own no queue.
-	uq.tenantQuerierState.notifyQuerierShutdown("querier-2")
+	uq.notifyQuerierShutdown("querier-2")
 	q, u, _, err := uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)
@@ -104,7 +104,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	confirmOrderForQuerier(t, uq, "querier-1", -1, qOne, qTwo, qOne, qTwo)
 
 	// After disconnecting querier-2, it's expected to own no queue.
-	uq.tenantQuerierState.removeQuerier("querier-2")
+	uq.tenantQuerierAssignments.removeQuerier("querier-2")
 	q, u, _, err = uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)
@@ -123,7 +123,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 	// Add some queriers.
 	for ix := 0; ix < queriers; ix++ {
 		qid := fmt.Sprintf("querier-%d", ix)
-		uq.tenantQuerierState.addQuerierConnection(qid)
+		uq.addQuerierConnection(qid)
 
 		// No querier has any queues yet.
 		q, u, _, err := uq.getNextQueueForQuerier(-1, qid)
@@ -140,7 +140,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 		getOrAdd(t, uq, uid, maxQueriersPerUser)
 
 		// Verify it has maxQueriersPerUser queriers assigned now.
-		qs := uq.tenantQuerierState.tenantQuerierIDs[uid]
+		qs := uq.tenantQuerierAssignments.tenantQuerierIDs[uid]
 		assert.Equal(t, maxQueriersPerUser, len(qs))
 	}
 
@@ -213,17 +213,17 @@ func TestQueuesConsistency(t *testing.T) {
 					uq.deleteQueue(generateTenant(r))
 				case 3:
 					q := generateQuerier(r)
-					uq.tenantQuerierState.addQuerierConnection(q)
+					uq.addQuerierConnection(q)
 					conns[q]++
 				case 4:
 					q := generateQuerier(r)
 					if conns[q] > 0 {
-						uq.tenantQuerierState.removeQuerierConnection(q, time.Now())
+						uq.removeQuerierConnection(q, time.Now())
 						conns[q]--
 					}
 				case 5:
 					q := generateQuerier(r)
-					uq.tenantQuerierState.notifyQuerierShutdown(q)
+					uq.notifyQuerierShutdown(q)
 				}
 
 				assert.NoErrorf(t, isConsistent(uq), "last action %d", i)
@@ -246,8 +246,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// 3 queriers open 2 connections each.
 	for i := 1; i <= 3; i++ {
-		uq.tenantQuerierState.addQuerierConnection(fmt.Sprintf("querier-%d", i))
-		uq.tenantQuerierState.addQuerierConnection(fmt.Sprintf("querier-%d", i))
+		uq.addQuerierConnection(fmt.Sprintf("querier-%d", i))
+		uq.addQuerierConnection(fmt.Sprintf("querier-%d", i))
 	}
 
 	// Add user queues.
@@ -261,12 +261,12 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	require.NotEmpty(t, querier1Users)
 
 	// Gracefully shutdown querier-1.
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(20*time.Second))
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(21*time.Second))
-	uq.tenantQuerierState.notifyQuerierShutdown("querier-1")
+	uq.removeQuerierConnection("querier-1", now.Add(20*time.Second))
+	uq.removeQuerierConnection("querier-1", now.Add(21*time.Second))
+	uq.notifyQuerierShutdown("querier-1")
 
 	// We expect querier-1 has been removed.
-	assert.NotContains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.NotContains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect querier-1 users have been shuffled to other queriers.
@@ -275,8 +275,8 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	}
 
 	// Querier-1 reconnects.
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-1")
 
 	// We expect the initial querier-1 users have got back to querier-1.
 	for _, userID := range querier1Users {
@@ -286,11 +286,11 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	}
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+	uq.removeQuerierConnection("querier-1", now.Add(40*time.Second))
+	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.Contains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -301,9 +301,9 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	}
 
 	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
-	uq.tenantQuerierState.forgetDisconnectedQueriers(now.Add(90 * time.Second))
+	uq.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
-	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.Contains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
@@ -313,9 +313,9 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	}
 
 	// Try to forget disconnected queriers. This time querier-1 forget delay has passed.
-	uq.tenantQuerierState.forgetDisconnectedQueriers(now.Add(105 * time.Second))
+	uq.forgetDisconnectedQueriers(now.Add(105 * time.Second))
 
-	assert.NotContains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.NotContains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect querier-1 users have been shuffled to other queriers.
@@ -338,8 +338,8 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 
 	// 3 queriers open 2 connections each.
 	for i := 1; i <= 3; i++ {
-		uq.tenantQuerierState.addQuerierConnection(fmt.Sprintf("querier-%d", i))
-		uq.tenantQuerierState.addQuerierConnection(fmt.Sprintf("querier-%d", i))
+		uq.addQuerierConnection(fmt.Sprintf("querier-%d", i))
+		uq.addQuerierConnection(fmt.Sprintf("querier-%d", i))
 	}
 
 	// Add user queues.
@@ -353,11 +353,11 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	require.NotEmpty(t, querier1Users)
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(40*time.Second))
-	uq.tenantQuerierState.removeQuerierConnection("querier-1", now.Add(41*time.Second))
+	uq.removeQuerierConnection("querier-1", now.Add(40*time.Second))
+	uq.removeQuerierConnection("querier-1", now.Add(41*time.Second))
 
 	// We expect querier-1 has NOT been removed.
-	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.Contains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -368,13 +368,13 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	}
 
 	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
-	uq.tenantQuerierState.forgetDisconnectedQueriers(now.Add(90 * time.Second))
+	uq.forgetDisconnectedQueriers(now.Add(90 * time.Second))
 
 	// Querier-1 reconnects.
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
-	uq.tenantQuerierState.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-1")
+	uq.addQuerierConnection("querier-1")
 
-	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.Contains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
@@ -385,9 +385,9 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	}
 
 	// Try to forget disconnected queriers far in the future, but there's no disconnected querier.
-	uq.tenantQuerierState.forgetDisconnectedQueriers(now.Add(200 * time.Second))
+	uq.forgetDisconnectedQueriers(now.Add(200 * time.Second))
 
-	assert.Contains(t, uq.tenantQuerierState.queriersByID, "querier-1")
+	assert.Contains(t, uq.tenantQuerierAssignments.queriersByID, "querier-1")
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
@@ -426,12 +426,12 @@ func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIn
 }
 
 func isConsistent(q *queues) error {
-	if len(q.tenantQuerierState.querierIDsSorted) != len(q.tenantQuerierState.queriersByID) {
+	if len(q.tenantQuerierAssignments.querierIDsSorted) != len(q.tenantQuerierAssignments.queriersByID) {
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 
 	userCount := 0
-	for ix, userID := range q.tenantQuerierState.tenantIDOrder {
+	for ix, userID := range q.tenantQuerierAssignments.tenantIDOrder {
 		uq := q.tenantQueues[userID]
 		if userID != "" && uq == nil {
 			return fmt.Errorf("user %s doesn't have queue", userID)
@@ -444,8 +444,8 @@ func isConsistent(q *queues) error {
 		}
 		userCount++
 
-		user := q.tenantQuerierState.tenantsByID[userID]
-		querierSet := q.tenantQuerierState.tenantQuerierIDs[userID]
+		user := q.tenantQuerierAssignments.tenantsByID[userID]
+		querierSet := q.tenantQuerierAssignments.tenantQuerierIDs[userID]
 
 		if user.orderIndex != ix {
 			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, user.orderIndex)
@@ -455,11 +455,11 @@ func isConsistent(q *queues) error {
 			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.tenantQuerierState.querierIDsSorted) <= user.maxQueriers && querierSet != nil {
+		if user.maxQueriers > 0 && len(q.tenantQuerierAssignments.querierIDsSorted) <= user.maxQueriers && querierSet != nil {
 			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.tenantQuerierState.querierIDsSorted) > user.maxQueriers && len(querierSet) != user.maxQueriers {
+		if user.maxQueriers > 0 && len(q.tenantQuerierAssignments.querierIDsSorted) > user.maxQueriers && len(querierSet) != user.maxQueriers {
 			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), user.maxQueriers)
 		}
 	}
@@ -475,7 +475,7 @@ func isConsistent(q *queues) error {
 func getUsersByQuerier(queues *queues, querierID string) []string {
 	var userIDs []string
 	for userID := range queues.tenantQueues {
-		querierSet := queues.tenantQuerierState.tenantQuerierIDs[userID]
+		querierSet := queues.tenantQuerierAssignments.tenantQuerierIDs[userID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
 			userIDs = append(userIDs, userID)
