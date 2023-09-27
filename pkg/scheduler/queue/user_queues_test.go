@@ -490,7 +490,7 @@ func getUsersByQuerier(queues *queues, querierID string) []string {
 
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := []string{"a", "b", "c", "d", "e"}
-	tqs := tenantQuerierState{
+	tqs := tenantQuerierAssignments{
 		querierIDsSorted: allQueriers,
 		tenantsByID: map[string]*queueTenant{
 			"team-a": {
@@ -529,7 +529,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 	}
 	slices.Sort(allSortedQueriers)
 
-	tqs := tenantQuerierState{
+	tqs := tenantQuerierAssignments{
 		querierIDsSorted: allSortedQueriers,
 		tenantsByID: map[string]*queueTenant{
 			"team-a": {
