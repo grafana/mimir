@@ -112,6 +112,7 @@ func (q *queues) deleteQueue(tenantID string) {
 	if tenantQueue == nil {
 		return
 	}
+	delete(q.tenantQueues, tenantID)
 	q.tenantQuerierState.removeTenant(tenantID)
 }
 
