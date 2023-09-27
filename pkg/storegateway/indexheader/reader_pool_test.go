@@ -96,6 +96,14 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 				}
 			},
 		},
+		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
+			lazyReaderEnabled:      true,
+			lazyReaderIdleTimeout:  time.Minute,
+			eagerLoadReaderEnabled: true,
+			initialSync:            true,
+			expectedLoadCountMetricBeforeLabelNamesCall: 0, // although eager loading is enabled, this test will not do eager loading because there is no snapshot file
+			expectedLoadCountMetricAfterLabelNamesCall:  1,
+		},
 	}
 
 	ctx := context.Background()

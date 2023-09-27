@@ -1272,7 +1272,7 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 
 	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
-		lset, err := s.indexr.LookupLabelsSymbols(series.lset, &labelsBuilder)
+		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &labelsBuilder)
 		if err != nil {
 			return seriesChunkRefsSet{}, err
 		}

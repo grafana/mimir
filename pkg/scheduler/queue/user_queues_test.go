@@ -27,9 +27,10 @@ func TestQueues(t *testing.T) {
 	uq.addQuerierConnection("querier-1")
 	uq.addQuerierConnection("querier-2")
 
-	q, u, lastUserIndex := uq.getNextQueueForQuerier(-1, "querier-1")
+	q, u, lastUserIndex, err := uq.getNextQueueForQuerier(-1, "querier-1")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)
+	assert.NoError(t, err)
 
 	// Add queues: [one]
 	qOne := getOrAdd(t, uq, "one", 0)
@@ -73,8 +74,9 @@ func TestQueues(t *testing.T) {
 	uq.deleteQueue("four")
 	assert.NoError(t, isConsistent(uq))
 
-	q, _, _ = uq.getNextQueueForQuerier(lastUserIndex, "querier-1")
+	q, _, _, err = uq.getNextQueueForQuerier(lastUserIndex, "querier-1")
 	assert.Nil(t, q)
+	assert.NoError(t, err)
 }
 
 func TestQueuesOnTerminatingQuerier(t *testing.T) {
@@ -93,18 +95,20 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 	// After notify shutdown for querier-2, it's expected to own no queue.
 	uq.notifyQuerierShutdown("querier-2")
-	q, u, _ := uq.getNextQueueForQuerier(-1, "querier-2")
+	q, u, _, err := uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)
+	assert.Equal(t, ErrQuerierShuttingDown, err)
 
 	// However, querier-1 still get queues because it's still running.
 	confirmOrderForQuerier(t, uq, "querier-1", -1, qOne, qTwo, qOne, qTwo)
 
 	// After disconnecting querier-2, it's expected to own no queue.
 	uq.removeQuerier("querier-2")
-	q, u, _ = uq.getNextQueueForQuerier(-1, "querier-2")
+	q, u, _, err = uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
 	assert.Equal(t, "", u)
+	assert.Equal(t, ErrQuerierShuttingDown, err)
 }
 
 func TestQueuesWithQueriers(t *testing.T) {
@@ -122,9 +126,10 @@ func TestQueuesWithQueriers(t *testing.T) {
 		uq.addQuerierConnection(qid)
 
 		// No querier has any queues yet.
-		q, u, _ := uq.getNextQueueForQuerier(-1, qid)
+		q, u, _, err := uq.getNextQueueForQuerier(-1, qid)
 		assert.Nil(t, q)
 		assert.Equal(t, "", u)
+		assert.NoError(t, err)
 	}
 
 	assert.NoError(t, isConsistent(uq))
@@ -148,7 +153,8 @@ func TestQueuesWithQueriers(t *testing.T) {
 
 		lastUserIndex := -1
 		for {
-			_, _, newIx := uq.getNextQueueForQuerier(lastUserIndex, qid)
+			_, _, newIx, err := uq.getNextQueueForQuerier(lastUserIndex, qid)
+			assert.NoError(t, err)
 			if newIx < lastUserIndex {
 				break
 			}
@@ -201,7 +207,7 @@ func TestQueuesConsistency(t *testing.T) {
 					assert.NotNil(t, uq.getOrAddQueue(generateTenant(r), 3))
 				case 1:
 					qid := generateQuerier(r)
-					_, _, luid := uq.getNextQueueForQuerier(lastUserIndexes[qid], qid)
+					_, _, luid, _ := uq.getNextQueueForQuerier(lastUserIndexes[qid], qid)
 					lastUserIndexes[qid] = luid
 				case 2:
 					uq.deleteQueue(generateTenant(r))
@@ -410,9 +416,11 @@ func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) *list.Li
 func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIndex int, qs ...*list.List) int {
 	var n *list.List
 	for _, q := range qs {
-		n, _, lastUserIndex = uq.getNextQueueForQuerier(lastUserIndex, querier)
+		var err error
+		n, _, lastUserIndex, err = uq.getNextQueueForQuerier(lastUserIndex, querier)
 		assert.Equal(t, q, n)
 		assert.NoError(t, isConsistent(uq))
+		assert.NoError(t, err)
 	}
 	return lastUserIndex
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
@@ -39,6 +40,11 @@ import (
 // GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
 // (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
 const GrpcContextMetadataTenantID = "__org_id__"
+
+// defaultBlockDurations is the expected duration of blocks the compactor generates. This is used for
+// metrics emitted by the store-gateway, so it's fine to hardcode it here instead of using the durations
+// that are actually configured to avoid coupling to compactor configuration.
+var defaultBlockDurations = []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
@@ -71,11 +77,12 @@ type BucketStores struct {
 	stores   map[string]*BucketStore
 
 	// Metrics.
-	syncTimes         prometheus.Histogram
-	syncLastSuccess   prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	tenantsSynced     prometheus.Gauge
-	blocksLoaded      prometheus.GaugeFunc
+	syncTimes              prometheus.Histogram
+	syncLastSuccess        prometheus.Gauge
+	tenantsDiscovered      prometheus.Gauge
+	tenantsSynced          prometheus.Gauge
+	blocksLoaded           *prometheus.Desc
+	blocksLoadedByDuration *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores.
@@ -144,10 +151,16 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		Name: "cortex_bucket_stores_tenants_synced",
 		Help: "Number of tenants synced.",
 	})
-	u.blocksLoaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_bucket_store_blocks_loaded",
-		Help: "Number of currently loaded blocks.",
-	}, u.getBlocksLoadedMetric)
+	u.blocksLoaded = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded",
+		"Number of currently loaded blocks.",
+		nil, nil,
+	)
+	u.blocksLoadedByDuration = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded_by_duration",
+		"Number of currently loaded blocks, bucketed by block duration.",
+		[]string{"duration"}, nil,
+	)
 
 	// Init the index cache.
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
@@ -156,6 +169,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	if reg != nil {
 		reg.MustRegister(u.metaFetcherMetrics)
+		reg.MustRegister(u)
 	}
 
 	return u, nil
@@ -551,17 +565,39 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// getBlocksLoadedMetric returns the number of blocks currently loaded across all bucket stores.
-func (u *BucketStores) getBlocksLoadedMetric() float64 {
-	count := 0
+// countBlocksLoaded returns the total number of blocks loaded and the number of blocks
+// loaded bucketed by the provided block durations, summed for all users.
+func (u *BucketStores) countBlocksLoaded(durations []time.Duration) (int, map[time.Duration]int) {
+	byDuration := make(map[time.Duration]int)
+	total := 0
 
 	u.storesMu.RLock()
-	for _, store := range u.stores {
-		count += store.Stats().BlocksLoaded
-	}
-	u.storesMu.RUnlock()
+	defer u.storesMu.RUnlock()
 
-	return float64(count)
+	for _, store := range u.stores {
+		stats := store.Stats(durations)
+		for d, n := range stats.BlocksLoaded {
+			byDuration[d] += n
+			total += n
+		}
+	}
+
+	return total, byDuration
+}
+
+func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
+	descs <- u.blocksLoaded
+	descs <- u.blocksLoadedByDuration
+}
+
+func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
+	total, byDuration := u.countBlocksLoaded(defaultBlockDurations)
+	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
+	for d, n := range byDuration {
+		// Convert time.Duration to model.Duration here since the string format is nicer
+		// to read for round numbers than the stdlib version. E.g. "2h" vs "2h0m0s"
+		metrics <- prometheus.MustNewConstMetric(u.blocksLoadedByDuration, prometheus.GaugeValue, float64(n), model.Duration(d).String())
+	}
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {

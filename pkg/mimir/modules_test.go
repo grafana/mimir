@@ -6,6 +6,7 @@
 package mimir
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -14,9 +15,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
+	hashivault "github.com/hashicorp/vault/api"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 func changeTargetConfig(c *Config) {
@@ -241,4 +246,122 @@ func TestMultiKVSetup(t *testing.T) {
 			checkFn(t, c.Cfg)
 		})
 	}
+}
+
+type mockKVStore struct {
+	values map[string]mockValue
+}
+
+type mockValue struct {
+	secret *hashivault.KVSecret
+	err    error
+}
+
+func newMockKVStore() *mockKVStore {
+	return &mockKVStore{
+		values: map[string]mockValue{
+			"test/secret1": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo1",
+					},
+				},
+				err: nil,
+			},
+			"test/secret2": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo2",
+					},
+				},
+				err: nil,
+			},
+			"test/secret3": {
+				secret: &hashivault.KVSecret{
+					Data: map[string]interface{}{
+						"value": "foo3",
+					},
+				},
+				err: nil,
+			},
+		},
+	}
+}
+
+func (m *mockKVStore) Get(_ context.Context, path string) (*hashivault.KVSecret, error) {
+	return m.values[path].secret, m.values[path].err
+}
+
+func TestInitVault(t *testing.T) {
+	cfg := Config{
+		Server: server.Config{
+			HTTPTLSConfig: server.TLSConfig{
+				TLSCertPath: "test/secret1",
+				TLSKeyPath:  "test/secret2",
+				ClientCAs:   "test/secret3",
+			},
+			GRPCTLSConfig: server.TLSConfig{
+				TLSCertPath: "test/secret1",
+				TLSKeyPath:  "test/secret2",
+				ClientCAs:   "test/secret3",
+			},
+		},
+		Vault: vault.Config{
+			Enabled: true,
+			Mock:    newMockKVStore(),
+		},
+	}
+
+	mimir := &Mimir{
+		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
+		Cfg:    cfg,
+	}
+
+	_, err := mimir.initVault()
+	require.NoError(t, err)
+
+	// Check KVStore
+	require.NotNil(t, mimir.Cfg.MemberlistKV.TCPTransport.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Alertmanager.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader)
+
+	// Check Redis Clients
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader)
+
+	// Check GRPC Clients
+	require.NotNil(t, mimir.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Worker.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Querier.StoreGatewayClient.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.Notifier.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader)
+
+	// Check Server
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.TLSCertPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.TLSKeyPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.ClientCAs)
+
+	require.Empty(t, mimir.Cfg.Server.GRPCTLSConfig.TLSCertPath)
+	require.Empty(t, mimir.Cfg.Server.GRPCTLSConfig.TLSKeyPath)
+	require.Empty(t, mimir.Cfg.Server.HTTPTLSConfig.ClientCAs)
+
+	require.Equal(t, "foo1", mimir.Cfg.Server.HTTPTLSConfig.TLSCert)
+	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.HTTPTLSConfig.TLSKey)
+	require.Equal(t, "foo3", mimir.Cfg.Server.HTTPTLSConfig.ClientCAsText)
+
+	require.Equal(t, "foo1", mimir.Cfg.Server.GRPCTLSConfig.TLSCert)
+	require.Equal(t, config.Secret("foo2"), mimir.Cfg.Server.GRPCTLSConfig.TLSKey)
+	require.Equal(t, "foo3", mimir.Cfg.Server.GRPCTLSConfig.ClientCAsText)
 }

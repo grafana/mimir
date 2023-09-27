@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"path"
 	"testing"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -25,7 +25,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	spec1 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
-			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{10, 11, nil, nil},
 				sample{20, 12, nil, nil},
 				sample{30, 13, nil, nil},
@@ -35,12 +35,12 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	spec2 := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "zxcv", "foo", "bar"),
 		Chunks: []chunks.Meta{
-			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{40, 0, test.GenerateTestHistogram(1), nil},
 				sample{50, 0, test.GenerateTestHistogram(2), nil},
 				sample{60, 0, test.GenerateTestHistogram(3), nil},
 			})),
-			must(tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{70, 0, test.GenerateTestHistogram(4), nil},
 				sample{80, 0, test.GenerateTestHistogram(5), nil},
 				sample{90, 0, test.GenerateTestHistogram(6), nil},
@@ -52,7 +52,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
-	stats, err := block.GatherBlockHealthStats(log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
+	stats, err := block.GatherBlockHealthStats(context.Background(), log.NewNopLogger(), blockDir, meta.MinTime, meta.MaxTime, true)
 	require.NoError(t, err)
 
 	require.Equal(t, int64(2), stats.TotalSeries)

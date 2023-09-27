@@ -12,6 +12,18 @@ build: ## Build Failsafe-go
 test: ## Test Failsafe-go
 	go run gotest.tools/gotestsum@latest
 
+.PHONY: test-with-race
+test-with-race: ## Test Failsafe-go
+	go test -race ./...
+
 .PHONY: fmt
 fmt: ## Format Failsafe-go
 	go fmt ./...
+
+.PHONY: lint
+lint: ## Lint Failsafe-go
+	golangci-lint run -D errcheck,unused
+
+.PHONY: check
+check: fmt test ## Check Failsafe-go for a commit or release
+	go mod tidy

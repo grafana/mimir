@@ -1613,6 +1613,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T) {
 	now := time.Now()
+	ctx := context.Background()
 
 	tests := map[string]struct {
 		queryStoreAfter time.Duration
@@ -1657,7 +1658,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
 			q := &blocksStoreQuerier{
-				ctx:             context.Background(),
+				ctx:             ctx,
 				minT:            testData.queryMinT,
 				maxT:            testData.queryMaxT,
 				userID:          "user-1",
@@ -1675,7 +1676,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				End:   testData.queryMaxT,
 			}
 
-			set := q.selectSorted(sp)
+			set := q.selectSorted(ctx, sp)
 			require.NoError(t, set.Err())
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
@@ -1731,8 +1732,9 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
+			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
-				ctx:         user.InjectOrgID(context.Background(), "user-1"),
+				ctx:         ctx,
 				minT:        testData.queryMinT,
 				maxT:        testData.queryMaxT,
 				userID:      "user-1",

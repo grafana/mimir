@@ -65,8 +65,9 @@ const (
 )
 
 type BucketStoreStats struct {
-	// BlocksLoaded is the number of blocks currently loaded in the bucket store.
-	BlocksLoaded int
+	// BlocksLoaded is the number of blocks currently loaded in the bucket store
+	// indexed by the duration of the block.
+	BlocksLoaded map[time.Duration]int
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -258,14 +259,36 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 }
 
 // Stats returns statistics about the BucketStore instance.
-func (s *BucketStore) Stats() BucketStoreStats {
-	stats := BucketStoreStats{}
-
+func (s *BucketStore) Stats(durations []time.Duration) BucketStoreStats {
 	s.blocksMx.RLock()
-	stats.BlocksLoaded = len(s.blocks)
-	s.blocksMx.RUnlock()
+	defer s.blocksMx.RUnlock()
+
+	return buildStoreStats(durations, s.blocks)
+}
+
+func buildStoreStats(durations []time.Duration, blocks map[ulid.ULID]*bucketBlock) BucketStoreStats {
+	stats := BucketStoreStats{}
+	stats.BlocksLoaded = make(map[time.Duration]int)
+
+	if len(durations) != 0 {
+		for _, b := range blocks {
+			// Bucket each block into one of the possible block durations we're creating.
+			bucketed := bucketBlockDuration(durations, b.blockDuration())
+			stats.BlocksLoaded[bucketed]++
+		}
+	}
 
 	return stats
+}
+
+func bucketBlockDuration(buckets tsdb.DurationList, duration time.Duration) time.Duration {
+	for _, d := range buckets {
+		if duration <= d {
+			return d
+		}
+	}
+
+	return buckets[len(buckets)-1]
 }
 
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
@@ -1931,6 +1954,11 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 	// The block itself is a half-open interval
 	// [b.meta.MinTime, b.meta.MaxTime).
 	return b.meta.MinTime <= maxt && mint < b.meta.MaxTime
+}
+
+// blockDuration returns the difference between the max and min time for this block.
+func (b *bucketBlock) blockDuration() time.Duration {
+	return time.Duration(b.meta.MaxTime-b.meta.MinTime) * time.Millisecond
 }
 
 // Close waits for all pending readers to finish and then closes all underlying resources.
