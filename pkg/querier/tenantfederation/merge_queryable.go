@@ -38,10 +38,6 @@ import (
 // prefixed with "original_". This behaviour is not implemented recursively.
 func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
 	callbacks := MergeQuerierCallbacks{
-		IDs: func(ctx context.Context) ([]string, error) {
-			tenantIDs, err := tenant.TenantIDs(ctx)
-			return tenantIDs, err
-		},
 		Querier: func(mint, maxt int64) (MergeQuerierUpstream, error) {
 			q, err := upstream.Querier(mint, maxt)
 			if err != nil {
@@ -51,6 +47,10 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 			return &tenantQuerier{
 				upstream: q,
 			}, nil
+		},
+		IDs: func(ctx context.Context) ([]string, error) {
+			tenantIDs, err := tenant.TenantIDs(ctx)
+			return tenantIDs, err
 		},
 	}
 	return NewMergeQueryable(defaultTenantLabel, callbacks, bypassWithSingleID, maxConcurrency, logger)
@@ -95,7 +95,7 @@ func (q *tenantQuerier) Close() error {
 // underlying Queryables. The underlying queryables and its label values to be
 // considered are returned by a MergeQuerierCallback.
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed
-// and results for request with a single querier will not contain the id label.
+// and results for requests with a single ID will not contain the ID label.
 // This allows a smoother transition, when enabling tenant federation in a
 // cluster.
 // Results contain a label `idLabelName` to identify the underlying queryable

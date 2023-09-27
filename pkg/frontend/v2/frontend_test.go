@@ -7,7 +7,6 @@ package v2
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -26,12 +25,13 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -154,46 +154,33 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
-	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
-	expectedMetrics := fmt.Sprintf(`
-		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
-		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
-		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 0
-	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
-
 	// Assert on cortex_query_frontend_enqueue_duration_seconds.
 	metricsMap, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
-	assert.Equal(t, uint64(0), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
+	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
 	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
 
-	// Assert on cortex_query_frontend_workers_enqueued_requests_total.
-	expectedMetrics = fmt.Sprintf(`
-		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
-		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
-		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 1
-	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
-
 	// Assert on cortex_query_frontend_enqueue_duration_seconds.
 	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
-	assert.Equal(t, uint64(1), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
+	require.NotEmpty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
+	require.Len(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric(), 1)
+	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
+	assert.Equal(t, uint64(1), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
 	// Manually remove the address, check that label is removed.
 	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
-	expectedMetrics = ``
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
-	// Assert on cortex_query_frontend_enqueue_duration_seconds.
 	metricsMap, err = metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
-	assert.Equal(t, uint64(1), metricsMap.SumHistograms("cortex_query_frontend_enqueue_duration_seconds").Count())
+	assert.Empty(t, metricsMap["cortex_query_frontend_enqueue_duration_seconds"])
 }
 
 func TestFrontendRetryEnqueue(t *testing.T) {
@@ -498,4 +485,17 @@ func checkStreamGoroutines() int {
 
 	goroutineStacks := string(buf[:stacklen])
 	return strings.Count(goroutineStacks, streamGoroutineStackFrameTrailer)
+}
+
+func makeLabels(namesAndValues ...string) []*dto.LabelPair {
+	out := []*dto.LabelPair(nil)
+
+	for i := 0; i+1 < len(namesAndValues); i = i + 2 {
+		out = append(out, &dto.LabelPair{
+			Name:  proto.String(namesAndValues[i]),
+			Value: proto.String(namesAndValues[i+1]),
+		})
+	}
+
+	return out
 }
