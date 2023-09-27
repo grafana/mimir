@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/googleapis/google/rpc"
+	"github.com/gogo/status"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -28,8 +31,10 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	pushpb "github.com/grafana/mimir/pkg/util/push/error"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -730,13 +735,13 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		expectedHTTPStatus int
 	}{
 		{
-			name:               "a generic error during request parsing gets an HTTP 400",
+			name:               "a generic error during request parsing gets translated into an HTTP 400",
 			parserError:        true,
 			err:                fmt.Errorf("something went wrong during the request parsing"),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "a gRPC error with a status during request parsing gets translated into HTTP error",
+			name:               "a gRPC error with a status during request parsing gets translated into an HTTP error",
 			parserError:        true,
 			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
 			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
@@ -786,4 +791,100 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 		})
 	}
+}
+
+func TestHandler_PushErrorTranslation(t *testing.T) {
+	msg := "something went wrong"
+	testCases := []struct {
+		name               string
+		err                error
+		expectedHTTPStatus int
+	}{
+		{
+			name:               "a push error with errorType ALREADY_PRESENT_ERROR translates into an HTTP 202",
+			err:                pushpb.NewPushError(codes.AlreadyExists, errors.New(msg), pushpb.ALREADY_PRESENT_ERROR),
+			expectedHTTPStatus: http.StatusAccepted,
+		},
+		{
+			name:               "a push error with errorType DATA_ERROR translates into an HTTP 400",
+			err:                pushpb.NewPushError(codes.InvalidArgument, errors.New(msg), pushpb.DATA_ERROR),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:               "a push error with errorType TENANT_LIMIT_ERROR translates into an HTTP 400",
+			err:                pushpb.NewPushError(codes.ResourceExhausted, errors.New(msg), pushpb.TENANT_LIMIT_ERROR),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:               "a push error with errorType INGESTION_RATE_LIMIT_ERROR translates into an HTTP 429",
+			err:                pushpb.NewPushError(codes.ResourceExhausted, errors.New(msg), pushpb.INGESTION_RATE_LIMIT_ERROR),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:               "a push error with errorType REQUEST_RATE_LIMIT_ERROR translates into an HTTP 429",
+			err:                pushpb.NewPushError(codes.ResourceExhausted, errors.New(msg), pushpb.REQUEST_RATE_LIMIT_ERROR),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:               "a push error with errorType INSTANCE_LIMIT_ERROR translates into an HTTP 500",
+			err:                pushpb.NewPushError(codes.ResourceExhausted, errors.New(msg), pushpb.INSTANCE_LIMIT_ERROR),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a push error with errorType INTERNAL_PUSH_ERROR translates into an HTTP 500",
+			err:                pushpb.NewPushError(codes.FailedPrecondition, errors.New(msg), pushpb.INTERNAL_PUSH_ERROR),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a push error with errorType TIMEOUT translates into an HTTP 500",
+			err:                pushpb.NewPushError(codes.DeadlineExceeded, errors.New(msg), pushpb.TIMEOUT),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a gRPC error without details translates into translates into an HTTP 500",
+			err:                status.New(codes.Unavailable, msg).Err(),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a gRPC error without PushErrorDetails payload translates into an HTTP 500",
+			err:                newErrorWithBadDetails(t, msg),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a context.Canceled error during push gets translated into an HTTP 499",
+			err:                context.Canceled,
+			expectedHTTPStatus: statusClientClosedRequest,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
+				return nil, nil
+			}
+			pushFunc := func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
+				return nil, tc.err
+			}
+
+			h := handler(10, nil, false, pushFunc, parserFunc)
+
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+
+			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
+		})
+	}
+}
+
+func newErrorWithBadDetails(t *testing.T, msg string) error {
+	stat := status.New(codes.Unavailable, msg)
+	stat, err := stat.WithDetails(
+		&rpc.ErrorInfo{
+			Reason: "TEST_REASON",
+			Domain: "test_domain",
+		},
+	)
+	require.NoError(t, err)
+	return stat.Err()
 }

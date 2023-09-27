@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package push;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+option go_package = "pushpb";
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message PushErrorDetails {
+  ErrorType ErrorType = 1;
+  repeated OptionalFlag OptionalFlags = 3;
+}
+
+enum ErrorType {
+  UNAVAILABLE = 0;
+  INGESTION_RATE_LIMIT_ERROR = 1;
+  REQUEST_RATE_LIMIT_ERROR = 2;
+  INSTANCE_LIMIT_ERROR = 3;
+  TENANT_LIMIT_ERROR = 4;
+  DATA_ERROR = 5;
+  ALREADY_PRESENT_ERROR = 6;
+  TIMEOUT = 7;
+  INTERNAL_PUSH_ERROR = 8;
+}
+
+enum OptionalFlag {
+    SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED = 0;
+}
+

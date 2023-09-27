@@ -38,6 +38,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -48,6 +49,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
+	pushpb "github.com/grafana/mimir/pkg/util/push/error"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -77,9 +79,6 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
-
-	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	statusServiceOverload = 529
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -696,12 +695,20 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
@@ -731,15 +738,27 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+				return nil, pushpb.NewPushError(
+					codes.AlreadyExists,
+					err,
+					pushpb.ALREADY_PRESENT_ERROR,
+				)
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+				return nil, pushpb.NewPushError(
+					codes.ResourceExhausted,
+					err,
+					pushpb.TENANT_LIMIT_ERROR,
+				)
 			}
 
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.Internal,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		if removeReplica {
@@ -770,12 +789,20 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		var removeTsIndexes []int
@@ -839,12 +866,20 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		now := mtime.Now()
@@ -905,8 +940,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			if validationErr != nil {
 				if firstPartialErr == nil {
 					// The series labels may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+					// use case because NewPushError discards the former by calling Error().
+					firstPartialErr = pushpb.NewPushError(
+						codes.InvalidArgument,
+						validationErr,
+						pushpb.DATA_ERROR,
+					)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -927,8 +966,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
 					// The metadata info may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+					// use case because NewPushError discards the former by calling Error().
+					firstPartialErr = pushpb.NewPushError(
+						codes.InvalidArgument,
+						validationErr,
+						pushpb.DATA_ERROR,
+					)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -950,10 +993,14 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			// Return a 429 here to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
+			return nil, pushpb.NewPushError(
+				codes.ResourceExhausted,
+				validation.NewIngestionRateLimitedError(
+					d.limits.IngestionRate(userID),
+					d.limits.IngestionBurstSize(userID),
+				),
+				pushpb.INGESTION_RATE_LIMIT_ERROR,
+			)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -983,12 +1030,20 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		numSamples := 0
@@ -1035,32 +1090,58 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return nil, util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
+			return nil, pushpb.NewPushError(
+				codes.ResourceExhausted,
+				util_log.DoNotLogError{Err: errMaxInflightRequestsReached},
+				pushpb.INSTANCE_LIMIT_ERROR,
+			)
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return nil, errMaxIngestionRateReached
+				return nil, pushpb.NewPushError(
+					codes.ResourceExhausted,
+					errMaxIngestionRateReached,
+					pushpb.INSTANCE_LIMIT_ERROR,
+				)
 			}
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 
 		now := mtime.Now()
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			// The SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED OptionalFlag
+			// is included in the error depending on the configuration.
 			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
-				return nil, httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+				return nil, pushpb.NewPushError(
+					codes.ResourceExhausted,
+					validation.NewRequestRateLimitedError(
+						d.limits.RequestRate(userID),
+						d.limits.RequestBurstSize(userID),
+					),
+					pushpb.REQUEST_RATE_LIMIT_ERROR,
+					pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED,
+				)
 			}
-			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+			return nil, pushpb.NewPushError(
+				codes.ResourceExhausted,
+				validation.NewRequestRateLimitedError(
+					d.limits.RequestRate(userID),
+					d.limits.RequestBurstSize(userID),
+				),
+				pushpb.REQUEST_RATE_LIMIT_ERROR,
+			)
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1068,7 +1149,11 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return nil, pushpb.NewPushError(
+				codes.FailedPrecondition,
+				err,
+				pushpb.INTERNAL_PUSH_ERROR,
+			)
 		}
 		reqSize := int64(req.Size())
 		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
@@ -1078,7 +1163,11 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return nil, errMaxInflightRequestsBytesReached
+			return nil, pushpb.NewPushError(
+				codes.ResourceExhausted,
+				errMaxInflightRequestsBytesReached,
+				pushpb.INSTANCE_LIMIT_ERROR,
+			)
 		}
 
 		cleanupInDefer = false
@@ -1110,12 +1199,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	req, err := pushReq.WriteRequest()
 	if err != nil {
-		return nil, err
+		return nil, pushpb.NewPushError(
+			codes.FailedPrecondition,
+			err,
+			pushpb.INTERNAL_PUSH_ERROR,
+		)
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return nil, pushpb.NewPushError(
+			codes.FailedPrecondition,
+			err,
+			pushpb.INTERNAL_PUSH_ERROR,
+		)
 	}
 
 	d.updateReceivedMetrics(req, userID)
@@ -1187,7 +1284,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
+			return pushpb.NewPushError(
+				codes.DeadlineExceeded,
+				errors.Errorf("exceeded configured distributor remote timeout: %s", err.Error()),
+				pushpb.TIMEOUT,
+			)
 		}
 		return err
 	}, func() { pushReq.CleanUp(); cancel() })
@@ -1255,6 +1356,9 @@ func handleIngesterPushError(err error) error {
 	if err == nil {
 		return nil
 	}
+	// TODO: This usage of httpgrpc is still needed for the backwards compatibility.
+	// Once the ingester push errors are also enriched with PushErrorDetails, this
+	// code can be removed.
 	resp, ok := httpgrpc.HTTPResponseFromError(err)
 	if ok {
 		// Wrap HTTP gRPC error with more explanatory message.
@@ -1449,7 +1553,11 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
 	if len(labelNames) > lbNamesLimit {
-		return 0, nil, httpgrpc.Errorf(http.StatusBadRequest, "label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
+		return 0, nil, pushpb.NewPushError(
+			codes.ResourceExhausted,
+			errors.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames)),
+			pushpb.TENANT_LIMIT_ERROR,
+		)
 	}
 
 	// Run labelValuesCardinality and UserStats methods in parallel

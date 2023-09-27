@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
+	pushpb "github.com/grafana/mimir/pkg/util/push/error"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
@@ -37,8 +38,12 @@ var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }
 
-const SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
-const statusClientClosedRequest = 499
+const (
+	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
+	statusClientClosedRequest     = 499
+	// StatusServiceOverload (529) is a non-standard status code used by some services to signal that "The service is overloaded".
+	StatusServiceOverload = 529
+)
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -122,14 +127,55 @@ func handler(maxRecvMsgSize int,
 				return
 			}
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+			var (
+				code int
+				msg  string
+			)
+			if ok {
+				code, msg = int(resp.GetCode()), string(resp.Body)
+			} else {
+				code, msg = detailsFromStatus(err)
 			}
-			if resp.GetCode() != 202 {
+			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
-			http.Error(w, string(resp.Body), int(resp.Code))
+			http.Error(w, msg, code)
 		}
 	})
+}
+
+func detailsFromStatus(err error) (int, string) {
+	pushErrorDetails, ok := pushpb.GetPushErrorDetails(err)
+	if ok {
+		code := getCodeFromPushErrorDetails(pushErrorDetails)
+		return code, err.Error()
+	}
+	return http.StatusInternalServerError, err.Error()
+}
+
+func getCodeFromPushErrorDetails(errorDetails *pushpb.PushErrorDetails) int {
+	errorType := errorDetails.GetErrorType()
+	switch errorType {
+	case pushpb.ALREADY_PRESENT_ERROR:
+		return http.StatusAccepted
+	case pushpb.DATA_ERROR, pushpb.TENANT_LIMIT_ERROR:
+		return http.StatusBadRequest
+	case pushpb.INGESTION_RATE_LIMIT_ERROR:
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return http.StatusTooManyRequests
+	case pushpb.REQUEST_RATE_LIMIT_ERROR:
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if errorDetails.ContainsOptionalFlag(pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED) {
+			return StatusServiceOverload
+		}
+		return http.StatusTooManyRequests
+	case pushpb.INTERNAL_PUSH_ERROR, pushpb.TIMEOUT:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusInternalServerError
+	}
 }

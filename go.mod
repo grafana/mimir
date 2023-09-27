@@ -58,6 +58,7 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/aws/aws-sdk-go v1.45.11
 	github.com/dennwc/varint v1.0.0
+	github.com/gogo/googleapis v1.4.1
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-github/v32 v32.1.0
@@ -155,7 +156,6 @@ require (
 	github.com/go-openapi/validate v0.22.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
-	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/glog v1.1.1 // indirect
 	github.com/google/btree v1.0.1 // indirect

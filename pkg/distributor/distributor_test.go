@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	pushpb "github.com/grafana/mimir/pkg/util/push/error"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -116,21 +117,26 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
-	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: Fail")
+	exprErrFail := handleIngesterPushError(errFail)
+	stat, ok := status.FromError(exprErrFail)
+	require.True(t, ok)
+	expFailGRPCCode := stat.Code()
 
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
 	}
 	for name, tc := range map[string]struct {
-		metricNames     []string
-		numIngesters    int
-		happyIngesters  int
-		samples         samplesIn
-		metadata        int
-		expectedError   error
-		expectedMetrics string
-		timeOut         bool
+		metricNames                  []string
+		numIngesters                 int
+		happyIngesters               int
+		samples                      samplesIn
+		metadata                     int
+		expectedError                error
+		expectedGRPCCode             codes.Code
+		expectedOptionalErrorDetails []pushpb.ErrorDetail
+		expectedMetrics              string
+		timeOut                      bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -161,11 +167,12 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 1 happy ingesters should fail": {
-			numIngesters:   3,
-			happyIngesters: 1,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:     3,
+			happyIngesters:   1,
+			samples:          samplesIn{num: 10, startTimestampMs: 123456789000},
+			expectedError:    exprErrFail,
+			expectedGRPCCode: expFailGRPCCode,
+			metricNames:      []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -173,11 +180,12 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 0 happy ingesters should fail": {
-			numIngesters:   3,
-			happyIngesters: 0,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:     3,
+			happyIngesters:   0,
+			samples:          samplesIn{num: 10, startTimestampMs: 123456789000},
+			expectedError:    exprErrFail,
+			expectedGRPCCode: expFailGRPCCode,
+			metricNames:      []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -185,12 +193,14 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push exceeding burst size should fail": {
-			numIngesters:   3,
-			happyIngesters: 3,
-			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
-			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(20, 20).Error()),
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:                 3,
+			happyIngesters:               3,
+			samples:                      samplesIn{num: 25, startTimestampMs: 123456789000},
+			metadata:                     5,
+			expectedError:                validation.NewIngestionRateLimitedError(20, 20),
+			expectedGRPCCode:             codes.ResourceExhausted,
+			expectedOptionalErrorDetails: []pushpb.ErrorDetail{pushpb.INGESTION_RATE_LIMIT_ERROR},
+			metricNames:                  []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -276,13 +286,14 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A timed out push should fail": {
-			numIngesters:   3,
-			happyIngesters: 3,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			timeOut:        true,
-			expectedError: httpgrpc.Errorf(http.StatusInternalServerError,
-				"exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
-			metricNames: []string{lastSeenTimestamp},
+			numIngesters:                 3,
+			happyIngesters:               3,
+			samples:                      samplesIn{num: 10, startTimestampMs: 123456789000},
+			timeOut:                      true,
+			expectedError:                errors.New("exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
+			expectedGRPCCode:             codes.DeadlineExceeded,
+			expectedOptionalErrorDetails: []pushpb.ErrorDetail{pushpb.TIMEOUT},
+			metricNames:                  []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -312,11 +323,8 @@ func TestDistributor_Push(t *testing.T) {
 				assert.Equal(t, emptyResponse, response)
 			} else {
 				assert.Nil(t, response)
-				assert.EqualError(t, err, tc.expectedError.Error())
-
-				// Assert that downstream gRPC statuses are passed back upstream
-				_, ok := httpgrpc.HTTPResponseFromError(err)
-				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
+				assert.ErrorContains(t, err, tc.expectedError.Error())
+				verifyGRPCError(t, true, err, tc.expectedGRPCCode, tc.expectedOptionalErrorDetails...)
 			}
 
 			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
@@ -472,6 +480,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 	type testPush struct {
 		expectedError error
 	}
+	expectedGRPCCode := codes.ResourceExhausted
+	expectedErrorType := pushpb.REQUEST_RATE_LIMIT_ERROR
+	expectedOptionalFlag := pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
 		distributors               int
@@ -487,7 +498,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{
+					expectedError: validation.NewRequestRateLimitedError(4, 2),
+				},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -508,7 +521,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
+				{
+					expectedError: validation.NewRequestRateLimitedError(2, 3),
+				},
 			},
 		},
 		"request limit is reached return 529 when enable service overload error set to true": {
@@ -519,7 +534,9 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{
+					expectedError: validation.NewRequestRateLimitedError(4, 2),
+				},
 			},
 		},
 	}
@@ -553,6 +570,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				} else {
 					assert.Nil(t, response)
 					assert.EqualError(t, err, push.expectedError.Error())
+					if testData.enableServiceOverloadError {
+						verifyGRPCError(t, true, err, expectedGRPCCode, expectedErrorType, expectedOptionalFlag)
+					} else {
+						verifyGRPCError(t, true, err, expectedGRPCCode, expectedErrorType)
+					}
 				}
 			}
 		})
@@ -565,6 +587,9 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		metadata      int
 		expectedError error
 	}
+
+	expectedGRPCCode := codes.ResourceExhausted
+	expectedErrorType := pushpb.INGESTION_RATE_LIMIT_ERROR
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
@@ -580,10 +605,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 2, metadata: 1, expectedError: validation.NewIngestionRateLimitedError(10, 5)},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 1, expectedError: validation.NewIngestionRateLimitedError(10, 5)},
+				{metadata: 1, expectedError: validation.NewIngestionRateLimitedError(10, 5)},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -593,10 +618,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 5, metadata: 1, expectedError: validation.NewIngestionRateLimitedError(10, 20)},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 1, expectedError: validation.NewIngestionRateLimitedError(10, 20)},
+				{metadata: 1, expectedError: validation.NewIngestionRateLimitedError(10, 20)},
 			},
 		},
 	}
@@ -628,7 +653,8 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 					assert.Nil(t, err)
 				} else {
 					assert.Nil(t, response)
-					assert.Equal(t, push.expectedError, err)
+					assert.ErrorContains(t, err, push.expectedError.Error())
+					verifyGRPCError(t, true, err, expectedGRPCCode, expectedErrorType)
 				}
 			}
 		})
@@ -643,6 +669,8 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "user")
+	expectedGRPCCode := codes.ResourceExhausted
+	expectedErrorType := pushpb.INSTANCE_LIMIT_ERROR
 	tests := map[string]struct {
 		preInflight    int
 		preRateSamples int        // initial rate before first push
@@ -805,6 +833,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 					assert.Nil(t, err)
 				} else {
 					assert.ErrorIs(t, err, push.expectedError)
+					verifyGRPCError(t, true, err, expectedGRPCCode, expectedErrorType)
 				}
 
 				d.ingestionRate.Tick()
@@ -826,13 +855,14 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	for i, tc := range []struct {
-		enableTracker    bool
-		acceptedReplica  string
-		testReplica      string
-		cluster          string
-		samples          int
-		expectedResponse *mimirpb.WriteResponse
-		expectedCode     int32
+		enableTracker     bool
+		acceptedReplica   string
+		testReplica       string
+		cluster           string
+		samples           int
+		expectedResponse  *mimirpb.WriteResponse
+		expectedCode      codes.Code
+		expectedErrorType pushpb.ErrorType
 	}{
 		{
 			enableTracker:    true,
@@ -842,14 +872,16 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			samples:          5,
 			expectedResponse: emptyResponse,
 		},
-		// The 202 indicates that we didn't accept this sample.
+		// The AlreadyExists gRPC code and error type ALREADY_PRESENT_ERROR
+		// indicate that we didn't accept this sample.
 		{
-			enableTracker:   true,
-			acceptedReplica: "instance2",
-			testReplica:     "instance0",
-			cluster:         "cluster0",
-			samples:         5,
-			expectedCode:    202,
+			enableTracker:     true,
+			acceptedReplica:   "instance2",
+			testReplica:       "instance0",
+			cluster:           "cluster0",
+			samples:           5,
+			expectedCode:      codes.AlreadyExists,
+			expectedErrorType: pushpb.ALREADY_PRESENT_ERROR,
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -862,13 +894,14 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		},
 		// Using very long replica label value results in validation error.
 		{
-			enableTracker:    true,
-			acceptedReplica:  "instance0",
-			testReplica:      "instance1234567890123456789012345678901234567890",
-			cluster:          "cluster0",
-			samples:          5,
-			expectedResponse: emptyResponse,
-			expectedCode:     400,
+			enableTracker:     true,
+			acceptedReplica:   "instance0",
+			testReplica:       "instance1234567890123456789012345678901234567890",
+			cluster:           "cluster0",
+			samples:           5,
+			expectedResponse:  emptyResponse,
+			expectedCode:      codes.InvalidArgument,
+			expectedErrorType: pushpb.DATA_ERROR,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -896,11 +929,8 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			response, err := d.Push(ctx, request)
 			assert.Equal(t, tc.expectedResponse, response)
 
-			httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-			if ok {
-				assert.Equal(t, tc.expectedCode, httpResp.Code)
-			} else if tc.expectedCode != 0 {
-				assert.Fail(t, "expected HTTP status code", tc.expectedCode)
+			if err != nil {
+				verifyGRPCError(t, true, err, tc.expectedCode, tc.expectedErrorType)
 			}
 		})
 	}
@@ -1257,8 +1287,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
 			if tc.errExpected {
-				fromError, _ := status.FromError(err)
-				assert.Equal(t, tc.errMessage, fromError.Message())
+				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1327,9 +1356,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			})
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
-				assert.Contains(t, fromError.Message(), tc.errMsg)
-				assert.Contains(t, fromError.Message(), tc.errID)
+				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1395,10 +1422,11 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
-				require.Equal(t, int32(400), fromError.Proto().Code)
+				fromError, ok := status.FromError(err)
+				assert.True(t, ok)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
+				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -2530,18 +2558,18 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 	}
 
+	expectedGRPCCode := codes.ResourceExhausted
+	expectedErrorType := pushpb.TENANT_LIMIT_ERROR
+
 	tests := map[string]struct {
 		labelNames              []model.LabelName
 		maxLabelNamesPerRequest int
-		expectedHTTPGrpcError   error
+		expectedError           error
 	}{
 		"should return a httpgrpc error if the maximum number of label names per request is reached": {
 			labelNames:              []model.LabelName{labels.MetricName, "status"},
 			maxLabelNamesPerRequest: 1,
-			expectedHTTPGrpcError: httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
-				Code: int32(400),
-				Body: []byte("label values cardinality request label names limit (limit: 1 actual: 2) exceeded"),
-			}),
+			expectedError:           errors.New("label values cardinality request label names limit (limit: 1 actual: 2) exceeded"),
 		},
 		"should succeed if the maximum number of label names per request is not reached": {
 			labelNames:              []model.LabelName{labels.MetricName},
@@ -2572,10 +2600,11 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 			}
 
 			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{}, cardinality.InMemoryMethod)
-			if testData.expectedHTTPGrpcError == nil {
+			if testData.expectedError == nil {
 				require.NoError(t, err)
 			} else {
-				require.Equal(t, testData.expectedHTTPGrpcError, err)
+				require.ErrorContains(t, err, testData.expectedError.Error())
+				verifyGRPCError(t, false, err, expectedGRPCCode, expectedErrorType)
 			}
 		})
 	}
@@ -2618,7 +2647,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		reqs              []*mimirpb.WriteRequest
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
-		expectErrs        []int
+		expectGRPCCodes   []codes.Code
+		expectErrorTypes  []pushpb.ErrorType
 	}
 	testCases := []testCase{
 		{
@@ -2629,7 +2659,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{{}},
 			expectedReqs:      []*mimirpb.WriteRequest{{}},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectGRPCCodes:   []codes.Code{codes.OK},
 		}, {
 			name:              "no changes if accept HA samples is false",
 			ctx:               ctxWithUser,
@@ -2638,7 +2668,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectGRPCCodes:   []codes.Code{codes.OK},
 		}, {
 			name:              "remove replica label with HA tracker disabled",
 			ctx:               ctxWithUser,
@@ -2647,7 +2677,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectGRPCCodes:   []codes.Code{codes.OK},
 		}, {
 			name:              "do nothing without user in context, don't even call next",
 			ctx:               context.Background(),
@@ -2656,7 +2686,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
-			expectErrs:        []int{-1}, // Special value because this is not an httpgrpc error.
+			expectGRPCCodes:   []codes.Code{codes.FailedPrecondition},
+			expectErrorTypes:  []pushpb.ErrorType{pushpb.INTERNAL_PUSH_ERROR},
 		}, {
 			name:            "perform HA deduplication",
 			ctx:             ctxWithUser,
@@ -2668,7 +2699,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0, 202},
+			expectGRPCCodes:   []codes.Code{codes.OK, codes.AlreadyExists},
+			expectErrorTypes:  []pushpb.ErrorType{pushpb.ALREADY_PRESENT_ERROR, pushpb.ALREADY_PRESENT_ERROR},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
@@ -2682,7 +2714,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0, 202, 400, 400},
+			expectGRPCCodes:   []codes.Code{codes.OK, codes.AlreadyExists, codes.ResourceExhausted, codes.ResourceExhausted},
+			expectErrorTypes:  []pushpb.ErrorType{pushpb.ALREADY_PRESENT_ERROR, pushpb.ALREADY_PRESENT_ERROR, pushpb.TENANT_LIMIT_ERROR, pushpb.TENANT_LIMIT_ERROR},
 		},
 	}
 
@@ -2726,19 +2759,14 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			}
 
 			assert.Equal(t, tc.expectedReqs, gotReqs)
-			assert.Len(t, gotErrs, len(tc.expectErrs))
-			for errIdx, expectErr := range tc.expectErrs {
-				if expectErr > 0 {
-					// Expect an httpgrpc error with specific status code.
-					resp, ok := httpgrpc.HTTPResponseFromError(gotErrs[errIdx])
-					assert.True(t, ok)
-					assert.Equal(t, expectErr, int(resp.Code))
-				} else if expectErr == 0 {
+			assert.Len(t, gotErrs, len(tc.expectGRPCCodes))
+			for errIdx, expectErr := range tc.expectGRPCCodes {
+				if expectErr == codes.OK {
 					// Expect no error.
-					assert.Nil(t, gotErrs[errIdx])
+					assert.NoError(t, gotErrs[errIdx])
 				} else {
-					// Expect an error which is not an httpgrpc error.
-					assert.NotNil(t, gotErrs[errIdx])
+					assert.Error(t, gotErrs[errIdx])
+					verifyGRPCError(t, true, gotErrs[errIdx], expectErr, tc.expectErrorTypes[errIdx])
 				}
 			}
 
@@ -2792,6 +2820,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// then this would set replica for the cluster.
 	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
+	verifyGRPCError(t, true, err, codes.ResourceExhausted, pushpb.INSTANCE_LIMIT_ERROR)
 
 	// Simulate no other inflight request.
 	ds[0].inflightPushRequests.Dec()
@@ -4041,14 +4070,15 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
+	expectedGRPCCode := codes.InvalidArgument
+	expectedErrorType := pushpb.DATA_ERROR
 
 	for name, tc := range map[string]struct {
-		metadata           []*mimirpb.MetricMetadata
-		labels             [][]mimirpb.LabelAdapter
-		samples            []mimirpb.Sample
-		exemplars          []*mimirpb.Exemplar
-		expectedStatusCode int32
-		expectedErr        string
+		metadata    []*mimirpb.MetricMetadata
+		labels      [][]mimirpb.LabelAdapter
+		samples     []mimirpb.Sample
+		exemplars   []*mimirpb.Exemplar
+		expectedErr string
 	}{
 		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4082,8 +4112,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(future),
 				Value:       4,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
+			expectedErr: fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
 		"exceeds maximum labels per series": {
@@ -4092,8 +4121,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
@@ -4107,8 +4135,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo…'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo…'`,
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 bytes when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
@@ -4120,8 +4147,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{families="👩\u200d👦👨\u200d👧👨\u200d👩\u200d👧👩\u200d👧👩\u200d👩\u200d👦\u200d👦👨\u200d👩\u200d👧\u200d👦👨\u200d👧\u200d👦👨\u200d👩\u200d👦👪👨\u200d👦👨\u200d👦\u200d👦👨\u200d👨\u200d👧👨\u200d👧\u200d👧", foo="b"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{families="👩\u200d👦👨\u200d👧👨\u200d👩\u200d👧👩\u200d👧👩\u200d👩\u200d👦\u200d👦👨\u200d👩\u200d👧\u200d👦👨\u200d👧\u200d👦👨\u200d👩\u200d👦👪👨\u200d👦👨\u200d👦\u200d👦👨\u200d👨\u200d👧👨\u200d👧\u200d👧", foo="b"}'`,
 		},
 		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
@@ -4132,8 +4158,7 @@ func TestDistributorValidation(t *testing.T) {
 				{TimestampMs: int64(now), Value: 2},
 				{TimestampMs: int64(past), Value: 2},
 			},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4142,8 +4167,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a metric metadata with no metric name`,
+			expectedErr: `received a metric metadata with no metric name`,
 		},
 		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4157,8 +4181,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
+			expectedErr: fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -4180,10 +4203,8 @@ func TestDistributorValidation(t *testing.T) {
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 			} else {
-				res, ok := httpgrpc.HTTPResponseFromError(err)
-				require.True(t, ok)
-				require.Equal(t, tc.expectedStatusCode, res.Code)
-				require.Contains(t, string(res.GetBody()), tc.expectedErr)
+				require.Error(t, err)
+				verifyGRPCError(t, false, err, expectedGRPCCode, expectedErrorType)
 			}
 		})
 	}
@@ -4685,6 +4706,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
 	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
 	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
+	verifyGRPCError(t, true, err, codes.ResourceExhausted, pushpb.INSTANCE_LIMIT_ERROR)
 }
 
 func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
@@ -4801,6 +4823,46 @@ func TestHandleIngesterPushError(t *testing.T) {
 			require.NoError(t, err)
 		} else {
 			require.ErrorContains(t, err, testData.expectedOutputError.Error())
+		}
+	}
+}
+
+func verifyGRPCError(t *testing.T, asserting bool, err error, expectedGRPCCode codes.Code, opts ...pushpb.ErrorDetail) {
+	// Assert or require that downstream gRPC statuses are passed back upstream
+	stat, ok := status.FromError(err)
+	if asserting {
+		assert.True(t, ok, fmt.Sprintf("expected error to be a gRPC error, but got: %T", err))
+		assert.Equal(t, expectedGRPCCode, stat.Code())
+	} else {
+		require.True(t, ok, fmt.Sprintf("expected error to be a gRPC error, but got: %T", err))
+		require.Equal(t, expectedGRPCCode, stat.Code())
+	}
+
+	if len(opts) > 0 {
+		errorDetails, ok := pushpb.GetPushErrorDetails(err)
+		if asserting {
+			assert.True(t, ok)
+		} else {
+			require.True(t, ok)
+		}
+		for _, opt := range opts {
+			expectedErrorType, ok := opt.(pushpb.ErrorType)
+			if ok {
+				if asserting {
+					assert.Equal(t, expectedErrorType, errorDetails.GetErrorType())
+				} else {
+					require.Equal(t, expectedErrorType, errorDetails.GetErrorType())
+				}
+				continue
+			}
+			optionalFlag, ok := opt.(pushpb.OptionalFlag)
+			if ok {
+				if asserting {
+					assert.True(t, errorDetails.ContainsOptionalFlag(optionalFlag))
+				} else {
+					require.True(t, errorDetails.ContainsOptionalFlag(optionalFlag))
+				}
+			}
 		}
 	}
 }
