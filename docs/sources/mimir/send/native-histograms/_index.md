@@ -173,7 +173,7 @@ This section assumes that you are famliar with basic algebra. Native histogram b
 
 Native histogram samples have three different kind of buckets, for any observed value the value is counted towards one kind of bucket.
 
-- A zero bucket, which contains the count of observations whose absolute value is smaller or equal to the zero threshold.
+- A zero bucket, which contains the count of observations whose absolute value is smaller or equal to the zero threshold.f
 
   [//]: # "LaTeX equation source: -threshold \\leq v \leq threshold"
 
@@ -214,7 +214,7 @@ Native histogram samples have three different kind of buckets, for any observed 
 
   ![Negative bucket definition](neg-bucket-def.svg)
 
-  where the `schema` is choosen as above.
+  where the `schema` is chosen as above.
 
 ## Limiting the number of buckets
 
