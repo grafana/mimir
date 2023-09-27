@@ -120,8 +120,8 @@ Use the latest version of Prometheus.
 
    ```yaml
    remote_write:
-      - url: http://.../api/prom/push
-        send_native_histograms: true
+     - url: http://.../api/prom/push
+       send_native_histograms: true
    ```
 
 ### Scrape and send native histograms with Grafana Agent
@@ -210,7 +210,7 @@ Native histogram samples have three different kind of buckets, for any observed 
 
 - Negative buckets, which contain the coint of observations with a negative value that is smaller or equal to the upper bound and larger than the lower bound of a bucket.
 
-  [//]: # "LaTeX equation source: {-2^{\left( 2^{-schema}\right)}}^{index+1} < v \leq {-2^{\left( 2^{-schema}\right)}}^{index}"
+  [//]: # "LaTeX equation source: {-2^{\\left( 2^{-schema}\right)}}^{index+1} < v \leq {-2^{\left( 2^{-schema}\right)}}^{index}"
 
   ![Negative bucket definition](neg-bucket-def.svg)
 
@@ -229,5 +229,4 @@ Once the set maximum is exceeded, the following strategy is enacted:
 1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of buckets to or below the maximum bucket number, but not to more than the maximum zaro threashold (`NativeHistogramMaxZeroThreshold` in GO). Thus, if the threashold is at or above the maximum threashold already nothing happens at this step.
 
 1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the sparse buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, see above in [Bucket boundary calculation](#bucket-boundary-calculation)).
-	
 1. Any increased zero threshold or reduced resolution is reset back to their original values once the minimum reset duration has passed (since the last reset or the creation of the histogram).
