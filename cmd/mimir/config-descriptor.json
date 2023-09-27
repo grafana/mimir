@@ -9455,7 +9455,7 @@
               "desc": "Authentication type to use. Supported types are: approle, kubernetes, userpass, token",
               "fieldValue": null,
               "fieldDefaultValue": "",
-              "fieldFlag": "vault.authtype",
+              "fieldFlag": "vault.auth.type",
               "fieldType": "string"
             },
             {
@@ -9471,7 +9471,7 @@
                   "desc": "Role ID of the AppRole",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authapprole.role-id",
+                  "fieldFlag": "vault.auth.approle.role-id",
                   "fieldType": "string"
                 },
                 {
@@ -9481,7 +9481,7 @@
                   "desc": "Secret ID issues against the AppRole",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authapprole.secret-id",
+                  "fieldFlag": "vault.auth.approle.secret-id",
                   "fieldType": "string"
                 },
                 {
@@ -9491,7 +9491,7 @@
                   "desc": "Response wrapping token if the Secret ID is response wrapped",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authapprole.wrapping-token",
+                  "fieldFlag": "vault.auth.approle.wrapping-token",
                   "fieldType": "string"
                 },
                 {
@@ -9501,7 +9501,7 @@
                   "desc": "Path if the Vault backend was mounted using a non-default path",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authapprole.mount-path",
+                  "fieldFlag": "vault.auth.approle.mount-path",
                   "fieldType": "string"
                 }
               ],
@@ -9521,7 +9521,7 @@
                   "desc": "The Kubernetes named role",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authkubernetes.role-name",
+                  "fieldFlag": "vault.auth.kubernetes.role-name",
                   "fieldType": "string"
                 },
                 {
@@ -9531,7 +9531,7 @@
                   "desc": "The Service Account JWT",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authkubernetes.service-account-token",
+                  "fieldFlag": "vault.auth.kubernetes.service-account-token",
                   "fieldType": "string"
                 },
                 {
@@ -9541,7 +9541,7 @@
                   "desc": "Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the ServiceAccountToken is not specified.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authkubernetes.service-account-token-path",
+                  "fieldFlag": "vault.auth.kubernetes.service-account-token-path",
                   "fieldType": "string"
                 },
                 {
@@ -9551,7 +9551,7 @@
                   "desc": "Path if the Vault backend was mounted using a non-default path",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authkubernetes.mount-path",
+                  "fieldFlag": "vault.auth.kubernetes.mount-path",
                   "fieldType": "string"
                 }
               ],
@@ -9571,7 +9571,7 @@
                   "desc": "The userpass auth method username",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authuserpass.username",
+                  "fieldFlag": "vault.auth.userpass.username",
                   "fieldType": "string"
                 },
                 {
@@ -9581,7 +9581,7 @@
                   "desc": "The userpass auth method password",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authuserpass.password",
+                  "fieldFlag": "vault.auth.userpass.password",
                   "fieldType": "string"
                 },
                 {
@@ -9591,7 +9591,7 @@
                   "desc": "Path if the Vault backend was mounted using a non-default path",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authuserpass.mount-path",
+                  "fieldFlag": "vault.auth.userpass.mount-path",
                   "fieldType": "string"
                 }
               ],
@@ -9611,7 +9611,7 @@
                   "desc": "The token used to authenticate against Vault",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "vault.authtoken",
+                  "fieldFlag": "vault.auth.token",
                   "fieldType": "string"
                 }
               ],

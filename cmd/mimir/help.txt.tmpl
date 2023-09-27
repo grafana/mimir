@@ -709,31 +709,31 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
-  -vault.authapprole.mount-path string
+  -vault.auth.approle.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authapprole.role-id string
+  -vault.auth.approle.role-id string
     	Role ID of the AppRole
-  -vault.authapprole.secret-id string
+  -vault.auth.approle.secret-id string
     	Secret ID issues against the AppRole
-  -vault.authapprole.wrapping-token string
+  -vault.auth.approle.wrapping-token string
     	Response wrapping token if the Secret ID is response wrapped
-  -vault.authkubernetes.mount-path string
+  -vault.auth.kubernetes.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authkubernetes.role-name string
+  -vault.auth.kubernetes.role-name string
     	The Kubernetes named role
-  -vault.authkubernetes.service-account-token string
+  -vault.auth.kubernetes.service-account-token string
     	The Service Account JWT
-  -vault.authkubernetes.service-account-token-path string
+  -vault.auth.kubernetes.service-account-token-path string
     	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the ServiceAccountToken is not specified.
-  -vault.authtoken string
+  -vault.auth.token string
     	The token used to authenticate against Vault
-  -vault.authtype string
+  -vault.auth.type string
     	Authentication type to use. Supported types are: approle, kubernetes, userpass, token
-  -vault.authuserpass.mount-path string
+  -vault.auth.userpass.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authuserpass.password string
+  -vault.auth.userpass.password string
     	The userpass auth method password
-  -vault.authuserpass.username string
+  -vault.auth.userpass.username string
     	The userpass auth method username
   -version
     	Print application version and exit.

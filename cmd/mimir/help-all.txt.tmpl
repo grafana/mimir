@@ -2629,31 +2629,31 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
-  -vault.authapprole.mount-path string
+  -vault.auth.approle.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authapprole.role-id string
+  -vault.auth.approle.role-id string
     	Role ID of the AppRole
-  -vault.authapprole.secret-id string
+  -vault.auth.approle.secret-id string
     	Secret ID issues against the AppRole
-  -vault.authapprole.wrapping-token string
+  -vault.auth.approle.wrapping-token string
     	Response wrapping token if the Secret ID is response wrapped
-  -vault.authkubernetes.mount-path string
+  -vault.auth.kubernetes.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authkubernetes.role-name string
+  -vault.auth.kubernetes.role-name string
     	The Kubernetes named role
-  -vault.authkubernetes.service-account-token string
+  -vault.auth.kubernetes.service-account-token string
     	The Service Account JWT
-  -vault.authkubernetes.service-account-token-path string
+  -vault.auth.kubernetes.service-account-token-path string
     	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the ServiceAccountToken is not specified.
-  -vault.authtoken string
+  -vault.auth.token string
     	The token used to authenticate against Vault
-  -vault.authtype string
+  -vault.auth.type string
     	Authentication type to use. Supported types are: approle, kubernetes, userpass, token
-  -vault.authuserpass.mount-path string
+  -vault.auth.userpass.mount-path string
     	Path if the Vault backend was mounted using a non-default path
-  -vault.authuserpass.password string
+  -vault.auth.userpass.password string
     	The userpass auth method password
-  -vault.authuserpass.username string
+  -vault.auth.userpass.username string
     	The userpass auth method username
   -vault.enabled
     	[experimental] Enables fetching of keys and certificates from Vault

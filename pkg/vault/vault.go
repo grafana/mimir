@@ -52,7 +52,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
 	f.StringVar(&cfg.Token, "vault.token", "", "Token used to authenticate with Vault")
 	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
-	cfg.Auth.RegisterFlagsWithPrefix(f, "vault.auth")
+	cfg.Auth.RegisterFlagsWithPrefix(f, "vault.auth.")
 }
 
 type SecretsEngine interface {
