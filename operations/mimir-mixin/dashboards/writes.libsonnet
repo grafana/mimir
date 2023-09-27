@@ -142,6 +142,15 @@ local filename = 'mimir-writes.json';
       $.row('Ingester')
       .addPanel(
         $.panel('Requests / sec') +
+        $.panelDescription(
+          'Requests / sec',
+          |||
+            The rate of successful, failed and rejected requests to ingester.
+            Rejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests and ingester-max-ingestion-rate).
+            When ingester is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
+            When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
+          |||
+        ) +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
         if $._config.show_rejected_requests_on_writes_dashboard then {
           targets: [
