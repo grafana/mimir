@@ -28,7 +28,7 @@ import (
 // that are part of the request and aggregates the results from each tenant's
 // Querier by sending of subsequent requests.
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed
-// and results for request with a single querier will not contain the
+// and results for request with a single ID will not contain the
 // "__tenant_id__" label. This allows a smoother transition, when enabling
 // tenant federation in a cluster.
 // The result contains a label "__tenant_id__" to identify the tenant ID that
