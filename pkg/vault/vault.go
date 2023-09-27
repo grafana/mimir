@@ -15,9 +15,10 @@ import (
 type Config struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
-	URL       string `yaml:"url" category:"experimental"`
-	Token     string `yaml:"token" category:"experimental"`
-	MountPath string `yaml:"mount_path" category:"experimental"`
+	URL       string     `yaml:"url" category:"experimental"`
+	Token     string     `yaml:"token" category:"experimental"`
+	MountPath string     `yaml:"mount_path" category:"experimental"`
+	Auth      AuthConfig `yaml:"auth" category:"experimental"`
 
 	Mock SecretsEngine `yaml:"-"`
 }
@@ -39,6 +40,10 @@ func (cfg *Config) Validate() error {
 		return errors.New("empty vault mount path supplied")
 	}
 
+	if _, err := cfg.Auth.authMethod(); err != nil {
+		return fmt.Errorf("invalid vault auth supplied: %w", err)
+	}
+
 	return nil
 }
 
@@ -47,6 +52,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
 	f.StringVar(&cfg.Token, "vault.token", "", "Token used to authenticate with Vault")
 	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
+	cfg.Auth.RegisterFlagsWithPrefix(f, "vault.auth")
 }
 
 type SecretsEngine interface {
@@ -72,7 +78,16 @@ func NewVault(cfg Config) (*Vault, error) {
 		return nil, err
 	}
 
-	client.SetToken(cfg.Token)
+	authMethod, err := cfg.Auth.authMethod()
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = authMethod.authenticate(client)
+	if err != nil {
+		return nil, fmt.Errorf("error authenticating to vault: %w", err)
+	}
+
 	vault := &Vault{
 		KVStore: client.KVv2(cfg.MountPath),
 	}

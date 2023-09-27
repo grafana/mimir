@@ -237,6 +237,66 @@ vault:
   # CLI flag: -vault.mount-path
   [mount_path: <string> | default = ""]
 
+  auth:
+    # Authentication type to use. Supported types are: approle, kubernetes,
+    # userpass, token
+    # CLI flag: -vault.authtype
+    [type: <string> | default = ""]
+
+    app_role:
+      # Role ID of the AppRole
+      # CLI flag: -vault.authapprole.role-id
+      [role_id: <string> | default = ""]
+
+      # Secret ID issues against the AppRole
+      # CLI flag: -vault.authapprole.secret-id
+      [secret_id: <string> | default = ""]
+
+      # Response wrapping token if the Secret ID is response wrapped
+      # CLI flag: -vault.authapprole.wrapping-token
+      [wrapping_token: <string> | default = ""]
+
+      # Path if the Vault backend was mounted using a non-default path
+      # CLI flag: -vault.authapprole.mount-path
+      [mount_path: <string> | default = ""]
+
+    kubernetes:
+      # The Kubernetes named role
+      # CLI flag: -vault.authkubernetes.role-name
+      [role_name: <string> | default = ""]
+
+      # The Service Account JWT
+      # CLI flag: -vault.authkubernetes.service-account-token
+      [service_account_token: <string> | default = ""]
+
+      # Path to where the Kubernetes service account token is mounted. By
+      # default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token.
+      # Field will be used if the ServiceAccountToken is not specified.
+      # CLI flag: -vault.authkubernetes.service-account-token-path
+      [service_account_token_path: <string> | default = ""]
+
+      # Path if the Vault backend was mounted using a non-default path
+      # CLI flag: -vault.authkubernetes.mount-path
+      [mount_path: <string> | default = ""]
+
+    user_pass:
+      # The userpass auth method username
+      # CLI flag: -vault.authuserpass.username
+      [username: <string> | default = ""]
+
+      # The userpass auth method password
+      # CLI flag: -vault.authuserpass.password
+      [password: <string> | default = ""]
+
+      # Path if the Vault backend was mounted using a non-default path
+      # CLI flag: -vault.authuserpass.mount-path
+      [mount_path: <string> | default = ""]
+
+    token:
+      # The token used to authenticate against Vault
+      # CLI flag: -vault.authtoken
+      [token: <string> | default = ""]
+
 # The ruler block configures the ruler.
 [ruler: <ruler>]
 
