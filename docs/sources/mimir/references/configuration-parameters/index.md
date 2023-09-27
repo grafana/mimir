@@ -248,7 +248,7 @@ vault:
       # CLI flag: -vault.auth.approle.role-id
       [role_id: <string> | default = ""]
 
-      # Secret ID issues against the AppRole
+      # Secret ID issued against the AppRole
       # CLI flag: -vault.auth.approle.secret-id
       [secret_id: <string> | default = ""]
 
@@ -271,7 +271,7 @@ vault:
 
       # Path to where the Kubernetes service account token is mounted. By
       # default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token.
-      # Field will be used if the ServiceAccountToken is not specified.
+      # Field will be used if the service_account_token is not specified.
       # CLI flag: -vault.auth.kubernetes.service-account-token-path
       [service_account_token_path: <string> | default = ""]
 

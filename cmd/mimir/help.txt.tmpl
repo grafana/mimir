@@ -714,7 +714,7 @@ Usage of ./cmd/mimir/mimir:
   -vault.auth.approle.role-id string
     	Role ID of the AppRole
   -vault.auth.approle.secret-id string
-    	Secret ID issues against the AppRole
+    	Secret ID issued against the AppRole
   -vault.auth.approle.wrapping-token string
     	Response wrapping token if the Secret ID is response wrapped
   -vault.auth.kubernetes.mount-path string
@@ -724,7 +724,7 @@ Usage of ./cmd/mimir/mimir:
   -vault.auth.kubernetes.service-account-token string
     	The Service Account JWT
   -vault.auth.kubernetes.service-account-token-path string
-    	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the ServiceAccountToken is not specified.
+    	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
   -vault.auth.token string
     	The token used to authenticate against Vault
   -vault.auth.type string

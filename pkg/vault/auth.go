@@ -29,10 +29,10 @@ type authMethod interface {
 type AuthConfig struct {
 	AuthType string `yaml:"type"`
 
-	AuthAppRole    AuthAppRole    `yaml:"app_role,omitempty"`
-	AuthKubernetes AuthKubernetes `yaml:"kubernetes,omitempty"`
-	AuthUserPass   AuthUserPass   `yaml:"user_pass,omitempty"`
-	AuthToken      AuthToken      `yaml:"token,omitempty"`
+	AuthAppRole    AuthAppRole    `yaml:"app_role,omitempty" category:"experimental"`
+	AuthKubernetes AuthKubernetes `yaml:"kubernetes,omitempty" category:"experimental"`
+	AuthUserPass   AuthUserPass   `yaml:"user_pass,omitempty" category:"experimental"`
+	AuthToken      AuthToken      `yaml:"token,omitempty" category:"experimental"`
 }
 
 func (cfg *AuthConfig) supportedMethods() []string {
@@ -71,7 +71,7 @@ type AuthAppRole struct {
 
 func (cfg *AuthAppRole) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.RoleID, prefix+"approle.role-id", "", "Role ID of the AppRole")
-	f.Var(&cfg.SecretID, prefix+"approle.secret-id", "Secret ID issues against the AppRole")
+	f.Var(&cfg.SecretID, prefix+"approle.secret-id", "Secret ID issued against the AppRole")
 	f.StringVar(&cfg.WrappingToken, prefix+"approle.wrapping-token", "", "Response wrapping token if the Secret ID is response wrapped")
 	f.StringVar(&cfg.MountPath, prefix+"approle.mount-path", "", "Path if the Vault backend was mounted using a non-default path")
 }
@@ -114,7 +114,7 @@ type AuthKubernetes struct {
 func (cfg *AuthKubernetes) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.RoleName, prefix+"kubernetes.role-name", "", "The Kubernetes named role")
 	f.Var(&cfg.ServiceAccountToken, prefix+"kubernetes.service-account-token", "The Service Account JWT")
-	f.StringVar(&cfg.ServiceAccountTokenPath, prefix+"kubernetes.service-account-token-path", "", "Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the ServiceAccountToken is not specified.")
+	f.StringVar(&cfg.ServiceAccountTokenPath, prefix+"kubernetes.service-account-token-path", "", "Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.")
 	f.StringVar(&cfg.MountPath, prefix+"kubernetes.mount-path", "", "Path if the Vault backend was mounted using a non-default path")
 }
 
