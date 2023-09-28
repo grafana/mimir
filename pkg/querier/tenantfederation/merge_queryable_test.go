@@ -158,21 +158,6 @@ func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.Select
 		return storage.ErrSeriesSet(err)
 	}
 
-	var warnings annotations.Annotations
-	if m.warningsByTenant != nil {
-		if w, ok := m.warningsByTenant[tenantID]; ok {
-			warnings = w
-		}
-	}
-
-	// set queryErr if exists
-	var queryErr error
-	if m.queryErrByTenant != nil {
-		if err, ok := m.queryErrByTenant[tenantID]; ok {
-			queryErr = err
-		}
-	}
-
 	for _, s := range m.matrix(tenantID) {
 		if metricMatches(s.Metric, matchers) {
 			matrix = append(matrix, s)
@@ -181,8 +166,8 @@ func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.Select
 
 	return &mockSeriesSet{
 		upstream: series.MatrixToSeriesSet(matrix),
-		warnings: warnings,
-		queryErr: queryErr,
+		warnings: m.warningsByTenant[tenantID],
+		queryErr: m.queryErrByTenant[tenantID],
 	}
 }
 
