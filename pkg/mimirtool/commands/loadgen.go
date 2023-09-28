@@ -231,7 +231,7 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 	compressed := snappy.Encode(nil, data)
 
 	start := time.Now()
-	if err := c.writeClient.Store(context.Background(), compressed); err != nil {
+	if err := c.writeClient.Store(context.Background(), compressed, 0); err != nil {
 		c.writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return err
 	}

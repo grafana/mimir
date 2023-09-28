@@ -53,8 +53,8 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 		"label-gg":                     {"g0000000"},
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
-	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
-	require.NoError(t, labelNamesAndValues(mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, server))
+	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
+	require.NoError(t, labelNamesAndValues(mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -239,7 +239,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 
 	// Server mock.
 	mockServer := mockLabelNamesAndValuesServer{context: cctx}
-	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
+	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
 
 	// Index reader mock.
 	existingLabels := make(map[string][]string)
@@ -262,7 +262,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 			idxReader,
 			[]*labels.Matcher{},
 			1*1024*1024, // 1MB
-			server,
+			stream,
 		)
 		doneCh <- err // Signal request completion.
 	}()
@@ -395,7 +395,7 @@ type mockIndex struct {
 	opDelay        time.Duration
 }
 
-func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
+func (i mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}
@@ -407,7 +407,7 @@ func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 	return l, nil
 }
 
-func (i mockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
+func (i mockIndex) LabelValues(_ context.Context, name string, _ ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}

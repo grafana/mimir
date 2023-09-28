@@ -2,6 +2,7 @@ package tsdb
 
 import (
 	"container/list"
+	"context"
 	"strings"
 	"sync"
 	"time"
@@ -18,13 +19,13 @@ const (
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers
 type IndexPostingsReader interface {
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g.
 	// during background garbage collections. Input values must be sorted.
-	Postings(name string, values ...string) (index.Postings, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 }
 
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
@@ -60,18 +61,18 @@ type PostingsForMatchersCache struct {
 	// timeNow is the time.Now that can be replaced for testing purposes
 	timeNow func() time.Time
 	// postingsForMatchers can be replaced for testing purposes
-	postingsForMatchers func(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
+	postingsForMatchers func(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error)
 }
 
-func (c *PostingsForMatchersCache) PostingsForMatchers(ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	if !concurrent && !c.force {
-		return c.postingsForMatchers(ix, ms...)
+		return c.postingsForMatchers(ctx, ix, ms...)
 	}
 	c.expire()
-	return c.postingsForMatchersPromise(ix, ms)()
+	return c.postingsForMatchersPromise(ctx, ix, ms)()
 }
 
-func (c *PostingsForMatchersCache) postingsForMatchersPromise(ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
+func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Context, ix IndexPostingsReader, ms []*labels.Matcher) func() (index.Postings, error) {
 	var (
 		wg       sync.WaitGroup
 		cloner   *index.PostingsCloner
@@ -94,7 +95,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ix IndexPostingsRe
 	}
 	defer wg.Done()
 
-	if postings, err := c.postingsForMatchers(ix, ms...); err != nil {
+	if postings, err := c.postingsForMatchers(ctx, ix, ms...); err != nil {
 		outerErr = err
 	} else {
 		cloner = index.NewPostingsCloner(postings)
@@ -198,8 +199,8 @@ type indexReaderWithPostingsForMatchers struct {
 	pfmc *PostingsForMatchersCache
 }
 
-func (ir indexReaderWithPostingsForMatchers) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return ir.pfmc.PostingsForMatchers(ir, concurrent, ms...)
+func (ir indexReaderWithPostingsForMatchers) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return ir.pfmc.PostingsForMatchers(ctx, ir, concurrent, ms...)
 }
 
 var _ IndexReader = indexReaderWithPostingsForMatchers{}

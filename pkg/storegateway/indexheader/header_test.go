@@ -130,6 +130,8 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 }
 
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
+	ctx := context.Background()
+
 	indexReader, err := index.NewReader(indexByteSlice)
 	require.NoError(t, err)
 	defer func() { _ = indexReader.Close() }()
@@ -166,7 +168,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.Error(t, err)
 	}
 
-	expLabelNames, err := indexReader.LabelNames()
+	expLabelNames, err := indexReader.LabelNames(ctx)
 	require.NoError(t, err)
 	actualLabelNames, err := headerReader.LabelNames()
 	require.NoError(t, err)
@@ -176,7 +178,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 	require.NoError(t, err)
 
 	for _, lname := range expLabelNames {
-		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
+		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
 		require.NoError(t, err)
 
 		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
