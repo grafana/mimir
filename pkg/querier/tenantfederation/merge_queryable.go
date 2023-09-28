@@ -395,7 +395,7 @@ func (m *addLabelsSeriesSet) Err() error {
 // Warnings could be return even iteration has not failed with error.
 func (m *addLabelsSeriesSet) Warnings() annotations.Annotations {
 	upstream := m.upstream.Warnings()
-	var warnings annotations.Annotations
+	warnings := make(annotations.Annotations, len(upstream))
 	for _, w := range upstream {
 		warnings.Add(errors.Wrapf(w, "warning querying %s", labelsToString(m.labels)))
 	}
