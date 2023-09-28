@@ -101,3 +101,17 @@ func TestNewPushError(t *testing.T) {
 	anotherPushErr := NewPushError(codes.Unavailable, pushErr, REQUEST_RATE_LIMIT_ERROR, SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED)
 	require.Equal(t, pushErr, anotherPushErr)
 }
+
+func TestNewPushErrorWithoutDetails(t *testing.T) {
+	originalErr := errors.New(msg)
+	pushError := NewPushError(codes.Unavailable, originalErr)
+	require.Error(t, pushError)
+	stat, ok := status.FromError(pushError)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, stat.Code())
+	require.EqualError(t, originalErr, stat.Message())
+
+	errorDetails, ok := GetPushErrorDetails(pushError)
+	require.False(t, ok)
+	require.Nil(t, errorDetails)
+}

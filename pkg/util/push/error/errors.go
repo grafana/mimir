@@ -29,6 +29,9 @@ func newPushErrorDetails(errorDetails ...ErrorDetail) *PushErrorDetails {
 		errorType     ErrorType
 		optionalFlags []OptionalFlag
 	)
+	if len(errorDetails) == 0 {
+		return nil
+	}
 	if len(errorDetails) > 1 {
 		optionalFlags = make([]OptionalFlag, 0, len(errorDetails)-1)
 	}
@@ -87,7 +90,7 @@ func (e errorWithStatus) GRPCStatus() *grpc.Status {
 //   - Otherwise, a new gRPC errorWithStatus error backed up by the given error,
 //     with the given gRPC code and with given set of details is created and
 //     returned.
-func NewPushError(code codes.Code, originalErr error, opts ...ErrorDetail) error {
+func NewPushError(code codes.Code, originalErr error, errorDetails ...ErrorDetail) error {
 	if _, ok := status.FromError(originalErr); ok {
 		return originalErr
 	}
@@ -97,7 +100,7 @@ func NewPushError(code codes.Code, originalErr error, opts ...ErrorDetail) error
 			code,
 			originalErr,
 		),
-		opts...,
+		errorDetails...,
 	)
 }
 
@@ -105,10 +108,13 @@ func NewPushError(code codes.Code, originalErr error, opts ...ErrorDetail) error
 // and creates a new errorWithStatus with the provided details appended to
 // the original error's status.
 // If the operation is successful, the new error is returned.
-// If the original error was not a gRPC error, or if the operation was not
-// successful, the original error is returned.
-func addPushErrorDetails(srcErr error, opts ...ErrorDetail) error {
-	errorDetails := newPushErrorDetails(opts...)
+// If the original error was not a gRPC error, no details are passed as parameter,
+// or if the operation was not successful, the original error is returned.
+func addPushErrorDetails(srcErr error, errDetails ...ErrorDetail) error {
+	errorDetails := newPushErrorDetails(errDetails...)
+	if errorDetails == nil {
+		return srcErr
+	}
 	stat, ok := status.FromError(srcErr)
 	if !ok {
 		return srcErr
@@ -125,7 +131,7 @@ func addPushErrorDetails(srcErr error, opts ...ErrorDetail) error {
 
 // GetPushErrorDetails gets a gRPC error, and returns the first occurrence of a PushErrorDetail
 // object from the status of the former. If this was successful, the status true is returned.
-// If the error is not a gRPC error, or if no PushErrorDetail is found, nil and false are returned.
+// If the error is a gRPC error, or no PushErrorDetails are found, nil and false are returned.
 func GetPushErrorDetails(err error) (*PushErrorDetails, bool) {
 	stat, ok := status.FromError(err)
 	if !ok {

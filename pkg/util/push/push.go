@@ -13,8 +13,10 @@ import (
 	"sync"
 
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -134,7 +136,7 @@ func handler(maxRecvMsgSize int,
 			if ok {
 				code, msg = int(resp.GetCode()), string(resp.Body)
 			} else {
-				code, msg = detailsFromStatus(err)
+				code, msg = getCodeAndMessageFromStatus(err)
 			}
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
@@ -144,11 +146,23 @@ func handler(maxRecvMsgSize int,
 	})
 }
 
-func detailsFromStatus(err error) (int, string) {
-	pushErrorDetails, ok := pushpb.GetPushErrorDetails(err)
+func getCodeAndMessageFromStatus(err error) (int, string) {
+	stat, ok := status.FromError(err)
 	if ok {
-		code := getCodeFromPushErrorDetails(pushErrorDetails)
-		return code, err.Error()
+		switch stat.Code() {
+		case codes.Internal:
+			return http.StatusInternalServerError, stat.Message()
+		case codes.AlreadyExists:
+			return http.StatusAccepted, stat.Message()
+		case codes.DeadlineExceeded:
+			return http.StatusInternalServerError, stat.Message()
+		default:
+			pushErrorDetails, ok := pushpb.GetPushErrorDetails(err)
+			if ok {
+				code := getCodeFromPushErrorDetails(pushErrorDetails)
+				return code, stat.Message()
+			}
+		}
 	}
 	return http.StatusInternalServerError, err.Error()
 }
@@ -156,9 +170,9 @@ func detailsFromStatus(err error) (int, string) {
 func getCodeFromPushErrorDetails(errorDetails *pushpb.PushErrorDetails) int {
 	errorType := errorDetails.GetErrorType()
 	switch errorType {
-	case pushpb.ALREADY_PRESENT_ERROR:
-		return http.StatusAccepted
-	case pushpb.DATA_ERROR, pushpb.TENANT_LIMIT_ERROR:
+	case pushpb.DATA_ERROR:
+		return http.StatusBadRequest
+	case pushpb.TENANT_LIMIT_ERROR:
 		return http.StatusBadRequest
 	case pushpb.INGESTION_RATE_LIMIT_ERROR:
 		// Return a 429 here to tell the client it is going too fast.
@@ -173,8 +187,6 @@ func getCodeFromPushErrorDetails(errorDetails *pushpb.PushErrorDetails) int {
 			return StatusServiceOverload
 		}
 		return http.StatusTooManyRequests
-	case pushpb.INTERNAL_PUSH_ERROR, pushpb.TIMEOUT:
-		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}

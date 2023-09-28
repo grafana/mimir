@@ -696,18 +696,16 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -741,7 +739,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 				return nil, pushpb.NewPushError(
 					codes.AlreadyExists,
 					err,
-					pushpb.ALREADY_PRESENT_ERROR,
 				)
 			}
 
@@ -757,7 +754,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			return nil, pushpb.NewPushError(
 				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -790,18 +786,16 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -867,18 +861,16 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -1031,18 +1023,16 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -1111,9 +1101,8 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 
@@ -1150,9 +1139,8 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return nil, pushpb.NewPushError(
-				codes.FailedPrecondition,
+				codes.Internal,
 				err,
-				pushpb.INTERNAL_PUSH_ERROR,
 			)
 		}
 		reqSize := int64(req.Size())
@@ -1200,18 +1188,16 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	req, err := pushReq.WriteRequest()
 	if err != nil {
 		return nil, pushpb.NewPushError(
-			codes.FailedPrecondition,
+			codes.Internal,
 			err,
-			pushpb.INTERNAL_PUSH_ERROR,
 		)
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, pushpb.NewPushError(
-			codes.FailedPrecondition,
+			codes.Internal,
 			err,
-			pushpb.INTERNAL_PUSH_ERROR,
 		)
 	}
 
@@ -1287,7 +1273,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			return pushpb.NewPushError(
 				codes.DeadlineExceeded,
 				errors.Errorf("exceeded configured distributor remote timeout: %s", err.Error()),
-				pushpb.TIMEOUT,
 			)
 		}
 		return err

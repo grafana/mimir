@@ -286,14 +286,13 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A timed out push should fail": {
-			numIngesters:                 3,
-			happyIngesters:               3,
-			samples:                      samplesIn{num: 10, startTimestampMs: 123456789000},
-			timeOut:                      true,
-			expectedError:                errors.New("exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
-			expectedGRPCCode:             codes.DeadlineExceeded,
-			expectedOptionalErrorDetails: []pushpb.ErrorDetail{pushpb.TIMEOUT},
-			metricNames:                  []string{lastSeenTimestamp},
+			numIngesters:     3,
+			happyIngesters:   3,
+			samples:          samplesIn{num: 10, startTimestampMs: 123456789000},
+			timeOut:          true,
+			expectedError:    errors.New("exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
+			expectedGRPCCode: codes.DeadlineExceeded,
+			metricNames:      []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -853,6 +852,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 func TestDistributor_PushHAInstances(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
+	dataError := pushpb.DATA_ERROR
 
 	for i, tc := range []struct {
 		enableTracker     bool
@@ -862,7 +862,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		samples           int
 		expectedResponse  *mimirpb.WriteResponse
 		expectedCode      codes.Code
-		expectedErrorType pushpb.ErrorType
+		expectedErrorType *pushpb.ErrorType
 	}{
 		{
 			enableTracker:    true,
@@ -872,16 +872,14 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			samples:          5,
 			expectedResponse: emptyResponse,
 		},
-		// The AlreadyExists gRPC code and error type ALREADY_PRESENT_ERROR
-		// indicate that we didn't accept this sample.
+		// The AlreadyExists gRPC code indicates that we didn't accept this sample.
 		{
-			enableTracker:     true,
-			acceptedReplica:   "instance2",
-			testReplica:       "instance0",
-			cluster:           "cluster0",
-			samples:           5,
-			expectedCode:      codes.AlreadyExists,
-			expectedErrorType: pushpb.ALREADY_PRESENT_ERROR,
+			enableTracker:   true,
+			acceptedReplica: "instance2",
+			testReplica:     "instance0",
+			cluster:         "cluster0",
+			samples:         5,
+			expectedCode:    codes.AlreadyExists,
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -901,7 +899,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			samples:           5,
 			expectedResponse:  emptyResponse,
 			expectedCode:      codes.InvalidArgument,
-			expectedErrorType: pushpb.DATA_ERROR,
+			expectedErrorType: &dataError,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -930,7 +928,11 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			assert.Equal(t, tc.expectedResponse, response)
 
 			if err != nil {
-				verifyGRPCError(t, true, err, tc.expectedCode, tc.expectedErrorType)
+				if tc.expectedErrorType == nil {
+					verifyGRPCError(t, true, err, tc.expectedCode)
+				} else {
+					verifyGRPCError(t, true, err, tc.expectedCode, tc.expectedErrorType)
+				}
 			}
 		})
 	}
@@ -2638,6 +2640,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
+	tenantLimit := pushpb.TENANT_LIMIT_ERROR
 
 	type testCase struct {
 		name              string
@@ -2648,7 +2651,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
 		expectGRPCCodes   []codes.Code
-		expectErrorTypes  []pushpb.ErrorType
+		expectErrorTypes  []*pushpb.ErrorType
 	}
 	testCases := []testCase{
 		{
@@ -2686,8 +2689,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
-			expectGRPCCodes:   []codes.Code{codes.FailedPrecondition},
-			expectErrorTypes:  []pushpb.ErrorType{pushpb.INTERNAL_PUSH_ERROR},
+			expectGRPCCodes:   []codes.Code{codes.Internal},
+			expectErrorTypes:  nil,
 		}, {
 			name:            "perform HA deduplication",
 			ctx:             ctxWithUser,
@@ -2700,7 +2703,6 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectGRPCCodes:   []codes.Code{codes.OK, codes.AlreadyExists},
-			expectErrorTypes:  []pushpb.ErrorType{pushpb.ALREADY_PRESENT_ERROR, pushpb.ALREADY_PRESENT_ERROR},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
@@ -2715,7 +2717,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectGRPCCodes:   []codes.Code{codes.OK, codes.AlreadyExists, codes.ResourceExhausted, codes.ResourceExhausted},
-			expectErrorTypes:  []pushpb.ErrorType{pushpb.ALREADY_PRESENT_ERROR, pushpb.ALREADY_PRESENT_ERROR, pushpb.TENANT_LIMIT_ERROR, pushpb.TENANT_LIMIT_ERROR},
+			expectErrorTypes:  []*pushpb.ErrorType{nil, nil, &tenantLimit, &tenantLimit},
 		},
 	}
 
@@ -2766,7 +2768,11 @@ func TestHaDedupeMiddleware(t *testing.T) {
 					assert.NoError(t, gotErrs[errIdx])
 				} else {
 					assert.Error(t, gotErrs[errIdx])
-					verifyGRPCError(t, true, gotErrs[errIdx], expectErr, tc.expectErrorTypes[errIdx])
+					if tc.expectErrorTypes == nil || tc.expectErrorTypes[errIdx] == nil {
+						verifyGRPCError(t, true, gotErrs[errIdx], expectErr)
+					} else {
+						verifyGRPCError(t, true, gotErrs[errIdx], expectErr, tc.expectErrorTypes[errIdx])
+					}
 				}
 			}
 
