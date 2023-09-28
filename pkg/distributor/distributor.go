@@ -49,7 +49,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
-	pushpb "github.com/grafana/mimir/pkg/util/push/error"
+	"github.com/grafana/mimir/pkg/util/push/errorpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -695,7 +695,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -703,7 +703,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -736,7 +736,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, pushpb.NewPushError(
+				return nil, errorpb.NewPushError(
 					codes.AlreadyExists,
 					err,
 				)
@@ -744,14 +744,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 			if errors.Is(err, tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return nil, pushpb.NewPushError(
+				return nil, errorpb.NewPushError(
 					codes.ResourceExhausted,
 					err,
-					pushpb.TENANT_LIMIT_ERROR,
+					errorpb.TENANT_LIMIT_ERROR,
 				)
 			}
 
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -785,7 +785,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -793,7 +793,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -860,7 +860,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -868,7 +868,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -933,10 +933,10 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The series labels may be retained by validationErr but that's not a problem for this
 					// use case because NewPushError discards the former by calling Error().
-					firstPartialErr = pushpb.NewPushError(
+					firstPartialErr = errorpb.NewPushError(
 						codes.InvalidArgument,
 						validationErr,
-						pushpb.DATA_ERROR,
+						errorpb.DATA_ERROR,
 					)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
@@ -959,10 +959,10 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The metadata info may be retained by validationErr but that's not a problem for this
 					// use case because NewPushError discards the former by calling Error().
-					firstPartialErr = pushpb.NewPushError(
+					firstPartialErr = errorpb.NewPushError(
 						codes.InvalidArgument,
 						validationErr,
-						pushpb.DATA_ERROR,
+						errorpb.DATA_ERROR,
 					)
 				}
 
@@ -985,13 +985,13 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.ResourceExhausted,
 				validation.NewIngestionRateLimitedError(
 					d.limits.IngestionRate(userID),
 					d.limits.IngestionBurstSize(userID),
 				),
-				pushpb.INGESTION_RATE_LIMIT_ERROR,
+				errorpb.INGESTION_RATE_LIMIT_ERROR,
 			)
 		}
 
@@ -1022,7 +1022,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -1030,7 +1030,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -1080,27 +1080,27 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.ResourceExhausted,
 				util_log.DoNotLogError{Err: errMaxInflightRequestsReached},
-				pushpb.INSTANCE_LIMIT_ERROR,
+				errorpb.INSTANCE_LIMIT_ERROR,
 			)
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return nil, pushpb.NewPushError(
+				return nil, errorpb.NewPushError(
 					codes.ResourceExhausted,
 					errMaxIngestionRateReached,
-					pushpb.INSTANCE_LIMIT_ERROR,
+					errorpb.INSTANCE_LIMIT_ERROR,
 				)
 			}
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -1113,23 +1113,23 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			// The SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED OptionalFlag
 			// is included in the error depending on the configuration.
 			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
-				return nil, pushpb.NewPushError(
+				return nil, errorpb.NewPushError(
 					codes.ResourceExhausted,
 					validation.NewRequestRateLimitedError(
 						d.limits.RequestRate(userID),
 						d.limits.RequestBurstSize(userID),
 					),
-					pushpb.REQUEST_RATE_LIMIT_ERROR,
-					pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED,
+					errorpb.REQUEST_RATE_LIMIT_ERROR,
+					errorpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED,
 				)
 			}
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.ResourceExhausted,
 				validation.NewRequestRateLimitedError(
 					d.limits.RequestRate(userID),
 					d.limits.RequestBurstSize(userID),
 				),
-				pushpb.REQUEST_RATE_LIMIT_ERROR,
+				errorpb.REQUEST_RATE_LIMIT_ERROR,
 			)
 		}
 
@@ -1138,7 +1138,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.Internal,
 				err,
 			)
@@ -1151,10 +1151,10 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return nil, pushpb.NewPushError(
+			return nil, errorpb.NewPushError(
 				codes.ResourceExhausted,
 				errMaxInflightRequestsBytesReached,
-				pushpb.INSTANCE_LIMIT_ERROR,
+				errorpb.INSTANCE_LIMIT_ERROR,
 			)
 		}
 
@@ -1187,7 +1187,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	req, err := pushReq.WriteRequest()
 	if err != nil {
-		return nil, pushpb.NewPushError(
+		return nil, errorpb.NewPushError(
 			codes.Internal,
 			err,
 		)
@@ -1195,7 +1195,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, pushpb.NewPushError(
+		return nil, errorpb.NewPushError(
 			codes.Internal,
 			err,
 		)
@@ -1270,7 +1270,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return pushpb.NewPushError(
+			return errorpb.NewPushError(
 				codes.DeadlineExceeded,
 				errors.Errorf("exceeded configured distributor remote timeout: %s", err.Error()),
 			)
@@ -1538,10 +1538,10 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
 	if len(labelNames) > lbNamesLimit {
-		return 0, nil, pushpb.NewPushError(
+		return 0, nil, errorpb.NewPushError(
 			codes.ResourceExhausted,
 			errors.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames)),
-			pushpb.TENANT_LIMIT_ERROR,
+			errorpb.TENANT_LIMIT_ERROR,
 		)
 	}
 

@@ -2,11 +2,11 @@
 
 syntax = "proto3";
 
-package push;
+package errorpb;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
-option go_package = "pushpb";
+option go_package = "errorpb";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 

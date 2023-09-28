@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
-	pushpb "github.com/grafana/mimir/pkg/util/push/error"
+	"github.com/grafana/mimir/pkg/util/push/errorpb"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
@@ -157,7 +157,7 @@ func getCodeAndMessageFromStatus(err error) (int, string) {
 		case codes.DeadlineExceeded:
 			return http.StatusInternalServerError, stat.Message()
 		default:
-			pushErrorDetails, ok := pushpb.GetPushErrorDetails(err)
+			pushErrorDetails, ok := errorpb.GetPushErrorDetails(err)
 			if ok {
 				code := getCodeFromPushErrorDetails(pushErrorDetails)
 				return code, stat.Message()
@@ -167,23 +167,23 @@ func getCodeAndMessageFromStatus(err error) (int, string) {
 	return http.StatusInternalServerError, err.Error()
 }
 
-func getCodeFromPushErrorDetails(errorDetails *pushpb.PushErrorDetails) int {
+func getCodeFromPushErrorDetails(errorDetails *errorpb.PushErrorDetails) int {
 	errorType := errorDetails.GetErrorType()
 	switch errorType {
-	case pushpb.DATA_ERROR:
+	case errorpb.DATA_ERROR:
 		return http.StatusBadRequest
-	case pushpb.TENANT_LIMIT_ERROR:
+	case errorpb.TENANT_LIMIT_ERROR:
 		return http.StatusBadRequest
-	case pushpb.INGESTION_RATE_LIMIT_ERROR:
+	case errorpb.INGESTION_RATE_LIMIT_ERROR:
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		return http.StatusTooManyRequests
-	case pushpb.REQUEST_RATE_LIMIT_ERROR:
+	case errorpb.REQUEST_RATE_LIMIT_ERROR:
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if errorDetails.ContainsOptionalFlag(pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED) {
+		if errorDetails.ContainsOptionalFlag(errorpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED) {
 			return StatusServiceOverload
 		}
 		return http.StatusTooManyRequests

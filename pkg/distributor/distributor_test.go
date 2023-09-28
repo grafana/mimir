@@ -57,7 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
-	pushpb "github.com/grafana/mimir/pkg/util/push/error"
+	"github.com/grafana/mimir/pkg/util/push/errorpb"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -134,7 +134,7 @@ func TestDistributor_Push(t *testing.T) {
 		metadata                     int
 		expectedError                error
 		expectedGRPCCode             codes.Code
-		expectedOptionalErrorDetails []pushpb.ErrorDetail
+		expectedOptionalErrorDetails []errorpb.ErrorDetail
 		expectedMetrics              string
 		timeOut                      bool
 	}{
@@ -199,7 +199,7 @@ func TestDistributor_Push(t *testing.T) {
 			metadata:                     5,
 			expectedError:                validation.NewIngestionRateLimitedError(20, 20),
 			expectedGRPCCode:             codes.ResourceExhausted,
-			expectedOptionalErrorDetails: []pushpb.ErrorDetail{pushpb.INGESTION_RATE_LIMIT_ERROR},
+			expectedOptionalErrorDetails: []errorpb.ErrorDetail{errorpb.INGESTION_RATE_LIMIT_ERROR},
 			metricNames:                  []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -480,8 +480,8 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		expectedError error
 	}
 	expectedGRPCCode := codes.ResourceExhausted
-	expectedErrorType := pushpb.REQUEST_RATE_LIMIT_ERROR
-	expectedOptionalFlag := pushpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED
+	expectedErrorType := errorpb.REQUEST_RATE_LIMIT_ERROR
+	expectedOptionalFlag := errorpb.SERVICE_OVERLOAD_STATUS_ON_RATE_LIMIT_ENABLED
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
 		distributors               int
@@ -588,7 +588,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 	}
 
 	expectedGRPCCode := codes.ResourceExhausted
-	expectedErrorType := pushpb.INGESTION_RATE_LIMIT_ERROR
+	expectedErrorType := errorpb.INGESTION_RATE_LIMIT_ERROR
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
@@ -669,7 +669,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	expectedGRPCCode := codes.ResourceExhausted
-	expectedErrorType := pushpb.INSTANCE_LIMIT_ERROR
+	expectedErrorType := errorpb.INSTANCE_LIMIT_ERROR
 	tests := map[string]struct {
 		preInflight    int
 		preRateSamples int        // initial rate before first push
@@ -852,7 +852,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 func TestDistributor_PushHAInstances(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
-	dataError := pushpb.DATA_ERROR
+	dataError := errorpb.DATA_ERROR
 
 	for i, tc := range []struct {
 		enableTracker     bool
@@ -862,7 +862,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		samples           int
 		expectedResponse  *mimirpb.WriteResponse
 		expectedCode      codes.Code
-		expectedErrorType *pushpb.ErrorType
+		expectedErrorType *errorpb.ErrorType
 	}{
 		{
 			enableTracker:    true,
@@ -1289,7 +1289,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
 			if tc.errExpected {
-				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
+				verifyGRPCError(t, true, err, codes.InvalidArgument, errorpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1358,7 +1358,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			})
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
-				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
+				verifyGRPCError(t, true, err, codes.InvalidArgument, errorpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1428,7 +1428,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				assert.True(t, ok)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
-				verifyGRPCError(t, true, err, codes.InvalidArgument, pushpb.DATA_ERROR)
+				verifyGRPCError(t, true, err, codes.InvalidArgument, errorpb.DATA_ERROR)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -2561,7 +2561,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 	}
 
 	expectedGRPCCode := codes.ResourceExhausted
-	expectedErrorType := pushpb.TENANT_LIMIT_ERROR
+	expectedErrorType := errorpb.TENANT_LIMIT_ERROR
 
 	tests := map[string]struct {
 		labelNames              []model.LabelName
@@ -2640,7 +2640,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
-	tenantLimit := pushpb.TENANT_LIMIT_ERROR
+	tenantLimit := errorpb.TENANT_LIMIT_ERROR
 
 	type testCase struct {
 		name              string
@@ -2651,7 +2651,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
 		expectGRPCCodes   []codes.Code
-		expectErrorTypes  []*pushpb.ErrorType
+		expectErrorTypes  []*errorpb.ErrorType
 	}
 	testCases := []testCase{
 		{
@@ -2717,7 +2717,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectGRPCCodes:   []codes.Code{codes.OK, codes.AlreadyExists, codes.ResourceExhausted, codes.ResourceExhausted},
-			expectErrorTypes:  []*pushpb.ErrorType{nil, nil, &tenantLimit, &tenantLimit},
+			expectErrorTypes:  []*errorpb.ErrorType{nil, nil, &tenantLimit, &tenantLimit},
 		},
 	}
 
@@ -2826,7 +2826,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// then this would set replica for the cluster.
 	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
-	verifyGRPCError(t, true, err, codes.ResourceExhausted, pushpb.INSTANCE_LIMIT_ERROR)
+	verifyGRPCError(t, true, err, codes.ResourceExhausted, errorpb.INSTANCE_LIMIT_ERROR)
 
 	// Simulate no other inflight request.
 	ds[0].inflightPushRequests.Dec()
@@ -4077,7 +4077,7 @@ func TestDistributorValidation(t *testing.T) {
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 	expectedGRPCCode := codes.InvalidArgument
-	expectedErrorType := pushpb.DATA_ERROR
+	expectedErrorType := errorpb.DATA_ERROR
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata
@@ -4712,7 +4712,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
 	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
 	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
-	verifyGRPCError(t, true, err, codes.ResourceExhausted, pushpb.INSTANCE_LIMIT_ERROR)
+	verifyGRPCError(t, true, err, codes.ResourceExhausted, errorpb.INSTANCE_LIMIT_ERROR)
 }
 
 func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
@@ -4833,7 +4833,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	}
 }
 
-func verifyGRPCError(t *testing.T, asserting bool, err error, expectedGRPCCode codes.Code, opts ...pushpb.ErrorDetail) {
+func verifyGRPCError(t *testing.T, asserting bool, err error, expectedGRPCCode codes.Code, opts ...errorpb.ErrorDetail) {
 	// Assert or require that downstream gRPC statuses are passed back upstream
 	stat, ok := status.FromError(err)
 	if asserting {
@@ -4845,14 +4845,14 @@ func verifyGRPCError(t *testing.T, asserting bool, err error, expectedGRPCCode c
 	}
 
 	if len(opts) > 0 {
-		errorDetails, ok := pushpb.GetPushErrorDetails(err)
+		errorDetails, ok := errorpb.GetPushErrorDetails(err)
 		if asserting {
 			assert.True(t, ok)
 		} else {
 			require.True(t, ok)
 		}
 		for _, opt := range opts {
-			expectedErrorType, ok := opt.(pushpb.ErrorType)
+			expectedErrorType, ok := opt.(errorpb.ErrorType)
 			if ok {
 				if asserting {
 					assert.Equal(t, expectedErrorType, errorDetails.GetErrorType())
@@ -4861,7 +4861,7 @@ func verifyGRPCError(t *testing.T, asserting bool, err error, expectedGRPCCode c
 				}
 				continue
 			}
-			optionalFlag, ok := opt.(pushpb.OptionalFlag)
+			optionalFlag, ok := opt.(errorpb.OptionalFlag)
 			if ok {
 				if asserting {
 					assert.True(t, errorDetails.ContainsOptionalFlag(optionalFlag))

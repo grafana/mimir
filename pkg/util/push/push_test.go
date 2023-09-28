@@ -32,7 +32,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	pushpb "github.com/grafana/mimir/pkg/util/push/error"
+	"github.com/grafana/mimir/pkg/util/push/errorpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -801,42 +801,42 @@ func TestHandler_PushErrorTranslation(t *testing.T) {
 	}{
 		{
 			name:               "a push error with AlreadyExists code translates into an HTTP 202",
-			err:                pushpb.NewPushError(codes.AlreadyExists, err),
+			err:                errorpb.NewPushError(codes.AlreadyExists, err),
 			expectedHTTPStatus: http.StatusAccepted,
 		},
 		{
 			name:               "a push error with Internal code into an HTTP 500",
-			err:                pushpb.NewPushError(codes.Internal, err),
+			err:                errorpb.NewPushError(codes.Internal, err),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			name:               "a push error with DeadlineExceeded code translates into an HTTP 500",
-			err:                pushpb.NewPushError(codes.DeadlineExceeded, err),
+			err:                errorpb.NewPushError(codes.DeadlineExceeded, err),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			name:               "a push error with errorType DATA_ERROR translates into an HTTP 400",
-			err:                pushpb.NewPushError(codes.InvalidArgument, err, pushpb.DATA_ERROR),
+			err:                errorpb.NewPushError(codes.InvalidArgument, err, errorpb.DATA_ERROR),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
 			name:               "a push error with errorType TENANT_LIMIT_ERROR translates into an HTTP 400",
-			err:                pushpb.NewPushError(codes.ResourceExhausted, err, pushpb.TENANT_LIMIT_ERROR),
+			err:                errorpb.NewPushError(codes.ResourceExhausted, err, errorpb.TENANT_LIMIT_ERROR),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
 			name:               "a push error with errorType INGESTION_RATE_LIMIT_ERROR translates into an HTTP 429",
-			err:                pushpb.NewPushError(codes.ResourceExhausted, err, pushpb.INGESTION_RATE_LIMIT_ERROR),
+			err:                errorpb.NewPushError(codes.ResourceExhausted, err, errorpb.INGESTION_RATE_LIMIT_ERROR),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
 		{
 			name:               "a push error with errorType REQUEST_RATE_LIMIT_ERROR translates into an HTTP 429",
-			err:                pushpb.NewPushError(codes.ResourceExhausted, err, pushpb.REQUEST_RATE_LIMIT_ERROR),
+			err:                errorpb.NewPushError(codes.ResourceExhausted, err, errorpb.REQUEST_RATE_LIMIT_ERROR),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
 		{
 			name:               "a push error with errorType INSTANCE_LIMIT_ERROR translates into an HTTP 500",
-			err:                pushpb.NewPushError(codes.ResourceExhausted, err, pushpb.INSTANCE_LIMIT_ERROR),
+			err:                errorpb.NewPushError(codes.ResourceExhausted, err, errorpb.INSTANCE_LIMIT_ERROR),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
@@ -846,12 +846,12 @@ func TestHandler_PushErrorTranslation(t *testing.T) {
 		},
 		{
 			name:               "a push error with code RESOURCE_EXHAUSTED and without PushErrorDetails gets translated into an HTTP 500",
-			err:                pushpb.NewPushError(codes.ResourceExhausted, err),
+			err:                errorpb.NewPushError(codes.ResourceExhausted, err),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
 			name:               "a push error with code INVALID_ARGUMENT and without PushErrorDetails gets translated into an HTTP 500",
-			err:                pushpb.NewPushError(codes.InvalidArgument, err),
+			err:                errorpb.NewPushError(codes.InvalidArgument, err),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 	}
