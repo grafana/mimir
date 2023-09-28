@@ -64,7 +64,7 @@ type RequestQueue struct {
 	stopRequested                 chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted                 chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 	querierOperations             chan querierOperation
-	enqueueRequests               chan enqueueRequest
+	requestsToEnqueue             chan requestToEnqueue
 	getNextRequestForQuerierCalls chan *getNextRequestForQuerierCall
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
@@ -87,7 +87,7 @@ const (
 	forgetDisconnected
 )
 
-type enqueueRequest struct {
+type requestToEnqueue struct {
 	userID      string
 	req         Request
 	maxQueriers int
@@ -109,7 +109,7 @@ func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, que
 
 		// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		querierOperations:             make(chan querierOperation),
-		enqueueRequests:               make(chan enqueueRequest),
+		requestsToEnqueue:             make(chan requestToEnqueue),
 		getNextRequestForQuerierCalls: make(chan *getNextRequestForQuerierCall),
 	}
 
@@ -166,7 +166,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			default:
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
 			}
-		case r := <-q.enqueueRequests:
+		case r := <-q.requestsToEnqueue:
 			err := q.handleEnqueueRequest(queues, r)
 			r.processed <- err
 
@@ -212,7 +212,7 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
+func (q *RequestQueue) handleEnqueueRequest(queues *queues, r requestToEnqueue) error {
 	queue := queues.getOrAddQueue(r.userID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if userID is "".
@@ -303,7 +303,7 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	r := enqueueRequest{
+	r := requestToEnqueue{
 		userID:      userID,
 		req:         req,
 		maxQueriers: maxQueriers,
@@ -312,7 +312,7 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 	}
 
 	select {
-	case q.enqueueRequests <- r:
+	case q.requestsToEnqueue <- r:
 		return <-r.processed
 	case <-q.stopCompleted:
 		return ErrStopped
