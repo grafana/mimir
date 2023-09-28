@@ -58,7 +58,7 @@
       }),
   ),
 
-  store_gateway_args+:: if !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+  store_gateway_args+:: if !$._config.is_microservices_deployment_mode || !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     // When prepare-downscale webhook is in use, we don't need the auto-forget feature to ensure
     // store-gateways are removed from the ring, because the shutdown endpoint (called by the
     // rollout-operator) will do it. For this reason, we disable the auto-forget which has the benefit

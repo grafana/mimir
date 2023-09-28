@@ -19,8 +19,7 @@ mimir {
 
     multi_zone_store_gateway_enabled: true,
     multi_zone_store_gateway_replicas: 3,
-    store_gateway_automated_downscale_enabled: true,
-    store_gateway_automated_downscale_min_time_between_zones: '40m',
+    store_gateway_automated_downscale_enabled: false,
   },
 
   ingester_env_map+:: {
