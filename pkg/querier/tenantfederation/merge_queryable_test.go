@@ -346,7 +346,7 @@ func TestMergeQueryable_Querier(t *testing.T) {
 		queryable := &mockTenantQueryableWithFilter{
 			logger: log.NewNopLogger(),
 		}
-		qable := NewQueryable(queryable, false /* bypassWithSingleTenant */, defaultConcurrency, log.NewNopLogger())
+		qable := NewQueryable(queryable, false /* bypassWithSingleID */, defaultConcurrency, log.NewNopLogger())
 		q, err := qable.Querier(mint, maxt)
 		require.NoError(t, err)
 
