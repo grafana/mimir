@@ -362,6 +362,11 @@ lint: check-makefiles
 		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Do not use the object storage client intended only for tools within Mimir itself
+	faillint -paths \
+		"github.com/grafana/mimir/pkg/util/objtools" \
+		./pkg/... ./cmd/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

@@ -31,8 +31,8 @@ go build .
   --destination-service gcs \
   --copy-period 24h \
   --min-block-duration 23h \
-  --source-bucket <source bucket name> \
-  --destination-bucket <destination bucket name>
+  --gcs-source-bucket-name <source bucket name> \
+  --gcs-destination-bucket-name <destination bucket name>
 ```
 
 ### Example for Azure Blob Storage
@@ -43,10 +43,10 @@ go build .
   --destination-service abs \
   --copy-period 24h \
   --min-block-duration 23h \
-  --source-bucket https://<source account name>.blob.core.windows.net/<source bucket name> \
+  --azure-source-container-url https://<source account name>.blob.core.windows.net/<source bucket name> \
   --azure-source-account-name <source account name> \
   --azure-source-account-key <source account key> \
-  --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
+  --azure-destination-container-url https://<destination account name>.blob.core.windows.net/<destination bucket name> \
   --azure-destination-account-name <destination account name> \
   --azure-destination-account-key <destination account key>
 ```
@@ -62,11 +62,11 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
   --destination-service s3 \
   --copy-period 24h \
   --min-block-duration 23h \
-  --source-bucket <source bucket name> \
+  --s3-source-bucket-name <source bucket name> \
   --s3-source-access-key <source access key> \
   --s3-source-secret-key <source secret key> \
   --s3-source-endpoint <source endpoint> \
-  --destination-bucket <destination bucket name> \
+  --s3-destination-bucket-name <destination bucket name> \
   --s3-destination-access-key <destination access key> \
   --s3-destination-secret-key <destination secret key> \
   --s3-destination-endpoint <destination endpoint>
@@ -83,11 +83,11 @@ For instance, to copy from S3 to ABS:
   --destination-service abs \
   --copy-period 24h \
   --min-block-duration 23h \
-  --source-bucket <source bucket name> \
+  --s3-source-bucket-name <source bucket name> \
   --s3-source-access-key <source access key> \
   --s3-source-secret-key <source secret key> \
   --s3-source-endpoint <source endpoint> \
-  --destination-bucket https://<destination account name>.blob.core.windows.net/<destination bucket name> \
+  --azure-destination-container-url https://<destination account name>.blob.core.windows.net/<destination bucket name> \
   --azure-destination-account-name <destination account name> \
   --azure-destination-account-key <destination account key>
 ```
