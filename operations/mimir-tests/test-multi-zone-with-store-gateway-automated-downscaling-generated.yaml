@@ -33,19 +33,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: consul
-  name: consul
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      name: consul
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: distributor
   name: distributor
   namespace: default
@@ -201,226 +188,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: consul-sidekick
-  namespace: default
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
   name: rollout-operator
-  namespace: default
----
-apiVersion: v1
-data:
-  consul-config.json: '{"leave_on_terminate": true, "raft_snapshot_threshold": 128,
-    "raft_trailing_logs": 10000, "telemetry": {"dogstatsd_addr": "127.0.0.1:9125"}}'
-  mapping: |
-    mappings:
-    - match: consul.*.runtime.*
-      name: consul_runtime
-      labels:
-        type: $2
-    - match: consul.runtime.total_gc_pause_ns
-      name: consul_runtime_total_gc_pause_ns
-      labels:
-        type: $2
-    - match: consul.consul.health.service.query-tag.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3
-    - match: consul.consul.health.service.query-tag.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7.$8
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7.$8.$9
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11
-    - match: consul.consul.health.service.query-tag.*.*.*.*.*.*.*.*.*.*.*.*
-      name: consul_health_service_query_tag
-      labels:
-        query: $1.$2.$3.$4.$5.$6.$7.$8.$9.$10.$11.$12
-    - match: consul.consul.catalog.deregister
-      name: consul_catalog_deregister
-      labels: {}
-    - match: consul.consul.dns.domain_query.*.*.*.*.*
-      name: consul_dns_domain_query
-      labels:
-        query: $1.$2.$3.$4.$5
-    - match: consul.consul.health.service.not-found.*
-      name: consul_health_service_not_found
-      labels:
-        query: $1
-    - match: consul.consul.health.service.query.*
-      name: consul_health_service_query
-      labels:
-        query: $1
-    - match: consul.*.memberlist.health.score
-      name: consul_memberlist_health_score
-      labels: {}
-    - match: consul.serf.queue.*
-      name: consul_serf_events
-      labels:
-        type: $1
-    - match: consul.serf.snapshot.appendLine
-      name: consul_serf_snapshot_appendLine
-      labels:
-        type: $1
-    - match: consul.serf.coordinate.adjustment-ms
-      name: consul_serf_coordinate_adjustment_ms
-      labels: {}
-    - match: consul.consul.rpc.query
-      name: consul_rpc_query
-      labels: {}
-    - match: consul.*.consul.session_ttl.active
-      name: consul_session_ttl_active
-      labels: {}
-    - match: consul.raft.rpc.*
-      name: consul_raft_rpc
-      labels:
-        type: $1
-    - match: consul.raft.rpc.appendEntries.storeLogs
-      name: consul_raft_rpc_appendEntries_storeLogs
-      labels:
-        type: $1
-    - match: consul.consul.fsm.persist
-      name: consul_fsm_persist
-      labels: {}
-    - match: consul.raft.fsm.apply
-      name: consul_raft_fsm_apply
-      labels: {}
-    - match: consul.raft.leader.lastContact
-      name: consul_raft_leader_lastcontact
-      labels: {}
-    - match: consul.raft.leader.dispatchLog
-      name: consul_raft_leader_dispatchLog
-      labels: {}
-    - match: consul.raft.commitTime
-      name: consul_raft_commitTime
-      labels: {}
-    - match: consul.raft.replication.appendEntries.logs.*.*.*.*
-      name: consul_raft_replication_appendEntries_logs
-      labels:
-        query: ${1}.${2}.${3}.${4}
-    - match: consul.raft.replication.appendEntries.rpc.*.*.*.*
-      name: consul_raft_replication_appendEntries_rpc
-      labels:
-        query: ${1}.${2}.${3}.${4}
-    - match: consul.raft.replication.heartbeat.*.*.*.*
-      name: consul_raft_replication_heartbeat
-      labels:
-        query: ${1}.${2}.${3}.${4}
-    - match: consul.consul.rpc.request
-      name: consul_rpc_requests
-      labels: {}
-    - match: consul.consul.rpc.accept_conn
-      name: consul_rpc_accept_conn
-      labels: {}
-    - match: consul.memberlist.udp.*
-      name: consul_memberlist_udp
-      labels:
-        type: $1
-    - match: consul.memberlist.tcp.*
-      name: consul_memberlist_tcp
-      labels:
-        type: $1
-    - match: consul.memberlist.gossip
-      name: consul_memberlist_gossip
-      labels: {}
-    - match: consul.memberlist.probeNode
-      name: consul_memberlist_probenode
-      labels: {}
-    - match: consul.memberlist.pushPullNode
-      name: consul_memberlist_pushpullnode
-      labels: {}
-    - match: consul.http.*
-      name: consul_http_request
-      labels:
-        method: $1
-        path: /
-    - match: consul.http.*.*
-      name: consul_http_request
-      labels:
-        method: $1
-        path: /$2
-    - match: consul.http.*.*.*
-      name: consul_http_request
-      labels:
-        method: $1
-        path: /$2/$3
-    - match: consul.http.*.*.*.*
-      name: consul_http_request
-      labels:
-        method: $1
-        path: /$2/$3/$4
-    - match: consul.http.*.*.*.*.*
-      name: consul_http_request
-      labels:
-        method: $1
-        path: /$2/$3/$4/$5
-    - match: consul.consul.leader.barrier
-      name: consul_leader_barrier
-      labels: {}
-    - match: consul.consul.leader.reconcileMember
-      name: consul_leader_reconcileMember
-      labels: {}
-    - match: consul.consul.leader.reconcile
-      name: consul_leader_reconcile
-      labels: {}
-    - match: consul.consul.fsm.coordinate.batch-update
-      name: consul_fsm_coordinate_batch_update
-      labels: {}
-    - match: consul.consul.fsm.autopilot
-      name: consul_fsm_autopilot
-      labels: {}
-    - match: consul.consul.fsm.kvs.cas
-      name: consul_fsm_kvs_cas
-      labels: {}
-    - match: consul.consul.fsm.register
-      name: consul_fsm_register
-      labels: {}
-    - match: consul.consul.fsm.deregister
-      name: consul_fsm_deregister
-      labels: {}
-    - match: consul.consul.fsm.tombstone.reap
-      name: consul_fsm_tombstone_reap
-      labels: {}
-    - match: consul.consul.catalog.register
-      name: consul_catalog_register
-      labels: {}
-    - match: consul.consul.catalog.deregister
-      name: consul_catalog_deregister
-      labels: {}
-    - match: consul.consul.leader.reapTombstones
-      name: consul_leader_reapTombstones
-      labels: {}
-kind: ConfigMap
-metadata:
-  name: consul
   namespace: default
 ---
 apiVersion: v1
@@ -431,24 +199,6 @@ kind: ConfigMap
 metadata:
   name: overrides
   namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: consul-sidekick
-  namespace: default
-rules:
-- apiGroups:
-  - ""
-  - extensions
-  - apps
-  resources:
-  - pods
-  - replicasets
-  verbs:
-  - get
-  - list
-  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -484,20 +234,6 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: consul-sidekick
-  namespace: default
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: consul-sidekick
-subjects:
-- kind: ServiceAccount
-  name: consul-sidekick
-  namespace: default
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
   name: rollout-operator-rolebinding
   namespace: default
 roleRef:
@@ -525,6 +261,9 @@ spec:
   - name: alertmanager-grpc
     port: 9095
     targetPort: 9095
+  - name: alertmanager-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: alertmanager
 ---
@@ -544,38 +283,11 @@ spec:
   - name: compactor-grpc
     port: 9095
     targetPort: 9095
+  - name: compactor-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: compactor
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: consul
-  name: consul
-  namespace: default
-spec:
-  ports:
-  - name: consul-server
-    port: 8300
-    targetPort: 8300
-  - name: consul-serf
-    port: 8301
-    targetPort: 8301
-  - name: consul-client
-    port: 8400
-    targetPort: 8400
-  - name: consul-api
-    port: 8500
-    targetPort: 8500
-  - name: statsd-exporter-http-metrics
-    port: 8000
-    targetPort: 8000
-  - name: consul-exporter-http-metrics
-    port: 9107
-    targetPort: 9107
-  selector:
-    name: consul
 ---
 apiVersion: v1
 kind: Service
@@ -593,8 +305,27 @@ spec:
   - name: distributor-grpc
     port: 9095
     targetPort: 9095
+  - name: distributor-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: distributor
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gossip-ring
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - appProtocol: tcp
+    name: gossip-ring
+    port: 7946
+    protocol: TCP
+    targetPort: 7946
+  selector:
+    gossip_ring_member: "true"
 ---
 apiVersion: v1
 kind: Service
@@ -612,6 +343,9 @@ spec:
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: ingester-zone-a
     rollout-group: ingester
@@ -632,6 +366,9 @@ spec:
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: ingester-zone-b
     rollout-group: ingester
@@ -652,6 +389,9 @@ spec:
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
+  - name: ingester-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: ingester-zone-c
     rollout-group: ingester
@@ -747,6 +487,9 @@ spec:
   - name: querier-grpc
     port: 9095
     targetPort: 9095
+  - name: querier-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: querier
 ---
@@ -856,6 +599,9 @@ spec:
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: store-gateway-zone-a
     rollout-group: store-gateway
@@ -876,6 +622,9 @@ spec:
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: store-gateway-zone-b
     rollout-group: store-gateway
@@ -896,138 +645,12 @@ spec:
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
+  - name: store-gateway-gossip-ring
+    port: 7946
+    targetPort: 7946
   selector:
     name: store-gateway-zone-c
     rollout-group: store-gateway
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: consul
-  namespace: default
-spec:
-  minReadySeconds: 10
-  replicas: 1
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      name: consul
-  strategy:
-    rollingUpdate:
-      maxSurge: 15%
-      maxUnavailable: 0
-  template:
-    metadata:
-      annotations:
-        consul-hash: e56ef6821a3557604caccaf6d5820239
-      labels:
-        name: consul
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: consul
-            topologyKey: kubernetes.io/hostname
-          - labelSelector:
-              matchLabels:
-                name: ingester
-            namespaces:
-            - default
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - agent
-        - -ui
-        - -server
-        - -client=0.0.0.0
-        - -config-file=/etc/config/consul-config.json
-        - -bootstrap-expect=1
-        - -ui-content-path=/default/consul/
-        env:
-        - name: CHECKPOINT_DISABLE
-          value: "1"
-        image: consul:1.5.3
-        imagePullPolicy: IfNotPresent
-        name: consul
-        ports:
-        - containerPort: 8300
-          name: server
-        - containerPort: 8301
-          name: serf
-        - containerPort: 8400
-          name: client
-        - containerPort: 8500
-          name: api
-        resources:
-          requests:
-            cpu: "4"
-            memory: 4Gi
-        volumeMounts:
-        - mountPath: /etc/config
-          name: consul
-        - mountPath: /consul/data/
-          name: data
-      - args:
-        - --namespace=$(POD_NAMESPACE)
-        - --pod-name=$(POD_NAME)
-        env:
-        - name: POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        image: weaveworks/consul-sidekick:master-f18ad13
-        imagePullPolicy: IfNotPresent
-        name: sidekick
-        volumeMounts:
-        - mountPath: /etc/config
-          name: consul
-        - mountPath: /consul/data/
-          name: data
-      - args:
-        - --web.listen-address=:8000
-        - --statsd.mapping-config=/etc/config/mapping
-        image: prom/statsd-exporter:v0.12.2
-        imagePullPolicy: IfNotPresent
-        name: statsd-exporter
-        ports:
-        - containerPort: 8000
-          name: http-metrics
-        volumeMounts:
-        - mountPath: /etc/config
-          name: consul
-        - mountPath: /consul/data/
-          name: data
-      - args:
-        - --consul.server=localhost:8500
-        - --web.listen-address=:9107
-        - --consul.timeout=1s
-        - --no-consul.health-summary
-        - --consul.allow_stale
-        image: prom/consul-exporter:v0.5.0
-        imagePullPolicy: IfNotPresent
-        name: consul-exporter
-        ports:
-        - containerPort: 9107
-          name: http-metrics
-        volumeMounts:
-        - mountPath: /etc/config
-          name: consul
-        - mountPath: /consul/data/
-          name: data
-      serviceAccount: consul-sidekick
-      volumes:
-      - configMap:
-          name: consul
-        name: consul
-      - emptyDir:
-          medium: Memory
-        name: data
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1048,6 +671,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: distributor
     spec:
       containers:
@@ -1060,16 +684,16 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
-        - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
-        - -distributor.ring.store=consul
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
+        - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=1073741824
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -1090,6 +714,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1136,6 +762,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: querier
     spec:
       containers:
@@ -1149,13 +776,14 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
         - -mem-ballast-size-bytes=268435456
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
@@ -1164,10 +792,9 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
@@ -1184,6 +811,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1413,6 +1042,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler
     spec:
       containers:
@@ -1426,12 +1056,13 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.max-partial-query-length=768h
         - -ruler-storage.cache.backend=memcached
         - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
@@ -1441,17 +1072,15 @@ spec:
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
-        - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
-        - -ruler.ring.store=consul
+        - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
@@ -1508,17 +1137,19 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: alertmanager
     spec:
       containers:
       - args:
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
-        - -alertmanager.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -alertmanager.sharding-ring.replication-factor=3
-        - -alertmanager.sharding-ring.store=consul
+        - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
         - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1538,6 +1169,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1593,6 +1226,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: compactor
     spec:
       containers:
@@ -1610,13 +1244,14 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
-        - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -compactor.ring.prefix=
-        - -compactor.ring.store=consul
+        - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -1631,6 +1266,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1690,6 +1327,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ingester-zone-a
         rollout-group: ingester
     spec:
@@ -1720,16 +1358,17 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1737,6 +1376,15 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: ingester-a-only
+        - name: GOGC
+          value: "off"
+        - name: GOMEMLIMIT
+          value: 1Gi
+        - name: Z
+          value: "123"
         image: grafana/mimir:2.10.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1745,6 +1393,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1804,6 +1454,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ingester-zone-b
         rollout-group: ingester
     spec:
@@ -1834,16 +1485,17 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1851,6 +1503,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
         image: grafana/mimir:2.10.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1859,6 +1514,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -1918,6 +1575,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ingester-zone-c
         rollout-group: ingester
     spec:
@@ -1948,16 +1606,17 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=consul
+        - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
         - -ingester.ring.unregister-on-shutdown=true
         - -ingester.ring.zone-awareness-enabled=true
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1965,6 +1624,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: A
+          value: all-ingesters
         image: grafana/mimir:2.10.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1973,6 +1635,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2236,7 +1900,7 @@ metadata:
     grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
+    grafana.com/min-time-between-zones-downscale: 40m
     grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-a
@@ -2252,6 +1916,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: store-gateway-zone-a
         rollout-group: store-gateway
     spec:
@@ -2296,16 +1961,17 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.auto-forget-enabled=false
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
@@ -2313,6 +1979,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: all-store-gateways
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
@@ -2325,6 +1993,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2373,7 +2043,7 @@ metadata:
     grafana.com/rollout-downscale-leader: store-gateway-zone-a
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
+    grafana.com/min-time-between-zones-downscale: 40m
     grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-b
@@ -2388,6 +2058,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: store-gateway-zone-b
         rollout-group: store-gateway
     spec:
@@ -2432,16 +2103,17 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.auto-forget-enabled=false
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
@@ -2449,6 +2121,10 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: zone-b
+        - name: GOGC
+          value: "1000"
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
@@ -2461,6 +2137,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
@@ -2509,7 +2187,7 @@ metadata:
     grafana.com/rollout-downscale-leader: store-gateway-zone-b
     rollout-max-unavailable: "50"
   labels:
-    grafana.com/min-time-between-zones-downscale: 15m
+    grafana.com/min-time-between-zones-downscale: 40m
     grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-c
@@ -2524,6 +2202,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: store-gateway-zone-c
         rollout-group: store-gateway
     spec:
@@ -2568,16 +2247,17 @@ spec:
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
+        - -memberlist.bind-port=7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.auto-forget-enabled=false
-        - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=consul
+        - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.unregister-on-shutdown=false
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
@@ -2585,6 +2265,8 @@ spec:
         - -target=store-gateway
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: A
+          value: all-store-gateways
         - name: GOMAXPROCS
           value: "5"
         - name: GOMEMLIMIT
@@ -2597,6 +2279,8 @@ spec:
           name: http-metrics
         - containerPort: 9095
           name: grpc
+        - containerPort: 7946
+          name: gossip-ring
         readinessProbe:
           httpGet:
             path: /ready
