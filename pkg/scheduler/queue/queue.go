@@ -176,7 +176,7 @@ func (q *RequestQueue) dispatcherLoop() {
 		case call := <-q.getNextRequestForQuerierCalls:
 			if !q.tryDispatchRequest(queues, call) {
 				// No requests available for this querier connection right now. Add it to the list to try later.
-				call.element = waitingGetNextRequestForQuerierCalls.PushBack(call)
+				waitingGetNextRequestForQuerierCalls.PushBack(call)
 			}
 		}
 
@@ -396,7 +396,6 @@ type getNextRequestForQuerierCall struct {
 	processed     chan nextRequestForQuerier
 
 	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
-	element  *list.Element
 }
 
 func (q *getNextRequestForQuerierCall) sendError(err error) {
