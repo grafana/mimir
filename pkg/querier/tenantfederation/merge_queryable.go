@@ -93,16 +93,14 @@ func (q *tenantQuerier) Close() error {
 	return q.upstream.Close()
 }
 
-// NewMergeQueryable returns a queryable that merges results from multiple
-// underlying Queryables. The underlying queryables and its label values to be
-// considered are returned by a MergeQueryableCallbacks.Querier callback.
-// By setting bypassWithSingleID to true the mergeQuerier gets bypassed
+// NewMergeQueryable returns a queryable that merges results for all involved federation IDs.
+// The underlying querier and its IDs are returned by respective callbacks in MergeQueryableCallbacks.
+// By setting bypassWithSingleID to true the mergeQuerier gets bypassed,
 // and results for requests with a single ID will not contain the ID label.
-// This allows a smoother transition, when enabling tenant federation in a
+// This allows for a smoother transition, when enabling tenant federation in a
 // cluster.
-// Results contain a label `idLabelName` to identify the underlying queryable
-// that it originally resulted from.
-// If the label `idLabelName` is already existing, its value is overwritten and
+// Each result contains a label `idLabelName` to identify the federation ID it originally resulted from.
+// If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
 func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
@@ -123,8 +121,8 @@ type mergeQueryable struct {
 	maxConcurrency     int
 }
 
-// Querier returns a new mergeQuerier, which aggregates results from multiple
-// underlying queriers into a single result.
+// Querier returns a new mergeQuerier, which aggregates results for multiple federation IDs
+// into a single result.
 func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error) {
 	upstream, err := m.callbacks.Querier(mint, maxt)
 	if err != nil {
@@ -140,10 +138,9 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 	}, nil
 }
 
-// mergeQuerier aggregates the results from underlying queriers and adds a
-// label `idLabelName` to identify the queryable that the metric resulted
-// from.
-// If the label `idLabelName` is already existing, its value is overwritten and
+// mergeQuerier aggregates the results for involved federation IDs, and adds a
+// label `idLabelName` to identify the ID each metric resulted from.
+// If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
@@ -155,11 +152,11 @@ type mergeQuerier struct {
 	bypassWithSingleID bool
 }
 
-// LabelValues returns all potential values for a label name.  It is not safe
-// to use the strings beyond the lifefime of the querier.
-// For the label `idLabelName` it will return all the underlying ids available.
-// For the label "original_" + `idLabelName it will return all the values
-// of the underlying queriers for `idLabelName`.
+// LabelValues returns all potential values for a label name given involved federation IDs.
+// It is not safe to use the strings beyond the lifefime of the querier.
+// For the label `idLabelName` it will return all the underlying IDs available.
+// For the label "original_" + `idLabelName it will return all values
+// for the original `idLabelName` label.
 func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.callbacks.IDs(ctx)
 	if err != nil {
@@ -196,9 +193,8 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}, matchedTenants)
 }
 
-// LabelNames returns all the unique label names present in the underlying
-// queriers. It also adds the `idLabelName` and if present in the original
-// results the original `idLabelName`.
+// LabelNames returns all the unique label names present for involved federation IDs.
+// It also adds the `idLabelName` and if present in the original results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.callbacks.IDs(ctx)
 	if err != nil {
@@ -254,8 +250,7 @@ type stringSliceFuncJob struct {
 }
 
 // mergeDistinctStringSliceWithTenants aggregates stringSliceFunc call
-// results from queriers whose tenant ids match the tenants map. If a nil map is
-// provided, all queriers are used. It removes duplicates and sorts the result.
+// results for provided tenants. It removes duplicates and sorts the result.
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
 func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, ids []string, f stringSliceFunc, tenants map[string]struct{}) ([]string, annotations.Annotations, error) {
@@ -313,10 +308,9 @@ func (m *mergeQuerier) Close() error {
 	return m.upstream.Close()
 }
 
-// Select returns a set of series that matches the given label matchers. If the
-// `idLabelName` is matched on, it only considers those queriers
-// matching. The forwarded labelSelector is not containing those that operate
-// on `idLabelName`.
+// Select returns a set of series that matches the given label matchers, given involved federation IDs.
+// If the `idLabelName` is matched on, it only considers matching IDs.
+// The forwarded labelSelector does not contain those that operate on `idLabelName`.
 func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ids, err := m.callbacks.IDs(ctx)
 	if err != nil {
@@ -394,7 +388,7 @@ func (m *addLabelsSeriesSet) Err() error {
 }
 
 // A collection of warnings for the whole set.
-// Warnings could be return even iteration has not failed with error.
+// Warnings could be returned even if iteration has not failed with an error.
 func (m *addLabelsSeriesSet) Warnings() annotations.Annotations {
 	upstream := m.upstream.Warnings()
 	warnings := make(annotations.Annotations, len(upstream))
