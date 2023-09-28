@@ -9422,17 +9422,6 @@
         },
         {
           "kind": "field",
-          "name": "token",
-          "required": false,
-          "desc": "Token used to authenticate with Vault",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "vault.token",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "mount_path",
           "required": false,
           "desc": "Location of secrets engine within Vault",
@@ -9490,9 +9479,9 @@
                   "required": false,
                   "desc": "Response wrapping token if the Secret ID is response wrapped",
                   "fieldValue": null,
-                  "fieldDefaultValue": "",
+                  "fieldDefaultValue": false,
                   "fieldFlag": "vault.auth.approle.wrapping-token",
-                  "fieldType": "string"
+                  "fieldType": "boolean"
                 },
                 {
                   "kind": "field",

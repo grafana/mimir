@@ -229,10 +229,6 @@ vault:
   # CLI flag: -vault.url
   [url: <string> | default = ""]
 
-  # (experimental) Token used to authenticate with Vault
-  # CLI flag: -vault.token
-  [token: <string> | default = ""]
-
   # (experimental) Location of secrets engine within Vault
   # CLI flag: -vault.mount-path
   [mount_path: <string> | default = ""]
@@ -254,7 +250,7 @@ vault:
 
       # Response wrapping token if the Secret ID is response wrapped
       # CLI flag: -vault.auth.approle.wrapping-token
-      [wrapping_token: <string> | default = ""]
+      [wrapping_token: <boolean> | default = false]
 
       # Path if the Vault backend was mounted using a non-default path
       # CLI flag: -vault.auth.approle.mount-path

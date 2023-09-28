@@ -9,6 +9,9 @@ import (
 	"fmt"
 
 	hashivault "github.com/hashicorp/vault/api"
+	"github.com/hashicorp/vault/api/auth/approle"
+	"github.com/hashicorp/vault/api/auth/kubernetes"
+	"github.com/hashicorp/vault/api/auth/userpass"
 )
 
 // Config for the Vault used to fetch secrets
@@ -16,7 +19,6 @@ type Config struct {
 	Enabled bool `yaml:"enabled" category:"experimental"`
 
 	URL       string     `yaml:"url" category:"experimental"`
-	Token     string     `yaml:"token" category:"experimental"`
 	MountPath string     `yaml:"mount_path" category:"experimental"`
 	Auth      AuthConfig `yaml:"auth" category:"experimental"`
 
@@ -30,10 +32,6 @@ func (cfg *Config) Validate() error {
 
 	if cfg.URL == "" {
 		return errors.New("empty vault URL supplied")
-	}
-
-	if cfg.Token == "" {
-		return errors.New("empty vault authentication token supplied")
 	}
 
 	if cfg.MountPath == "" {
@@ -50,7 +48,6 @@ func (cfg *Config) Validate() error {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "vault.enabled", false, "Enables fetching of keys and certificates from Vault")
 	f.StringVar(&cfg.URL, "vault.url", "", "Location of the Vault server")
-	f.StringVar(&cfg.Token, "vault.token", "", "Token used to authenticate with Vault")
 	f.StringVar(&cfg.MountPath, "vault.mount-path", "", "Location of secrets engine within Vault")
 	cfg.Auth.RegisterFlagsWithPrefix(f, "vault.auth.")
 }
@@ -83,7 +80,8 @@ func NewVault(cfg Config) (*Vault, error) {
 		return nil, err
 	}
 
-	_, err = authMethod.authenticate(client)
+	authFac := authFactoryReal{}
+	_, err = authMethod.authenticate(context.Background(), &authFac, client)
 	if err != nil {
 		return nil, fmt.Errorf("error authenticating to vault: %w", err)
 	}
@@ -112,4 +110,29 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	}
 
 	return []byte(data), nil
+}
+
+type authFactoryReal struct{}
+
+func (af *authFactoryReal) NewAppRoleAuth(roleID string, secretID *approle.SecretID, opts ...approle.LoginOption) (*approle.AppRoleAuth, error) {
+	return approle.NewAppRoleAuth(
+		roleID,
+		secretID,
+		opts...,
+	)
+}
+
+func (af *authFactoryReal) NewKubernetesAuth(roleName string, opts ...kubernetes.LoginOption) (*kubernetes.KubernetesAuth, error) {
+	return kubernetes.NewKubernetesAuth(
+		roleName,
+		opts...,
+	)
+}
+
+func (af *authFactoryReal) NewUserpassAuth(username string, password string, opts ...userpass.LoginOption) (*userpass.UserpassAuth, error) {
+	return userpass.NewUserpassAuth(
+		username,
+		&userpass.Password{FromString: password},
+		opts...,
+	)
 }
