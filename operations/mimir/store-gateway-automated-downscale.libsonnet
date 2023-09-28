@@ -9,7 +9,7 @@
   // automatically is determined and tested.
 
   _config+: {
-    store_gateway_automated_downscale_enabled: true,
+    store_gateway_automated_downscale_enabled: false,
     // Give more time if lazy-loading is disabled.
     store_gateway_automated_downscale_min_time_between_zones: if $._config.store_gateway_lazy_loading_enabled then '15m' else '60m',
   },

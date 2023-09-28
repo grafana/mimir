@@ -1896,8 +1896,12 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 20m
+    grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-a
   namespace: default
@@ -1963,6 +1967,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2033,14 +2038,18 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: store-gateway-zone-a
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 20m
+    grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-b
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
       name: store-gateway-zone-b
@@ -2100,6 +2109,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2172,14 +2182,18 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
+    grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
+    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/rollout-downscale-leader: store-gateway-zone-b
     rollout-max-unavailable: "50"
   labels:
+    grafana.com/min-time-between-zones-downscale: 20m
+    grafana.com/prepare-downscale: "true"
     rollout-group: store-gateway
   name: store-gateway-zone-c
   namespace: default
 spec:
   podManagementPolicy: Parallel
-  replicas: 1
   selector:
     matchLabels:
       name: store-gateway-zone-c
@@ -2239,6 +2253,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.auto-forget-enabled=false
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
