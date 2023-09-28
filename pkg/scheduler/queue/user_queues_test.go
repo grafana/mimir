@@ -500,13 +500,21 @@ func TestShuffleQueriers(t *testing.T) {
 		tenantQuerierIDs: map[string]map[string]struct{}{},
 	}
 
+	// maxQueriers is 0, so sharding is off
 	tqs.shuffleTenantQueriers("team-a", nil)
 	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
 
+	// maxQueriers is equal to the total queriers, so the sharding calculation is unnecessary
 	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers)
 	tqs.shuffleTenantQueriers("team-a", nil)
 	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
 
+	// maxQueriers is greater than the total queriers, so the sharding calculation is unnecessary
+	tqs.tenantsByID["team-a"].maxQueriers = len(allQueriers) + 1
+	tqs.shuffleTenantQueriers("team-a", nil)
+	require.Nil(t, tqs.tenantQuerierIDs["team-a"])
+
+	// now maxQueriers is nonzero and less than the total queriers, so we shuffle shard and assign
 	tqs.tenantsByID["team-a"].maxQueriers = 3
 	tqs.shuffleTenantQueriers("team-a", nil)
 	r1 := tqs.tenantQuerierIDs["team-a"]
