@@ -29,6 +29,8 @@
 
 ### Mixin
 
+* [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
+
 ### Jsonnet
 
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
