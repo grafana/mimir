@@ -11,7 +11,6 @@
     autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
     autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
-    autoscaling_ruler_querier_memory_target_utilization: 1,
 
     autoscaling_distributor_enabled: false,
     autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
@@ -194,8 +193,6 @@
   // The "up" metrics correctly handles the stale marker when the pod is terminated, while it’s not the
   // case for the cAdvisor metrics. By intersecting these 2 metrics, we only look the memory utilization
   // of containers there are running at any given time, without suffering the PromQL lookback period.
-  // If a pod is terminated because it OOMs, we still want to scale up -- add the memory resource request of OOMing
-  //  pods to the memory metric calculation.
   local memoryHPAQuery = |||
     max_over_time(
       sum(
@@ -204,27 +201,9 @@
         max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
       )[15m:]
     )
-    +
-    sum(
-      sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="%(container)s", namespace="%(namespace)s", resource="memory"}[15m]))
-      and
-      max by (pod) (changes(kube_pod_container_status_restarts_total{container="%(container)s", namespace="%(namespace)s"}[15m]) > 0)
-      and
-      max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"})
-      or vector(0)
-    )
   |||,
 
-
-  newQueryFrontendScaledObject(
-    name,
-    cpu_requests,
-    memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-  ):: self.newScaledObject(
+  newQueryFrontendScaledObject(name, cpu_requests, memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
@@ -333,16 +312,7 @@
 
   // newRulerQuerierScaledObject will create a scaled object for the ruler-querier component with the given name.
   // `weight` param works in the same way as in `newQuerierScaledObject`, see docs there.
-  newRulerQuerierScaledObject(
-    name,
-    querier_cpu_requests,
-    memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-    weight=1,
-  ):: self.newScaledObject(name, $._config.namespace, {
+  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas, cpu_target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -356,17 +326,6 @@
         // threshold is expected to be a string.
         threshold: std.toString(std.floor(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization)),
       },
-      {
-        metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: memoryHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // Threshold is expected to be a string
-        threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
-      },
     ],
   }),
 
@@ -374,10 +333,8 @@
     $.newRulerQuerierScaledObject(
       name='ruler-querier',
       querier_cpu_requests=$.ruler_querier_container.resources.requests.cpu,
-      memory_requests=$.ruler_querier_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
-      memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
     ),
 
@@ -408,15 +365,7 @@
   // Distributors
   //
 
-  newDistributorScaledObject(
-    name,
-    distributor_cpu_requests,
-    distributor_memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-  ):: self.newScaledObject(name, $._config.namespace, {
+  newDistributorScaledObject(name, distributor_cpu_requests, distributor_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 
@@ -515,15 +464,7 @@
 
   // Alertmanager
 
-  newAlertmanagerScaledObject(
-    name,
-    alertmanager_cpu_requests,
-    alertmanager_memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-  ):: self.newScaledObject(name, $._config.namespace, {
+  newAlertmanagerScaledObject(name, alertmanager_cpu_requests, alertmanager_memory_requests, min_replicas, max_replicas, cpu_target_utilization, memory_target_utilization):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: min_replicas,
     max_replica_count: max_replicas,
 

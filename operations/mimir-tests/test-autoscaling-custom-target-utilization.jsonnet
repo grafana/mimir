@@ -5,7 +5,6 @@
 
     autoscaling_querier_target_utilization: targetUtilization,
     autoscaling_ruler_querier_cpu_target_utilization: targetUtilization,
-    autoscaling_ruler_querier_memory_target_utilization: targetUtilization,
     autoscaling_distributor_cpu_target_utilization: targetUtilization,
     autoscaling_distributor_memory_target_utilization: targetUtilization,
     autoscaling_ruler_cpu_target_utilization: targetUtilization,
