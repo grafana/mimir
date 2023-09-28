@@ -36,4 +36,7 @@
 (import 'read-write-deployment/main.libsonnet') +
 
 // mTLS client configuration for Memcached
-(import 'memcached-client-mtls.libsonnet')
+(import 'memcached-client-mtls.libsonnet') +
+
+// Automated downscale of store-gateways
+(import 'store-gateway-automated-downscale.libsonnet')
