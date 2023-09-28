@@ -124,9 +124,6 @@ type mergeQueryable struct {
 // Querier returns a new mergeQuerier, which aggregates results from multiple
 // underlying queriers into a single result.
 func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error) {
-	// TODO: it's necessary to think of how to override context inside querier
-	//  to mark spans created inside querier as child of a span created inside
-	//  methods of merged querier.
 	upstream, err := m.callbacks.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
