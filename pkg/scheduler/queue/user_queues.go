@@ -148,6 +148,8 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
+//
+// getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
 func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
 	uid := lastUserIndex
 

@@ -25,11 +25,14 @@
 * [ENHANCEMENT] Packaging: add logrotate config file. #6142
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
-* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100
+* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
 * [BUGFIX] Ensure correct nesting of children of the `querier.Select` tracing span. #6085
 
 ### Mixin
+
+* [ENHANCEMENT] Dashboards: Optionally show rejected requests on Mimir Writes dashboard. Useful when used together with "early request rejection". #6132
+* [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
 
 ### Jsonnet
 

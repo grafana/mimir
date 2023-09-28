@@ -39751,6 +39751,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to ingester.\nRejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests and ingester-max-ingestion-rate).\nWhen ingester is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen ingester is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                       "fill": 10,
                       "id": 10,
                       "legend": {
