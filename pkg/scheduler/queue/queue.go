@@ -127,7 +127,7 @@ func (q *RequestQueue) starting(_ context.Context) error {
 
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
-	queues := newUserQueues(q.maxOutstandingPerTenant, q.forgetDelay)
+	queueBroker := newQueueBroker(q.maxOutstandingPerTenant, q.forgetDelay)
 	waitingQuerierConnections := list.New()
 
 	for {
@@ -143,14 +143,14 @@ func (q *RequestQueue) dispatcherLoop() {
 			switch qe.operation {
 			case registerConnection:
 				q.connectedQuerierWorkers.Inc()
-				queues.addQuerierConnection(qe.querierID)
+				queueBroker.addQuerierConnection(qe.querierID)
 				needToDispatchQueries = true
 			case unregisterConnection:
 				q.connectedQuerierWorkers.Dec()
-				queues.removeQuerierConnection(qe.querierID, time.Now())
+				queueBroker.removeQuerierConnection(qe.querierID, time.Now())
 				needToDispatchQueries = true
 			case notifyShutdown:
-				queues.notifyQuerierShutdown(qe.querierID)
+				queueBroker.notifyQuerierShutdown(qe.querierID)
 				needToDispatchQueries = true
 
 				// Tell any waiting GetNextRequestForQuerier calls for this querier that nothing is coming.
@@ -159,7 +159,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				// later. This will fail because the connection is broken, and GetNextRequestForQuerier won't be called again.
 				q.cancelWaitingConnectionsForQuerier(qe.querierID, waitingQuerierConnections)
 			case forgetDisconnected:
-				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
+				if queueBroker.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
 					needToDispatchQueries = true
 				}
@@ -167,14 +167,14 @@ func (q *RequestQueue) dispatcherLoop() {
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
 			}
 		case r := <-q.enqueueRequests:
-			err := q.handleEnqueueRequest(queues, r)
+			err := q.handleEnqueueRequest(queueBroker, r)
 			r.processed <- err
 
 			if err == nil {
 				needToDispatchQueries = true
 			}
 		case querierConn := <-q.availableQuerierConnections:
-			if !q.dispatchRequestToQuerier(queues, querierConn) {
+			if !q.dispatchRequestToQuerier(queueBroker, querierConn) {
 				// No requests available for this querier connection right now. Add it to the list to try later.
 				querierConn.element = waitingQuerierConnections.PushBack(querierConn)
 			}
@@ -183,11 +183,11 @@ func (q *RequestQueue) dispatcherLoop() {
 		if needToDispatchQueries {
 			currentElement := waitingQuerierConnections.Front()
 
-			for currentElement != nil && queues.len() > 0 {
+			for currentElement != nil && queueBroker.len() > 0 {
 				querierConn := currentElement.Value.(*querierConnection)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.dispatchRequestToQuerier(queues, querierConn) {
+				if q.dispatchRequestToQuerier(queueBroker, querierConn) {
 					waitingQuerierConnections.Remove(currentElement)
 				}
 
@@ -195,7 +195,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		if stopping && (queues.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
+		if stopping && (queueBroker.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
 			currentElement := waitingQuerierConnections.Front()
 
@@ -212,14 +212,14 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) error {
-	queue := queues.getOrAddTenantQueue(r.userID, r.maxQueriers)
+func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueRequest) error {
+	queue := broker.getOrAddTenantQueue(r.userID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if userID is "".
 		return errors.New("no queue found")
 	}
 
-	if queue.Len()+1 > queues.maxUserQueueSize {
+	if queue.Len()+1 > broker.maxUserQueueSize {
 		q.discardedRequests.WithLabelValues(r.userID).Inc()
 		return ErrTooManyRequests
 	}
@@ -237,10 +237,10 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
+func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn *querierConnection) bool {
 	// If this querier has told us it's shutting down, don't bother trying to find a query request for it.
 	// Terminate GetNextRequestForQuerier with an error now.
-	queue, userID, idx, err := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	queue, userID, idx, err := broker.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
 	if err != nil {
 		querierConn.sendError(err)
 		return true
@@ -252,7 +252,7 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *que
 		return false
 	}
 
-	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty queues.
+	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty broker.
 	queueElement := queue.Front()
 
 	requestSent := querierConn.send(nextRequestForQuerier{
@@ -267,7 +267,7 @@ func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *que
 		queue.Remove(queueElement)
 
 		if queue.Len() == 0 {
-			queues.deleteQueue(userID)
+			broker.deleteQueue(userID)
 		}
 
 		q.queueLength.WithLabelValues(userID).Dec()

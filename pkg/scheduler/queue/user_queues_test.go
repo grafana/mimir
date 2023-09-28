@@ -20,7 +20,7 @@ import (
 )
 
 func TestQueues(t *testing.T) {
-	uq := newUserQueues(0, 0)
+	uq := newQueueBroker(0, 0)
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
@@ -80,7 +80,7 @@ func TestQueues(t *testing.T) {
 }
 
 func TestQueuesOnTerminatingQuerier(t *testing.T) {
-	uq := newUserQueues(0, 0)
+	uq := newQueueBroker(0, 0)
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
@@ -112,7 +112,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 }
 
 func TestQueuesWithQueriers(t *testing.T) {
-	uq := newUserQueues(0, 0)
+	uq := newQueueBroker(0, 0)
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
@@ -191,7 +191,7 @@ func TestQueuesConsistency(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			uq := newUserQueues(0, testData.forgetDelay)
+			uq := newQueueBroker(0, testData.forgetDelay)
 			assert.NotNil(t, uq)
 			assert.NoError(t, isConsistent(uq))
 
@@ -240,7 +240,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	)
 
 	now := time.Now()
-	uq := newUserQueues(0, forgetDelay)
+	uq := newQueueBroker(0, forgetDelay)
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
@@ -332,7 +332,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	)
 
 	now := time.Now()
-	uq := newUserQueues(0, forgetDelay)
+	uq := newQueueBroker(0, forgetDelay)
 	assert.NotNil(t, uq)
 	assert.NoError(t, isConsistent(uq))
 
@@ -405,34 +405,34 @@ func generateQuerier(r *rand.Rand) string {
 	return fmt.Sprint("querier-", r.Int()%5)
 }
 
-func getOrAdd(t *testing.T, uq *queues, tenant string, maxQueriers int) *list.List {
-	q := uq.getOrAddTenantQueue(tenant, maxQueriers)
+func getOrAdd(t *testing.T, qb *queueBroker, tenant string, maxQueriers int) *list.List {
+	q := qb.getOrAddTenantQueue(tenant, maxQueriers)
 	assert.NotNil(t, q)
-	assert.NoError(t, isConsistent(uq))
-	assert.Equal(t, q, uq.getOrAddTenantQueue(tenant, maxQueriers))
+	assert.NoError(t, isConsistent(qb))
+	assert.Equal(t, q, qb.getOrAddTenantQueue(tenant, maxQueriers))
 	return q
 }
 
-func confirmOrderForQuerier(t *testing.T, uq *queues, querier string, lastUserIndex int, qs ...*list.List) int {
+func confirmOrderForQuerier(t *testing.T, qb *queueBroker, querier string, lastUserIndex int, qs ...*list.List) int {
 	var n *list.List
 	for _, q := range qs {
 		var err error
-		n, _, lastUserIndex, err = uq.getNextQueueForQuerier(lastUserIndex, querier)
+		n, _, lastUserIndex, err = qb.getNextQueueForQuerier(lastUserIndex, querier)
 		assert.Equal(t, q, n)
-		assert.NoError(t, isConsistent(uq))
+		assert.NoError(t, isConsistent(qb))
 		assert.NoError(t, err)
 	}
 	return lastUserIndex
 }
 
-func isConsistent(q *queues) error {
-	if len(q.tenantQuerierAssignments.querierIDsSorted) != len(q.tenantQuerierAssignments.queriersByID) {
+func isConsistent(qb *queueBroker) error {
+	if len(qb.tenantQuerierAssignments.querierIDsSorted) != len(qb.tenantQuerierAssignments.queriersByID) {
 		return fmt.Errorf("inconsistent number of sorted queriers and querier connections")
 	}
 
 	userCount := 0
-	for ix, userID := range q.tenantQuerierAssignments.tenantIDOrder {
-		uq := q.tenantQueues[userID]
+	for ix, userID := range qb.tenantQuerierAssignments.tenantIDOrder {
+		uq := qb.tenantQueues[userID]
 		if userID != "" && uq == nil {
 			return fmt.Errorf("user %s doesn't have queue", userID)
 		}
@@ -444,8 +444,8 @@ func isConsistent(q *queues) error {
 		}
 		userCount++
 
-		user := q.tenantQuerierAssignments.tenantsByID[userID]
-		querierSet := q.tenantQuerierAssignments.tenantQuerierIDs[userID]
+		user := qb.tenantQuerierAssignments.tenantsByID[userID]
+		querierSet := qb.tenantQuerierAssignments.tenantQuerierIDs[userID]
 
 		if user.orderIndex != ix {
 			return fmt.Errorf("invalid user's index, expected=%d, got=%d", ix, user.orderIndex)
@@ -455,16 +455,16 @@ func isConsistent(q *queues) error {
 			return fmt.Errorf("user %s has queriers, but maxQueriers=0", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.tenantQuerierAssignments.querierIDsSorted) <= user.maxQueriers && querierSet != nil {
+		if user.maxQueriers > 0 && len(qb.tenantQuerierAssignments.querierIDsSorted) <= user.maxQueriers && querierSet != nil {
 			return fmt.Errorf("user %s has queriers set despite not enough queriers available", userID)
 		}
 
-		if user.maxQueriers > 0 && len(q.tenantQuerierAssignments.querierIDsSorted) > user.maxQueriers && len(querierSet) != user.maxQueriers {
+		if user.maxQueriers > 0 && len(qb.tenantQuerierAssignments.querierIDsSorted) > user.maxQueriers && len(querierSet) != user.maxQueriers {
 			return fmt.Errorf("user %s has incorrect number of queriers, expected=%d, got=%d", userID, len(querierSet), user.maxQueriers)
 		}
 	}
 
-	if userCount != len(q.tenantQueues) {
+	if userCount != len(qb.tenantQueues) {
 		return fmt.Errorf("inconsistent number of users list and user queues")
 	}
 
@@ -472,10 +472,10 @@ func isConsistent(q *queues) error {
 }
 
 // getUsersByQuerier returns the list of users handled by the provided querierID.
-func getUsersByQuerier(queues *queues, querierID string) []string {
+func getUsersByQuerier(broker *queueBroker, querierID string) []string {
 	var userIDs []string
-	for userID := range queues.tenantQueues {
-		querierSet := queues.tenantQuerierAssignments.tenantQuerierIDs[userID]
+	for userID := range broker.tenantQueues {
+		querierSet := broker.tenantQuerierAssignments.tenantQuerierIDs[userID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
 			userIDs = append(userIDs, userID)

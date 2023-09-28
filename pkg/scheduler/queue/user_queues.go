@@ -76,7 +76,7 @@ type queueTenant struct {
 
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
 // and mapping between users and queriers.
-type queues struct {
+type queueBroker struct {
 	tenantQueues map[string]*userQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
@@ -88,8 +88,8 @@ type userQueue struct {
 	requests *list.List
 }
 
-func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
-	return &queues{
+func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroker {
+	return &queueBroker{
 		tenantQueues: map[string]*userQueue{},
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[string]*querierConn{},
@@ -103,26 +103,26 @@ func newUserQueues(maxUserQueueSize int, forgetDelay time.Duration) *queues {
 	}
 }
 
-func (q *queues) len() int {
-	return len(q.tenantQueues)
+func (qb *queueBroker) len() int {
+	return len(qb.tenantQueues)
 }
 
 // Returns existing or new queue for user.
 // MaxQueriers is used to compute which queriers should handle requests for this user.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (q *queues) getOrAddTenantQueue(tenantID string, maxQueriers int) *list.List {
-	tenant := q.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
+func (qb *queueBroker) getOrAddTenantQueue(tenantID string, maxQueriers int) *list.List {
+	tenant := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
 	if tenant == nil {
 		return nil
 	}
-	queue := q.tenantQueues[tenantID]
+	queue := qb.tenantQueues[tenantID]
 
 	if queue == nil {
 		queue = &userQueue{
 			requests: list.New(),
 		}
-		q.tenantQueues[tenantID] = queue
+		qb.tenantQueues[tenantID] = queue
 	}
 
 	return queue.requests
@@ -131,39 +131,39 @@ func (q *queues) getOrAddTenantQueue(tenantID string, maxQueriers int) *list.Lis
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
-func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
-	nextTenantID, nextTenantIndex, err := q.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
+func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
+	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
 	if err != nil || nextTenantID == emptyTenantID {
 		return nil, nextTenantID, nextTenantIndex, err
 	}
 
-	tenantQueue := q.tenantQueues[nextTenantID]
+	tenantQueue := qb.tenantQueues[nextTenantID]
 	return tenantQueue.requests, nextTenantID, nextTenantIndex, nil
 }
 
-func (q *queues) addQuerierConnection(querierID string) {
-	q.tenantQuerierAssignments.addQuerierConnection(querierID)
+func (qb *queueBroker) addQuerierConnection(querierID string) {
+	qb.tenantQuerierAssignments.addQuerierConnection(querierID)
 }
 
-func (q *queues) removeQuerierConnection(querierID string, now time.Time) {
-	q.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
+func (qb *queueBroker) removeQuerierConnection(querierID string, now time.Time) {
+	qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
 }
 
-func (q *queues) notifyQuerierShutdown(querierID string) {
-	q.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
+func (qb *queueBroker) notifyQuerierShutdown(querierID string) {
+	qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
 }
 
-func (q *queues) forgetDisconnectedQueriers(now time.Time) int {
-	return q.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
+func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
+	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
-func (q *queues) deleteQueue(tenantID string) {
-	tenantQueue := q.tenantQueues[tenantID]
+func (qb *queueBroker) deleteQueue(tenantID string) {
+	tenantQueue := qb.tenantQueues[tenantID]
 	if tenantQueue == nil {
 		return
 	}
-	delete(q.tenantQueues, tenantID)
-	q.tenantQuerierAssignments.removeTenant(tenantID)
+	delete(qb.tenantQueues, tenantID)
+	qb.tenantQuerierAssignments.removeTenant(tenantID)
 }
 
 func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID string) (string, int, error) {
