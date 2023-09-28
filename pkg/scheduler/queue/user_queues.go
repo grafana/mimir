@@ -175,6 +175,8 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
 		tenantOrderIndex++
 		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
+			// do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap around this list,
+			// as it could skip tenant IDs if the slice has changed size since the last call
 			tenantOrderIndex = 0
 		}
 
