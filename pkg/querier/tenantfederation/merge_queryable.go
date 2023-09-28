@@ -25,19 +25,18 @@ import (
 )
 
 // NewQueryable returns a queryable that iterates through all the tenant IDs
-// that are part of the request and aggregates the results from each tenant's
-// Querier by sending of subsequent requests.
+// that are part of the request and aggregates the query results for tenant.
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed
-// and results for request with a single ID will not contain the
-// "__tenant_id__" label. This allows a smoother transition, when enabling
+// and results for requests with a single ID will not contain the
+// "__tenant_id__" label. This allows for a smoother transition, when enabling
 // tenant federation in a cluster.
 // The result contains a label "__tenant_id__" to identify the tenant ID that
 // it originally resulted from.
-// If the label "__tenant_id__" is already existing, its value is overwritten
+// If the label "__tenant_id__" already exists, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
 func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
-	callbacks := MergeQuerierCallbacks{
+	callbacks := MergeQueryableCallbacks{
 		Querier: func(mint, maxt int64) (MergeQuerierUpstream, error) {
 			q, err := upstream.Querier(mint, maxt)
 			if err != nil {
@@ -56,9 +55,12 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 	return NewMergeQueryable(defaultTenantLabel, callbacks, bypassWithSingleID, maxConcurrency, logger)
 }
 
-type MergeQuerierCallbacks struct {
+// MergeQueryableCallbacks contains callbacks to NewMergeQueryable, for customizing its behaviour.
+type MergeQueryableCallbacks struct {
+	// Querier returns a MergeQuerierUpstream implementation for mint and maxt.
 	Querier func(mint, maxt int64) (MergeQuerierUpstream, error)
-	IDs     func(ctx context.Context) (ids []string, err error)
+	// IDs returns federation IDs for ctx.
+	IDs func(ctx context.Context) (ids []string, err error)
 }
 
 // MergeQuerierUpstream mirrors storage.Querier, except every query method also takes a federation ID.
@@ -93,7 +95,7 @@ func (q *tenantQuerier) Close() error {
 
 // NewMergeQueryable returns a queryable that merges results from multiple
 // underlying Queryables. The underlying queryables and its label values to be
-// considered are returned by a MergeQuerierCallback.
+// considered are returned by a MergeQueryableCallbacks.Querier callback.
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed
 // and results for requests with a single ID will not contain the ID label.
 // This allows a smoother transition, when enabling tenant federation in a
@@ -103,7 +105,7 @@ func (q *tenantQuerier) Close() error {
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callbacks MergeQuerierCallbacks, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
+func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
 		logger:             logger,
 		idLabelName:        idLabelName,
@@ -117,7 +119,7 @@ type mergeQueryable struct {
 	logger             log.Logger
 	idLabelName        string
 	bypassWithSingleID bool
-	callbacks          MergeQuerierCallbacks
+	callbacks          MergeQueryableCallbacks
 	maxConcurrency     int
 }
 
@@ -146,7 +148,7 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
 	logger             log.Logger
-	callbacks          MergeQuerierCallbacks
+	callbacks          MergeQueryableCallbacks
 	upstream           MergeQuerierUpstream
 	idLabelName        string
 	maxConcurrency     int
