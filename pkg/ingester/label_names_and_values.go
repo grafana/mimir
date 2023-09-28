@@ -30,9 +30,9 @@ func labelNamesAndValues(
 	index tsdb.IndexReader,
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
-	server client.Ingester_LabelNamesAndValuesServer,
+	stream client.Ingester_LabelNamesAndValuesServer,
 ) error {
-	ctx := server.Context()
+	ctx := stream.Context()
 
 	labelNames, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
@@ -49,7 +49,7 @@ func labelNamesAndValues(
 		responseSizeBytes += len(labelName)
 		// send message if (response size + size of label name of current label) is greater or equals to threshold
 		if responseSizeBytes >= messageSizeThreshold {
-			err = client.SendLabelNamesAndValuesResponse(server, &response)
+			err = client.SendLabelNamesAndValuesResponse(stream, &response)
 			if err != nil {
 				return err
 			}
@@ -70,7 +70,7 @@ func labelNamesAndValues(
 				labelItem.Values = values[lastAddedValueIndex+1 : i+1]
 				lastAddedValueIndex = i
 				response.Items = append(response.Items, labelItem)
-				err = client.SendLabelNamesAndValuesResponse(server, &response)
+				err = client.SendLabelNamesAndValuesResponse(stream, &response)
 				if err != nil {
 					return err
 				}
@@ -94,7 +94,7 @@ func labelNamesAndValues(
 	}
 	// send the last message if there is some data that was not sent.
 	if response.Size() > 0 {
-		return client.SendLabelNamesAndValuesResponse(server, &response)
+		return client.SendLabelNamesAndValuesResponse(stream, &response)
 	}
 	return nil
 }

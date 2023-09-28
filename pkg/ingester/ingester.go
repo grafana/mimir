@@ -1492,7 +1492,7 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 // So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -1500,7 +1500,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 
-	userID, err := tenant.TenantID(server.Context())
+	userID, err := tenant.TenantID(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -1517,7 +1517,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
