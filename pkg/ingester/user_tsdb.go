@@ -156,8 +156,8 @@ func (u *userTSDB) Close() error {
 	return u.db.Close()
 }
 
-func (u *userTSDB) Compact(ctx context.Context) error {
-	return u.db.Compact(ctx)
+func (u *userTSDB) Compact() error {
+	return u.db.Compact(context.Background())
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
@@ -196,7 +196,7 @@ func (u *userTSDB) changeStateToForcedCompaction(from tsdbState, forcedCompactio
 //
 // The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
 // in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
-func (u *userTSDB) compactHead(ctx context.Context, blockDuration, forcedCompactionMaxTime int64) error {
+func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) error {
 	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
@@ -227,7 +227,7 @@ func (u *userTSDB) compactHead(ctx context.Context, blockDuration, forcedCompact
 		}
 	}
 
-	return u.db.CompactOOOHead(ctx)
+	return u.db.CompactOOOHead(context.Background())
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction

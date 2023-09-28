@@ -5413,7 +5413,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -5437,7 +5437,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	// Only the second block should be gone along with a new block.
 	newBlocks := db.Blocks()
@@ -5469,7 +5469,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	// All blocks from the old blocks should be gone now.
 	newBlocks2 := db.Blocks()
@@ -5526,7 +5526,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Equal(t, 3, len(oldBlocks))
@@ -5553,7 +5553,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	// Only the last two old blocks plus the one containing the newly added samples should remain.
 	newBlocks := db.Blocks()
@@ -5607,7 +5607,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	oldBlocks := db.Blocks()
 	require.Len(t, oldBlocks, 3)
@@ -5619,7 +5619,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
-	require.NoError(t, db.Compact(ctx))
+	require.NoError(t, db.Compact())
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_tsdb_compactions_total Total number of TSDB compactions that were executed.
