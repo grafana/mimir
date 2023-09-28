@@ -170,12 +170,12 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
-	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	if name == m.idLabelName {
-		var labelValues = make([]string, 0, len(matchedTenants))
+		labelValues := make([]string, 0, len(matchedIDs))
 		for _, id := range ids {
-			if _, matched := matchedTenants[id]; matched {
+			if _, matched := matchedIDs[id]; matched {
 				labelValues = append(labelValues, id)
 			}
 		}
@@ -188,9 +188,9 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 		name = m.idLabelName
 	}
 
-	return m.mergeDistinctStringSliceWithTenants(ctx, ids, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
+	return m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
 		return m.upstream.LabelValues(ctx, id, name, filteredMatchers...)
-	}, matchedTenants)
+	})
 }
 
 // LabelNames returns all the unique label names present for involved federation IDs.
@@ -208,11 +208,11 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
-	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
 
-	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, ids, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
+	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
 		return m.upstream.LabelNames(ctx, id, filteredMatchers...)
-	}, matchedTenants)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -253,15 +253,9 @@ type stringSliceFuncJob struct {
 // results for provided tenants. It removes duplicates and sorts the result.
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
-func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, ids []string, f stringSliceFunc, tenants map[string]struct{}) ([]string, annotations.Annotations, error) {
+func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, ids map[string]struct{}, f stringSliceFunc) ([]string, annotations.Annotations, error) {
 	jobs := make([]*stringSliceFuncJob, 0, len(ids))
-	for _, id := range ids {
-		if tenants != nil {
-			if _, matched := tenants[id]; !matched {
-				continue
-			}
-		}
-
+	for id := range ids {
 		jobs = append(jobs, &stringSliceFuncJob{
 			id: id,
 		})
@@ -295,7 +289,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(ctx context.Context, 
 		}
 	}
 
-	var result = make([]string, 0, len(resultMap))
+	result := make([]string, 0, len(resultMap))
 	for e := range resultMap {
 		result = append(result, e)
 	}
@@ -324,14 +318,11 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
-	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
 
-	var jobs = make([]string, 0, len(matchedValues))
-	var seriesSets = make([]storage.SeriesSet, len(matchedValues))
-	for _, id := range ids {
-		if _, matched := matchedValues[id]; !matched {
-			continue
-		}
+	jobs := make([]string, 0, len(matchedIDs))
+	seriesSets := make([]storage.SeriesSet, len(matchedIDs))
+	for id := range matchedIDs {
 		jobs = append(jobs, id)
 	}
 
