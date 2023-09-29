@@ -243,12 +243,12 @@ type TSDBConfig struct {
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	BlockPostingsForMatchersCacheTTL time.Duration `yaml:"block_postings_for_matchers_cache_ttl" category:"experimental"`
 
-	// BlockPostingsForMatchersCacheMaxItems is the maximum size of cached postings for matchers elements in each compcated block.
+	// BlockPostingsForMatchersCacheMaxItems is the maximum size of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
 	// Deprecated: use max bytes limit instead.
 	BlockPostingsForMatchersCacheMaxItems int `yaml:"block_postings_for_matchers_cache_size" category:"deprecated"`
 
-	// BlockPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in each compcated block.
+	// BlockPostingsForMatchersCacheMaxBytes is the maximum size (in bytes) of cached postings for matchers elements in each compacted block.
 	// It's ignored used when BlockPostingsForMatchersCacheTTL is 0.
 	BlockPostingsForMatchersCacheMaxBytes int64 `yaml:"block_postings_for_matchers_cache_max_bytes" category:"experimental"`
 
