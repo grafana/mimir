@@ -14,9 +14,9 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const emptyTenantID = ""
-
 type TenantID string
+
+const emptyTenantID = TenantID("")
 
 type QuerierID string
 type querierIDSlice []QuerierID
@@ -72,17 +72,17 @@ type tenantQuerierAssignments struct {
 	querierForgetDelay time.Duration
 
 	// List of all tenants with queues, used for iteration when searching for next queue to handle.
-	tenantIDOrder []string
-	tenantsByID   map[string]*queueTenant
+	tenantIDOrder []TenantID
+	tenantsByID   map[TenantID]*queueTenant
 
 	// Tenant assigned querier ID set as determined by shuffle sharding.
 	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
-	tenantQuerierIDs map[string]map[QuerierID]struct{}
+	tenantQuerierIDs map[TenantID]map[QuerierID]struct{}
 }
 
 type queueTenant struct {
-	// seed for shuffle sharding of queriers; computed from userID only,
+	// seed for shuffle sharding of queriers; computed from tenantID only,
 	// and is therefore consistent between different frontends.
 	shuffleShardSeed int64
 
@@ -95,7 +95,7 @@ type queueTenant struct {
 // This struct holds user queues for pending requests. It also keeps track of connected queriers,
 // and mapping between users and queriers.
 type queueBroker struct {
-	tenantQueues map[string]*userQueue
+	tenantQueues map[TenantID]*userQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
@@ -108,14 +108,14 @@ type userQueue struct {
 
 func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueues: map[string]*userQueue{},
+		tenantQueues: map[TenantID]*userQueue{},
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
 			querierForgetDelay: forgetDelay,
 			tenantIDOrder:      nil,
-			tenantsByID:        map[string]*queueTenant{},
-			tenantQuerierIDs:   map[string]map[QuerierID]struct{}{},
+			tenantsByID:        map[TenantID]*queueTenant{},
+			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
 	}
@@ -129,7 +129,7 @@ func (qb *queueBroker) len() int {
 // MaxQueriers is used to compute which queriers should handle requests for this user.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (qb *queueBroker) getOrAddTenantQueue(tenantID string, maxQueriers int) *list.List {
+func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) *list.List {
 	tenant := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
 	if tenant == nil {
 		return nil
@@ -151,7 +151,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID string, maxQueriers int) *li
 // last user index, use -1.
 //
 // getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
-func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID QuerierID) (*list.List, string, int, error) {
+func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID QuerierID) (*list.List, TenantID, int, error) {
 	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
 	if err != nil || nextTenantID == emptyTenantID {
 		return nil, nextTenantID, nextTenantIndex, err
@@ -177,7 +177,7 @@ func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
-func (qb *queueBroker) deleteQueue(tenantID string) {
+func (qb *queueBroker) deleteQueue(tenantID TenantID) {
 	tenantQueue := qb.tenantQueues[tenantID]
 	if tenantQueue == nil {
 		return
@@ -186,7 +186,7 @@ func (qb *queueBroker) deleteQueue(tenantID string) {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 }
 
-func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (string, int, error) {
+func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (TenantID, int, error) {
 	// check if querier is registered and is not shutting down
 	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
 		return emptyTenantID, lastTenantIndex, ErrQuerierShuttingDown
@@ -218,7 +218,7 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 	return emptyTenantID, lastTenantIndex, nil
 }
 
-func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID string, maxQueriers int) *queueTenant {
+func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) *queueTenant {
 	// empty tenantID is not allowed; "" is used for free spot
 	if tenantID == emptyTenantID {
 		return nil
@@ -232,7 +232,7 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID string, maxQueriers
 
 	if tenant == nil {
 		tenant = &queueTenant{
-			shuffleShardSeed: util.ShuffleShardSeed(tenantID, ""),
+			shuffleShardSeed: util.ShuffleShardSeed(string(tenantID), ""),
 			orderIndex:       -1,
 			maxQueriers:      0,
 		}
@@ -284,7 +284,7 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
 	tqa.recomputeTenantQueriers()
 }
 
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID string) {
+func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	tenant := tqa.tenantsByID[tenantID]
 	delete(tqa.tenantsByID, tenantID)
 	tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
@@ -392,7 +392,7 @@ func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
 	}
 }
 
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scratchpad querierIDSlice) {
+func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID TenantID, scratchpad querierIDSlice) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return

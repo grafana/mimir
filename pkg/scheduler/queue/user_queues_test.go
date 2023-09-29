@@ -28,7 +28,7 @@ func TestQueues(t *testing.T) {
 
 	q, u, lastUserIndex, err := uq.getNextQueueForQuerier(-1, "querier-1")
 	assert.Nil(t, q)
-	assert.Equal(t, "", u)
+	assert.Equal(t, emptyTenantID, u)
 	assert.NoError(t, err)
 
 	// Add queues: [one]
@@ -96,7 +96,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	uq.notifyQuerierShutdown("querier-2")
 	q, u, _, err := uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
-	assert.Equal(t, "", u)
+	assert.Equal(t, emptyTenantID, u)
 	assert.Equal(t, ErrQuerierShuttingDown, err)
 
 	// However, querier-1 still get queues because it's still running.
@@ -106,7 +106,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 	uq.tenantQuerierAssignments.removeQuerier("querier-2")
 	q, u, _, err = uq.getNextQueueForQuerier(-1, "querier-2")
 	assert.Nil(t, q)
-	assert.Equal(t, "", u)
+	assert.Equal(t, emptyTenantID, u)
 	assert.Equal(t, ErrQuerierShuttingDown, err)
 }
 
@@ -127,7 +127,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 		// No querier has any queues yet.
 		q, u, _, err := uq.getNextQueueForQuerier(-1, qid)
 		assert.Nil(t, q)
-		assert.Equal(t, "", u)
+		assert.Equal(t, emptyTenantID, u)
 		assert.NoError(t, err)
 	}
 
@@ -135,7 +135,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 
 	// Add user queues.
 	for u := 0; u < users; u++ {
-		uid := fmt.Sprintf("user-%d", u)
+		uid := TenantID(fmt.Sprintf("user-%d", u))
 		getOrAdd(t, uq, uid, maxQueriersPerUser)
 
 		// Verify it has maxQueriersPerUser queriers assigned now.
@@ -251,12 +251,12 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// Add user queues.
 	for i := 0; i < numUsers; i++ {
-		userID := fmt.Sprintf("user-%d", i)
-		getOrAdd(t, uq, userID, maxQueriersPerUser)
+		tenantID := TenantID(fmt.Sprintf("user-%d", i))
+		getOrAdd(t, uq, tenantID, maxQueriersPerUser)
 	}
 
 	// We expect querier-1 to have some users.
-	querier1Users := getUsersByQuerier(uq, "querier-1")
+	querier1Users := getTenantsByQuerier(uq, "querier-1")
 	require.NotEmpty(t, querier1Users)
 
 	// Gracefully shutdown querier-1.
@@ -270,7 +270,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// We expect querier-1 users have been shuffled to other queriers.
 	for _, userID := range querier1Users {
-		assert.Contains(t, append(getUsersByQuerier(uq, "querier-2"), getUsersByQuerier(uq, "querier-3")...), userID)
+		assert.Contains(t, append(getTenantsByQuerier(uq, "querier-2"), getTenantsByQuerier(uq, "querier-3")...), userID)
 	}
 
 	// Querier-1 reconnects.
@@ -279,9 +279,9 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// We expect the initial querier-1 users have got back to querier-1.
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
@@ -294,9 +294,9 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 
 	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
@@ -306,9 +306,9 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 
 	// Try to forget disconnected queriers. This time querier-1 forget delay has passed.
@@ -319,7 +319,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 
 	// We expect querier-1 users have been shuffled to other queriers.
 	for _, userID := range querier1Users {
-		assert.Contains(t, append(getUsersByQuerier(uq, "querier-2"), getUsersByQuerier(uq, "querier-3")...), userID)
+		assert.Contains(t, append(getTenantsByQuerier(uq, "querier-2"), getTenantsByQuerier(uq, "querier-3")...), userID)
 	}
 }
 
@@ -343,12 +343,12 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 
 	// Add user queues.
 	for i := 0; i < numUsers; i++ {
-		userID := fmt.Sprintf("user-%d", i)
-		getOrAdd(t, uq, userID, maxQueriersPerUser)
+		tenantID := TenantID(fmt.Sprintf("user-%d", i))
+		getOrAdd(t, uq, tenantID, maxQueriersPerUser)
 	}
 
 	// We expect querier-1 to have some users.
-	querier1Users := getUsersByQuerier(uq, "querier-1")
+	querier1Users := getTenantsByQuerier(uq, "querier-1")
 	require.NotEmpty(t, querier1Users)
 
 	// Querier-1 abruptly terminates (no shutdown notification received).
@@ -361,9 +361,9 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 
 	// Try to forget disconnected queriers, but querier-1 forget delay hasn't passed yet.
@@ -378,9 +378,9 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 
 	// We expect the querier-1 users have not been shuffled to other queriers.
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 
 	// Try to forget disconnected queriers far in the future, but there's no disconnected querier.
@@ -390,25 +390,25 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	assert.NoError(t, isConsistent(uq))
 
 	for _, userID := range querier1Users {
-		assert.Contains(t, getUsersByQuerier(uq, "querier-1"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-2"), userID)
-		assert.NotContains(t, getUsersByQuerier(uq, "querier-3"), userID)
+		assert.Contains(t, getTenantsByQuerier(uq, "querier-1"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-2"), userID)
+		assert.NotContains(t, getTenantsByQuerier(uq, "querier-3"), userID)
 	}
 }
 
-func generateTenant(r *rand.Rand) string {
-	return fmt.Sprint("tenant-", r.Int()%5)
+func generateTenant(r *rand.Rand) TenantID {
+	return TenantID(fmt.Sprint("tenant-", r.Int()%5))
 }
 
 func generateQuerier(r *rand.Rand) QuerierID {
 	return QuerierID(fmt.Sprint("querier-", r.Int()%5))
 }
 
-func getOrAdd(t *testing.T, qb *queueBroker, tenant string, maxQueriers int) *list.List {
-	q := qb.getOrAddTenantQueue(tenant, maxQueriers)
+func getOrAdd(t *testing.T, qb *queueBroker, tenantID TenantID, maxQueriers int) *list.List {
+	q := qb.getOrAddTenantQueue(tenantID, maxQueriers)
 	assert.NotNil(t, q)
 	assert.NoError(t, isConsistent(qb))
-	assert.Equal(t, q, qb.getOrAddTenantQueue(tenant, maxQueriers))
+	assert.Equal(t, q, qb.getOrAddTenantQueue(tenantID, maxQueriers))
 	return q
 }
 
@@ -470,33 +470,33 @@ func isConsistent(qb *queueBroker) error {
 	return nil
 }
 
-// getUsersByQuerier returns the list of users handled by the provided QuerierID.
-func getUsersByQuerier(broker *queueBroker, querierID QuerierID) []string {
-	var userIDs []string
+// getTenantsByQuerier returns the list of users handled by the provided QuerierID.
+func getTenantsByQuerier(broker *queueBroker, querierID QuerierID) []TenantID {
+	var tenantIDs []TenantID
 	for userID := range broker.tenantQueues {
 		querierSet := broker.tenantQuerierAssignments.tenantQuerierIDs[userID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this user.
-			userIDs = append(userIDs, userID)
+			tenantIDs = append(tenantIDs, userID)
 			continue
 		}
 		if _, ok := querierSet[querierID]; ok {
-			userIDs = append(userIDs, userID)
+			tenantIDs = append(tenantIDs, userID)
 		}
 	}
-	return userIDs
+	return tenantIDs
 }
 
 func TestShuffleQueriers(t *testing.T) {
 	allQueriers := querierIDSlice{"a", "b", "c", "d", "e"}
 	tqs := tenantQuerierAssignments{
 		querierIDsSorted: allQueriers,
-		tenantsByID: map[string]*queueTenant{
+		tenantsByID: map[TenantID]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},
 		},
-		tenantQuerierIDs: map[string]map[QuerierID]struct{}{},
+		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
 	}
 
 	// maxQueriers is 0, so sharding is off
@@ -538,12 +538,12 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 
 	tqs := tenantQuerierAssignments{
 		querierIDsSorted: allSortedQueriers,
-		tenantsByID: map[string]*queueTenant{
+		tenantsByID: map[TenantID]*queueTenant{
 			"team-a": {
 				shuffleShardSeed: 12345,
 			},
 		},
-		tenantQuerierIDs: map[string]map[QuerierID]struct{}{},
+		tenantQuerierIDs: map[TenantID]map[QuerierID]struct{}{},
 	}
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))

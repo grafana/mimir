@@ -88,7 +88,7 @@ const (
 )
 
 type enqueueRequest struct {
-	userID      string
+	tenantID    TenantID
 	req         Request
 	maxQueriers int
 	successFn   func()
@@ -211,19 +211,19 @@ func (q *RequestQueue) dispatcherLoop() {
 }
 
 func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueRequest) error {
-	queue := broker.getOrAddTenantQueue(r.userID, r.maxQueriers)
+	queue := broker.getOrAddTenantQueue(TenantID(r.tenantID), r.maxQueriers)
 	if queue == nil {
-		// This can only happen if userID is "".
+		// This can only happen if tenantID is "".
 		return errors.New("no queue found")
 	}
 
 	if queue.Len()+1 > broker.maxUserQueueSize {
-		q.discardedRequests.WithLabelValues(r.userID).Inc()
+		q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
 		return ErrTooManyRequests
 	}
 
 	queue.PushBack(r.req)
-	q.queueLength.WithLabelValues(r.userID).Inc()
+	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
 
 	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
 	if r.successFn != nil {
@@ -236,7 +236,7 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueReques
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn *querierConnection) bool {
-	queue, userID, idx, err := broker.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	queue, tenantID, idx, err := broker.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		querierConn.sendError(err)
@@ -265,10 +265,10 @@ func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn
 		queue.Remove(queueElement)
 
 		if queue.Len() == 0 {
-			broker.deleteQueue(userID)
+			broker.deleteQueue(tenantID)
 		}
 
-		q.queueLength.WithLabelValues(userID).Dec()
+		q.queueLength.WithLabelValues(string(tenantID)).Dec()
 	}
 
 	return true
@@ -279,14 +279,14 @@ func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn
 // between calls.
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
-func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers int, successFn func()) error {
+func (q *RequestQueue) EnqueueRequest(tenantID string, req Request, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
 	r := enqueueRequest{
-		userID:      userID,
+		tenantID:    TenantID(tenantID),
 		req:         req,
 		maxQueriers: maxQueriers,
 		successFn:   successFn,
@@ -304,10 +304,10 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // GetNextRequestForQuerier find next user queue and takes the next request off of it. Will block if there are no requests.
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
-func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID QuerierID) (Request, UserIndex, error) {
+func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
 	querierConn := &querierConnection{
 		ctx:           ctx,
-		querierID:     querierID,
+		querierID:     QuerierID(querierID),
 		lastUserIndex: last,
 		processed:     make(chan nextRequestForQuerier),
 	}

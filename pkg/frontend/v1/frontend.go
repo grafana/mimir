@@ -212,7 +212,7 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	lastUserIndex := queue.FirstUser()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastUserIndex, queue.QuerierID(querierID))
+		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastUserIndex, querierID)
 		if err != nil {
 			return err
 		}
