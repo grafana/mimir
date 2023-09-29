@@ -1215,7 +1215,7 @@ func TestIngester_Push(t *testing.T) {
 			// Push timeseries
 			for idx, req := range testData.reqs {
 				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
-				_, err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
+				err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
