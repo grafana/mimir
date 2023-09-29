@@ -8075,6 +8075,17 @@
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-size",
               "fieldType": "int",
+              "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "head_postings_for_matchers_cache_max_bytes",
+              "required": false,
+              "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10485760,
+              "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -8107,6 +8118,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 100,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-size",
+              "fieldType": "int",
+              "fieldCategory": "deprecated"
+            },
+            {
+              "kind": "field",
+              "name": "block_postings_for_matchers_cache_max_bytes",
+              "required": false,
+              "desc": "Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10485760,
+              "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
               "fieldCategory": "experimental"
             },

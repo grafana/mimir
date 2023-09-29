@@ -86,10 +86,12 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
   - CPU/memory utilization based read request limiting:
     - `-ingester.read-path-cpu-utilization-limit`
