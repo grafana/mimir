@@ -346,15 +346,21 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
 	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), log.NewNopLogger())
-	_, _ = qf(context.Background(), "test", time.Now())
+	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
 
-	require.GreaterOrEqual(t, testutil.ToFloat64(queryTime.WithLabelValues("userID")), float64(1))
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
 // TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
