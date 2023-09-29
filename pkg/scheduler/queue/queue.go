@@ -235,8 +235,8 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueReques
 
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
-	queue, userID, idx, err := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn *querierConnection) bool {
+	queue, userID, idx, err := broker.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		querierConn.sendError(err)
