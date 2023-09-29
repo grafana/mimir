@@ -184,7 +184,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	assert.GreaterOrEqual(t, waitTime.Milliseconds(), forgetDelay.Milliseconds())
 }
 
-func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterGracefulShutdownNotification(t *testing.T) {
+func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
@@ -193,26 +193,26 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterGracefulShutdown
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
 
-	ctx := context.Background()
-	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), queue))
 	})
 
 	queue.RegisterQuerierConnection(querierID)
 	errChan := make(chan error)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
+		_, _, err := queue.GetNextRequestForQuerier(ctx, FirstUser(), querierID)
 		errChan <- err
 	}()
 
 	time.Sleep(20 * time.Millisecond) // Wait for GetNextRequestForQuerier to be waiting for a query.
-	queue.NotifyQuerierShutdown(querierID)
+	cancel()
 
 	select {
 	case err := <-errChan:
-		require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
+		require.Equal(t, context.Canceled, err)
 	case <-time.After(time.Second):
 		require.Fail(t, "gave up waiting for GetNextRequestForQuerierToReturn")
 	}

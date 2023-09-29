@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -86,7 +87,7 @@ func (bqss *blockQuerierSeriesSet) Err() error {
 	return nil
 }
 
-func (bqss *blockQuerierSeriesSet) Warnings() storage.Warnings {
+func (bqss *blockQuerierSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 

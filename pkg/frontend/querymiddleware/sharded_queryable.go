@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -50,8 +51,8 @@ func newShardedQueryable(req Request, next Handler) *shardedQueryable {
 }
 
 // Querier implements storage.Queryable.
-func (q *shardedQueryable) Querier(ctx context.Context, _, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
+func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return &shardedQuerier{req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -64,7 +65,6 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
 type shardedQuerier struct {
-	ctx     context.Context
 	req     Request
 	handler Handler
 
@@ -74,7 +74,7 @@ type shardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -100,7 +100,7 @@ func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...
 		return storage.ErrSeriesSet(err)
 	}
 
-	return q.handleEmbeddedQueries(q.ctx, queries, hints)
+	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
@@ -133,12 +133,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 

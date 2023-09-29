@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -69,7 +70,7 @@ func (bqss *blockStreamingQuerierSeriesSet) Err() error {
 	return nil
 }
 
-func (bqss *blockStreamingQuerierSeriesSet) Warnings() storage.Warnings {
+func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -95,13 +96,13 @@ type mockShardedQueryable struct {
 }
 
 // Querier impls storage.Queryable
-func (q *mockShardedQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (q *mockShardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	return q, nil
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *mockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *mockShardedQueryable) Select(_ context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -186,12 +187,12 @@ func (s *shardLabelSeries) Labels() labels.Labels {
 }
 
 // LabelValues impls storage.Querier
-func (q *mockShardedQueryable) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *mockShardedQueryable) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
@@ -261,10 +262,11 @@ func TestNewMockShardedQueryable(t *testing.T) {
 		q := newMockShardedQueryable(tc.nSamples, tc.nHistograms, tc.labelSet, tc.labelBuckets, 0)
 		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
 
+		ctx := context.Background()
 		seriesCt := 0
 		for i := uint64(0); i < tc.shards; i++ {
 
-			set := q.Select(false, nil, &labels.Matcher{
+			set := q.Select(ctx, false, nil, &labels.Matcher{
 				Type: labels.MatchEqual,
 				Name: sharding.ShardLabel,
 				Value: sharding.ShardSelector{

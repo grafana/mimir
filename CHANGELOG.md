@@ -10,6 +10,7 @@
 * [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
 * [CHANGE] Query-frontend: removed `cortex_query_frontend_workers_enqueued_requests_total`. Use `cortex_query_frontend_enqueue_duration_seconds_count` instead. #6121
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
+* [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. When query-scheduler is in use, the metric has the `scheduler_address` label to differentiate the enqueue duration by query-scheduler backend. #5879 #6087 #6120
@@ -22,17 +23,27 @@
 * [ENHANCEMENT] Ruler: Fetch secrets used to configure TLS on the Alertmanager client from Vault when `-vault.enabled` is true. #5239
 * [ENHANCEMENT] Query-frontend: added query-sharding support for `group by` aggregation queries. #6024
 * [ENHANCEMENT] Fetch secrets used to configure server-side TLS from Vault when `-vault.enabled` is true. #6052.
+* [ENHANCEMENT] Packaging: add logrotate config file. #6142
+* [ENHANCEMENT] Ingester: add the experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to enforce a limit in bytes on the `PostingsForMatchers()` cache used by ingesters (the cache limit is per TSDB head and block basis, not a global one). The experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` have been deprecated. #6151
+* [ENHANCEMENT] Ingester: use the `PostingsForMatchers()` in-memory cache for label values queries with matchers too. #6151
+* [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
-* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100
+* [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
+* [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
+* [BUGFIX] Ensure correct nesting of children of the `querier.Select` tracing span. #6085
 
 ### Mixin
+
+* [ENHANCEMENT] Dashboards: Optionally show rejected requests on Mimir Writes dashboard. Useful when used together with "early request rejection". #6132
+* [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
 
 ### Jsonnet
 
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
 * [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler` `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler` and `consul` deployments, to ensure they don't become completely unavailable during a rollout. #5924
 * [ENHANCEMENT] Update rollout-operator to `v0.8.1`. #6022 #6110
+* [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 
 ### Mimirtool
 

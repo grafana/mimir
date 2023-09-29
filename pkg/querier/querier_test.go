@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -446,7 +447,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	}
 
 	require.NoError(t, app.Commit())
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return tsdb.NewBlockQuerier(head, mint, maxt)
 	})
 
@@ -797,7 +798,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 				require.NoError(t, err)
@@ -825,7 +825,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				hints := &storage.SelectHints{
@@ -835,7 +835,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				}
 				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				set := q.Select(false, hints, matcher)
+				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
 				require.NoError(t, set.Err())
 
@@ -860,10 +860,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelNames(matchers...)
+				_, _, err = q.LabelNames(ctx, matchers...)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -886,10 +886,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(labels.MetricName)
+				_, _, err = q.LabelValues(ctx, labels.MetricName)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -956,7 +956,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, storeQueryable, nil, log.NewNopLogger(), nil)
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				hints := &storage.SelectHints{
@@ -966,7 +966,7 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 				}
 				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
 
-				set := q.Select(false, hints, matcher)
+				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
 				require.NoError(t, set.Err())
 
@@ -1142,14 +1142,13 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			limits := defaultLimitsConfig()
 			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
 			overrides, err := validation.NewOverrides(limits, nil)
-
 			require.NoError(t, err)
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
 			// it was hit or not).
 			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
 			querier := &mockBlocksStorageQuerier{}
-			querier.On("Select", true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
+			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
 			queryable, _, _ := New(cfg, overrides, distributor, newMockBlocksStorageQueryable(querier), nil, log.NewNopLogger(), nil)
 			ctx := user.InjectOrgID(context.Background(), "0")
@@ -1173,9 +1172,9 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			time.Sleep(30 * time.Millisecond) // NOTE: Since this is a lazy querier there is a race condition between the response and chunk store being called
 
 			if c.expectedHitStorage {
-				querier.AssertCalled(t, "Select", true, mock.Anything, expectedMatchers)
+				querier.AssertCalled(t, "Select", mock.Anything, true, mock.Anything, expectedMatchers)
 			} else {
-				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything)
+				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			}
 		})
 	}
@@ -1373,7 +1372,7 @@ func newMockBlocksStorageQueryable(querier storage.Querier) *mockBlocksStorageQu
 }
 
 // Querier implements storage.Queryable.
-func (m *mockBlocksStorageQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (m *mockBlocksStorageQueryable) Querier(int64, int64) (storage.Querier, error) {
 	return m.querier, nil
 }
 
@@ -1381,19 +1380,19 @@ type mockBlocksStorageQuerier struct {
 	mock.Mock
 }
 
-func (m *mockBlocksStorageQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	args := m.Called(sortSeries, hints, matchers)
+func (m *mockBlocksStorageQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	args := m.Called(ctx, sortSeries, hints, matchers)
 	return args.Get(0).(storage.SeriesSet)
 }
 
-func (m *mockBlocksStorageQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	args := m.Called(name, matchers)
-	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, name, matchers)
+	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
-func (m *mockBlocksStorageQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	args := m.Called(matchers)
-	return args.Get(0).([]string), args.Get(1).(storage.Warnings), args.Error(2)
+func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
 func (m *mockBlocksStorageQuerier) Close() error {

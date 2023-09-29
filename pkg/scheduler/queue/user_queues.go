@@ -149,6 +149,8 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID string, maxQueriers int) *li
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
+//
+// getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
 func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID QuerierID) (*list.List, string, int, error) {
 	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
 	if err != nil || nextTenantID == emptyTenantID {

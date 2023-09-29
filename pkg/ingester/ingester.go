@@ -795,7 +795,7 @@ func (i *Ingester) FinishPushRequest() {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) error {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer pushReq.CleanUp()
@@ -803,19 +803,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		if err := i.StartPushRequest(); err != nil {
-			return nil, util_log.DoNotLogError{Err: err}
+			return util_log.DoNotLogError{Err: err}
 		}
 		defer i.FinishPushRequest()
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	req, err := pushReq.WriteRequest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
@@ -827,17 +827,17 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
 	if len(req.Timeseries) == 0 {
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 
-	db, err := i.getOrCreateTSDB(ctx, userID, false)
+	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -877,7 +877,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -893,7 +893,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -922,10 +922,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
 		errWithUser := wrapOrAnnotateWithUser(firstPartialErr, userID)
-		return &mimirpb.WriteResponse{}, newErrorWithHTTPStatus(errWithUser, code)
+		return newErrorWithHTTPStatus(errWithUser, code)
 	}
 
-	return &mimirpb.WriteResponse{}, nil
+	return nil
 }
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
@@ -1012,14 +1012,14 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 			return true
 
-		case errMaxSeriesPerUserLimitExceeded:
+		case globalerror.MaxSeriesPerUser:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
 			})
 			return true
 
-		case errMaxSeriesPerMetricLimitExceeded:
+		case globalerror.MaxSeriesPerMetric:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
@@ -1315,13 +1315,13 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs)
+	q, err := db.Querier(startTimestampMs, endTimestampMs)
 	if err != nil {
 		return nil, err
 	}
 	defer q.Close()
 
-	vals, _, err := q.LabelValues(labelName, matchers...)
+	vals, _, err := q.LabelValues(ctx, labelName, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,13 +1354,13 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
 	defer q.Close()
 
-	names, _, err := q.LabelNames(matchers...)
+	names, _, err := q.LabelNames(ctx, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -1396,7 +1396,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(mint, maxt)
 	if err != nil {
 		return nil, err
 	}
@@ -1417,7 +1417,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
-		seriesSet := q.Select(true, hints, matchers...)
+		seriesSet := q.Select(ctx, true, hints, matchers...)
 		sets = append(sets, seriesSet)
 	}
 
@@ -1492,7 +1492,7 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 // So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -1500,7 +1500,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 
-	userID, err := tenant.TenantID(server.Context())
+	userID, err := tenant.TenantID(stream.Context())
 	if err != nil {
 		return err
 	}
@@ -1517,7 +1517,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
@@ -1555,12 +1555,10 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
 	case client.IN_MEMORY:
-		postingsForMatchersFn = func(_ context.Context, ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			return tsdb.PostingsForMatchers(ix, ms...)
-		}
+		postingsForMatchersFn = tsdb.PostingsForMatchers
 	case client.ACTIVE:
-		postingsForMatchersFn = func(_ context.Context, ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			postings, err := tsdb.PostingsForMatchers(ix, ms...)
+		postingsForMatchersFn = func(ctx context.Context, ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+			postings, err := tsdb.PostingsForMatchers(ctx, ix, ms...)
 			if err != nil {
 				return nil, err
 			}
@@ -1684,7 +1682,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 }
 
 func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(ctx, from, through)
+	q, err := db.Querier(from, through)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1696,7 +1694,7 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 	}
 
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(false, hints, matchers...)
+	ss := q.Select(ctx, false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
 	}
@@ -1775,7 +1773,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
 		q, err = db.UnorderedChunkQuerier(ctx, from, through)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
+		q, err = db.ChunkQuerier(from, through)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -1789,7 +1787,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	hints = configSelectHintsWithDisabledTrimming(hints)
 
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(false, hints, matchers...)
+	ss := q.Select(ctx, false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
 	}
@@ -1869,7 +1867,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
 		q, err = db.UnorderedChunkQuerier(ctx, from, through)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
+		q, err = db.ChunkQuerier(from, through)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -1928,7 +1926,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(_ context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -1936,7 +1934,7 @@ func (i *Ingester) sendStreamingQuerySeries(_ context.Context, q storage.ChunkQu
 	hints = configSelectHintsWithDisabledTrimming(hints)
 
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
-	ss := q.Select(true, hints, matchers...)
+	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
 		return nil, 0, ss.Err()
 	}
@@ -2104,7 +2102,7 @@ func (i *Ingester) getTSDBUsers() []string {
 	return ids
 }
 
-func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force bool) (*userTSDB, error) {
+func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error) {
 	db := i.getTSDB(userID)
 	if db != nil {
 		return db, nil
@@ -2139,7 +2137,7 @@ func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force boo
 	}
 
 	// Create the database and a shipper for a user
-	db, err := i.createTSDB(ctx, userID, 0)
+	db, err := i.createTSDB(userID, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -2152,7 +2150,7 @@ func (i *Ingester) getOrCreateTSDB(ctx context.Context, userID string, force boo
 }
 
 // createTSDB creates a TSDB for a given userID, and returns the created db.
-func (i *Ingester) createTSDB(_ context.Context, userID string, walReplayConcurrency int) (*userTSDB, error) {
+func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
 	userLogger := util_log.WithUserID(userID, i.logger)
@@ -2176,34 +2174,36 @@ func (i *Ingester) createTSDB(_ context.Context, userID string, walReplayConcurr
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
-		RetentionDuration:                  i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:                   blockRanges[0],
-		MaxBlockDuration:                   blockRanges[len(blockRanges)-1],
-		NoLockfile:                         true,
-		StripeSize:                         i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:          i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                     i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
-		WALSegmentSize:                     i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		WALReplayConcurrency:               walReplayConcurrency,
-		SeriesLifecycleCallback:            userDB,
-		BlocksToDelete:                     userDB.blocksToDelete,
-		EnableExemplarStorage:              true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                       int64(maxExemplars),
-		SeriesHashCache:                    i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown:     i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		IsolationDisabled:                  true,
-		HeadChunksWriteQueueSize:           i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingCompaction:         false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:               oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:                   int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		HeadPostingsForMatchersCacheTTL:    i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
-		HeadPostingsForMatchersCacheSize:   i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheSize,
-		HeadPostingsForMatchersCacheForce:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
-		BlockPostingsForMatchersCacheTTL:   i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
-		BlockPostingsForMatchersCacheSize:  i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheSize,
-		BlockPostingsForMatchersCacheForce: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
-		EnableNativeHistograms:             i.limits.NativeHistogramsIngestionEnabled(userID),
+		RetentionDuration:                     i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:                      blockRanges[0],
+		MaxBlockDuration:                      blockRanges[len(blockRanges)-1],
+		NoLockfile:                            true,
+		StripeSize:                            i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksEndTimeVariance:             i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		WALCompression:                        i.cfg.BlocksStorageConfig.TSDB.WALCompressionType(),
+		WALSegmentSize:                        i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		WALReplayConcurrency:                  walReplayConcurrency,
+		SeriesLifecycleCallback:               userDB,
+		BlocksToDelete:                        userDB.blocksToDelete,
+		EnableExemplarStorage:                 true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                          int64(maxExemplars),
+		SeriesHashCache:                       i.seriesHashCache,
+		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+		IsolationDisabled:                     true,
+		HeadChunksWriteQueueSize:              i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		AllowOverlappingCompaction:            false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderTimeWindow:                  oooTW.Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		HeadPostingsForMatchersCacheTTL:       i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
+		HeadPostingsForMatchersCacheMaxItems:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxItems,
+		HeadPostingsForMatchersCacheMaxBytes:  i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheMaxBytes,
+		HeadPostingsForMatchersCacheForce:     i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce,
+		BlockPostingsForMatchersCacheTTL:      i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheTTL,
+		BlockPostingsForMatchersCacheMaxItems: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxItems,
+		BlockPostingsForMatchersCacheMaxBytes: i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheMaxBytes,
+		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
+		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
@@ -2214,7 +2214,9 @@ func (i *Ingester) createTSDB(_ context.Context, userID string, walReplayConcurr
 	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
 	// local blocks compaction may still take place if configured.
 	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
-	err = db.Compact()
+	// Note that we want to let TSDB creation finish without being interrupted by eventual context cancellation,
+	// so passing an independent context here
+	err = db.Compact(context.Background())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
 	}
@@ -2322,7 +2324,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	for n := 0; n < tsdbOpenConcurrency; n++ {
 		group.Go(func() error {
 			for userID := range queue {
-				db, err := i.createTSDB(ctx, userID, tsdbWALReplayConcurrency)
+				db, err := i.createTSDB(userID, tsdbWALReplayConcurrency)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "unable to open TSDB", "err", err, "user", userID)
 					return errors.Wrapf(err, "unable to open TSDB for user %s", userID)
@@ -2662,18 +2664,18 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		switch {
 		case force:
 			reason = "forced"
-			err = userDB.compactHead(ctx, i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
 			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
-			err = userDB.compactHead(ctx, i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
 
 		default:
 			reason = "regular"
-			err = userDB.Compact(ctx)
+			err = userDB.Compact()
 		}
 
 		if err != nil {
@@ -3127,7 +3129,11 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
-	return i.PushWithCleanup(ctx, pushReq)
+	err := i.PushWithCleanup(ctx, pushReq)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, nil
 }
 
 // pushMetadata returns number of ingested metadata.

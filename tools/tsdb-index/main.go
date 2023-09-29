@@ -65,7 +65,7 @@ func main() {
 	}
 }
 
-func printBlockIndex(_ context.Context, blockDir string, printChunks bool, matchers []*labels.Matcher) {
+func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, matchers []*labels.Matcher) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)
@@ -92,7 +92,7 @@ func printBlockIndex(_ context.Context, blockDir string, printChunks bool, match
 		}
 	}
 
-	p, err := idx.Postings(k, v)
+	p, err := idx.Postings(ctx, k, v)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to get postings", "err", err)
 		return

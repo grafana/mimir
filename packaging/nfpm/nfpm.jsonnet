@@ -45,6 +45,11 @@ local overrides = {
         dst: '/etc/mimir/runtime_config.yml',
         type: 'config|noreplace',
       },
+      {
+        src: './dist/tmp/dependencies-%s-%s-%s/mimir.logrotate' % [name, packager, arch],
+        dst: '/etc/logrotate.d/mimir',
+        type: 'config|noreplace',
+      },
     ],
     scripts: {
       postinstall: './dist/tmp/dependencies-%s-%s-%s/postinstall.sh' % [name, packager, arch],

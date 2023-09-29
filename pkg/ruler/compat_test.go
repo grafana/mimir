@@ -471,7 +471,7 @@ func newMockQueryable() *mockQueryable {
 	}
 }
 
-func (m *mockQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	select {
 	case <-m.called:
 		// already closed
