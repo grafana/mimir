@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
@@ -38,6 +39,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -48,6 +50,7 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/push/pusherror"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1093,7 +1096,26 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
-	return d.PushWithMiddlewares(ctx, pushReq)
+	err := d.PushWithMiddlewares(ctx, pushReq)
+
+	var tle pusherror.TenantLimitError
+	var retErr error
+	switch {
+	case errors.As(err, &tle):
+		retErr = status.Error(codes.ResourceExhausted, err.Error())
+
+	case errors.Is(err, context.Canceled):
+		return nil, status.Error(codes.Canceled, err.Error())
+	case errors.As(err, pusherror.MaxTenantSeriesExceeded):
+		retErr = status.Error(codes.ResourceExhausted, err.Error())
+		retErr.addDetailsToStatus()
+	default:
+		retErr = status.Error(codes.Internal, err.Error())
+	}
+}
+
+func (d *Distributor) CorrectPush(ctx context.Context, pushReq *push.Request) error {
+
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
@@ -1255,11 +1277,22 @@ func handleIngesterPushError(err error) error {
 	if err == nil {
 		return nil
 	}
+
 	resp, ok := httpgrpc.HTTPResponseFromError(err)
 	if ok {
-		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+		switch resp.Code {
+		case http.StatusTooManyRequests:
+			return pusherror.NewTenantLimitError(globalerror.MaxSeriesPerMetric)
+		}
 	}
+
+	stt := status.FromError(err)
+	switch stt.Code() {
+	case codes.ResourceExhausted:
+		idErr := globalerror.ID(stt.Details()[0].GetID())
+		return pusherror.NewTenantLimitError(idErr)
+	}
+
 	return errors.Wrap(err, "failed pushing to ingester")
 }
 

@@ -109,6 +109,8 @@ func (id ID) Error() string {
 	return string(id)
 }
 
+func (id ID) GlobalID() ID { return id }
+
 func buildFlagsList(flag string, addFlags ...string) (string, string) {
 	var sb strings.Builder
 	sb.WriteString("-")

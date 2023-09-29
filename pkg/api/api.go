@@ -42,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 )
 
@@ -87,9 +88,10 @@ type API struct {
 	logger    log.Logger
 	sourceIPs *middleware.SourceIPExtractor
 	indexPage *IndexPageContent
+	limits    validation.Overrides
 }
 
-func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
+func New(limits validation.Overrides, cfg Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
 	// Ensure the encoded path is used. Required for the rules API
 	s.HTTP.UseEncodedPath()
 

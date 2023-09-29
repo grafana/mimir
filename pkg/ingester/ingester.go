@@ -173,7 +173,8 @@ type Config struct {
 
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
 
-	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
+	ErrorSampleRate         int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
+	ReturnCorrectGRPCErrors bool
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -795,6 +796,11 @@ func (i *Ingester) FinishPushRequest() {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
+func (i *Ingester) CorrectPush(ctx context.Context, pushReq *push.Request) error {
+
+}
+
+// PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
@@ -1012,14 +1018,14 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 			return true
 
-		case errMaxSeriesPerUserLimitExceeded:
+		case globalerror.MaxSeriesPerUser:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
 			})
 			return true
 
-		case errMaxSeriesPerMetricLimitExceeded:
+		case globalerror.MaxSeriesPerMetric:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
@@ -3127,7 +3133,12 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
-	return i.PushWithCleanup(ctx, pushReq)
+	err := i.CorrectPush(ctx, pushReq)
+	if err == nil {
+		return &mimirpb.WriteResponse{}, nil
+	}
+	// err is something pusherror / globalerror
+	return mapToOlderror(err)
 }
 
 // pushMetadata returns number of ingested metadata.
