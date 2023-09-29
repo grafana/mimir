@@ -109,7 +109,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								<-start
 
 								for i := 0; i < requestCount; i++ {
-									_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+									_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, QuerierID(querierID))
 									if err != nil {
 										return err
 									}

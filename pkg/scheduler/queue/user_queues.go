@@ -11,12 +11,30 @@ import (
 	"sort"
 	"time"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/grafana/mimir/pkg/util"
 )
 
 const emptyTenantID = ""
+
+type TenantID string
+
+type QuerierID string
+type querierIDSlice []QuerierID
+
+// Len implements sort.Interface for querierIDSlice
+func (s querierIDSlice) Len() int { return len(s) }
+
+// Swap implements sort.Interface for querierIDSlice
+func (s querierIDSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+// Less implements sort.Interface for querierIDSlice
+func (s querierIDSlice) Less(i, j int) bool { return s[i] < s[j] }
+
+// Search method covers for sort.Search's functionality,
+// as sort.Search does not allow anything more generic yet.
+func (s querierIDSlice) Search(x QuerierID) int {
+	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
+}
 
 type querierConn struct {
 	// Number of active connections.
@@ -45,9 +63,9 @@ type tenantQuerierAssignments struct {
 	//  - it is detected during request enqueueing that a tenant's queriers
 	//    were calculated from an outdated max-queriers-per-tenant value
 
-	queriersByID map[string]*querierConn
+	queriersByID map[QuerierID]*querierConn
 	// Sorted list of querier ids, used when shuffle sharding queriers for tenant
-	querierIDsSorted []string
+	querierIDsSorted querierIDSlice
 
 	// How long to wait before removing a querier which has got disconnected
 	// but hasn't notified about a graceful shutdown.
@@ -60,7 +78,7 @@ type tenantQuerierAssignments struct {
 	// Tenant assigned querier ID set as determined by shuffle sharding.
 	// If tenant querier ID set is not nil, only those queriers can handle the tenant's requests,
 	// Tenant querier ID is set to nil if sharding is off or available queriers <= tenant's maxQueriers.
-	tenantQuerierIDs map[string]map[string]struct{}
+	tenantQuerierIDs map[string]map[QuerierID]struct{}
 }
 
 type queueTenant struct {
@@ -92,12 +110,12 @@ func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroke
 	return &queueBroker{
 		tenantQueues: map[string]*userQueue{},
 		tenantQuerierAssignments: tenantQuerierAssignments{
-			queriersByID:       map[string]*querierConn{},
+			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
 			querierForgetDelay: forgetDelay,
 			tenantIDOrder:      nil,
 			tenantsByID:        map[string]*queueTenant{},
-			tenantQuerierIDs:   map[string]map[string]struct{}{},
+			tenantQuerierIDs:   map[string]map[QuerierID]struct{}{},
 		},
 		maxUserQueueSize: maxUserQueueSize,
 	}
@@ -131,7 +149,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID string, maxQueriers int) *li
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
 // to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
-func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
+func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID QuerierID) (*list.List, string, int, error) {
 	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
 	if err != nil || nextTenantID == emptyTenantID {
 		return nil, nextTenantID, nextTenantIndex, err
@@ -141,15 +159,15 @@ func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID strin
 	return tenantQueue.requests, nextTenantID, nextTenantIndex, nil
 }
 
-func (qb *queueBroker) addQuerierConnection(querierID string) {
+func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {
 	qb.tenantQuerierAssignments.addQuerierConnection(querierID)
 }
 
-func (qb *queueBroker) removeQuerierConnection(querierID string, now time.Time) {
+func (qb *queueBroker) removeQuerierConnection(querierID QuerierID, now time.Time) {
 	qb.tenantQuerierAssignments.removeQuerierConnection(querierID, now)
 }
 
-func (qb *queueBroker) notifyQuerierShutdown(querierID string) {
+func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) {
 	qb.tenantQuerierAssignments.notifyQuerierShutdown(querierID)
 }
 
@@ -166,7 +184,7 @@ func (qb *queueBroker) deleteQueue(tenantID string) {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 }
 
-func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID string) (string, int, error) {
+func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (string, int, error) {
 	// check if querier is registered and is not shutting down
 	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
 		return emptyTenantID, lastTenantIndex, ErrQuerierShuttingDown
@@ -244,7 +262,7 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID string, maxQueriers
 	return tenant
 }
 
-func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID string) {
+func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
 	querier := tqa.queriersByID[querierID]
 	if querier != nil {
 		querier.connections++
@@ -259,7 +277,7 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID string) {
 	// First connection from this querier.
 	tqa.queriersByID[querierID] = &querierConn{connections: 1}
 	tqa.querierIDsSorted = append(tqa.querierIDsSorted, querierID)
-	slices.Sort(tqa.querierIDsSorted)
+	sort.Sort(tqa.querierIDsSorted)
 
 	tqa.recomputeTenantQueriers()
 }
@@ -279,7 +297,7 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID string) {
 	}
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID string, now time.Time) {
+func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) {
 	querier := tqa.queriersByID[querierID]
 	if querier == nil || querier.connections <= 0 {
 		panic("unexpected number of connections for querier")
@@ -304,10 +322,10 @@ func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID string, n
 	querier.disconnectedAt = now
 }
 
-func (tqa *tenantQuerierAssignments) removeQuerier(querierID string) {
+func (tqa *tenantQuerierAssignments) removeQuerier(querierID QuerierID) {
 	delete(tqa.queriersByID, querierID)
 
-	ix := sort.SearchStrings(tqa.querierIDsSorted, querierID)
+	ix := tqa.querierIDsSorted.Search(querierID)
 	if ix >= len(tqa.querierIDsSorted) || tqa.querierIDsSorted[ix] != querierID {
 		panic("incorrect state of sorted queriers")
 	}
@@ -318,7 +336,7 @@ func (tqa *tenantQuerierAssignments) removeQuerier(querierID string) {
 }
 
 // notifyQuerierShutdown records that a querier has sent notification about a graceful shutdown.
-func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID string) {
+func (tqa *tenantQuerierAssignments) notifyQuerierShutdown(querierID QuerierID) {
 	querier := tqa.queriersByID[querierID]
 	if querier == nil {
 		// The querier may have already been removed, so we just ignore it.
@@ -361,18 +379,18 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) i
 func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
 	// Only allocate the scratchpad the first time we need it.
 	// If shuffle-sharding is disabled, it will not be used.
-	var scratchpad []string
+	var scratchpad querierIDSlice
 
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
-			scratchpad = make([]string, 0, len(tqa.querierIDsSorted))
+			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
 		}
 
 		tqa.shuffleTenantQueriers(tenantID, scratchpad)
 	}
 }
 
-func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scratchpad []string) {
+func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scratchpad querierIDSlice) {
 	tenant := tqa.tenantsByID[tenantID]
 	if tenant == nil {
 		return
@@ -384,7 +402,7 @@ func (tqa *tenantQuerierAssignments) shuffleTenantQueriers(tenantID string, scra
 		return
 	}
 
-	querierIDSet := make(map[string]struct{}, tenant.maxQueriers)
+	querierIDSet := make(map[QuerierID]struct{}, tenant.maxQueriers)
 	rnd := rand.New(rand.NewSource(tenant.shuffleShardSeed))
 
 	scratchpad = append(scratchpad[:0], tqa.querierIDsSorted...)

@@ -74,7 +74,7 @@ type RequestQueue struct {
 }
 
 type querierOperation struct {
-	querierID string
+	querierID QuerierID
 	operation querierOperationType
 }
 
@@ -276,7 +276,7 @@ func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn
 	return true
 }
 
-func (q *RequestQueue) cancelWaitingConnectionsForQuerier(querierID string, waitingQuerierConnections *list.List) {
+func (q *RequestQueue) cancelWaitingConnectionsForQuerier(querierID QuerierID, waitingQuerierConnections *list.List) {
 	currentElement := waitingQuerierConnections.Front()
 
 	for currentElement != nil {
@@ -322,7 +322,7 @@ func (q *RequestQueue) EnqueueRequest(userID string, req Request, maxQueriers in
 // GetNextRequestForQuerier find next user queue and takes the next request off of it. Will block if there are no requests.
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
-func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
+func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID QuerierID) (Request, UserIndex, error) {
 	querierConn := &querierConnection{
 		ctx:           ctx,
 		querierID:     querierID,
@@ -373,7 +373,7 @@ func (q *RequestQueue) NotifyQuerierShutdown(querierID string) {
 
 func (q *RequestQueue) runQuerierOperation(querierID string, operation querierOperationType) {
 	op := querierOperation{
-		querierID: querierID,
+		querierID: QuerierID(querierID),
 		operation: operation,
 	}
 
@@ -391,7 +391,7 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 
 type querierConnection struct {
 	ctx           context.Context
-	querierID     string
+	querierID     QuerierID
 	lastUserIndex UserIndex
 	processed     chan nextRequestForQuerier
 
