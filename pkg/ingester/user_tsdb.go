@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -274,7 +275,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 
 	// Total series limit.
 	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
-		return errMaxSeriesPerUserLimitExceeded
+		return globalerror.MaxSeriesPerUser
 	}
 
 	// Series per metric name limit.
@@ -283,7 +284,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 		return err
 	}
 	if !u.seriesInMetric.canAddSeriesFor(u.userID, metricName) {
-		return errMaxSeriesPerMetricLimitExceeded
+		return globalerror.MaxSeriesPerMetric
 	}
 
 	return nil

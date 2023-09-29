@@ -1012,14 +1012,14 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			})
 			return true
 
-		case errMaxSeriesPerUserLimitExceeded:
+		case globalerror.MaxSeriesPerUser:
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
 			})
 			return true
 
-		case errMaxSeriesPerMetricLimitExceeded:
+		case globalerror.MaxSeriesPerMetric:
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(func() error {
 				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
