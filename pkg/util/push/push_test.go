@@ -730,6 +730,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		expectedHTTPStatus int
 	}{
 		{
+			name:               "no error during push gets translated into a HTTP 200",
+			parserError:        false,
+			err:                nil,
+			expectedHTTPStatus: http.StatusOK,
+		},
+		{
 			name:               "a generic error during request parsing gets an HTTP 400",
 			parserError:        true,
 			err:                fmt.Errorf("something went wrong during the request parsing"),
