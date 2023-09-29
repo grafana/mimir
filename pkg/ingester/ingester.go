@@ -795,7 +795,7 @@ func (i *Ingester) FinishPushRequest() {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) error {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer pushReq.CleanUp()
@@ -803,19 +803,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		if err := i.StartPushRequest(); err != nil {
-			return nil, util_log.DoNotLogError{Err: err}
+			return util_log.DoNotLogError{Err: err}
 		}
 		defer i.FinishPushRequest()
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	req, err := pushReq.WriteRequest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
@@ -827,17 +827,17 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
 	if len(req.Timeseries) == 0 {
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return &mimirpb.WriteResponse{}, newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -877,7 +877,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -893,7 +893,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
-		return nil, wrapOrAnnotateWithUser(err, userID)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 
 	commitDuration := time.Since(startCommit)
@@ -922,10 +922,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
 		errWithUser := wrapOrAnnotateWithUser(firstPartialErr, userID)
-		return &mimirpb.WriteResponse{}, newErrorWithHTTPStatus(errWithUser, code)
+		return newErrorWithHTTPStatus(errWithUser, code)
 	}
 
-	return &mimirpb.WriteResponse{}, nil
+	return nil
 }
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
@@ -3129,7 +3129,11 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	pushReq.AddCleanup(func() {
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
-	return i.PushWithCleanup(ctx, pushReq)
+	err := i.PushWithCleanup(ctx, pushReq)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, nil
 }
 
 // pushMetadata returns number of ingested metadata.

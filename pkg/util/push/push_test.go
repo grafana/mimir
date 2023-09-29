@@ -98,7 +98,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			Unit: "metric_unit",
 		},
 	}
-	samplesVerifierFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	samplesVerifierFunc := func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 
@@ -118,10 +118,10 @@ func TestHandlerOTLPPush(t *testing.T) {
 		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
 
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 
-	samplesVerifierFuncDisabledMetadataIngest := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	samplesVerifierFuncDisabledMetadataIngest := func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 
@@ -138,7 +138,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
 
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 
 	tests := []struct {
@@ -189,9 +189,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize:  30,
 			series:      sampleSeries,
 			metadata:    sampleMetadata,
-			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
-				_, err = pushReq.WriteRequest()
-				return &mimirpb.WriteResponse{}, err
+			verifyFunc: func(ctx context.Context, pushReq *Request) error {
+				_, err := pushReq.WriteRequest()
+				return err
 			},
 			responseCode: http.StatusRequestEntityTooLarge,
 			errMessage:   "the incoming push request has been rejected because its message size of 63 bytes is larger",
@@ -202,9 +202,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			maxMsgSize: 100000,
 			series:     sampleSeries,
 			metadata:   sampleMetadata,
-			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
-				_, err = pushReq.WriteRequest()
-				return &mimirpb.WriteResponse{}, err
+			verifyFunc: func(ctx context.Context, pushReq *Request) error {
+				_, err := pushReq.WriteRequest()
+				return err
 			},
 			responseCode: http.StatusUnsupportedMediaType,
 			errMessage:   "Only \"gzip\" or no compression supported",
@@ -228,7 +228,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 					Unit: "metric_unit",
 				},
 			},
-			verifyFunc: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyFunc: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 
@@ -246,7 +246,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				assert.Equal(t, "metric_unit", metadata[0].GetUnit())
 
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			responseCode:              http.StatusOK,
 			enableOtelMetadataStorage: true,
@@ -315,13 +315,13 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	})
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -355,13 +355,13 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	})
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -381,13 +381,13 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler = OTLPHandler(100000, nil, false, true, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	})
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -431,9 +431,9 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, func(_ context.Context, req *Request) (*mimirpb.WriteResponse, error) {
+	handler := Handler(100000, sourceIPs, false, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
-		return nil, fmt.Errorf("the request failed: %w", context.Canceled)
+		return fmt.Errorf("the request failed: %w", context.Canceled)
 	})
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 499, resp.Code)
@@ -452,7 +452,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to false means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -461,7 +461,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelNameValidation)
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
@@ -470,7 +470,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to false means SkipLabelNameValidation is always false even if write requests sets it to true",
 			allowSkipLabelNameValidation: false,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -479,7 +479,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelNameValidation)
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
@@ -488,7 +488,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true but write request set to false means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -497,7 +497,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelNameValidation)
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			expectedStatusCode: http.StatusOK,
 		},
@@ -505,7 +505,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true and write request set to true means SkipLabelNameValidation is true",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -514,7 +514,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.True(t, request.SkipLabelNameValidation)
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			expectedStatusCode: http.StatusOK,
 		},
@@ -522,7 +522,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			name:                         "config flag set to true and write request set to true but header not sent means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
 				assert.NoError(t, err)
 				assert.Len(t, request.Timeseries, 1)
@@ -531,7 +531,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelNameValidation)
 				pushReq.CleanUp()
-				return &mimirpb.WriteResponse{}, nil
+				return nil
 			},
 			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
@@ -552,7 +552,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 
 func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) Func {
 	t.Helper()
-	return func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	return func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 1)
@@ -561,15 +561,15 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 		assert.Equal(t, expectSource, request.Source)
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 }
 
 func readBodyPushFunc(t *testing.T) Func {
 	t.Helper()
-	return func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, req *Request) error {
 		_, err := req.WriteRequest()
-		return &mimirpb.WriteResponse{}, err
+		return err
 	}
 }
 
@@ -690,12 +690,12 @@ func BenchmarkPushHandler(b *testing.B) {
 	protobuf := createPrometheusRemoteWriteProtobuf(b)
 	buf := bytes.NewBuffer(snappy.Encode(nil, protobuf))
 	req := createRequest(b, protobuf)
-	pushFunc := func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	pushFunc := func(ctx context.Context, pushReq *Request) error {
 		if _, err := pushReq.WriteRequest(); err != nil {
-			return nil, err
+			return err
 		}
 		pushReq.CleanUp()
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 	handler := Handler(100000, nil, false, pushFunc)
 	b.ResetTimer()
@@ -770,12 +770,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return nil, nil
 			}
-			pushFunc := func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
+			pushFunc := func(ctx context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
 				if err != nil {
-					return nil, err
+					return err
 				}
-				return nil, tc.err
+				return tc.err
 			}
 
 			h := handler(10, nil, false, pushFunc, parserFunc)
