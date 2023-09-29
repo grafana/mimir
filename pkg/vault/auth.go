@@ -70,10 +70,10 @@ func (am *AuthConfig) authMethod() (authMethod, error) {
 }
 
 type AuthAppRole struct {
-	RoleID        string         `yaml:"role_id"`
-	SecretID      flagext.Secret `yaml:"secret_id"`
-	WrappingToken bool           `yaml:"wrapping_token,omitempty"`
-	MountPath     string         `yaml:"mount_path,omitempty"`
+	RoleID        string         `yaml:"role_id" category:"experimental"`
+	SecretID      flagext.Secret `yaml:"secret_id" category:"experimental"`
+	WrappingToken bool           `yaml:"wrapping_token,omitempty" category:"experimental"`
+	MountPath     string         `yaml:"mount_path,omitempty" category:"experimental"`
 }
 
 func (cfg *AuthAppRole) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -112,10 +112,10 @@ func (a *AuthAppRole) authenticate(ctx context.Context, factory authFactory, cli
 }
 
 type AuthKubernetes struct {
-	RoleName                string         `yaml:"role_name"`
-	ServiceAccountToken     flagext.Secret `yaml:"service_account_token,omitempty"`
-	ServiceAccountTokenPath string         `yaml:"service_account_token_path,omitempty"`
-	MountPath               string         `yaml:"mount_path,omitempty"`
+	RoleName                string         `yaml:"role_name" category:"experimental"`
+	ServiceAccountToken     flagext.Secret `yaml:"service_account_token,omitempty" category:"experimental"`
+	ServiceAccountTokenPath string         `yaml:"service_account_token_path,omitempty" category:"experimental"`
+	MountPath               string         `yaml:"mount_path,omitempty" category:"experimental"`
 }
 
 func (cfg *AuthKubernetes) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -154,9 +154,9 @@ func (a *AuthKubernetes) authenticate(ctx context.Context, factory authFactory, 
 }
 
 type AuthUserPass struct {
-	Username  string         `yaml:"username"`
-	Password  flagext.Secret `yaml:"password"`
-	MountPath string         `yaml:"mount_path,omitempty"`
+	Username  string         `yaml:"username" category:"experimental"`
+	Password  flagext.Secret `yaml:"password" category:"experimental"`
+	MountPath string         `yaml:"mount_path,omitempty" category:"experimental"`
 }
 
 func (cfg *AuthUserPass) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -189,7 +189,7 @@ func (a *AuthUserPass) authenticate(ctx context.Context, factory authFactory, cl
 }
 
 type AuthToken struct {
-	Token flagext.Secret `yaml:"token"`
+	Token flagext.Secret `yaml:"token" category:"experimental"`
 }
 
 func (cfg *AuthToken) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {

@@ -2630,31 +2630,31 @@ Usage of ./cmd/mimir/mimir:
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
   -vault.auth.approle.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
+    	[experimental] Path if the Vault backend was mounted using a non-default path
   -vault.auth.approle.role-id string
-    	Role ID of the AppRole
+    	[experimental] Role ID of the AppRole
   -vault.auth.approle.secret-id string
-    	Secret ID issued against the AppRole
+    	[experimental] Secret ID issued against the AppRole
   -vault.auth.approle.wrapping-token
-    	Response wrapping token if the Secret ID is response wrapped
+    	[experimental] Response wrapping token if the Secret ID is response wrapped
   -vault.auth.kubernetes.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
+    	[experimental] Path if the Vault backend was mounted using a non-default path
   -vault.auth.kubernetes.role-name string
-    	The Kubernetes named role
+    	[experimental] The Kubernetes named role
   -vault.auth.kubernetes.service-account-token string
-    	The Service Account JWT
+    	[experimental] The Service Account JWT
   -vault.auth.kubernetes.service-account-token-path string
-    	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
+    	[experimental] Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
   -vault.auth.token string
-    	The token used to authenticate against Vault
+    	[experimental] The token used to authenticate against Vault
   -vault.auth.type string
     	[experimental] Authentication type to use. Supported types are: approle, kubernetes, userpass, token
   -vault.auth.userpass.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
+    	[experimental] Path if the Vault backend was mounted using a non-default path
   -vault.auth.userpass.password string
-    	The userpass auth method password
+    	[experimental] The userpass auth method password
   -vault.auth.userpass.username string
-    	The userpass auth method username
+    	[experimental] The userpass auth method username
   -vault.enabled
     	[experimental] Enables fetching of keys and certificates from Vault
   -vault.mount-path string

@@ -709,30 +709,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
-  -vault.auth.approle.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
-  -vault.auth.approle.role-id string
-    	Role ID of the AppRole
-  -vault.auth.approle.secret-id string
-    	Secret ID issued against the AppRole
-  -vault.auth.approle.wrapping-token
-    	Response wrapping token if the Secret ID is response wrapped
-  -vault.auth.kubernetes.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
-  -vault.auth.kubernetes.role-name string
-    	The Kubernetes named role
-  -vault.auth.kubernetes.service-account-token string
-    	The Service Account JWT
-  -vault.auth.kubernetes.service-account-token-path string
-    	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
-  -vault.auth.token string
-    	The token used to authenticate against Vault
-  -vault.auth.userpass.mount-path string
-    	Path if the Vault backend was mounted using a non-default path
-  -vault.auth.userpass.password string
-    	The userpass auth method password
-  -vault.auth.userpass.username string
-    	The userpass auth method username
   -version
     	Print application version and exit.
 

@@ -9462,7 +9462,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.approle.role-id",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9472,7 +9473,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.approle.secret-id",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9482,7 +9484,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "vault.auth.approle.wrapping-token",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9492,7 +9495,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.approle.mount-path",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -9512,7 +9516,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.kubernetes.role-name",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9522,7 +9527,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.kubernetes.service-account-token",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9532,7 +9538,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.kubernetes.service-account-token-path",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9542,7 +9549,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.kubernetes.mount-path",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -9562,7 +9570,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.userpass.username",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9572,7 +9581,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.userpass.password",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -9582,7 +9592,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.userpass.mount-path",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -9602,7 +9613,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "vault.auth.token",
-                  "fieldType": "string"
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
