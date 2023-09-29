@@ -31,7 +31,7 @@ func (s querierIDSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 func (s querierIDSlice) Less(i, j int) bool { return s[i] < s[j] }
 
 // Search method covers for sort.Search's functionality,
-// as sort.Search does not allow anything more generic yet.
+// as sort.Search does not allow anything interface-based or generic yet.
 func (s querierIDSlice) Search(x QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
