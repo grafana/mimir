@@ -82,6 +82,34 @@ func TestAppRoleAuthenticate(t *testing.T) {
 	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"), mock.AnythingOfType("approle.LoginOption"))
 }
 
+func TestAppRoleAuthenticateSingleLoginOption(t *testing.T) {
+	testRoleID := "testRoleID"
+	testSecretID := "testSecretID"
+
+	cfg := Config{
+		Enabled: true,
+		Auth: AuthConfig{
+			AuthType: AppRole,
+			AuthAppRole: AuthAppRole{
+				RoleID:        testRoleID,
+				SecretID:      flagext.SecretWithValue(testSecretID),
+				WrappingToken: true,
+			},
+		},
+	}
+
+	authMethod, err := cfg.Auth.authMethod()
+	require.NoError(t, err)
+
+	factoryMock := authFactoryMock{}
+	factoryMock.On("NewAppRoleAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&approle.AppRoleAuth{}, nil)
+
+	client, err := api.NewClient(nil)
+	require.NoError(t, err)
+	authMethod.authenticate(context.Background(), &factoryMock, client)
+	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"))
+}
+
 func TestKubernetesAuthenticate(t *testing.T) {
 	testRoleName := "testRoleName"
 	testToken := "testToken"
@@ -111,6 +139,35 @@ func TestKubernetesAuthenticate(t *testing.T) {
 	require.NoError(t, err)
 	authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
+}
+
+func TestKubernetesAuthenticateSingleLoginOption(t *testing.T) {
+	testRoleName := "testRoleName"
+	testToken := "testToken"
+	testMountPath := "testMountPath"
+
+	cfg := Config{
+		Enabled: true,
+		Auth: AuthConfig{
+			AuthType: Kubernetes,
+			AuthKubernetes: AuthKubernetes{
+				RoleName:            testRoleName,
+				ServiceAccountToken: flagext.SecretWithValue(testToken),
+				MountPath:           testMountPath,
+			},
+		},
+	}
+
+	authMethod, err := cfg.Auth.authMethod()
+	require.NoError(t, err)
+
+	factoryMock := authFactoryMock{}
+	factoryMock.On("NewKubernetesAuth", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&kubernetes.KubernetesAuth{}, nil)
+
+	client, err := api.NewClient(nil)
+	require.NoError(t, err)
+	authMethod.authenticate(context.Background(), &factoryMock, client)
+	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
 }
 
 func TestUserpassAuthenticate(t *testing.T) {
