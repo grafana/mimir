@@ -9445,7 +9445,8 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "vault.auth.type",
-              "fieldType": "string"
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",

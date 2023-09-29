@@ -22,6 +22,7 @@ const (
 	Token      = "token"
 )
 
+// authFactory interface is used so a mock implementation can be passed to authenticate() for testing
 type authFactory interface {
 	NewAppRoleAuth(roleID string, secretID *approle.SecretID, opts ...approle.LoginOption) (*approle.AppRoleAuth, error)
 	NewKubernetesAuth(roleName string, opts ...kubernetes.LoginOption) (*kubernetes.KubernetesAuth, error)
@@ -33,7 +34,7 @@ type authMethod interface {
 }
 
 type AuthConfig struct {
-	AuthType string `yaml:"type"`
+	AuthType string `yaml:"type" category:"experimental"`
 
 	AuthAppRole    AuthAppRole    `yaml:"app_role,omitempty" category:"experimental"`
 	AuthKubernetes AuthKubernetes `yaml:"kubernetes,omitempty" category:"experimental"`

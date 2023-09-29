@@ -727,8 +727,6 @@ Usage of ./cmd/mimir/mimir:
     	Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
   -vault.auth.token string
     	The token used to authenticate against Vault
-  -vault.auth.type string
-    	Authentication type to use. Supported types are: approle, kubernetes, userpass, token
   -vault.auth.userpass.mount-path string
     	Path if the Vault backend was mounted using a non-default path
   -vault.auth.userpass.password string

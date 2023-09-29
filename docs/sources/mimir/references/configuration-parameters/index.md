@@ -234,8 +234,8 @@ vault:
   [mount_path: <string> | default = ""]
 
   auth:
-    # Authentication type to use. Supported types are: approle, kubernetes,
-    # userpass, token
+    # (experimental) Authentication type to use. Supported types are: approle,
+    # kubernetes, userpass, token
     # CLI flag: -vault.auth.type
     [type: <string> | default = ""]
 
