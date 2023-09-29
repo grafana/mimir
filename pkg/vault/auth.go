@@ -54,16 +54,16 @@ func (cfg *AuthConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	cfg.AuthToken.RegisterFlagsWithPrefix(f, prefix)
 }
 
-func (am *AuthConfig) authMethod() (authMethod, error) {
-	switch am.AuthType {
+func (cfg *AuthConfig) authMethod() (authMethod, error) {
+	switch cfg.AuthType {
 	case AppRole:
-		return &am.AuthAppRole, nil
+		return &cfg.AuthAppRole, nil
 	case Kubernetes:
-		return &am.AuthKubernetes, nil
+		return &cfg.AuthKubernetes, nil
 	case UserPass:
-		return &am.AuthUserPass, nil
+		return &cfg.AuthUserPass, nil
 	case Token:
-		return &am.AuthToken, nil
+		return &cfg.AuthToken, nil
 	}
 
 	return nil, fmt.Errorf("unsupported auth method")
@@ -83,19 +83,19 @@ func (cfg *AuthAppRole) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) 
 	f.StringVar(&cfg.MountPath, prefix+"approle.mount-path", "", "Path if the Vault backend was mounted using a non-default path")
 }
 
-func (a *AuthAppRole) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
-	secretID := &approle.SecretID{FromString: a.SecretID.String()}
+func (cfg *AuthAppRole) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
+	secretID := &approle.SecretID{FromString: cfg.SecretID.String()}
 
 	var opts []approle.LoginOption
-	if a.WrappingToken {
+	if cfg.WrappingToken {
 		opts = append(opts, approle.WithWrappingToken())
 	}
-	if a.MountPath != "" {
-		opts = append(opts, approle.WithMountPath(a.MountPath))
+	if cfg.MountPath != "" {
+		opts = append(opts, approle.WithMountPath(cfg.MountPath))
 	}
 
 	appRoleAuth, err := factory.NewAppRoleAuth(
-		a.RoleID,
+		cfg.RoleID,
 		secretID,
 		opts...,
 	)
@@ -125,20 +125,20 @@ func (cfg *AuthKubernetes) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix strin
 	f.StringVar(&cfg.MountPath, prefix+"kubernetes.mount-path", "", "Path if the Vault backend was mounted using a non-default path")
 }
 
-func (a *AuthKubernetes) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
+func (cfg *AuthKubernetes) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
 	var opts []kubernetes.LoginOption
-	if a.ServiceAccountToken.String() != "" {
-		opts = append(opts, kubernetes.WithServiceAccountToken(a.ServiceAccountToken.String()))
+	if cfg.ServiceAccountToken.String() != "" {
+		opts = append(opts, kubernetes.WithServiceAccountToken(cfg.ServiceAccountToken.String()))
 	}
-	if a.ServiceAccountTokenPath != "" {
-		opts = append(opts, kubernetes.WithServiceAccountTokenPath(a.ServiceAccountTokenPath))
+	if cfg.ServiceAccountTokenPath != "" {
+		opts = append(opts, kubernetes.WithServiceAccountTokenPath(cfg.ServiceAccountTokenPath))
 	}
-	if a.MountPath != "" {
-		opts = append(opts, kubernetes.WithMountPath(a.MountPath))
+	if cfg.MountPath != "" {
+		opts = append(opts, kubernetes.WithMountPath(cfg.MountPath))
 	}
 
 	k8sAuth, err := factory.NewKubernetesAuth(
-		a.RoleName,
+		cfg.RoleName,
 		opts...,
 	)
 	if err != nil {
@@ -165,15 +165,15 @@ func (cfg *AuthUserPass) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string)
 	f.StringVar(&cfg.MountPath, prefix+"userpass.mount-path", "", "Path if the Vault backend was mounted using a non-default path")
 }
 
-func (a *AuthUserPass) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
+func (cfg *AuthUserPass) authenticate(ctx context.Context, factory authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
 	var opts []userpass.LoginOption
-	if a.MountPath != "" {
-		opts = append(opts, userpass.WithMountPath(a.MountPath))
+	if cfg.MountPath != "" {
+		opts = append(opts, userpass.WithMountPath(cfg.MountPath))
 	}
 
 	userpassAuth, err := factory.NewUserpassAuth(
-		a.Username,
-		a.Password.String(),
+		cfg.Username,
+		cfg.Password.String(),
 		opts...,
 	)
 	if err != nil {
@@ -196,8 +196,8 @@ func (cfg *AuthToken) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.Var(&cfg.Token, prefix+"token", "The token used to authenticate against Vault")
 }
 
-func (a *AuthToken) authenticate(_ context.Context, _ authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
-	client.SetToken(a.Token.String())
+func (cfg *AuthToken) authenticate(_ context.Context, _ authFactory, client *hashivault.Client) (*hashivault.Secret, error) {
+	client.SetToken(cfg.Token.String())
 
 	return nil, nil
 }

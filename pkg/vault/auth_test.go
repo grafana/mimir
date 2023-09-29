@@ -78,7 +78,7 @@ func TestAppRoleAuthenticate(t *testing.T) {
 
 	client, err := api.NewClient(nil)
 	require.NoError(t, err)
-	authMethod.authenticate(context.Background(), &factoryMock, client)
+	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"), mock.AnythingOfType("approle.LoginOption"))
 }
 
@@ -106,7 +106,7 @@ func TestAppRoleAuthenticateSingleLoginOption(t *testing.T) {
 
 	client, err := api.NewClient(nil)
 	require.NoError(t, err)
-	authMethod.authenticate(context.Background(), &factoryMock, client)
+	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewAppRoleAuth", testRoleID, &approle.SecretID{FromString: testSecretID}, mock.AnythingOfType("approle.LoginOption"))
 }
 
@@ -137,7 +137,7 @@ func TestKubernetesAuthenticate(t *testing.T) {
 
 	client, err := api.NewClient(nil)
 	require.NoError(t, err)
-	authMethod.authenticate(context.Background(), &factoryMock, client)
+	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
 }
 
@@ -166,7 +166,7 @@ func TestKubernetesAuthenticateSingleLoginOption(t *testing.T) {
 
 	client, err := api.NewClient(nil)
 	require.NoError(t, err)
-	authMethod.authenticate(context.Background(), &factoryMock, client)
+	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewKubernetesAuth", testRoleName, mock.AnythingOfType("kubernetes.LoginOption"), mock.AnythingOfType("kubernetes.LoginOption"))
 }
 
@@ -195,6 +195,6 @@ func TestUserpassAuthenticate(t *testing.T) {
 
 	client, err := api.NewClient(nil)
 	require.NoError(t, err)
-	authMethod.authenticate(context.Background(), &factoryMock, client)
+	_, _ = authMethod.authenticate(context.Background(), &factoryMock, client)
 	factoryMock.AssertCalled(t, "NewUserpassAuth", testUsername, testPassword, mock.AnythingOfType("userpass.LoginOption"))
 }
