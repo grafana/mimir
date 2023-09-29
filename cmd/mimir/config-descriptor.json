@@ -9444,17 +9444,6 @@
         },
         {
           "kind": "field",
-          "name": "token",
-          "required": false,
-          "desc": "Token used to authenticate with Vault",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "vault.token",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "mount_path",
           "required": false,
           "desc": "Location of secrets engine within Vault",
@@ -9463,6 +9452,199 @@
           "fieldFlag": "vault.mount-path",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "auth",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "type",
+              "required": false,
+              "desc": "Authentication type to use. Supported types are: approle, kubernetes, userpass, token",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "vault.auth.type",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "app_role",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "role_id",
+                  "required": false,
+                  "desc": "Role ID of the AppRole",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.approle.role-id",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "secret_id",
+                  "required": false,
+                  "desc": "Secret ID issued against the AppRole",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.approle.secret-id",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "wrapping_token",
+                  "required": false,
+                  "desc": "Response wrapping token if the Secret ID is response wrapped",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "vault.auth.approle.wrapping-token",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "mount_path",
+                  "required": false,
+                  "desc": "Path if the Vault backend was mounted using a non-default path",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.approle.mount-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "kubernetes",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "role_name",
+                  "required": false,
+                  "desc": "The Kubernetes named role",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.kubernetes.role-name",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "service_account_token",
+                  "required": false,
+                  "desc": "The Service Account JWT",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.kubernetes.service-account-token",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "service_account_token_path",
+                  "required": false,
+                  "desc": "Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.kubernetes.service-account-token-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "mount_path",
+                  "required": false,
+                  "desc": "Path if the Vault backend was mounted using a non-default path",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.kubernetes.mount-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "user_pass",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "username",
+                  "required": false,
+                  "desc": "The userpass auth method username",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.userpass.username",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "password",
+                  "required": false,
+                  "desc": "The userpass auth method password",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.userpass.password",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "mount_path",
+                  "required": false,
+                  "desc": "Path if the Vault backend was mounted using a non-default path",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.userpass.mount-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "token",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "token",
+                  "required": false,
+                  "desc": "The token used to authenticate against Vault",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "vault.auth.token",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

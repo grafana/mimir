@@ -179,6 +179,9 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/memberlist v0.5.0 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
+	github.com/hashicorp/vault/api/auth/approle v0.5.0
+	github.com/hashicorp/vault/api/auth/kubernetes v0.5.0
+	github.com/hashicorp/vault/api/auth/userpass v0.5.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jessevdk/go-flags v1.5.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect

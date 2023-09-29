@@ -229,13 +229,74 @@ vault:
   # CLI flag: -vault.url
   [url: <string> | default = ""]
 
-  # (experimental) Token used to authenticate with Vault
-  # CLI flag: -vault.token
-  [token: <string> | default = ""]
-
   # (experimental) Location of secrets engine within Vault
   # CLI flag: -vault.mount-path
   [mount_path: <string> | default = ""]
+
+  auth:
+    # (experimental) Authentication type to use. Supported types are: approle,
+    # kubernetes, userpass, token
+    # CLI flag: -vault.auth.type
+    [type: <string> | default = ""]
+
+    app_role:
+      # (experimental) Role ID of the AppRole
+      # CLI flag: -vault.auth.approle.role-id
+      [role_id: <string> | default = ""]
+
+      # (experimental) Secret ID issued against the AppRole
+      # CLI flag: -vault.auth.approle.secret-id
+      [secret_id: <string> | default = ""]
+
+      # (experimental) Response wrapping token if the Secret ID is response
+      # wrapped
+      # CLI flag: -vault.auth.approle.wrapping-token
+      [wrapping_token: <boolean> | default = false]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.approle.mount-path
+      [mount_path: <string> | default = ""]
+
+    kubernetes:
+      # (experimental) The Kubernetes named role
+      # CLI flag: -vault.auth.kubernetes.role-name
+      [role_name: <string> | default = ""]
+
+      # (experimental) The Service Account JWT
+      # CLI flag: -vault.auth.kubernetes.service-account-token
+      [service_account_token: <string> | default = ""]
+
+      # (experimental) Path to where the Kubernetes service account token is
+      # mounted. By default it lives at
+      # /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used
+      # if the service_account_token is not specified.
+      # CLI flag: -vault.auth.kubernetes.service-account-token-path
+      [service_account_token_path: <string> | default = ""]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.kubernetes.mount-path
+      [mount_path: <string> | default = ""]
+
+    user_pass:
+      # (experimental) The userpass auth method username
+      # CLI flag: -vault.auth.userpass.username
+      [username: <string> | default = ""]
+
+      # (experimental) The userpass auth method password
+      # CLI flag: -vault.auth.userpass.password
+      [password: <string> | default = ""]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.userpass.mount-path
+      [mount_path: <string> | default = ""]
+
+    token:
+      # (experimental) The token used to authenticate against Vault
+      # CLI flag: -vault.auth.token
+      [token: <string> | default = ""]
 
 # The ruler block configures the ruler.
 [ruler: <ruler>]
