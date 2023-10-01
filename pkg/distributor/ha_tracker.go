@@ -726,11 +726,17 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 	var pair mimirpb.LabelAdapter
 
 	for _, pair = range labels {
-		if pair.Name == replicaLabel {
+		switch pair.Name {
+		case replicaLabel:
 			replica = pair.Value
-		}
-		if pair.Name == clusterLabel {
+			if cluster != "" && replica != "" {
+				return cluster, replica
+			}
+		case clusterLabel:
 			cluster = pair.Value
+			if cluster != "" && replica != "" {
+				return cluster, replica
+			}
 		}
 	}
 
