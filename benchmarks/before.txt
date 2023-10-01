@@ -1,7 +1,3 @@
-GOROOT=/usr/local/go #gosetup
-GOPATH=/Users/dimitar/go #gosetup
-/usr/local/go/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2023.2/tmp/GoLand/___BenchmarkDistributor_Push_in_github_com_grafana_mimir_pkg_distributor.test github.com/grafana/mimir/pkg/distributor #gosetup
-/Users/dimitar/Library/Caches/JetBrains/GoLand2023.2/tmp/GoLand/___BenchmarkDistributor_Push_in_github_com_grafana_mimir_pkg_distributor.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkDistributor_Push\E$ -test.run ^$ -test.count=4 -test.benchmem
 goos: darwin
 goarch: arm64
 pkg: github.com/grafana/mimir/pkg/distributor

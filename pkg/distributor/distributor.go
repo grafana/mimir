@@ -1259,6 +1259,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		var errs multierror.MultiError
+		// TODO dimitarvdimitrov maybe unite the two maps that have the haReplicas as the key
 		samplesPerReplica := make(map[haReplica]int)
 		replicaStates := make(map[haReplica]replicaState, len(samplesPerReplica))
 		samplesPerState := make(map[replicaState]int)
@@ -1275,10 +1276,21 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 				samplesPerState[state]++
 			}
 		}
-		lastAccepted := sortByAccepted(req, replicaStates, getReplicaForSample, haReplicaLabel)
+		if len(samplesPerReplica) == 1 {
+			var r haReplica
+			for k := range samplesPerReplica {
+				r = k
+			}
+			getReplicaForSample = func(i int) haReplica {
+				return r
+			}
+		}
+		lastAccepted := sortByAccepted(req, replicaStates, getReplicaForSample)
 
 		for i := 0; i <= lastAccepted; i++ {
-			if replicaStates[getReplicaForSample(i)]&replicaIsPrimary == 0 {
+			r := getReplicaForSample(i)
+			s := replicaStates[r]
+			if s&replicaIsPrimary == 0 {
 				continue
 			}
 			// If we found both the cluster and replica labels, we only want to include the cluster label when
@@ -1329,7 +1341,17 @@ func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func()
 
 }
 
-func sortByAccepted(req *mimirpb.WriteRequest, replicaStates map[haReplica]replicaState, getReplicaForSample func(int) haReplica, haReplicaLabel string) int {
+// sortByAccepted returns the index of the last acepted timeseries in the write request based on the ha dedup sattes of the eplicas
+func sortByAccepted(req *mimirpb.WriteRequest, replicaStates map[haReplica]replicaState, getReplicaForSample func(int) haReplica) int {
+	numAcceptedReplicas := 0
+	for _, state := range replicaStates {
+		if state&replicaAccepted != 0 {
+			numAcceptedReplicas++
+		}
+	}
+	if numAcceptedReplicas == len(replicaStates) {
+		return len(req.Timeseries) - 1
+	}
 	findPreviousAccepted := func(i int) int {
 		for i > 0 {
 			state := replicaStates[getReplicaForSample(i)]
