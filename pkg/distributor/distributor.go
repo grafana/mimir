@@ -762,7 +762,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		var getReplicaForSample func(int) haReplica
 		{
-			var replicaKey haReplica
+			var replicaKey haReplica // TODO dimitarvdimitrov - do we need this closure or a regular func also works?
 			getReplicaForSample = func(i int) haReplica {
 				replicaKey.cluster, replicaKey.replica = findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[i].Labels)
 				return replicaKey

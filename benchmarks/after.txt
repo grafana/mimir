@@ -1,0 +1,101 @@
+GOROOT=/usr/local/go #gosetup
+GOPATH=/Users/dimitar/go #gosetup
+/usr/local/go/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2023.2/tmp/GoLand/___BenchmarkDistributor_Push_in_github_com_grafana_mimir_pkg_distributor.test github.com/grafana/mimir/pkg/distributor #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2023.2/tmp/GoLand/___BenchmarkDistributor_Push_in_github_com_grafana_mimir_pkg_distributor.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkDistributor_Push\E$ -test.run ^$ -test.count=4 -test.benchmem
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/distributor
+BenchmarkDistributor_Push
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1312	    929242 ns/op	  159250 B/op	      58 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1071	   1143727 ns/op	  160389 B/op	      70 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1275	    899824 ns/op	  159454 B/op	      60 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1294	    921454 ns/op	  159192 B/op	      57 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1652	    726394 ns/op	  159126 B/op	      56 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1378	    728107 ns/op	  158903 B/op	      56 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1624	    768422 ns/op	  159730 B/op	      58 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1624	    723607 ns/op	  158480 B/op	      56 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3510	    338593 ns/op	    5221 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3441	    342120 ns/op	    5218 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3476	    341393 ns/op	    5235 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3537	    336424 ns/op	    5192 B/op	      55 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2238	    528852 ns/op	  135424 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2154	    531953 ns/op	  135460 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2234	    545949 ns/op	  135496 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2185	    539797 ns/op	  135508 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     391	   2895589 ns/op	  170561 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     396	   2861465 ns/op	  170980 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     381	   2895654 ns/op	  170515 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     374	   2885592 ns/op	  171028 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2484	    488602 ns/op	  157234 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2539	    475637 ns/op	  157388 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2500	    474968 ns/op	  157343 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2506	    471234 ns/op	  157278 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2540	    470589 ns/op	  144447 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2449	    469306 ns/op	  144420 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2316	    490365 ns/op	  144342 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2522	    466890 ns/op	  144423 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     693	   1499117 ns/op	 1369741 B/op	    7250 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     717	   1470605 ns/op	 1367735 B/op	    7243 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     682	   1486844 ns/op	 1372203 B/op	    7249 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     735	   1476921 ns/op	 1371677 B/op	    7250 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1836	    634788 ns/op	   86670 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1874	    639382 ns/op	   86277 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1861	    640199 ns/op	   85788 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1807	    646105 ns/op	   86014 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1312	    929242 ns/op	  159250 B/op	      58 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1071	   1143727 ns/op	  160389 B/op	      70 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1275	    899824 ns/op	  159454 B/op	      60 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_all_samples_same_replica-10         	    1294	    921454 ns/op	  159192 B/op	      57 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1652	    726394 ns/op	  159126 B/op	      56 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1378	    728107 ns/op	  158903 B/op	      56 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1624	    768422 ns/op	  159730 B/op	      58 allocs/op
+BenchmarkDistributor_Push/all_samples_successfully_pushed-10            	    1624	    723607 ns/op	  158480 B/op	      56 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3510	    338593 ns/op	    5221 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3441	    342120 ns/op	    5218 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3476	    341393 ns/op	    5235 B/op	      55 allocs/op
+BenchmarkDistributor_Push/ingestion_rate_limit_reached-10               	    3537	    336424 ns/op	    5192 B/op	      55 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2238	    528852 ns/op	  135424 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2154	    531953 ns/op	  135460 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2234	    545949 ns/op	  135496 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/too_many_labels_limit_reached-10              	    2185	    539797 ns/op	  135508 B/op	    3234 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     391	   2895589 ns/op	  170561 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     396	   2861465 ns/op	  170980 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     381	   2895654 ns/op	  170515 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_name_length_limit_reached-10        	     374	   2885592 ns/op	  171028 B/op	    3165 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2484	    488602 ns/op	  157234 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2539	    475637 ns/op	  157388 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2500	    474968 ns/op	  157343 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/max_label_value_length_limit_reached-10       	    2506	    471234 ns/op	  157278 B/op	    3171 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2540	    470589 ns/op	  144447 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2449	    469306 ns/op	  144420 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2316	    490365 ns/op	  144342 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/timestamp_too_new-10                          	    2522	    466890 ns/op	  144423 B/op	    3127 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     693	   1499117 ns/op	 1369741 B/op	    7250 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     717	   1470605 ns/op	 1367735 B/op	    7243 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     682	   1486844 ns/op	 1372203 B/op	    7249 allocs/op
+BenchmarkDistributor_Push/all_samples_go_to_metric_relabel_configs-10   	     735	   1476921 ns/op	 1371677 B/op	    7250 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1836	    634788 ns/op	   86670 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1874	    639382 ns/op	   86277 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1861	    640199 ns/op	   85788 B/op	     116 allocs/op
+BenchmarkDistributor_Push/HA_dedup;_4_clusters_8_replicas_evenly_split-10         	    1807	    646105 ns/op	   86014 B/op	     116 allocs/op
+PASS
+
+Process finished with the exit code 0
