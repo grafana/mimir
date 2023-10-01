@@ -1263,20 +1263,27 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		samplesPerReplica := make(map[haReplica]int)
 		replicaStates := make(map[haReplica]replicaState, len(samplesPerReplica))
 		samplesPerState := make(map[replicaState]int)
+		isOneReplica := true
 		{
+			replica := getReplicaForSample(0)
+
 			for i := range req.Timeseries {
-				replicaKey := getReplicaForSample(i)
-				samplesPerReplica[replicaKey]++
-				state, ok := replicaStates[replicaKey]
-				if !ok {
-					state, err = d.replicaObserved(ctx, userID, replicaKey)
-					replicaStates[replicaKey] = state
-					errs.Add(err)
+				if getReplicaForSample(i) != replica {
+					isOneReplica = false
+					break
 				}
-				samplesPerState[state]++
 			}
 		}
-		if len(samplesPerReplica) == 1 {
+		{
+			if isOneReplica {
+				samplesPerReplica[getReplicaForSample(0)] = numSamples
+			} else {
+				for i := range req.Timeseries {
+					samplesPerReplica[getReplicaForSample(i)]++
+				}
+			}
+		}
+		if isOneReplica {
 			var r haReplica
 			for k := range samplesPerReplica {
 				r = k
@@ -1285,11 +1292,33 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 				return r
 			}
 		}
+		for replicaKey, numSamples := range samplesPerReplica {
+			state, ok := replicaStates[replicaKey]
+			if !ok {
+				state, err = d.replicaObserved(ctx, userID, replicaKey)
+				replicaStates[replicaKey] = state
+				errs.Add(err)
+			}
+			samplesPerState[state] += numSamples
+		}
 		lastAccepted := sortByAccepted(req, replicaStates, getReplicaForSample)
-
+		var getReplicaState func(haReplica) replicaState
+		if isOneReplica {
+			var s replicaState
+			for _, rs := range replicaStates {
+				s = rs
+			}
+			getReplicaState = func(replica haReplica) replicaState {
+				return s
+			}
+		} else {
+			getReplicaState = func(replica haReplica) replicaState {
+				return replicaStates[replica]
+			}
+		}
 		for i := 0; i <= lastAccepted; i++ {
 			r := getReplicaForSample(i)
-			s := replicaStates[r]
+			s := getReplicaState(r)
 			if s&replicaIsPrimary == 0 {
 				continue
 			}
