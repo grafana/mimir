@@ -75,7 +75,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
 
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
-	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	loadalertCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 
 	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
