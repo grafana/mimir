@@ -153,11 +153,9 @@ func (q *RequestQueue) dispatcherLoop() {
 				queues.notifyQuerierShutdown(qe.querierID)
 				needToDispatchQueries = true
 
-				// Tell any waiting GetNextRequestForQuerier calls for this querier that nothing is coming.
-				// If the querier shuts down without notifying us, this is OK: we'll never mark it as shutting down, so we'll
-				// dispatch a query to GetNextRequestForQuerier and Scheduler.QuerierLoop will try to send the query to it
-				// later. This will fail because the connection is broken, and GetNextRequestForQuerier won't be called again.
-				q.cancelWaitingConnectionsForQuerier(qe.querierID, waitingGetNextRequestForQuerierCalls)
+				// We don't need to do any cleanup here in response to a graceful shutdown: next time we try to dispatch a query to
+				// this querier, getNextQueueForQuerier will return ErrQuerierShuttingDown and we'll remove the waiting
+				// GetNextRequestForQuerier call from our list.
 			case forgetDisconnected:
 				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
@@ -238,11 +236,11 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r requestToEnqueue) 
 // tryDispatchRequest finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
 // Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) tryDispatchRequest(queues *queues, call *nextRequestForQuerierCall) bool {
-	// If this querier has told us it's shutting down, don't bother trying to find a query request for it.
-	// Terminate GetNextRequestForQuerier with an error now.
 	queue, userID, idx, err := queues.getNextQueueForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
+		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		call.sendError(err)
+		// ...and remove the waiting GetNextRequestForQuerier call from our list.
 		return true
 	}
 
@@ -274,22 +272,6 @@ func (q *RequestQueue) tryDispatchRequest(queues *queues, call *nextRequestForQu
 	}
 
 	return true
-}
-
-func (q *RequestQueue) cancelWaitingConnectionsForQuerier(querierID string, waitingQuerierConnections *list.List) {
-	currentElement := waitingQuerierConnections.Front()
-
-	for currentElement != nil {
-		call := currentElement.Value.(*nextRequestForQuerierCall)
-		nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
-
-		if call.querierID == querierID {
-			call.sendError(ErrQuerierShuttingDown)
-			waitingQuerierConnections.Remove(currentElement)
-		}
-
-		currentElement = nextElement
-	}
 }
 
 // EnqueueRequest puts the request into the queue. maxQueries is user-specific value that specifies how many queriers can

@@ -225,7 +225,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	noopQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
 	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {

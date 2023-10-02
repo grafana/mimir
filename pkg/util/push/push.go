@@ -23,7 +23,7 @@ import (
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
-type Func func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error)
+type Func func(ctx context.Context, req *Request) error
 
 // parserFunc defines how to read the body the request from an HTTP request
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
@@ -115,7 +115,7 @@ func handler(maxRecvMsgSize int,
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
-		if _, err := push(ctx, req); err != nil {
+		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)

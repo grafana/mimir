@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 
@@ -181,11 +182,11 @@ type errorTestQueryable struct {
 	err error
 }
 
-func (t errorTestQueryable) ChunkQuerier(context.Context, int64, int64) (storage.ChunkQuerier, error) {
+func (t errorTestQueryable) ChunkQuerier(int64, int64) (storage.ChunkQuerier, error) {
 	return nil, t.err
 }
 
-func (t errorTestQueryable) Querier(context.Context, int64, int64) (storage.Querier, error) {
+func (t errorTestQueryable) Querier(int64, int64) (storage.Querier, error) {
 	if t.q != nil {
 		return t.q, nil
 	}
@@ -197,11 +198,11 @@ type errorTestQuerier struct {
 	err error
 }
 
-func (t errorTestQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (t errorTestQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (t errorTestQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 
@@ -209,7 +210,7 @@ func (t errorTestQuerier) Close() error {
 	return nil
 }
 
-func (t errorTestQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+func (t errorTestQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	if t.s != nil {
 		return t.s
 	}
@@ -232,6 +233,6 @@ func (t errorTestSeriesSet) Err() error {
 	return t.err
 }
 
-func (t errorTestSeriesSet) Warnings() storage.Warnings {
+func (t errorTestSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }

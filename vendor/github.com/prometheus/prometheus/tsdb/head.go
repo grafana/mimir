@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"math"
@@ -179,9 +180,10 @@ type HeadOptions struct {
 
 	IsolationDisabled bool
 
-	PostingsForMatchersCacheTTL   time.Duration
-	PostingsForMatchersCacheSize  int
-	PostingsForMatchersCacheForce bool
+	PostingsForMatchersCacheTTL      time.Duration
+	PostingsForMatchersCacheMaxItems int
+	PostingsForMatchersCacheMaxBytes int64
+	PostingsForMatchersCacheForce    bool
 
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// The default value is GOMAXPROCS.
@@ -198,20 +200,21 @@ const (
 
 func DefaultHeadOptions() *HeadOptions {
 	ho := &HeadOptions{
-		ChunkRange:                    DefaultBlockDuration,
-		ChunkDirRoot:                  "",
-		ChunkPool:                     chunkenc.NewPool(),
-		ChunkWriteBufferSize:          chunks.DefaultWriteBufferSize,
-		ChunkEndTimeVariance:          0,
-		ChunkWriteQueueSize:           chunks.DefaultWriteQueueSize,
-		SamplesPerChunk:               DefaultSamplesPerChunk,
-		StripeSize:                    DefaultStripeSize,
-		SeriesCallback:                &noopSeriesLifecycleCallback{},
-		IsolationDisabled:             defaultIsolationDisabled,
-		PostingsForMatchersCacheTTL:   defaultPostingsForMatchersCacheTTL,
-		PostingsForMatchersCacheSize:  defaultPostingsForMatchersCacheSize,
-		PostingsForMatchersCacheForce: false,
-		WALReplayConcurrency:          defaultWALReplayConcurrency,
+		ChunkRange:                       DefaultBlockDuration,
+		ChunkDirRoot:                     "",
+		ChunkPool:                        chunkenc.NewPool(),
+		ChunkWriteBufferSize:             chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance:             0,
+		ChunkWriteQueueSize:              chunks.DefaultWriteQueueSize,
+		SamplesPerChunk:                  DefaultSamplesPerChunk,
+		StripeSize:                       DefaultStripeSize,
+		SeriesCallback:                   &noopSeriesLifecycleCallback{},
+		IsolationDisabled:                defaultIsolationDisabled,
+		PostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
+		PostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
+		PostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
+		PostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
+		WALReplayConcurrency:             defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
@@ -278,7 +281,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		stats: stats,
 		reg:   r,
 
-		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheSize, opts.PostingsForMatchersCacheForce),
+		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1453,19 +1456,23 @@ func (h *RangeHead) String() string {
 
 // Delete all samples in the range of [mint, maxt] for series that satisfy the given
 // label matchers.
-func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Matcher) error {
 	// Do not delete anything beyond the currently valid range.
 	mint, maxt = clampInterval(mint, maxt, h.MinTime(), h.MaxTime())
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := ir.PostingsForMatchers(false, ms...)
+	p, err := ir.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
 
 	var stones []tombstones.Stone
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return errors.Wrap(err, "select series")
+		}
+
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if series == nil {
 			level.Debug(h.logger).Log("msg", "Series not found in Head.Delete")
@@ -1485,6 +1492,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	if p.Err() != nil {
 		return p.Err()
 	}
+	if ctx.Err() != nil {
+		return errors.Wrap(err, "select series")
+	}
+
 	if h.wal != nil {
 		var enc record.Encoder
 		if err := h.wal.Log(enc.Tombstones(stones, nil)); err != nil {

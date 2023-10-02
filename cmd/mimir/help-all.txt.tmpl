@@ -735,8 +735,10 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 10485760)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
-    	[experimental] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
+    	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
@@ -763,8 +765,10 @@ Usage of ./cmd/mimir/mimir:
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 10485760)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
-    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
+    	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -2629,12 +2633,36 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
+  -vault.auth.approle.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.approle.role-id string
+    	[experimental] Role ID of the AppRole
+  -vault.auth.approle.secret-id string
+    	[experimental] Secret ID issued against the AppRole
+  -vault.auth.approle.wrapping-token
+    	[experimental] Response wrapping token if the Secret ID is response wrapped
+  -vault.auth.kubernetes.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.kubernetes.role-name string
+    	[experimental] The Kubernetes named role
+  -vault.auth.kubernetes.service-account-token string
+    	[experimental] The Service Account JWT
+  -vault.auth.kubernetes.service-account-token-path string
+    	[experimental] Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
+  -vault.auth.token string
+    	[experimental] The token used to authenticate against Vault
+  -vault.auth.type string
+    	[experimental] Authentication type to use. Supported types are: approle, kubernetes, userpass, token
+  -vault.auth.userpass.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.userpass.password string
+    	[experimental] The userpass auth method password
+  -vault.auth.userpass.username string
+    	[experimental] The userpass auth method username
   -vault.enabled
     	[experimental] Enables fetching of keys and certificates from Vault
   -vault.mount-path string
     	[experimental] Location of secrets engine within Vault
-  -vault.token string
-    	[experimental] Token used to authenticate with Vault
   -vault.url string
     	[experimental] Location of the Vault server
   -version
