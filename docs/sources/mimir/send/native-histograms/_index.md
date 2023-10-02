@@ -105,7 +105,7 @@ Use the latest version of Prometheus or at least version 2.47.
    prometheus --enabled-feature native-histograms
    ```
 
-1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time we recommend setting `scrape_classic_histograms` to `true` in your scrape jobs, for example:
+1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
 
    ```yaml
    scrape_configs:
@@ -129,7 +129,39 @@ Use the latest version of Prometheus or at least version 2.47.
 
 ### Scrape and send native histograms with Grafana Agent
 
-TBD, awaiting agent version 0.37.
+Use the latest version of the Grafana Agent in [Flow mode](https://grafana.com/docs/agent/latest/flow/) or at least version 0.37.
+
+1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
+
+   ```
+   prometheus.scrape "myapp" {
+     enable_protobuf_negotiation = true
+   }
+   ```
+
+1. The above flag will make Grafana Agent detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histogram` to `true` in your scrape jobs, for example:
+
+   ```
+   prometheus.scrape "myapp" {
+     enable_protobuf_negotiation = true
+     scrape_classic_histogram = true
+   }
+   ```
+
+   {{% admonition type="note" %}}
+   Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Grafana Agent negotiates a Protobuf protocol transfer in this case.
+   {{% /admonition %}}
+
+1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` argument to `true` in the `prometheus.remote_write` component, for example:
+
+   ```
+   prometheus.remote_write "mimir" {
+     endpoint {
+       url = "http://.../api/prom/push"
+       send_native_histograms = true
+     }
+   }
+   ```
 
 ## Migrate from classic histograms
 
