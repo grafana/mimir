@@ -3780,7 +3780,7 @@ tsdb:
   # triggered only if the estimated series reduction is at least the configured
   # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
-  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 10]
+  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
 ```
 
 ### compactor

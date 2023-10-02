@@ -8160,7 +8160,7 @@
               "required": false,
               "desc": "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).",
               "fieldValue": null,
-              "fieldDefaultValue": 10,
+              "fieldDefaultValue": 15,
               "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
               "fieldType": "int",
               "fieldCategory": "experimental"
