@@ -166,7 +166,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 			return errors.Wrap(err, "read chunk")
 		}
 
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb))
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk{b: &cb})
 		if err != nil {
 			return errors.Wrap(err, "populate chunk")
 		}
@@ -229,26 +229,28 @@ type loadIdx struct {
 // rawChunk is a helper type that wraps a chunk's raw bytes and implements the chunkenc.Chunk
 // interface over it.
 // It is used to Store API responses which don't need to introspect and validate the chunk's contents.
-type rawChunk []byte
-
-func (b rawChunk) Encoding() chunkenc.Encoding {
-	return chunkenc.Encoding(b[0])
+type rawChunk struct {
+	b *[]byte
 }
 
-func (b rawChunk) Bytes() []byte {
-	return b[1:]
+func (c rawChunk) Encoding() chunkenc.Encoding {
+	return chunkenc.Encoding((*c.b)[0])
 }
-func (b rawChunk) Compact() {}
 
-func (b rawChunk) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
+func (c rawChunk) Bytes() []byte {
+	return (*c.b)[1:]
+}
+func (c rawChunk) Compact() {}
+
+func (c rawChunk) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	panic("invalid call")
 }
 
-func (b rawChunk) Appender() (chunkenc.Appender, error) {
+func (c rawChunk) Appender() (chunkenc.Appender, error) {
 	panic("invalid call")
 }
 
-func (b rawChunk) NumSamples() int {
+func (c rawChunk) NumSamples() int {
 	panic("invalid call")
 }
 
