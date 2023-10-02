@@ -1722,10 +1722,9 @@
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -1747,7 +1746,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1766,10 +1765,9 @@
           "required": false,
           "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -1780,7 +1778,7 @@
           "fieldDefaultValue": 3000000000,
           "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
