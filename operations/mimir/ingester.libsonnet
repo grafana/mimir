@@ -41,7 +41,13 @@
       // requested just because it spikes during the WAL replay. Therefore, the WAL replay
       // concurrency is chosen in such a way that it is always less than the current CPU request.
       'blocks-storage.tsdb.wal-replay-concurrency': std.max(1, std.floor($.util.parseCPU($.ingester_container.resources.requests.cpu) - 1)),
-    } + $.mimirRuntimeConfigFile,
+    } + (
+      // Optionally configure the TSDB head early compaction (only when enabled).
+      if !$._config.ingester_tsdb_head_early_compaction_enabled then {} else {
+        'blocks-storage.tsdb.early-head-compaction-min-in-memory-series': $._config.ingester_tsdb_head_early_compaction_min_in_memory_series,
+        'blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage': $._config.ingester_tsdb_head_early_compaction_reduction_percentage,
+      }
+    ) + $.mimirRuntimeConfigFile,
 
   ingester_ports:: $.util.defaultPorts,
 
