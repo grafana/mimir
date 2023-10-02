@@ -705,7 +705,9 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 		require.NoError(t, chunksReader.Close())
 	}()
 
-	postings, err := indexReader.Postings(labels.MetricName, metricName)
+	ctx := context.Background()
+
+	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
 	require.NoError(t, err)
 
 	for postings.Next() {

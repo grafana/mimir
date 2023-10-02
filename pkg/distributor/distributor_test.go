@@ -862,13 +862,12 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		},
 		// Using very long replica label value results in validation error.
 		{
-			enableTracker:    true,
-			acceptedReplica:  "instance0",
-			testReplica:      "instance1234567890123456789012345678901234567890",
-			cluster:          "cluster0",
-			samples:          5,
-			expectedResponse: emptyResponse,
-			expectedCode:     400,
+			enableTracker:   true,
+			acceptedReplica: "instance0",
+			testReplica:     "instance1234567890123456789012345678901234567890",
+			cluster:         "cluster0",
+			samples:         5,
+			expectedCode:    400,
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -2695,13 +2694,13 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+			next := func(ctx context.Context, pushReq *push.Request) error {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
-				return nil, nil
+				return nil
 			}
 
 			var limits validation.Limits
@@ -2721,7 +2720,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			for _, req := range tc.reqs {
 				pushReq := push.NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
-				_, err := middleware(tc.ctx, pushReq)
+				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err)
 			}
 
@@ -2762,12 +2761,12 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	mockPush := func(ctx context.Context, pushReq *push.Request) error {
 		defer pushReq.CleanUp()
 		writeReq, err := pushReq.WriteRequest()
 		require.NoError(t, err)
 		submittedWriteReqs = append(submittedWriteReqs, writeReq)
-		return nil, nil
+		return nil
 	}
 
 	// Setup limits with HA enabled and forwarding rules for the metric "foo".
@@ -2790,7 +2789,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
+	err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
@@ -2799,7 +2798,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	_, err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
+	err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -2921,12 +2920,12 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+			next := func(ctx context.Context, pushReq *push.Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
-				return nil, nil
+				return nil
 			}
 
 			var limits validation.Limits
@@ -2943,7 +2942,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			for _, req := range tc.reqs {
 				pushReq := push.NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
-				_, err := middleware(tc.ctx, pushReq)
+				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
 			}
 
@@ -4722,7 +4721,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
 	distrib := d[0]
-	_, err := distrib.push(ctx, push.NewParsedRequest(req))
+	err := distrib.push(ctx, push.NewParsedRequest(req))
 	require.NoError(t, err)
 
 	// Verify that each ingester only received series and metadata that it should receive.

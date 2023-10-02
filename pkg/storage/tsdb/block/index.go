@@ -212,7 +212,7 @@ func (n *minMaxSumInt64) Avg() int64 {
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
 // See HealthStats.Issue347OutsideChunks for details.
-func GatherBlockHealthStats(_ context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunkData bool) (stats HealthStats, err error) {
+func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunkData bool) (stats HealthStats, err error) {
 	indexFn := filepath.Join(blockDir, IndexFilename)
 	chunkDir := filepath.Join(blockDir, ChunksDirname)
 	// index reader
@@ -222,7 +222,8 @@ func GatherBlockHealthStats(_ context.Context, logger log.Logger, blockDir strin
 	}
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
 
-	p, err := r.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	p, err := r.Postings(ctx, n, v)
 	if err != nil {
 		return stats, errors.Wrap(err, "get all postings")
 	}
@@ -249,13 +250,13 @@ func GatherBlockHealthStats(_ context.Context, logger log.Logger, blockDir strin
 		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
 	}
 
-	lnames, err := r.LabelNames()
+	lnames, err := r.LabelNames(ctx)
 	if err != nil {
 		return stats, errors.Wrap(err, "label names")
 	}
 	stats.LabelNamesCount = int64(len(lnames))
 
-	lvals, err := r.LabelValues("__name__")
+	lvals, err := r.LabelValues(ctx, "__name__")
 	if err != nil {
 		return stats, errors.Wrap(err, "metric label values")
 	}
@@ -620,22 +621,22 @@ type seriesRepair struct {
 // which index.Reader does not implement.
 type indexReader interface {
 	Symbols() index.StringIter
-	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
-	Postings(name string, values ...string) (index.Postings, error)
+	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 	SortedPostings(index.Postings) index.Postings
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
-	LabelNames(matchers ...*labels.Matcher) ([]string, error)
-	LabelValueFor(id storage.SeriesRef, label string) (string, error)
-	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
+	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
+	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
 	Close() error
 }
 
 // rewrite writes all data from the readers back into the writers while cleaning
 // up mis-ordered and duplicated chunks.
 func rewrite(
-	_ context.Context,
+	ctx context.Context,
 	logger log.Logger,
 	indexr indexReader, chunkr tsdb.ChunkReader,
 	indexw tsdb.IndexWriter, chunkw tsdb.ChunkWriter,
@@ -652,7 +653,8 @@ func rewrite(
 		return errors.Wrap(symbols.Err(), "next symbol")
 	}
 
-	all, err := indexr.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	all, err := indexr.Postings(ctx, n, v)
 	if err != nil {
 		return errors.Wrap(err, "postings")
 	}

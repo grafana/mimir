@@ -708,7 +708,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s instance %(alert_instance_variable)s in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
+            message: 'One or more %(product)s instances in %(alert_aggregation_variables)s see incorrect number of gossip members.' % $._config,
           },
         },
       ],

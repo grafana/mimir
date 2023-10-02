@@ -855,11 +855,11 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					t.Cleanup(cancel)
 					ctx = limiter.AddQueryLimiterToContext(ctx, testData.queryLimiter)
 					st, ctx := stats.ContextWithEmptyStats(ctx)
+					const tenantID = "user-1"
+					ctx = user.InjectOrgID(ctx, tenantID)
 					q := &blocksStoreQuerier{
-						ctx:         ctx,
 						minT:        minT,
 						maxT:        maxT,
-						userID:      "user-1",
 						finder:      finder,
 						stores:      stores,
 						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -876,7 +876,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					}
 
 					sp := &storage.SelectHints{Start: minT, End: maxT}
-					set := q.Select(true, sp, matchers...)
+					set := q.Select(ctx, true, sp, matchers...)
 					if testData.expectedErr != nil {
 						if streaming && set.Err() == nil {
 							// In case of streaming, the error can happen during iteration.
@@ -992,6 +992,9 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			ctx = limiter.AddQueryLimiterToContext(ctx, noOpQueryLimiter)
 			reg := prometheus.NewPedanticRegistry()
 
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
+
 			storeGateway := &cancelerStoreGatewayClientMock{
 				remoteAddr:    "1.1.1.1",
 				produceSeries: testData,
@@ -1009,10 +1012,8 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 			q := &blocksStoreQuerier{
-				ctx:         ctx,
 				minT:        minT,
 				maxT:        maxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      stores,
 				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1026,7 +1027,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			}
 
 			sp := &storage.SelectHints{Start: minT, End: maxT}
-			set := q.Select(true, sp, matchers...)
+			set := q.Select(ctx, true, sp, matchers...)
 			require.Error(t, set.Err())
 			require.ErrorIs(t, set.Err(), context.Canceled)
 		})
@@ -1511,10 +1512,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
 
 				q := &blocksStoreQuerier{
-					ctx:         ctx,
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
 					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1524,7 +1523,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames()
+					names, warnings, err := q.LabelNames(ctx)
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1541,7 +1540,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -1563,7 +1562,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 	t.Run("canceled request", func(t *testing.T) {
 		for _, testFunc := range []string{"LabelNames", "LabelValues"} {
 			t.Run(testFunc, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(context.Background())
+				ctx, cancel := context.WithCancel(user.InjectOrgID(context.Background(), "user-1"))
 				defer cancel()
 
 				reg := prometheus.NewPedanticRegistry()
@@ -1584,10 +1583,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
 
 				q := &blocksStoreQuerier{
-					ctx:         ctx,
 					minT:        minT,
 					maxT:        maxT,
-					userID:      "user-1",
 					finder:      finder,
 					stores:      stores,
 					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1599,9 +1596,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames()
+					_, _, err = q.LabelNames(ctx)
 				case "LabelValues":
-					_, _, err = q.LabelValues(labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName)
 				}
 
 				require.Error(t, err)
@@ -1657,11 +1654,11 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
+			const tenantID = "user-1"
+			ctx = user.InjectOrgID(ctx, tenantID)
 			q := &blocksStoreQuerier{
-				ctx:             ctx,
 				minT:            testData.queryMinT,
 				maxT:            testData.queryMaxT,
-				userID:          "user-1",
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
 				consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1676,7 +1673,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				End:   testData.queryMaxT,
 			}
 
-			set := q.selectSorted(ctx, sp)
+			set := q.selectSorted(ctx, sp, tenantID)
 			require.NoError(t, set.Err())
 
 			if testData.expectedMinT == 0 && testData.expectedMaxT == 0 {
@@ -1734,10 +1731,8 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
-				ctx:         ctx,
 				minT:        testData.queryMinT,
 				maxT:        testData.queryMaxT,
-				userID:      "user-1",
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
 				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
@@ -1748,13 +1743,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames()
+			_, _, err := q.LabelNames(ctx)
 			require.NoError(t, err)
 			require.Len(t, finder.Calls, 1)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
 			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
 
-			_, _, err = q.LabelValues("foo")
+			_, _, err = q.LabelValues(ctx, "foo")
 			require.Len(t, finder.Calls, 2)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
@@ -1836,6 +1831,8 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
+					ctx := context.Background()
+
 					block1 := ulid.MustNew(1, nil)
 					block2 := ulid.MustNew(2, nil)
 
@@ -1880,7 +1877,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					})
 
 					// Query metrics.
-					ctx := user.InjectOrgID(context.Background(), "user-1")
+					ctx = user.InjectOrgID(ctx, "user-1")
 					q, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, queryStart, queryEnd, 15*time.Second)
 					require.NoError(t, err)
 

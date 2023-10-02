@@ -136,7 +136,8 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename))
 		require.NoError(t, err)
 
-		all, err := ixReader.Postings(index.AllPostingsKey())
+		n, v := index.AllPostingsKey()
+		all, err := ixReader.Postings(context.Background(), n, v)
 		require.NoError(t, err)
 
 		for p := ixReader.SortedPostings(all); p.Next(); {

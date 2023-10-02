@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1434,10 +1435,10 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
-		queryableInternalErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		queryableInternalErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError, Body: []byte("fatal queryable error")})
 		})
-		queryablePrometheusExecErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		queryablePrometheusExecErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
@@ -1551,7 +1552,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
 	}
 
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 
@@ -1989,7 +1990,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 }
 
 func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	return storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 }
@@ -1998,7 +1999,7 @@ type querierMock struct {
 	series []*promql.StorageSeries
 }
 
-func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -2026,11 +2027,11 @@ func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*l
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *querierMock) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -2240,7 +2241,7 @@ func (i *seriesIteratorMock) Err() error {
 	return nil
 }
 
-func (i *seriesIteratorMock) Warnings() storage.Warnings {
+func (i *seriesIteratorMock) Warnings() annotations.Annotations {
 	return nil
 }
 

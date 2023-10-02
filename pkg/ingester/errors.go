@@ -29,9 +29,6 @@ var (
 		safeToWrapError("the ingester is currently too busy to process queries, try again later"),
 		http.StatusServiceUnavailable,
 	)
-
-	errMaxSeriesPerMetricLimitExceeded = safeToWrapError("per-metric series limit exceeded")
-	errMaxSeriesPerUserLimitExceeded   = safeToWrapError("per-user series limit exceeded")
 )
 
 type safeToWrap interface {
