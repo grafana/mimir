@@ -129,7 +129,7 @@ Use the latest version of Prometheus or at least version 2.47.
 
 ### Scrape and send native histograms with Grafana Agent
 
-Use the latest version of the Grafana Agent in [Flow mode](https://grafana.com/docs/agent/latest/flow/) or at least version 0.37.
+Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) or at least version 0.37.
 
 1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
 
@@ -139,12 +139,12 @@ Use the latest version of the Grafana Agent in [Flow mode](https://grafana.com/d
    }
    ```
 
-1. The above flag will make Grafana Agent detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histogram` to `true` in your scrape jobs, for example:
+1. The above flag will make Grafana Agent detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
 
    ```
    prometheus.scrape "myapp" {
      enable_protobuf_negotiation = true
-     scrape_classic_histogram = true
+     scrape_classic_histograms = true
    }
    ```
 
