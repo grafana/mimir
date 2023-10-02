@@ -47,7 +47,7 @@ All three problems are mitigated by high resolution, which native histograms can
 
 ### Instrument application with Prometheus client libraries
 
-The following examples have some reasonable defaults to define a new native histogram metric. The examples use the GO client library version 1.16 and the Java client library 1.0.
+The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [GO client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
 {{% admonition type="note" %}}
 Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. See [Migrate from classic histograms](#migrate-from-classic-histograms).
@@ -59,7 +59,7 @@ Native histogram options can be added to existing classic histograms to get both
 histogram := prometheus.NewHistogram(
    prometheus.HistogramOpts{
       Name: "request_latency_seconds",
-      Help: "Histogram of request response times.",
+      Help: "Histogram of request latency in seconds",
       NativeHistogramBucketFactor: 1.1,
       NativeHistogramMaxBucketNumber: 100,
       NativeHistogramMinResetDuration: 1*time.Hour,
@@ -69,7 +69,8 @@ histogram := prometheus.NewHistogram(
 ```java
 static final Histogram requestLatency = Histogram.build()
      .name("requests_latency_seconds")
-     .help("Histogram of request latency in seconds.")
+     .help("Histogram of request latency in seconds")
+     .nativeOnly()
      .nativeInitialSchema(3)
      .nativeMaxNumberOfBuckets(100)
      .nativeResetDuration(1, TimeUnit.HOURS)
@@ -88,7 +89,7 @@ Some of the resulting buckets for factor `1.1` rounded to two decimal places are
 
 ..., (512, 558], (558, 608], (608, 663], ...
 
-In Java `.nativeInitialSchema` using schema value `3` results in the same bucket boundaries.
+In Java `.nativeInitialSchema` using schema value `3` results in the same bucket boundaries. For more information about the schema supported in Java, consult the documentation for [nativeInitialSchema](<https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html#nativeInitialSchema(int)>).
 
 The value of `NativeHistogramMaxBucketNumber`/`nativeMaxNumberOfBuckets` limits the number of buckets produced by the observations. This can be especially useful if the receiver side is limiting the number of buckets that can be sent. For more information about the bucket limit see [Limiting the number of buckets](#limiting-the-number-of-buckets).
 
@@ -148,7 +149,7 @@ Code examples:
 histogram := prometheus.NewHistogram(
    prometheus.HistogramOpts{
       Name: "request_latency_seconds",
-      Help: "Histogram of request response times.",
+      Help: "Histogram of request latency in seconds",
       Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 25, 50, 100},
       NativeHistogramBucketFactor: 1.1,
       NativeHistogramMaxBucketNumber: 100,
@@ -159,7 +160,7 @@ histogram := prometheus.NewHistogram(
 ```java
 static final Histogram requestLatency = Histogram.build()
      .name("requests_latency_seconds")
-     .help("Histogram of request latency in seconds.")
+     .help("Histogram of request latency in seconds")
      .classicUpperBounds(0.005, 0.01, 0.025, 0,05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, Double.NaN);
      .nativeInitialSchema(3)
      .nativeMaxNumberOfBuckets(100)
