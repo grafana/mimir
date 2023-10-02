@@ -9472,7 +9472,7 @@
             },
             {
               "kind": "block",
-              "name": "app_role",
+              "name": "approle",
               "required": false,
               "desc": "",
               "blockEntries": [
@@ -9580,7 +9580,7 @@
             },
             {
               "kind": "block",
-              "name": "user_pass",
+              "name": "userpass",
               "required": false,
               "desc": "",
               "blockEntries": [
