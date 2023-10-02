@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.1
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
+
 ## 2.10.0
 
 ### Grafana Mimir
