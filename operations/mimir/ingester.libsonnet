@@ -16,6 +16,7 @@
       target: 'ingester',
 
       'server.http-listen-port': $._config.server_http_port,
+      'server.grpc-max-concurrent-streams': 500,
 
       // Ring config.
       'ingester.ring.num-tokens': 512,
