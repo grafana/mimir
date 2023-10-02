@@ -229,13 +229,74 @@ vault:
   # CLI flag: -vault.url
   [url: <string> | default = ""]
 
-  # (experimental) Token used to authenticate with Vault
-  # CLI flag: -vault.token
-  [token: <string> | default = ""]
-
   # (experimental) Location of secrets engine within Vault
   # CLI flag: -vault.mount-path
   [mount_path: <string> | default = ""]
+
+  auth:
+    # (experimental) Authentication type to use. Supported types are: approle,
+    # kubernetes, userpass, token
+    # CLI flag: -vault.auth.type
+    [type: <string> | default = ""]
+
+    app_role:
+      # (experimental) Role ID of the AppRole
+      # CLI flag: -vault.auth.approle.role-id
+      [role_id: <string> | default = ""]
+
+      # (experimental) Secret ID issued against the AppRole
+      # CLI flag: -vault.auth.approle.secret-id
+      [secret_id: <string> | default = ""]
+
+      # (experimental) Response wrapping token if the Secret ID is response
+      # wrapped
+      # CLI flag: -vault.auth.approle.wrapping-token
+      [wrapping_token: <boolean> | default = false]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.approle.mount-path
+      [mount_path: <string> | default = ""]
+
+    kubernetes:
+      # (experimental) The Kubernetes named role
+      # CLI flag: -vault.auth.kubernetes.role-name
+      [role_name: <string> | default = ""]
+
+      # (experimental) The Service Account JWT
+      # CLI flag: -vault.auth.kubernetes.service-account-token
+      [service_account_token: <string> | default = ""]
+
+      # (experimental) Path to where the Kubernetes service account token is
+      # mounted. By default it lives at
+      # /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used
+      # if the service_account_token is not specified.
+      # CLI flag: -vault.auth.kubernetes.service-account-token-path
+      [service_account_token_path: <string> | default = ""]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.kubernetes.mount-path
+      [mount_path: <string> | default = ""]
+
+    user_pass:
+      # (experimental) The userpass auth method username
+      # CLI flag: -vault.auth.userpass.username
+      [username: <string> | default = ""]
+
+      # (experimental) The userpass auth method password
+      # CLI flag: -vault.auth.userpass.password
+      [password: <string> | default = ""]
+
+      # (experimental) Path if the Vault backend was mounted using a non-default
+      # path
+      # CLI flag: -vault.auth.userpass.mount-path
+      [mount_path: <string> | default = ""]
+
+    token:
+      # (experimental) The token used to authenticate against Vault
+      # CLI flag: -vault.auth.token
+      [token: <string> | default = ""]
 
 # The ruler block configures the ruler.
 [ruler: <ruler>]
@@ -3658,7 +3719,7 @@ tsdb:
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
-  [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
+  [series_hash_cache_max_size_bytes: <int> | default = 367001600]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.
@@ -3670,10 +3731,15 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl
   [head_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (experimental) Maximum number of entries in the cache for postings for
+  # (deprecated) Maximum number of entries in the cache for postings for
   # matchers in the Head and OOOHead when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-size
   [head_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Maximum size in bytes of the cache for postings for matchers
+  # in the Head and OOOHead when TTL is greater than 0.
+  # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
+  [head_postings_for_matchers_cache_max_bytes: <int> | default = 10485760]
 
   # (experimental) Force the cache to be used for postings for matchers in the
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
@@ -3686,10 +3752,15 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl
   [block_postings_for_matchers_cache_ttl: <duration> | default = 10s]
 
-  # (experimental) Maximum number of entries in the cache for postings for
+  # (deprecated) Maximum number of entries in the cache for postings for
   # matchers in each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-size
   [block_postings_for_matchers_cache_size: <int> | default = 100]
+
+  # (experimental) Maximum size in bytes of the cache for postings for matchers
+  # in each compacted block when TTL is greater than 0.
+  # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes
+  [block_postings_for_matchers_cache_max_bytes: <int> | default = 10485760]
 
   # (experimental) Force the cache to be used for postings for matchers in
   # compacted blocks, even if it's not a concurrent (query-sharding) call.

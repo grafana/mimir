@@ -23,8 +23,9 @@ const (
 )
 
 var (
-	ErrTooManyRequests = errors.New("too many outstanding requests")
-	ErrStopped         = errors.New("queue is stopped")
+	ErrTooManyRequests     = errors.New("too many outstanding requests")
+	ErrStopped             = errors.New("queue is stopped")
+	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
 )
 
 // UserIndex is opaque type that allows to resume iteration over users between successive calls
@@ -151,6 +152,10 @@ func (q *RequestQueue) dispatcherLoop() {
 			case notifyShutdown:
 				queues.notifyQuerierShutdown(qe.querierID)
 				needToDispatchQueries = true
+
+				// We don't need to do any cleanup here in response to a graceful shutdown: next time we try to dispatch a query to
+				// this querier, getNextQueueForQuerier will return ErrQuerierShuttingDown and we'll remove the waiting
+				// GetNextRequestForQuerier call from our list.
 			case forgetDisconnected:
 				if queues.forgetDisconnectedQueriers(time.Now()) > 0 {
 					// Removing some queriers may have caused a resharding.
@@ -194,7 +199,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 			for currentElement != nil {
 				querierConn := currentElement.Value.(*querierConnection)
-				_ = querierConn.send(nextRequestForQuerier{err: ErrStopped}) // If GetNextRequestForQuerier is already gone, we don't care, so ignore the result.
+				querierConn.sendError(ErrStopped)
 				currentElement = currentElement.Next()
 			}
 
@@ -231,7 +236,14 @@ func (q *RequestQueue) handleEnqueueRequest(queues *queues, r enqueueRequest) er
 // dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
 // Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) dispatchRequestToQuerier(queues *queues, querierConn *querierConnection) bool {
-	queue, userID, idx := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	queue, userID, idx, err := queues.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+	if err != nil {
+		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
+		querierConn.sendError(err)
+		// ...and remove the waiting GetNextRequestForQuerier call from our list.
+		return true
+	}
+
 	querierConn.lastUserIndex.last = idx
 	if queue == nil {
 		// Nothing available for this querier, try again next time.
@@ -367,6 +379,11 @@ type querierConnection struct {
 
 	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
 	element  *list.Element
+}
+
+func (q *querierConnection) sendError(err error) {
+	// If GetNextRequestForQuerier is already gone, we don't care, so ignore the result from send.
+	_ = q.send(nextRequestForQuerier{err: err})
 }
 
 // send sends req to the GetNextRequestForQuerier call that is waiting for a new query.

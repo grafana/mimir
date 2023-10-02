@@ -345,7 +345,7 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.0.0-20230918014924-ee2f3b27e8d7
+# github.com/failsafe-go/failsafe-go v0.3.1
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/circuitbreaker
@@ -567,7 +567,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20230920092933-98f431c981b2
+# github.com/grafana/dskit v0.0.0-20230925094553-c4a1874aadb0
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -691,6 +691,15 @@ github.com/hashicorp/serf/coordinate
 # github.com/hashicorp/vault/api v1.10.0
 ## explicit; go 1.19
 github.com/hashicorp/vault/api
+# github.com/hashicorp/vault/api/auth/approle v0.5.0
+## explicit; go 1.16
+github.com/hashicorp/vault/api/auth/approle
+# github.com/hashicorp/vault/api/auth/kubernetes v0.5.0
+## explicit; go 1.16
+github.com/hashicorp/vault/api/auth/kubernetes
+# github.com/hashicorp/vault/api/auth/userpass v0.5.0
+## explicit; go 1.16
+github.com/hashicorp/vault/api/auth/userpass
 # github.com/inconshreveable/mousetrap v1.1.0
 ## explicit; go 1.18
 github.com/inconshreveable/mousetrap
@@ -908,7 +917,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e => github.com/grafana/mimir-prometheus v0.0.0-20230922140437-a10cef685b49
+# github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e => github.com/grafana/mimir-prometheus v0.0.0-20230929133245-5e1fe508c771
 ## explicit; go 1.20
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -928,6 +937,7 @@ github.com/prometheus/prometheus/prompb
 github.com/prometheus/prometheus/prompb/io/prometheus/client
 github.com/prometheus/prometheus/promql
 github.com/prometheus/prometheus/promql/parser
+github.com/prometheus/prometheus/promql/parser/posrange
 github.com/prometheus/prometheus/rules
 github.com/prometheus/prometheus/scrape
 github.com/prometheus/prometheus/storage
@@ -949,6 +959,7 @@ github.com/prometheus/prometheus/tsdb/record
 github.com/prometheus/prometheus/tsdb/tombstones
 github.com/prometheus/prometheus/tsdb/tsdbutil
 github.com/prometheus/prometheus/tsdb/wlog
+github.com/prometheus/prometheus/util/annotations
 github.com/prometheus/prometheus/util/gate
 github.com/prometheus/prometheus/util/httputil
 github.com/prometheus/prometheus/util/jsonutil
@@ -979,9 +990,9 @@ github.com/sean-/seed
 # github.com/segmentio/fasthash v1.0.3
 ## explicit; go 1.11
 github.com/segmentio/fasthash/fnv1a
-# github.com/sercand/kuberesolver/v4 v4.0.0
-## explicit; go 1.14
-github.com/sercand/kuberesolver/v4
+# github.com/sercand/kuberesolver/v5 v5.1.1
+## explicit; go 1.18
+github.com/sercand/kuberesolver/v5
 # github.com/shurcooL/httpfs v0.0.0-20230704072500-f1e31cf0ba5c
 ## explicit; go 1.19
 github.com/shurcooL/httpfs/filter
@@ -1131,8 +1142,8 @@ go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.42.0
 ## explicit; go 1.19
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
-# go.opentelemetry.io/otel v1.17.0
-## explicit; go 1.19
+# go.opentelemetry.io/otel v1.18.0
+## explicit; go 1.20
 go.opentelemetry.io/otel
 go.opentelemetry.io/otel/attribute
 go.opentelemetry.io/otel/baggage
@@ -1145,12 +1156,12 @@ go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv/internal/v2
 go.opentelemetry.io/otel/semconv/v1.17.0
 go.opentelemetry.io/otel/semconv/v1.17.0/httpconv
-# go.opentelemetry.io/otel/metric v1.17.0
-## explicit; go 1.19
+# go.opentelemetry.io/otel/metric v1.18.0
+## explicit; go 1.20
 go.opentelemetry.io/otel/metric
 go.opentelemetry.io/otel/metric/embedded
-# go.opentelemetry.io/otel/trace v1.17.0
-## explicit; go 1.19
+# go.opentelemetry.io/otel/trace v1.18.0
+## explicit; go 1.20
 go.opentelemetry.io/otel/trace
 # go.uber.org/atomic v1.11.0
 ## explicit; go 1.18
@@ -1277,7 +1288,7 @@ golang.org/x/tools/internal/typesinternal
 ## explicit; go 1.17
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
-# google.golang.org/api v0.141.0
+# google.golang.org/api v0.142.0
 ## explicit; go 1.19
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
@@ -1316,13 +1327,13 @@ google.golang.org/genproto/internal
 ## explicit; go 1.19
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20230911183012-2d3300fd4832
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20230913181813-007df8e322eb
 ## explicit; go 1.19
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.57.0
-## explicit; go 1.17
+# google.golang.org/grpc v1.58.2
+## explicit; go 1.19
 google.golang.org/grpc
 google.golang.org/grpc/attributes
 google.golang.org/grpc/backoff
@@ -1366,6 +1377,7 @@ google.golang.org/grpc/internal/grpclog
 google.golang.org/grpc/internal/grpcrand
 google.golang.org/grpc/internal/grpcsync
 google.golang.org/grpc/internal/grpcutil
+google.golang.org/grpc/internal/idle
 google.golang.org/grpc/internal/metadata
 google.golang.org/grpc/internal/pretty
 google.golang.org/grpc/internal/resolver
@@ -1435,7 +1447,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/kube-openapi v0.0.0-20230601164746-7562a1006961
+# k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9
 ## explicit; go 1.19
 k8s.io/kube-openapi/pkg/internal
 k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json
@@ -1485,7 +1497,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230922140437-a10cef685b49
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230929133245-5e1fe508c771
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

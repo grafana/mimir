@@ -146,15 +146,17 @@ func (q *queues) getOrAddQueue(userID string, maxQueriers int) *list.List {
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
-// to pass last user index returned by this function as argument. Is there was no previous
+// to pass last user index returned by this function as argument. If there was no previous
 // last user index, use -1.
-func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int) {
+//
+// getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
+func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*list.List, string, int, error) {
 	uid := lastUserIndex
 
 	// Ensure the querier is not shutting down. If the querier is shutting down, we shouldn't forward
 	// any more queries to it.
 	if info := q.queriers[querierID]; info == nil || info.shuttingDown {
-		return nil, "", uid
+		return nil, "", uid, ErrQuerierShuttingDown
 	}
 
 	for iters := 0; iters < len(q.users); iters++ {
@@ -180,9 +182,9 @@ func (q *queues) getNextQueueForQuerier(lastUserIndex int, querierID string) (*l
 			}
 		}
 
-		return userQueue.requests, u, uid
+		return userQueue.requests, u, uid, nil
 	}
-	return nil, "", uid
+	return nil, "", uid, nil
 }
 
 func (q *queues) addQuerierConnection(querierID string) {

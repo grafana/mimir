@@ -89,7 +89,7 @@ func main() {
 	fmt.Println("Analysis complete in", time.Since(startTime))
 }
 
-func analyseSymbols(_ context.Context, blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
+func analyseSymbols(ctx context.Context, blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
 	block, err := tsdb.OpenBlock(gokitlog.NewLogfmtLogger(os.Stderr), blockDir, nil)
 	if err != nil {
 		return fmt.Errorf("failed to open block: %v", err)
@@ -137,7 +137,7 @@ func analyseSymbols(_ context.Context, blockDir string, uniqueSymbols map[string
 	}
 
 	k, v := index.AllPostingsKey()
-	p, err := idx.Postings(k, v)
+	p, err := idx.Postings(ctx, k, v)
 
 	if err != nil {
 		return fmt.Errorf("failed to get postings: %v", err)

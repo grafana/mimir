@@ -11,7 +11,7 @@ remove a deprecated item from the third major release after it has been deprecat
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
 * NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
   `nginx` section is deprecated in `4.0.0` and will be removed in `7.0.0`.
-  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
+  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
 
 ## Format of changelog
 
@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.0`. #6022
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.1`. #6022 #6110
 
 ## 5.1.0
 
@@ -146,7 +146,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## 4.0.0
 
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
-  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
+  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
 * [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
   - If you are **upgrading** an existing installation:
     - Turn off zone-aware replication, by setting the following values:

@@ -83,7 +83,8 @@ func TestRewrite(t *testing.T) {
 
 	defer func() { require.NoError(t, ir2.Close()) }()
 
-	all, err := ir2.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	all, err := ir2.Postings(ctx, n, v)
 	require.NoError(t, err)
 
 	resultChunks := 0

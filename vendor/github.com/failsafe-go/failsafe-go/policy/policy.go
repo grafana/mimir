@@ -75,7 +75,7 @@ func (d *BaseDelayablePolicy[R]) WithDelayFn(delayFn failsafe.DelayFunction[R]) 
 }
 
 // ComputeDelay returns a computed delay else -1 if no delay could be computed.
-func (d *BaseDelayablePolicy[R]) ComputeDelay(exec failsafe.Execution[R]) time.Duration {
+func (d *BaseDelayablePolicy[R]) ComputeDelay(exec failsafe.ExecutionAttempt[R]) time.Duration {
 	if exec != nil && d.DelayFn != nil {
 		return d.DelayFn(exec)
 	}

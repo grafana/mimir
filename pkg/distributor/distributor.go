@@ -686,7 +686,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, pushReq *push.Request) error {
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
@@ -696,12 +696,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
@@ -731,15 +731,15 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+				return httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+				return httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
-			return nil, err
+			return err
 		}
 
 		if removeReplica {
@@ -760,7 +760,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, pushReq *push.Request) error {
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
@@ -770,12 +770,12 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		var removeTsIndexes []int
@@ -829,7 +829,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 }
 
 func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, pushReq *push.Request) error {
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
@@ -839,12 +839,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		now := mtime.Now()
@@ -942,7 +942,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		}
 
 		if validatedSamples == 0 && validatedMetadata == 0 {
-			return &mimirpb.WriteResponse{}, firstPartialErr
+			return firstPartialErr
 		}
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
@@ -953,27 +953,27 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
+			return httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
 		cleanupInDefer = false
-		res, err := next(ctx, pushReq)
+		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over validation errors.
-			return nil, err
+			return err
 		}
 
-		return res, firstPartialErr
+		return firstPartialErr
 	}
 }
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, pushReq *push.Request) error {
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
@@ -983,12 +983,12 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		numSamples := 0
@@ -1017,7 +1017,7 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+	return func(ctx context.Context, pushReq *push.Request) error {
 		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 		inflight := d.inflightPushRequests.Inc()
 
@@ -1035,19 +1035,19 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return nil, util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
+			return util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return nil, errMaxIngestionRateReached
+				return errMaxIngestionRateReached
 			}
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		now := mtime.Now()
@@ -1058,9 +1058,9 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
-				return nil, httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+				return httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 			}
-			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+			return httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1068,7 +1068,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		reqSize := int64(req.Size())
 		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
@@ -1078,7 +1078,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return nil, errMaxInflightRequestsBytesReached
+			return errMaxInflightRequestsBytesReached
 		}
 
 		cleanupInDefer = false
@@ -1093,14 +1093,18 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
-	return d.PushWithMiddlewares(ctx, pushReq)
+	err := d.PushWithMiddlewares(ctx, pushReq)
+	if err != nil {
+		return nil, err
+	}
+	return &mimirpb.WriteResponse{}, nil
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
 // These limits are checked either by Push gRPC method (when invoked via gRPC) or limitsMiddleware (when invoked via HTTP)
-func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+func (d *Distributor) push(ctx context.Context, pushReq *push.Request) error {
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -1110,18 +1114,18 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 	req, err := pushReq.WriteRequest()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	d.updateReceivedMetrics(req, userID)
 
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
-		return &mimirpb.WriteResponse{}, nil
+		return nil
 	}
 
 	span := opentracing.SpanFromContext(ctx)
@@ -1192,10 +1196,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return err
 	}, func() { pushReq.CleanUp(); cancel() })
 
-	if err != nil {
-		return nil, err
-	}
-	return &mimirpb.WriteResponse{}, nil
+	return err
 }
 
 func preallocSliceIfNeeded[T any](size int) []T {

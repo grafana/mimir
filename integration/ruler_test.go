@@ -540,7 +540,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_notifications_alertmanagers_discovered"}, e2e.WaitMissingMetrics))
 }
 
-func TestRulerMetricsForInvalidQueries(t *testing.T) {
+func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -573,6 +573,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
+
+			// Enable query stats for ruler to test metric for no fetched series
+			"-ruler.query-stats-enabled": "true",
 		},
 	)
 
@@ -607,6 +610,33 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	totalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
 	require.NoError(t, err)
 
+	addNewRuleAndWait := func(groupName, expression string, shouldFail bool) {
+		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
+		m := ruleGroupMatcher(user, namespace, groupName)
+
+		// Wait until ruler has loaded the group.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		// Wait until rule group has tried to evaluate the rule, and succeeded.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		if shouldFail {
+			// Verify that evaluation of the rule failed.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		} else {
+			// Verify that evaluation of the rule succeeded.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		}
+	}
+
+	deleteRuleAndWait := func(groupName string) {
+		// Delete rule to prepare for next part of test.
+		require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
+
+		// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+	}
+
 	// Verify that user-failures don't increase cortex_ruler_queries_failed_total
 	for groupName, expression := range map[string]string{
 		// Syntactically correct expression (passes check in ruler), but failing because of invalid regex. This fails in PromQL engine.
@@ -616,28 +646,15 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		"too_many_chunks_group": `sum(metric)`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-			m := ruleGroupMatcher(user, namespace, groupName)
+			addNewRuleAndWait(groupName, expression, true)
 
-			// Wait until ruler has loaded the group.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Wait until rule group has tried to evaluate the rule.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Verify that evaluation of the rule failed.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// But these failures were not reported as "failed queries"
+			// Ensure that these failures were not reported as "failed queries"
 			sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
 			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
-			require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
-
-			// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+			deleteRuleAndWait(groupName)
 
 			// Check that cortex_ruler_queries_total went up since last test.
 			newTotalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
@@ -653,23 +670,51 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
-
-		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-		m := ruleGroupMatcher(user, namespace, groupName)
-
-		// Wait until ruler has loaded the group.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-		// Wait until rule group has tried to evaluate the rule, and succeeded.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		addNewRuleAndWait(groupName, expression, false)
 
 		// Still no failures.
 		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
 
-		// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+		deleteRuleAndWait(groupName)
+	})
+
+	// Now let's test the metric for no fetched series.
+	t.Run("no_fetched_series_metric", func(t *testing.T) {
+		const groupName = "good_rule_with_fetched_series_but_no_samples"
+		const expression = `sum(metric{foo=~"1|2"}) < -1`
+		addNewRuleAndWait(groupName, expression, false)
+
+		// Ensure that no samples were returned.
+		sum, err := ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		// Ensure that the metric for no fetched series was not incremented.
+		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		deleteRuleAndWait(groupName)
+
+		const groupName2 = "good_rule_with_no_fetched_series_and_no_samples"
+		const expression2 = `sum(metric{foo="10000"})`
+		addNewRuleAndWait(groupName2, expression2, false)
+
+		// Ensure that no samples were returned.
+		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		// Ensure that the metric for no fetched series was incremented.
+		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		require.Equal(t, float64(1), sum[0])
+	})
+
+	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+	t.Run("stop_ingester", func(t *testing.T) {
 		require.NoError(t, s.Stop(ingester))
 
 		// We should start getting "real" failures now.
