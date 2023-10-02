@@ -239,7 +239,7 @@ vault:
     # CLI flag: -vault.auth.type
     [type: <string> | default = ""]
 
-    app_role:
+    approle:
       # (experimental) Role ID of the AppRole
       # CLI flag: -vault.auth.approle.role-id
       [role_id: <string> | default = ""]
@@ -279,7 +279,7 @@ vault:
       # CLI flag: -vault.auth.kubernetes.mount-path
       [mount_path: <string> | default = ""]
 
-    user_pass:
+    userpass:
       # (experimental) The userpass auth method username
       # CLI flag: -vault.auth.userpass.username
       [username: <string> | default = ""]
