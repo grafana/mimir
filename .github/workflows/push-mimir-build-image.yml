@@ -30,6 +30,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
+        # Temporarily downgrade from v3, since it fails to authenticate (might need a Docker Hub personal access token instead of password)
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
