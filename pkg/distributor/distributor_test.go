@@ -54,7 +54,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	distributor_error "github.com/grafana/mimir/pkg/util/error"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -189,7 +191,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(20, 20).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributor_error.NewIngestionRateDistributorPushError(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -487,7 +489,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{expectedError: distributor_error.NewRequestRateDistributorPushError(
+					4,
+					2,
+					false,
+				)},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -508,7 +514,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
+				{expectedError: distributor_error.NewRequestRateDistributorPushError(
+					2,
+					3,
+					false,
+				)},
 			},
 		},
 		"request limit is reached return 529 when enable service overload error set to true": {
@@ -519,7 +529,11 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{expectedError: distributor_error.NewRequestRateDistributorPushError(
+					4,
+					2,
+					true,
+				)},
 			},
 		},
 	}
@@ -543,16 +557,15 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			})
 
 			// Send multiple requests to the first distributor
-			for _, push := range testData.pushes {
+			for _, p := range testData.pushes {
 				request := makeWriteRequest(0, 1, 1, false, true)
-				response, err := distributors[0].Push(ctx, request)
+				pushReq := push.NewParsedRequest(request)
+				err := distributors[0].limitsMiddleware(distributors[0].push)(ctx, pushReq)
 
-				if push.expectedError == nil {
-					assert.Equal(t, emptyResponse, response)
+				if p.expectedError == nil {
 					assert.Nil(t, err)
 				} else {
-					assert.Nil(t, response)
-					assert.EqualError(t, err, push.expectedError.Error())
+					assert.EqualError(t, err, p.expectedError.Error())
 				}
 			}
 		})
@@ -580,10 +593,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 2, metadata: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 5)},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 5)},
+				{metadata: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 5)},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -593,10 +606,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 5, metadata: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 20)},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 20)},
+				{metadata: 1, expectedError: distributor_error.NewIngestionRateDistributorPushError(10, 20)},
 			},
 		},
 	}
@@ -619,16 +632,15 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			})
 
 			// Push samples in multiple requests to the first distributor
-			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
-				response, err := distributors[0].Push(ctx, request)
+			for _, p := range testData.pushes {
+				request := makeWriteRequest(0, p.samples, p.metadata, false, false)
+				pushReq := push.NewParsedRequest(request)
+				err := distributors[0].prePushValidationMiddleware(distributors[0].push)(ctx, pushReq)
 
-				if push.expectedError == nil {
-					assert.Equal(t, emptyResponse, response)
+				if p.expectedError == nil {
 					assert.Nil(t, err)
 				} else {
-					assert.Nil(t, response)
-					assert.Equal(t, push.expectedError, err)
+					assert.Equal(t, p.expectedError, err)
 				}
 			}
 		})
@@ -697,7 +709,11 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			preInflight:   101,
 			inflightLimit: 101,
 			pushes: []testPush{
-				{samples: 100, expectedError: errMaxInflightRequestsReached},
+				{samples: 100, expectedError: distributor_error.NewDistributorPushError(
+					util_log.DoNotLogError{
+						Err: errMaxInflightRequestsReached,
+					},
+				)},
 			},
 		},
 		"below ingestion rate limit": {
@@ -726,7 +742,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			ingestionRateLimit: 1000,
 
 			pushes: []testPush{
-				{samples: 100, expectedError: errMaxIngestionRateReached},
+				{samples: 100, expectedError: distributor_error.NewDistributorPushError(errMaxIngestionRateReached)},
 				{samples: 100, expectedError: nil},
 			},
 		},
@@ -736,10 +752,10 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			ingestionRateLimit: 1000,
 
 			pushes: []testPush{
-				{samples: 5000, expectedError: nil},                        // after push, rate = 500 + 0.2*(5000-500) = 1400
-				{samples: 5000, expectedError: errMaxIngestionRateReached}, // after push, rate = 1400 + 0.2*(0 - 1400) = 1120
-				{samples: 5000, expectedError: errMaxIngestionRateReached}, // after push, rate = 1120 + 0.2*(0 - 1120) = 896
-				{samples: 5000, expectedError: nil},                        // 896 is below 1000, so this push succeeds, new rate = 896 + 0.2*(5000-896) = 1716.8
+				{samples: 5000, expectedError: nil}, // after push, rate = 500 + 0.2*(5000-500) = 1400
+				{samples: 5000, expectedError: distributor_error.NewDistributorPushError(errMaxIngestionRateReached)}, // after push, rate = 1400 + 0.2*(0 - 1400) = 1120
+				{samples: 5000, expectedError: distributor_error.NewDistributorPushError(errMaxIngestionRateReached)}, // after push, rate = 1120 + 0.2*(0 - 1120) = 896
+				{samples: 5000, expectedError: nil}, // 896 is below 1000, so this push succeeds, new rate = 896 + 0.2*(5000-896) = 1716.8
 			},
 		},
 
@@ -768,7 +784,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			inflightBytesLimit: 5800, // 5800 ~= size of a singe request with 100 samples
 
 			pushes: []testPush{
-				{samples: 150, expectedError: errMaxInflightRequestsBytesReached},
+				{samples: 150, expectedError: distributor_error.NewDistributorPushError(errMaxInflightRequestsBytesReached)},
 			},
 		},
 	}
@@ -804,7 +820,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				if push.expectedError == nil {
 					assert.Nil(t, err)
 				} else {
-					assert.ErrorIs(t, err, push.expectedError)
+					assert.Equal(t, push.expectedError, err)
 				}
 
 				d.ingestionRate.Tick()
@@ -826,39 +842,41 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	for i, tc := range []struct {
-		enableTracker    bool
-		acceptedReplica  string
-		testReplica      string
-		cluster          string
-		samples          int
-		expectedResponse *mimirpb.WriteResponse
-		expectedCode     int32
+		enableTracker   bool
+		acceptedReplica string
+		testReplica     string
+		cluster         string
+		samples         int
+		expectedErr     error
 	}{
 		{
-			enableTracker:    true,
-			acceptedReplica:  "instance0",
-			testReplica:      "instance0",
-			cluster:          "cluster0",
-			samples:          5,
-			expectedResponse: emptyResponse,
+			enableTracker:   true,
+			acceptedReplica: "instance0",
+			testReplica:     "instance0",
+			cluster:         "cluster0",
+			samples:         5,
 		},
-		// The 202 indicates that we didn't accept this sample.
+		// A ReplicasNotMatchDistributorPushError indicates that we didn't accept this sample.
 		{
 			enableTracker:   true,
 			acceptedReplica: "instance2",
 			testReplica:     "instance0",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedCode:    202,
+			expectedErr: distributor_error.NewReplicasNotMatchDistributorPushError(
+				replicasNotMatchError{
+					"instance0",
+					"instance2",
+				},
+			),
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
-			enableTracker:    false,
-			acceptedReplica:  "instance0",
-			testReplica:      "instance0",
-			cluster:          "cluster0",
-			samples:          5,
-			expectedResponse: emptyResponse,
+			enableTracker:   false,
+			acceptedReplica: "instance0",
+			testReplica:     "instance0",
+			cluster:         "cluster0",
+			samples:         5,
 		},
 		// Using very long replica label value results in validation error.
 		{
@@ -867,7 +885,9 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance1234567890123456789012345678901234567890",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedCode:    400,
+			expectedErr: distributor_error.NewValidationDistributorPushError(
+				validation.ValidationError(errors.New("received a series whose label value length exceeds the limit, value: 'instance1234567890123456789012345678901234567890'")),
+			),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -892,14 +912,15 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			assert.NoError(t, err)
 
 			request := makeWriteRequestForGenerators(tc.samples, labelSetGenWithReplicaAndCluster(tc.testReplica, tc.cluster), nil, nil)
-			response, err := d.Push(ctx, request)
-			assert.Equal(t, tc.expectedResponse, response)
+			_, err = d.Push(ctx, request)
 
-			httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-			if ok {
-				assert.Equal(t, tc.expectedCode, httpResp.Code)
-			} else if tc.expectedCode != 0 {
-				assert.Fail(t, "expected HTTP status code", tc.expectedCode)
+			fmt.Println(err)
+
+			if tc.expectedErr == nil {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
+				assert.ErrorContains(t, err, tc.expectedErr.Error())
 			}
 		})
 	}
@@ -1254,10 +1275,12 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			})
 			req := mockWriteRequest(tc.inputLabels, 42, 100000)
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
-			_, err := ds[0].Push(ctx, req)
+			pushReq := push.NewParsedRequest(req)
+			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errExpected {
-				fromError, _ := status.FromError(err)
-				assert.Equal(t, tc.errMessage, fromError.Message())
+				var validationPushError distributor_error.ValidationDistributorPushError
+				assert.ErrorAs(t, err, &validationPushError)
+				assert.Equal(t, tc.errMessage, validationPushError.Error())
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1324,11 +1347,13 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				numDistributors:  1,
 				shuffleShardSize: 0,
 			})
-			_, err := ds[0].Push(ctx, tc.req)
+			pushReq := push.NewParsedRequest(tc.req)
+			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
-				assert.Contains(t, fromError.Message(), tc.errMsg)
-				assert.Contains(t, fromError.Message(), tc.errID)
+				var validationPushErr distributor_error.ValidationDistributorPushError
+				assert.ErrorAs(t, err, &validationPushErr)
+				assert.Contains(t, validationPushErr.Error(), tc.errMsg)
+				assert.Contains(t, validationPushErr.Error(), tc.errID)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -1392,12 +1417,13 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				limits:           limits,
 			})
 
-			_, err := ds[0].Push(ctx, tc.req)
+			pushReq := push.NewParsedRequest(tc.req)
+			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
-				require.Equal(t, int32(400), fromError.Proto().Code)
-				assert.Contains(t, fromError.Message(), tc.errMsg)
-				assert.Contains(t, fromError.Message(), tc.errID)
+				var validationPushErr distributor_error.ValidationDistributorPushError
+				require.ErrorAs(t, err, &validationPushErr)
+				assert.Contains(t, validationPushErr.Error(), tc.errMsg)
+				assert.Contains(t, validationPushErr.Error(), tc.errID)
 			} else {
 				assert.Nil(t, err)
 			}
@@ -2617,7 +2643,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		reqs              []*mimirpb.WriteRequest
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
-		expectErrs        []int
+		expectErrs        []distributor_error.DistributorError
 	}
 	testCases := []testCase{
 		{
@@ -2628,7 +2654,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{{}},
 			expectedReqs:      []*mimirpb.WriteRequest{{}},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectErrs:        []distributor_error.DistributorError{nil},
 		}, {
 			name:              "no changes if accept HA samples is false",
 			ctx:               ctxWithUser,
@@ -2637,7 +2663,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectErrs:        []distributor_error.DistributorError{nil},
 		}, {
 			name:              "remove replica label with HA tracker disabled",
 			ctx:               ctxWithUser,
@@ -2646,7 +2672,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0},
+			expectErrs:        []distributor_error.DistributorError{nil},
 		}, {
 			name:              "do nothing without user in context, don't even call next",
 			ctx:               context.Background(),
@@ -2655,7 +2681,9 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
-			expectErrs:        []int{-1}, // Special value because this is not an httpgrpc error.
+			expectErrs: []distributor_error.DistributorError{
+				distributor_error.NewDistributorPushError(user.ErrNoOrgID),
+			},
 		}, {
 			name:            "perform HA deduplication",
 			ctx:             ctxWithUser,
@@ -2667,7 +2695,15 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0, 202},
+			expectErrs: []distributor_error.DistributorError{
+				nil,
+				distributor_error.NewReplicasNotMatchDistributorPushError(
+					replicasNotMatchError{
+						replica2,
+						replica1,
+					},
+				),
+			},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
@@ -2681,7 +2717,25 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []int{0, 202, 400, 400},
+			expectErrs: []distributor_error.DistributorError{
+				nil,
+				distributor_error.NewReplicasNotMatchDistributorPushError(
+					replicasNotMatchError{
+						replica2,
+						replica1,
+					},
+				),
+				distributor_error.NewTooManyClustersDistributorPushError(
+					tooManyClustersError{
+						1,
+					},
+				),
+				distributor_error.NewTooManyClustersDistributorPushError(
+					tooManyClustersError{
+						1,
+					},
+				),
+			},
 		},
 	}
 
@@ -2727,17 +2781,11 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			assert.Equal(t, tc.expectedReqs, gotReqs)
 			assert.Len(t, gotErrs, len(tc.expectErrs))
 			for errIdx, expectErr := range tc.expectErrs {
-				if expectErr > 0 {
-					// Expect an httpgrpc error with specific status code.
-					resp, ok := httpgrpc.HTTPResponseFromError(gotErrs[errIdx])
-					assert.True(t, ok)
-					assert.Equal(t, expectErr, int(resp.Code))
-				} else if expectErr == 0 {
+				if expectErr == nil {
 					// Expect no error.
 					assert.Nil(t, gotErrs[errIdx])
 				} else {
-					// Expect an error which is not an httpgrpc error.
-					assert.NotNil(t, gotErrs[errIdx])
+					assert.Equal(t, expectErr, gotErrs[errIdx])
 				}
 			}
 
@@ -2816,7 +2864,7 @@ func TestRelabelMiddleware(t *testing.T) {
 		dropLabels     []string
 		reqs           []*mimirpb.WriteRequest
 		expectedReqs   []*mimirpb.WriteRequest
-		expectErrs     []bool
+		expectErrs     []distributor_error.DistributorError
 	}
 	testCases := []testCase{
 		{
@@ -2826,7 +2874,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     nil,
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:     []bool{false},
+			expectErrs:     []distributor_error.DistributorError{nil},
 		}, {
 			name:           "no user in context",
 			ctx:            context.Background(),
@@ -2834,7 +2882,9 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     nil,
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectedReqs:   nil,
-			expectErrs:     []bool{true},
+			expectErrs: []distributor_error.DistributorError{
+				distributor_error.NewDistributorPushError(user.ErrNoOrgID),
+			},
 		}, {
 			name:           "apply a relabel rule",
 			ctx:            ctxWithUser,
@@ -2842,7 +2892,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     []string{"label1", "label3"},
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
 			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:     []bool{false},
+			expectErrs:     []distributor_error.DistributorError{nil},
 		}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
@@ -2857,7 +2907,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			},
 			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
 			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:   []bool{false},
+			expectErrs:   []distributor_error.DistributorError{nil},
 		}, {
 			name:       "drop entire series if they have no labels",
 			ctx:        ctxWithUser,
@@ -2874,7 +2924,7 @@ func TestRelabelMiddleware(t *testing.T) {
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
-			expectErrs: []bool{false, false, false, false},
+			expectErrs: []distributor_error.DistributorError{nil, nil, nil, nil},
 		}, {
 			name: metaLabelTenantID + " available and cleaned up afterwards",
 			ctx:  ctxWithUser,
@@ -2908,7 +2958,7 @@ func TestRelabelMiddleware(t *testing.T) {
 					1.23,
 				)},
 			}},
-			expectErrs: []bool{false},
+			expectErrs: []distributor_error.DistributorError{nil},
 		},
 	}
 
@@ -2938,16 +2988,18 @@ func TestRelabelMiddleware(t *testing.T) {
 			})
 			middleware := ds[0].prePushRelabelMiddleware(next)
 
-			var gotErrs []bool
+			var gotErrs []error
 			for _, req := range tc.reqs {
 				pushReq := push.NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
-				gotErrs = append(gotErrs, err != nil)
+				gotErrs = append(gotErrs, err)
 			}
 
 			assert.Equal(t, tc.expectedReqs, gotReqs)
-			assert.Equal(t, tc.expectErrs, gotErrs)
+			for errID, gotErr := range gotErrs {
+				assert.Equal(t, tc.expectErrs[errID], gotErr)
+			}
 
 			// Cleanup must have been called once per request.
 			assert.Equal(t, len(tc.reqs), cleanupCallCount)
@@ -4042,12 +4094,11 @@ func TestDistributorValidation(t *testing.T) {
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 
 	for name, tc := range map[string]struct {
-		metadata           []*mimirpb.MetricMetadata
-		labels             [][]mimirpb.LabelAdapter
-		samples            []mimirpb.Sample
-		exemplars          []*mimirpb.Exemplar
-		expectedStatusCode int32
-		expectedErr        string
+		metadata    []*mimirpb.MetricMetadata
+		labels      [][]mimirpb.LabelAdapter
+		samples     []mimirpb.Sample
+		exemplars   []*mimirpb.Exemplar
+		expectedErr string
 	}{
 		"validation passes": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4081,8 +4132,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(future),
 				Value:       4,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
+			expectedErr: fmt.Sprintf(`received a sample whose timestamp is too far in the future, timestamp: %d series: 'testmetric' (err-mimir-too-far-in-future)`, future),
 		},
 
 		"exceeds maximum labels per series": {
@@ -4091,8 +4141,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 characters when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
@@ -4106,8 +4155,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo…'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 5, limit: 2) series: 'testmetric{foo-with-a-long-long-label="bar-with-a-long-long-value", foo2-with-a-long-long-label="bar2-with-a-long-long-value", foo3-with-a-long-long-label="bar3-with-a-long-long-value", foo4-with-a-lo…'`,
 		},
 		"exceeds maximum labels per series with a metric that exceeds 200 bytes when formatted": {
 			labels: [][]mimirpb.LabelAdapter{{
@@ -4119,8 +4167,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       2,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{families="👩\u200d👦👨\u200d👧👨\u200d👩\u200d👧👩\u200d👧👩\u200d👩\u200d👦\u200d👦👨\u200d👩\u200d👧\u200d👦👨\u200d👧\u200d👦👨\u200d👩\u200d👦👪👨\u200d👦👨\u200d👦\u200d👦👨\u200d👨\u200d👧👨\u200d👧\u200d👧", foo="b"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{families="👩\u200d👦👨\u200d👧👨\u200d👩\u200d👧👩\u200d👧👩\u200d👩\u200d👦\u200d👦👨\u200d👩\u200d👧\u200d👦👨\u200d👧\u200d👦👨\u200d👩\u200d👦👪👨\u200d👦👨\u200d👦\u200d👦👨\u200d👨\u200d👧👨\u200d👧\u200d👧", foo="b"}'`,
 		},
 		"multiple validation failures should return the first failure": {
 			labels: [][]mimirpb.LabelAdapter{
@@ -4131,8 +4178,7 @@ func TestDistributorValidation(t *testing.T) {
 				{TimestampMs: int64(now), Value: 2},
 				{TimestampMs: int64(past), Value: 2},
 			},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
+			expectedErr: `received a series whose number of labels exceeds the limit (actual: 3, limit: 2) series: 'testmetric{foo2="bar2", foo="bar"}'`,
 		},
 		"metadata validation failure": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4141,8 +4187,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        `received a metric metadata with no metric name`,
+			expectedErr: `received a metric metadata with no metric name`,
 		},
 		"empty exemplar labels": {
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
@@ -4156,8 +4201,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
+			expectedErr: fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -4175,14 +4219,16 @@ func TestDistributorValidation(t *testing.T) {
 				limits:          &limits,
 			})
 
-			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.exemplars, tc.metadata, mimirpb.API))
+			req := mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.exemplars, tc.metadata, mimirpb.API)
+			pushReq := push.NewParsedRequest(req)
+			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
+
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 			} else {
-				res, ok := httpgrpc.HTTPResponseFromError(err)
-				require.True(t, ok)
-				require.Equal(t, tc.expectedStatusCode, res.Code)
-				require.Contains(t, string(res.GetBody()), tc.expectedErr)
+				var distributorError distributor_error.ValidationDistributorPushError
+				assert.ErrorAs(t, err, &distributorError)
+				assert.ErrorContains(t, distributorError, tc.expectedErr)
 			}
 		})
 	}

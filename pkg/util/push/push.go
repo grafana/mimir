@@ -18,6 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	distributor_error "github.com/grafana/mimir/pkg/util/error"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 )
@@ -33,12 +34,27 @@ type bufHolder struct {
 	buf []byte
 }
 
+// TODO: the idea of this interface is to represent the error interface of
+// push.Func, which would then have the following signature:
+// type Fund func(ctx context.Context, req *Request) Error.
+// This will be possible only after ingester's write path has been refactored
+// in such a way that the functions involved on the write path return errors
+// implementing the Error interface.
+type Error interface {
+	error
+	PushError()
+}
+
 var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }
 
-const SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
-const statusClientClosedRequest = 499
+const (
+	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
+	statusClientClosedRequest     = 499
+	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
+	StatusServiceOverload = 529
+)
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -121,15 +137,56 @@ func handler(maxRecvMsgSize int,
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
 				return
 			}
+			var (
+				code int
+				msg  string
+			)
 			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+			if ok {
+				code, msg = int(resp.Code), string(resp.Body)
+			} else {
+				code, msg = getHTTPStatusAndMessage(err)
 			}
-			if resp.GetCode() != 202 {
+			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
-			http.Error(w, string(resp.Body), int(resp.Code))
+			http.Error(w, msg, code)
 		}
 	})
+}
+
+func getHTTPStatusAndMessage(err error) (int, string) {
+	var distributorError distributor_error.DistributorError
+	if errors.As(err, &distributorError) {
+		msg := distributorError.Error()
+		code := GetDistributorPushErrorHTTPStatus(distributorError)
+		return code, msg
+	}
+	return http.StatusInternalServerError, err.Error()
+}
+
+func GetDistributorPushErrorHTTPStatus(distributorError distributor_error.DistributorError) int {
+	switch err := distributorError.(type) {
+	case distributor_error.ReplicasNotMatchDistributorPushError:
+		return http.StatusAccepted
+	case distributor_error.TooManyClustersDistributorPushError:
+		return http.StatusTooManyRequests
+	case distributor_error.ValidationDistributorPushError:
+		return http.StatusBadRequest
+	case distributor_error.IngestionRateDistributorPushError:
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return http.StatusTooManyRequests
+	case distributor_error.RequestRateDistributorPushError:
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if err.ServiceOverloadErrorEnabled() {
+			return StatusServiceOverload
+		}
+		return http.StatusTooManyRequests
+	default:
+		return http.StatusInternalServerError
+	}
 }

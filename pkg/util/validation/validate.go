@@ -373,7 +373,7 @@ type MetadataValidationConfig interface {
 }
 
 // CleanAndValidateMetadata returns an err if a metric metadata is invalid.
-func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) ValidationError {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		m.missingMetricName.WithLabelValues(userID).Inc()
 		return newMetadataMetricNameMissingError()

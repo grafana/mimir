@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,7 +31,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	distributor_error "github.com/grafana/mimir/pkg/util/error"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestHandler_remoteWrite(t *testing.T) {
@@ -791,5 +794,70 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 		})
+	}
+}
+
+func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
+	originalMsg := "this is an error"
+	originalErr := errors.New(originalMsg)
+	testCases := []struct {
+		name               string
+		err                error
+		expectedHTTPStatus int
+		expectedErrorMsg   string
+	}{
+		{
+			name:               "a generic error gets translated into a HTTP 500",
+			err:                originalErr,
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a ReplicasNotMatchDistributorPushError gets translated into an HTTP 202",
+			err:                distributor_error.NewReplicasNotMatchDistributorPushError(originalErr),
+			expectedHTTPStatus: http.StatusAccepted,
+		},
+		{
+			name:               "a TooManyClustersDistributorPushError gets translated into an HTTP 429",
+			err:                distributor_error.NewTooManyClustersDistributorPushError(originalErr),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:               "a ValidationDistributorPushError gets translated into an HTTP 400",
+			err:                distributor_error.NewValidationDistributorPushError(validation.ValidationError(originalErr)),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:               "an IngestionRateDistributorPushError gets translated into an HTTP 429",
+			err:                distributor_error.NewIngestionRateDistributorPushError(10, 10),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedErrorMsg:   validation.NewIngestionRateLimitedError(10, 10).Error(),
+		},
+		{
+			name:               "a RequestRateDistributorPushError with ServiceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                distributor_error.NewRequestRateDistributorPushError(10, 10, true),
+			expectedHTTPStatus: StatusServiceOverload,
+			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
+		},
+		{
+			name:               "a RequestRateDistributorPushError without ServiceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                distributor_error.NewRequestRateDistributorPushError(10, 10, false),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
+		},
+		{
+			name:               "a DistributorPushError gets translated into an HTTP 500",
+			err:                distributor_error.NewDistributorPushError(originalErr),
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range testCases {
+		status, msg := getHTTPStatusAndMessage(tc.err)
+		assert.Equal(t, tc.expectedHTTPStatus, status)
+		expectedErrMsg := tc.expectedErrorMsg
+		if expectedErrMsg == "" {
+			expectedErrMsg = originalMsg
+		}
+		assert.Equal(t, expectedErrMsg, msg)
 	}
 }
