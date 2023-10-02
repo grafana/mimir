@@ -10,18 +10,6 @@
         "matchBaseBranches": ["release-2.10","release-2.9"],
         "packagePatterns": ["*"],
         "enabled": false
-      },
-      {
-        "groupName": "docker-dependencies",
-        "matchManagers": ["dockerfile"],
-        "matchUpdateTypes": ["minor", "patch", "major"],
-        "matchPackageNames": [
-          "k8s.gcr.io/kustomize/kustomize",
-          "alpine/helm",
-          "alpine",
-          "memcached",
-          "golang"
-        ]
       }
     ],
     "vulnerabilityAlerts": {
