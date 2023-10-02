@@ -15,14 +15,15 @@ import (
 	"go.uber.org/atomic"
 
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/promextra"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type ingesterMetrics struct {
-	ingestedSamples       *prometheus.CounterVec
+	ingestedSamples       promextra.CounterVec
 	ingestedExemplars     prometheus.Counter
 	ingestedMetadata      prometheus.Counter
-	ingestedSamplesFail   *prometheus.CounterVec
+	ingestedSamplesFail   promextra.CounterVec
 	ingestedExemplarsFail prometheus.Counter
 	ingestedMetadataFail  prometheus.Counter
 
@@ -33,16 +34,16 @@ type ingesterMetrics struct {
 
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
-	memMetadataCreatedTotal *prometheus.CounterVec
-	memMetadataRemovedTotal *prometheus.CounterVec
+	memMetadataCreatedTotal promextra.CounterVec
+	memMetadataRemovedTotal promextra.CounterVec
 
-	activeSeriesLoading                               *prometheus.GaugeVec
-	activeSeriesPerUser                               *prometheus.GaugeVec
-	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
-	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
-	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
-	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
-	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesLoading                               promextra.GaugeVec
+	activeSeriesPerUser                               promextra.GaugeVec
+	activeSeriesCustomTrackersPerUser                 promextra.GaugeVec
+	activeSeriesPerUserNativeHistograms               promextra.GaugeVec
+	activeSeriesCustomTrackersPerUserNativeHistograms promextra.GaugeVec
+	activeNativeHistogramBucketsPerUser               promextra.GaugeVec
+	activeNativeHistogramBucketsCustomTrackersPerUser promextra.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
@@ -58,23 +59,23 @@ type ingesterMetrics struct {
 	compactionsFailed      prometheus.Counter
 	appenderAddDuration    prometheus.Histogram
 	appenderCommitDuration prometheus.Histogram
-	idleTsdbChecks         *prometheus.CounterVec
+	idleTsdbChecks         promextra.CounterVec
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
 
 	discarded *discardedMetrics
-	rejected  *prometheus.CounterVec
+	rejected  promextra.CounterVec
 
 	// Discarded metadata
-	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
-	discardedMetadataPerMetricMetadataLimit *prometheus.CounterVec
+	discardedMetadataPerUserMetadataLimit   promextra.CounterVec
+	discardedMetadataPerMetricMetadataLimit promextra.CounterVec
 
 	// Shutdown marker for ingester scale down
 	shutdownMarker prometheus.Gauge
 
 	// Count number of requests rejected due to utilization based limiting.
-	utilizationLimitedRequests *prometheus.CounterVec
+	utilizationLimitedRequests promextra.CounterVec
 }
 
 func newIngesterMetrics(
@@ -90,21 +91,21 @@ func newIngesterMetrics(
 		limitLabel         = "limit"
 	)
 
-	idleTsdbChecks := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+	idleTsdbChecks := promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingester_idle_tsdb_checks_total",
 		Help: "The total number of various results for idle TSDB checks.",
-	}, []string{"result"})
+	}, []string{"result"})}
 
-	idleTsdbChecks.WithLabelValues(string(tsdbShippingDisabled))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotIdle))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotCompacted))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotShipped))
-	idleTsdbChecks.WithLabelValues(string(tsdbCheckFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbCloseFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotActive))
-	idleTsdbChecks.WithLabelValues(string(tsdbDataRemovalFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbTenantMarkedForDeletion))
-	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
+	idleTsdbChecks.WithLabelValue(string(tsdbShippingDisabled))
+	idleTsdbChecks.WithLabelValue(string(tsdbNotIdle))
+	idleTsdbChecks.WithLabelValue(string(tsdbNotCompacted))
+	idleTsdbChecks.WithLabelValue(string(tsdbNotShipped))
+	idleTsdbChecks.WithLabelValue(string(tsdbCheckFailed))
+	idleTsdbChecks.WithLabelValue(string(tsdbCloseFailed))
+	idleTsdbChecks.WithLabelValue(string(tsdbNotActive))
+	idleTsdbChecks.WithLabelValue(string(tsdbDataRemovalFailed))
+	idleTsdbChecks.WithLabelValue(string(tsdbTenantMarkedForDeletion))
+	idleTsdbChecks.WithLabelValue(string(tsdbIdleClosed))
 
 	// Active series metrics are registered only if enabled.
 	var activeSeriesReg prometheus.Registerer
@@ -113,10 +114,10 @@ func newIngesterMetrics(
 	}
 
 	m := &ingesterMetrics{
-		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		ingestedSamples: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
@@ -125,10 +126,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_ingested_metadata_total",
 			Help: "The total number of metadata ingested.",
 		}),
-		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		ingestedSamplesFail: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
@@ -167,18 +168,18 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_memory_users",
 			Help: "The current number of users in memory.",
 		}),
-		memMetadataCreatedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		memMetadataCreatedTotal: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_memory_metadata_created_total",
 			Help: "The total number of metadata that were created per user",
-		}, []string{"user"}),
-		memMetadataRemovedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		}, []string{"user"})},
+		memMetadataRemovedTotal: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_memory_metadata_removed_total",
 			Help: "The total number of metadata that were removed per user.",
-		}, []string{"user"}),
-		utilizationLimitedRequests: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		}, []string{"user"})},
+		utilizationLimitedRequests: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
-		}, []string{"reason"}),
+		}, []string{"reason"})},
 
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
@@ -253,46 +254,46 @@ func newIngesterMetrics(
 		}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesLoading: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_loading",
 			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesPerUser: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesCustomTrackersPerUser: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
-		}, []string{"user", "name"}),
+		}, []string{"user", "name"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesPerUserNativeHistograms: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_native_histogram_series",
 			Help: "Number of currently active native histogram series per user.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesCustomTrackersPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesCustomTrackersPerUserNativeHistograms: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_native_histogram_series_custom_tracker",
 			Help: "Number of currently active native histogram series matching a pre-configured label matchers per user.",
-		}, []string{"user", "name"}),
+		}, []string{"user", "name"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeNativeHistogramBucketsPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeNativeHistogramBucketsPerUser: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_native_histogram_buckets",
 			Help: "Number of currently active native histogram buckets per user.",
-		}, []string{"user"}),
+		}, []string{"user"})},
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeNativeHistogramBucketsCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+		activeNativeHistogramBucketsCustomTrackersPerUser: promextra.GaugeVec{GaugeVec: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_native_histogram_buckets_custom_tracker",
 			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
-		}, []string{"user", "name"}),
+		}, []string{"user", "name"})},
 
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
@@ -322,13 +323,13 @@ func newIngesterMetrics(
 		}),
 
 		discarded: newDiscardedMetrics(r),
-		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		rejected: promextra.CounterVec{CounterVec: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_instance_rejected_requests_total",
 			Help: "Requests rejected for hitting per-instance limits",
-		}, []string{"reason"}),
+		}, []string{"reason"})},
 
-		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
-		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
+		discardedMetadataPerUserMetadataLimit:   promextra.CounterVec{CounterVec: validation.DiscardedMetadataCounter(r, perUserMetadataLimit)},
+		discardedMetadataPerMetricMetadataLimit: promextra.CounterVec{CounterVec: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit)},
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
@@ -337,25 +338,25 @@ func newIngesterMetrics(
 	}
 
 	// Initialize expected rejected request labels
-	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
-	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
-	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
-	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
+	m.rejected.WithLabelValue(reasonIngesterMaxIngestionRate)
+	m.rejected.WithLabelValue(reasonIngesterMaxTenants)
+	m.rejected.WithLabelValue(reasonIngesterMaxInMemorySeries)
+	m.rejected.WithLabelValue(reasonIngesterMaxInflightPushRequests)
 
 	return m
 }
 
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
-	m.ingestedSamples.DeleteLabelValues(userID)
-	m.ingestedSamplesFail.DeleteLabelValues(userID)
-	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
-	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
+	m.ingestedSamples.DeleteLabelValue(userID)
+	m.ingestedSamplesFail.DeleteLabelValue(userID)
+	m.memMetadataCreatedTotal.DeleteLabelValue(userID)
+	m.memMetadataRemovedTotal.DeleteLabelValue(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	m.discarded.DeletePartialMatch(filter)
 
-	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
-	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValue(userID)
+	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValue(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
@@ -363,57 +364,57 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
-	m.activeSeriesLoading.DeleteLabelValues(userID)
-	m.activeSeriesPerUser.DeleteLabelValues(userID)
-	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
-	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
+	m.activeSeriesLoading.DeleteLabelValue(userID)
+	m.activeSeriesPerUser.DeleteLabelValue(userID)
+	m.activeSeriesPerUserNativeHistograms.DeleteLabelValue(userID)
+	m.activeNativeHistogramBucketsPerUser.DeleteLabelValue(userID)
 	for _, name := range customTrackerMetrics {
-		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
-		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
-		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+		m.activeSeriesCustomTrackersPerUser.DeleteTwoLabelValues(userID, name)
+		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteTwoLabelValues(userID, name)
+		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteTwoLabelValues(userID, name)
 	}
 }
 
 type discardedMetrics struct {
-	sampleOutOfBounds    *prometheus.CounterVec
-	sampleOutOfOrder     *prometheus.CounterVec
-	sampleTooOld         *prometheus.CounterVec
-	sampleTooFarInFuture *prometheus.CounterVec
-	newValueForTimestamp *prometheus.CounterVec
-	perUserSeriesLimit   *prometheus.CounterVec
-	perMetricSeriesLimit *prometheus.CounterVec
+	sampleOutOfBounds    promextra.CounterVec
+	sampleOutOfOrder     promextra.CounterVec
+	sampleTooOld         promextra.CounterVec
+	sampleTooFarInFuture promextra.CounterVec
+	newValueForTimestamp promextra.CounterVec
+	perUserSeriesLimit   promextra.CounterVec
+	perMetricSeriesLimit promextra.CounterVec
 }
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
-		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
-		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
-		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
-		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
-		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
-		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
+		sampleOutOfBounds:    promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds)},
+		sampleOutOfOrder:     promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder)},
+		sampleTooOld:         promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonSampleTooOld)},
+		sampleTooFarInFuture: promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture)},
+		newValueForTimestamp: promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp)},
+		perUserSeriesLimit:   promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit)},
+		perMetricSeriesLimit: promextra.CounterVec{CounterVec: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit)},
 	}
 }
 
 func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
-	m.sampleOutOfBounds.DeletePartialMatch(filter)
-	m.sampleOutOfOrder.DeletePartialMatch(filter)
-	m.sampleTooOld.DeletePartialMatch(filter)
-	m.sampleTooFarInFuture.DeletePartialMatch(filter)
-	m.newValueForTimestamp.DeletePartialMatch(filter)
-	m.perUserSeriesLimit.DeletePartialMatch(filter)
-	m.perMetricSeriesLimit.DeletePartialMatch(filter)
+	m.sampleOutOfBounds.CounterVec.DeletePartialMatch(filter)
+	m.sampleOutOfOrder.CounterVec.DeletePartialMatch(filter)
+	m.sampleTooOld.CounterVec.DeletePartialMatch(filter)
+	m.sampleTooFarInFuture.CounterVec.DeletePartialMatch(filter)
+	m.newValueForTimestamp.CounterVec.DeletePartialMatch(filter)
+	m.perUserSeriesLimit.CounterVec.DeletePartialMatch(filter)
+	m.perMetricSeriesLimit.CounterVec.DeletePartialMatch(filter)
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
-	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
-	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
-	m.sampleTooOld.DeleteLabelValues(userID, group)
-	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
-	m.newValueForTimestamp.DeleteLabelValues(userID, group)
-	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
-	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
+	m.sampleOutOfBounds.DeleteTwoLabelValues(userID, group)
+	m.sampleOutOfOrder.DeleteTwoLabelValues(userID, group)
+	m.sampleTooOld.DeleteTwoLabelValues(userID, group)
+	m.sampleTooFarInFuture.DeleteTwoLabelValues(userID, group)
+	m.newValueForTimestamp.DeleteTwoLabelValues(userID, group)
+	m.perUserSeriesLimit.DeleteTwoLabelValues(userID, group)
+	m.perMetricSeriesLimit.DeleteTwoLabelValues(userID, group)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.

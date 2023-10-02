@@ -50,7 +50,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 	if !ok {
 		// Verify that the user can create more metric metadata given we don't have a set for that metric name.
 		if !mm.limiter.IsWithinMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
-			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValues(mm.userID).Inc()
+			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValue(mm.userID).Inc()
 			return mm.errorSamplers.maxMetadataPerUserLimitExceeded.WrapError(formatMaxMetadataPerUserError(mm.limiter.limits, mm.userID))
 		}
 		set = metricMetadataSet{}
@@ -58,7 +58,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 	}
 
 	if !mm.limiter.IsWithinMaxMetadataPerMetric(mm.userID, len(set)) {
-		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValues(mm.userID).Inc()
+		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValue(mm.userID).Inc()
 		return mm.errorSamplers.maxMetadataPerMetricLimitExceeded.WrapError(formatMaxMetadataPerMetricError(mm.limiter.limits, labels.FromStrings(labels.MetricName, metric), mm.userID))
 	}
 
@@ -66,7 +66,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 	_, ok = set[*metadata]
 	if !ok {
 		mm.metrics.memMetadata.Inc()
-		mm.metrics.memMetadataCreatedTotal.WithLabelValues(mm.userID).Inc()
+		mm.metrics.memMetadataCreatedTotal.WithLabelValue(mm.userID).Inc()
 	}
 
 	mm.metricToMetadata[metric][*metadata] = time.Now()
@@ -87,7 +87,7 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 	}
 
 	mm.metrics.memMetadata.Sub(float64(deleted))
-	mm.metrics.memMetadataRemovedTotal.WithLabelValues(mm.userID).Add(float64(deleted))
+	mm.metrics.memMetadataRemovedTotal.WithLabelValue(mm.userID).Add(float64(deleted))
 }
 
 func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {

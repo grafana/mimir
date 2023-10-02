@@ -600,42 +600,42 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		valid := userDB.activeSeries.Purge(now)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
-			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
+			i.metrics.activeSeriesLoading.WithLabelValue(userID).Set(1)
 		} else {
 			allActive, activeMatching, allActiveHistograms, activeMatchingHistograms, allActiveBuckets, activeMatchingBuckets := userDB.activeSeries.ActiveWithMatchers()
-			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
+			i.metrics.activeSeriesLoading.DeleteLabelValue(userID)
 			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+				i.metrics.activeSeriesPerUser.WithLabelValue(userID).Set(float64(allActive))
 			} else {
-				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+				i.metrics.activeSeriesPerUser.DeleteLabelValue(userID)
 			}
 			if allActiveHistograms > 0 {
-				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValues(userID).Set(float64(allActiveHistograms))
+				i.metrics.activeSeriesPerUserNativeHistograms.WithLabelValue(userID).Set(float64(allActiveHistograms))
 			} else {
-				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+				i.metrics.activeSeriesPerUserNativeHistograms.DeleteLabelValue(userID)
 			}
 			if allActiveBuckets > 0 {
-				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValues(userID).Set(float64(allActiveBuckets))
+				i.metrics.activeNativeHistogramBucketsPerUser.WithLabelValue(userID).Set(float64(allActiveBuckets))
 			} else {
-				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
+				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValue(userID)
 			}
 
 			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
 				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 				if activeMatching[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+					i.metrics.activeSeriesCustomTrackersPerUser.WithTwoLabelValues(userID, name).Set(float64(activeMatching[idx]))
 				} else {
-					i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+					i.metrics.activeSeriesCustomTrackersPerUser.DeleteTwoLabelValues(userID, name)
 				}
 				if activeMatchingHistograms[idx] > 0 {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.WithTwoLabelValues(userID, name).Set(float64(activeMatchingHistograms[idx]))
 				} else {
-					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+					i.metrics.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteTwoLabelValues(userID, name)
 				}
 				if activeMatchingBuckets[idx] > 0 {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.WithTwoLabelValues(userID, name).Set(float64(activeMatchingBuckets[idx]))
 				} else {
-					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
+					i.metrics.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteTwoLabelValues(userID, name)
 				}
 			}
 		}
@@ -774,14 +774,14 @@ func (i *Ingester) StartPushRequest() error {
 	il := i.getInstanceLimits()
 	if il != nil && il.MaxInflightPushRequests > 0 {
 		if inflight > il.MaxInflightPushRequests {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			i.metrics.rejected.WithLabelValue(reasonIngesterMaxInflightPushRequests).Inc()
 			return errMaxInflightRequestsReached
 		}
 	}
 
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+			i.metrics.rejected.WithLabelValue(reasonIngesterMaxIngestionRate).Inc()
 			return errMaxIngestionRateReached
 		}
 	}
@@ -908,8 +908,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) e
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(stats.succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(stats.failedSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValue(userID).Add(float64(stats.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValue(userID).Add(float64(stats.failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(stats.succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(stats.failedExemplarsCount))
 	i.appendedSamplesStats.Inc(int64(stats.succeededSamplesCount))
@@ -930,25 +930,25 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) e
 
 func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats *pushStats, samplesSource mimirpb.WriteRequest_SourceEnum, db *userTSDB, discarded *discardedMetrics) {
 	if stats.sampleOutOfBoundsCount > 0 {
-		discarded.sampleOutOfBounds.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
+		discarded.sampleOutOfBounds.WithTwoLabelValues(userID, group).Add(float64(stats.sampleOutOfBoundsCount))
 	}
 	if stats.sampleOutOfOrderCount > 0 {
-		discarded.sampleOutOfOrder.WithLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
+		discarded.sampleOutOfOrder.WithTwoLabelValues(userID, group).Add(float64(stats.sampleOutOfOrderCount))
 	}
 	if stats.sampleTooOldCount > 0 {
-		discarded.sampleTooOld.WithLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
+		discarded.sampleTooOld.WithTwoLabelValues(userID, group).Add(float64(stats.sampleTooOldCount))
 	}
 	if stats.sampleTooFarInFutureCount > 0 {
-		discarded.sampleTooFarInFuture.WithLabelValues(userID, group).Add(float64(stats.sampleTooFarInFutureCount))
+		discarded.sampleTooFarInFuture.WithTwoLabelValues(userID, group).Add(float64(stats.sampleTooFarInFutureCount))
 	}
 	if stats.newValueForTimestampCount > 0 {
-		discarded.newValueForTimestamp.WithLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
+		discarded.newValueForTimestamp.WithTwoLabelValues(userID, group).Add(float64(stats.newValueForTimestampCount))
 	}
 	if stats.perUserSeriesLimitCount > 0 {
-		discarded.perUserSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
+		discarded.perUserSeriesLimit.WithTwoLabelValues(userID, group).Add(float64(stats.perUserSeriesLimitCount))
 	}
 	if stats.perMetricSeriesLimitCount > 0 {
-		discarded.perMetricSeriesLimit.WithLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
+		discarded.perMetricSeriesLimit.WithTwoLabelValues(userID, group).Add(float64(stats.perMetricSeriesLimitCount))
 	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
@@ -2131,7 +2131,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	gl := i.getInstanceLimits()
 	if gl != nil && gl.MaxInMemoryTenants > 0 {
 		if users := int64(len(i.tsdbs)); users >= gl.MaxInMemoryTenants {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxTenants).Inc()
+			i.metrics.rejected.WithLabelValue(reasonIngesterMaxTenants).Inc()
 			return nil, errMaxTenantsReached
 		}
 	}
@@ -2794,7 +2794,7 @@ func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
 
 		result := i.closeAndDeleteUserTSDBIfIdle(userID)
 
-		i.metrics.idleTsdbChecks.WithLabelValues(string(result)).Inc()
+		i.metrics.idleTsdbChecks.WithLabelValue(string(result)).Inc()
 	}
 
 	return nil
@@ -3339,7 +3339,7 @@ func (i *Ingester) checkReadOverloaded() error {
 		return nil
 	}
 
-	i.metrics.utilizationLimitedRequests.WithLabelValues(reason).Inc()
+	i.metrics.utilizationLimitedRequests.WithLabelValue(reason).Inc()
 	return tooBusyError
 }
 
