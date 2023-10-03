@@ -15,12 +15,14 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
@@ -50,9 +52,10 @@ func Handler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	limits *validation.Overrides,
 	push Func,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -73,9 +76,11 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
-func handler(maxRecvMsgSize int,
+func handler(
+	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	limits *validation.Overrides,
 	push Func,
 	parser parserFunc,
 ) http.Handler {
@@ -133,7 +138,7 @@ func handler(maxRecvMsgSize int,
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = distributorPushErrorHTTPStatus(err), err.Error()
+				code, msg = distributorPushErrorHTTPStatus(ctx, err, limits), err.Error()
 			}
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
@@ -143,7 +148,7 @@ func handler(maxRecvMsgSize int,
 	})
 }
 
-func distributorPushErrorHTTPStatus(err error) int {
+func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *validation.Overrides) int {
 	var (
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
 		tooManyClusterErr   distributorerror.TooManyClusters
@@ -168,7 +173,13 @@ func distributorPushErrorHTTPStatus(err error) int {
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if requestRateErr.ServiceOverloadErrorEnabled() {
+		serviceOverloadErrorEnabled := false
+		userID, err := tenant.TenantID(ctx)
+		if err == nil {
+			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+		}
+
+		if serviceOverloadErrorEnabled {
 			return StatusServiceOverloaded
 		}
 		return http.StatusTooManyRequests

@@ -607,7 +607,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) validation.ValidationError {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -906,7 +906,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The series labels may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidation(validationErr)
+					firstPartialErr = distributorerror.NewValidationError(validationErr)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -928,7 +928,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The metadata info may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidation(validationErr)
+					firstPartialErr = distributorerror.NewValidationError(validationErr)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -950,7 +950,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRate(
+			return distributorerror.NewIngestionRateError(
 				d.limits.IngestionRate(userID),
 				d.limits.IngestionBurstSize(userID),
 			)
@@ -1056,11 +1056,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.NewRequestRate(
-				d.limits.RequestRate(userID),
-				d.limits.RequestBurstSize(userID),
-				d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID),
-			)
+			return distributorerror.NewRequestRateError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1097,11 +1093,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := d.handlePushError(pushErr)
+	handledErr := d.handlePushError(ctx, pushErr, nil)
 	return nil, handledErr
 }
 
-func (d *Distributor) handlePushError(err error) error {
+func (d *Distributor) handlePushError(ctx context.Context, err error, limits *validation.Overrides) error {
 	if errors.Is(err, context.Canceled) {
 		return err
 	}
@@ -1130,7 +1126,13 @@ func (d *Distributor) handlePushError(err error) error {
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if requestRateErr.ServiceOverloadErrorEnabled() {
+		serviceOverloadErrorEnabled := false
+		userID, err := tenant.TenantID(ctx)
+		if err == nil {
+			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+		}
+
+		if serviceOverloadErrorEnabled {
 			return httpgrpc.Errorf(push.StatusServiceOverloaded, requestRateErr.Error())
 		}
 		return httpgrpc.Errorf(http.StatusTooManyRequests, requestRateErr.Error())

@@ -3,45 +3,58 @@
 package distributorerror
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	errMsg = "this is an error"
-)
-
 func TestNewReplicasNotMatchError(t *testing.T) {
-	err := NewReplicasNotMatch("a", "b")
+	replica := "a"
+	elected := "b"
+	err := NewReplicasNotMatchError(replica, elected)
 	assert.Error(t, err)
+	expectedMsg := fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", replica, elected)
+	assert.EqualError(t, err, expectedMsg)
 }
 
 func TestNewTooManyClustersError(t *testing.T) {
-	err := NewTooManyClusters(1)
+	limit := 1
+	err := NewTooManyClustersError(limit)
 	assert.Error(t, err)
+	expectedMsg := globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", limit),
+		validation.HATrackerMaxClustersFlag,
+	)
+	assert.EqualError(t, err, expectedMsg)
 }
 
-func TestNewValidationDistributorPushError(t *testing.T) {
-	originalErr := validation.ValidationError(errors.New(errMsg))
-	err := NewValidation(originalErr)
+func TestNewValidationError(t *testing.T) {
+	validationMsg := "this is a validation error"
+	validationErr := errors.New(validationMsg)
+	err := NewValidationError(validationErr)
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, originalErr))
+	assert.EqualError(t, err, validationMsg)
 }
 
-func TestNewIngestionRateDistributorPushError(t *testing.T) {
-	originalErr := validation.NewIngestionRateLimitedError(10, 10)
-	err := NewIngestionRate(10, 10)
+func TestNewIngestionRateError(t *testing.T) {
+	limit := 10.0
+	burst := 10
+	err := NewIngestionRateError(limit, burst)
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, originalErr))
+	expectedMsg := validation.FormatIngestionRateLimitedError(limit, burst)
+	assert.EqualError(t, err, expectedMsg)
 }
 
-func TestNewRequestRateDistributorPushError(t *testing.T) {
-	originalErr := validation.NewRequestRateLimitedError(10, 10)
-	err := NewRequestRate(10, 10, false)
+func TestNewRequestRateError(t *testing.T) {
+	limit := 10.0
+	burst := 10
+	err := NewRequestRateError(limit, burst)
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, originalErr))
+	expectedMsg := validation.FormatRequestRateLimitedError(limit, burst)
+	assert.EqualError(t, err, expectedMsg)
 }

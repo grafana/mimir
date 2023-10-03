@@ -37,11 +37,11 @@ func TestNewTotalMaxQueryLengthError(t *testing.T) {
 }
 
 func TestNewRequestRateLimitedError(t *testing.T) {
-	err := NewRequestRateLimitedError(10, 5)
-	assert.Equal(t, "the request has been rejected because the tenant exceeded the request rate limit, set to 10 requests/s across all distributors with a maximum allowed burst of 5 (err-mimir-tenant-max-request-rate). To adjust the related per-tenant limits, configure -distributor.request-rate-limit and -distributor.request-burst-size, or contact your service administrator.", err.Error())
+	err := FormatRequestRateLimitedError(10, 5)
+	assert.Equal(t, "the request has been rejected because the tenant exceeded the request rate limit, set to 10 requests/s across all distributors with a maximum allowed burst of 5 (err-mimir-tenant-max-request-rate). To adjust the related per-tenant limits, configure -distributor.request-rate-limit and -distributor.request-burst-size, or contact your service administrator.", err)
 }
 
 func TestNewIngestionRateLimitedError(t *testing.T) {
-	err := NewIngestionRateLimitedError(10, 5)
-	assert.Equal(t, "the request has been rejected because the tenant exceeded the ingestion rate limit, set to 10 items/s with a maximum allowed burst of 5. This limit is applied on the total number of samples, exemplars and metadata received across all distributors (err-mimir-tenant-max-ingestion-rate). To adjust the related per-tenant limits, configure -distributor.ingestion-rate-limit and -distributor.ingestion-burst-size, or contact your service administrator.", err.Error())
+	err := FormatIngestionRateLimitedError(10, 5)
+	assert.Equal(t, "the request has been rejected because the tenant exceeded the ingestion rate limit, set to 10 items/s with a maximum allowed burst of 5. This limit is applied on the total number of samples, exemplars and metadata received across all distributors (err-mimir-tenant-max-ingestion-rate). To adjust the related per-tenant limits, configure -distributor.ingestion-rate-limit and -distributor.ingestion-burst-size, or contact your service administrator.", err)
 }

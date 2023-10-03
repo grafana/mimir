@@ -37,7 +37,7 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, nil, &FakeLogger{})
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -54,7 +54,7 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, nil, &FakeLogger{})
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
@@ -71,7 +71,7 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 		MetricsNamespace:   "with_invalid_source_ip_extractor",
 	}
 
-	api, err := New(cfg, serverCfg, &s, &FakeLogger{})
+	api, err := New(cfg, serverCfg, &s, nil, &FakeLogger{})
 	require.Error(t, err)
 	require.Nil(t, api)
 }
@@ -84,7 +84,7 @@ func TestApiGzip(t *testing.T) {
 	go func() { _ = srv.Run() }()
 	t.Cleanup(srv.Stop)
 
-	api, err := New(cfg, serverCfg, srv, log.NewNopLogger())
+	api, err := New(cfg, serverCfg, srv, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
