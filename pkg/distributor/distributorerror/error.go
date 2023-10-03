@@ -23,52 +23,50 @@ func (e distributorPushError) Unwrap() error {
 	return e.err
 }
 
-// ReplicasNotMatchError is an implementation of Error,
-// meaning that replicas do not match.
-type ReplicasNotMatchError struct {
+// ReplicasNotMatch is an error stating that replicas do not match.
+// This error is not exposed in the Error catalog.
+type ReplicasNotMatch struct {
 	replica, elected string
 }
 
-func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatchError {
-	return ReplicasNotMatchError{
+func NewReplicasNotMatch(replica, elected string) ReplicasNotMatch {
+	return ReplicasNotMatch{
 		replica: replica,
 		elected: elected,
 	}
 }
 
-// Error makes ReplicasNotMatchError implement error interface.
-func (e ReplicasNotMatchError) Error() string {
+func (e ReplicasNotMatch) Error() string {
 	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// TooManyClustersError is an implementation of Error,
-// meaning that there are too many HA clusters (globalerror.TooManyHAClusters).
-type TooManyClustersError struct {
+// TooManyClusters is an error stating that there are too many HA clusters.
+// In the Error catalog, the ID of this error is globalerror.TooManyHAClusters.
+type TooManyClusters struct {
 	limit int
 }
 
-func NewTooManyClustersError(limit int) TooManyClustersError {
-	return TooManyClustersError{
+func NewTooManyClusters(limit int) TooManyClusters {
+	return TooManyClusters{
 		limit: limit,
 	}
 }
 
-// Error makes TooManyClustersError implement error interface.
-func (e TooManyClustersError) Error() string {
+func (e TooManyClusters) Error() string {
 	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
 		validation.HATrackerMaxClustersFlag)
 }
 
-// ValidationError is an implementation of Error,
-// used to represent all implementations of validation.ValidationError.
-type ValidationError struct {
+// Validation is an error, used to represent all validation errors from the validation package.
+// All of those errors have an ID exposed in the Error catalog.
+type Validation struct {
 	distributorPushError
 	err string
 }
 
-func NewValidationError(err validation.ValidationError) ValidationError {
-	return ValidationError{
+func NewValidation(err validation.ValidationError) Validation {
+	return Validation{
 		distributorPushError: distributorPushError{
 			err: err,
 		},
@@ -76,18 +74,18 @@ func NewValidationError(err validation.ValidationError) ValidationError {
 	}
 }
 
-func (e ValidationError) Error() string {
+func (e Validation) Error() string {
 	return e.err
 }
 
-// IngestionRateError is an implementation of Error,
-// used to represent the ingestion rate limited error (globalerror.IngestionRateLimited).
-type IngestionRateError struct {
+// IngestionRate is an error used to represent the ingestion rate limited error.
+// In the error catalog, the ID of this error is globalerror.IngestionRateLimited.
+type IngestionRate struct {
 	distributorPushError
 }
 
-func NewIngestionRateError(limit float64, burst int) IngestionRateError {
-	return IngestionRateError{
+func NewIngestionRate(limit float64, burst int) IngestionRate {
+	return IngestionRate{
 		distributorPushError{
 			err: validation.NewIngestionRateLimitedError(
 				limit,
@@ -97,15 +95,15 @@ func NewIngestionRateError(limit float64, burst int) IngestionRateError {
 	}
 }
 
-// RequestRateError is an implementation of Error,
-// used to represent the request rate limited error (globalerror.RequestRateLimited).
-type RequestRateError struct {
+// RequestRate is an error used to represent the request rate limited error.
+// In the error catalog, the ID of this error is globalerror.RequestRateLimited.
+type RequestRate struct {
 	distributorPushError
 	serviceOverloadErrorEnabled bool
 }
 
-func NewRequestRateError(limit float64, burst int, enableServiceOverloadError bool) RequestRateError {
-	return RequestRateError{
+func NewRequestRate(limit float64, burst int, enableServiceOverloadError bool) RequestRate {
+	return RequestRate{
 		distributorPushError: distributorPushError{
 			err: validation.NewRequestRateLimitedError(
 				limit,
@@ -116,6 +114,6 @@ func NewRequestRateError(limit float64, burst int, enableServiceOverloadError bo
 	}
 }
 
-func (e RequestRateError) ServiceOverloadErrorEnabled() bool {
+func (e RequestRate) ServiceOverloadErrorEnabled() bool {
 	return e.serviceOverloadErrorEnabled
 }

@@ -145,11 +145,11 @@ func handler(maxRecvMsgSize int,
 
 func distributorPushErrorHTTPStatus(err error) int {
 	var (
-		replicasNotMatchErr distributorerror.ReplicasNotMatchError
-		tooManyClusterErr   distributorerror.TooManyClustersError
-		validationErr       distributorerror.ValidationError
-		ingestionRateErr    distributorerror.IngestionRateError
-		requestRateErr      distributorerror.RequestRateError
+		replicasNotMatchErr distributorerror.ReplicasNotMatch
+		tooManyClusterErr   distributorerror.TooManyClusters
+		validationErr       distributorerror.Validation
+		ingestionRateErr    distributorerror.IngestionRate
+		requestRateErr      distributorerror.RequestRate
 	)
 
 	switch {

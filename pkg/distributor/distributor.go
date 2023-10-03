@@ -726,14 +726,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			var replicasNotMatchErr distributorerror.ReplicasNotMatchError
+			var replicasNotMatchErr distributorerror.ReplicasNotMatch
 			if errors.As(err, &replicasNotMatchErr) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 				return replicasNotMatchErr
 			}
 
-			var tooManyClustersErr distributorerror.TooManyClustersError
+			var tooManyClustersErr distributorerror.TooManyClusters
 			if errors.As(err, &tooManyClustersErr) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return tooManyClustersErr
@@ -906,7 +906,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The series labels may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidationError(validationErr)
+					firstPartialErr = distributorerror.NewValidation(validationErr)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -928,7 +928,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The metadata info may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidationError(validationErr)
+					firstPartialErr = distributorerror.NewValidation(validationErr)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -950,7 +950,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRateError(
+			return distributorerror.NewIngestionRate(
 				d.limits.IngestionRate(userID),
 				d.limits.IngestionBurstSize(userID),
 			)
@@ -1056,7 +1056,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.NewRequestRateError(
+			return distributorerror.NewRequestRate(
 				d.limits.RequestRate(userID),
 				d.limits.RequestBurstSize(userID),
 				d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID),
@@ -1107,11 +1107,11 @@ func (d *Distributor) handlePushError(err error) error {
 	}
 
 	var (
-		replicasNotMatchErr distributorerror.ReplicasNotMatchError
-		tooManyClusterErr   distributorerror.TooManyClustersError
-		validationErr       distributorerror.ValidationError
-		ingestionRateErr    distributorerror.IngestionRateError
-		requestRateErr      distributorerror.RequestRateError
+		replicasNotMatchErr distributorerror.ReplicasNotMatch
+		tooManyClusterErr   distributorerror.TooManyClusters
+		validationErr       distributorerror.Validation
+		ingestionRateErr    distributorerror.IngestionRate
+		requestRateErr      distributorerror.RequestRate
 	)
 
 	switch {
