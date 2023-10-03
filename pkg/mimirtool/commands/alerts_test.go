@@ -11,7 +11,7 @@ import (
 
 func TestReadAlertmanagerConfigTemplates(t *testing.T) {
 	cmd := AlertmanagerCommand{
-		TemplateFiles: []string {
+		TemplateFiles: []string{
 			"./testdata/alertmanager_template.tmpl",
 		},
 	}
@@ -32,7 +32,7 @@ func TestReadAlertmanagerConfigTemplates(t *testing.T) {
 
 func TestReadAlertmanagerConfigTemplates_collidingNames(t *testing.T) {
 	cmd := AlertmanagerCommand{
-		TemplateFiles: []string {
+		TemplateFiles: []string{
 			"./testdata/alertmanager_template.tmpl",
 			"./testdata/otherdir/alertmanager_template.tmpl",
 		},
