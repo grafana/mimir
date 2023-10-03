@@ -32,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -813,13 +814,18 @@ func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
 		},
 		{
 			name:               "a ReplicasNotMatchDistributorPushError gets translated into an HTTP 202",
-			err:                distributorerror.NewReplicasNotMatchDistributorPushError(originalErr),
+			err:                distributorerror.NewReplicasNotMatchError("a", "b"),
 			expectedHTTPStatus: http.StatusAccepted,
+			expectedErrorMsg:   "replicas did not mach, rejecting sample: replica=a, elected=b",
 		},
 		{
 			name:               "a TooManyClustersDistributorPushError gets translated into an HTTP 429",
-			err:                distributorerror.NewTooManyClustersDistributorPushError(originalErr),
+			err:                distributorerror.NewTooManyClustersError(1),
 			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedErrorMsg: globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: 1)",
+				validation.HATrackerMaxClustersFlag,
+			),
 		},
 		{
 			name:               "a ValidationDistributorPushError gets translated into an HTTP 400",

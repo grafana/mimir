@@ -37,25 +37,17 @@ func TestDoNotLogDistributorPushError(t *testing.T) {
 	assert.False(t, doNotLogErr.ShouldLog(context.Background(), 0))
 }
 
-func TestNewReplicasNotMatchDistributorPushError(t *testing.T) {
-	originalErr := errors.New(errMsg)
+func TestNewReplicasNotMatchError(t *testing.T) {
 	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
-	err := NewReplicasNotMatchDistributorPushError(originalErr)
+	err := NewReplicasNotMatchError("a", "b")
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, originalErr))
 	assert.ErrorAs(t, err, &distributorError)
 }
 
-func TestNewTooManyClustersDistributorPushError(t *testing.T) {
-	originalErr := errors.New(errMsg)
+func TestNewTooManyClustersError(t *testing.T) {
 	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
-	err := NewTooManyClustersDistributorPushError(originalErr)
+	err := NewTooManyClustersError(1)
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, originalErr))
 	assert.ErrorAs(t, err, &distributorError)
 }
 

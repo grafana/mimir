@@ -726,15 +726,17 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			if errors.Is(err, &replicasNotMatchError{}) {
+			var replicasNotMatchErr distributorerror.ReplicasNotMatchDistributorPushError
+			if errors.As(err, &replicasNotMatchErr) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return distributorerror.NewReplicasNotMatchDistributorPushError(err)
+				return replicasNotMatchErr
 			}
 
-			if errors.Is(err, tooManyClustersError{}) {
+			var tooManyClustersErr distributorerror.TooManyClustersDistributorPushError
+			if errors.As(err, &tooManyClustersErr) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return distributorerror.NewTooManyClustersDistributorPushError(err)
+				return tooManyClustersErr
 			}
 
 			return distributorerror.NewDistributorPushError(err)

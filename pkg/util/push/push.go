@@ -34,17 +34,6 @@ type bufHolder struct {
 	buf []byte
 }
 
-// TODO: the idea of this interface is to represent the error interface of
-// push.Func, which would then have the following signature:
-// type Fund func(ctx context.Context, req *Request) Error.
-// This will be possible only after ingester's write path has been refactored
-// in such a way that the functions involved on the write path return errors
-// implementing the Error interface.
-type Error interface {
-	error
-	PushError()
-}
-
 var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }

@@ -863,11 +863,9 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance0",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedErr: distributorerror.NewReplicasNotMatchDistributorPushError(
-				replicasNotMatchError{
-					"instance0",
-					"instance2",
-				},
+			expectedErr: distributorerror.NewReplicasNotMatchError(
+				"instance0",
+				"instance2",
 			),
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
@@ -2697,11 +2695,9 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedNextCalls: 1,
 			expectErrs: []distributorerror.Error{
 				nil,
-				distributorerror.NewReplicasNotMatchDistributorPushError(
-					replicasNotMatchError{
-						replica2,
-						replica1,
-					},
+				distributorerror.NewReplicasNotMatchError(
+					replica2,
+					replica1,
 				),
 			},
 		}, {
@@ -2719,22 +2715,12 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedNextCalls: 1,
 			expectErrs: []distributorerror.Error{
 				nil,
-				distributorerror.NewReplicasNotMatchDistributorPushError(
-					replicasNotMatchError{
-						replica2,
-						replica1,
-					},
+				distributorerror.NewReplicasNotMatchError(
+					replica2,
+					replica1,
 				),
-				distributorerror.NewTooManyClustersDistributorPushError(
-					tooManyClustersError{
-						1,
-					},
-				),
-				distributorerror.NewTooManyClustersDistributorPushError(
-					tooManyClustersError{
-						1,
-					},
-				),
+				distributorerror.NewTooManyClustersError(1),
+				distributorerror.NewTooManyClustersError(1),
 			},
 		},
 	}

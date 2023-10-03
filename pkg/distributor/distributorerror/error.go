@@ -2,7 +2,12 @@
 
 package distributorerror
 
-import "github.com/grafana/mimir/pkg/util/validation"
+import (
+	"fmt"
+
+	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
+)
 
 type Error interface {
 	error
@@ -25,9 +30,6 @@ func (e DistributorPushError) Unwrap() error {
 	return e.err
 }
 
-// PushError makes DistributorPushError implement pusherror.Error interface.
-func (e DistributorPushError) PushError() {}
-
 // Error makes DistributorPushError implement Error interface.
 func (e DistributorPushError) DistributorError() {}
 
@@ -39,32 +41,47 @@ func NewDistributorPushError(err error) DistributorPushError {
 }
 
 // ReplicasNotMatchDistributorPushError is an implementation of Error,
-// corresponding to distributor.replicasNotMatchError.
+// meaning that replicas do not match.
 type ReplicasNotMatchDistributorPushError struct {
-	DistributorPushError
+	replica, elected string
 }
 
-func NewReplicasNotMatchDistributorPushError(err error) ReplicasNotMatchDistributorPushError {
+func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatchDistributorPushError {
 	return ReplicasNotMatchDistributorPushError{
-		DistributorPushError{
-			err: err,
-		},
+		replica: replica,
+		elected: elected,
 	}
 }
+
+// Error makes ReplicasNotMatchDistributorPushError implement error interface.
+func (e ReplicasNotMatchDistributorPushError) Error() string {
+	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
+}
+
+// DistributorError makes ReplicasNotMatchDistributorPushError implement Error interface.
+func (e ReplicasNotMatchDistributorPushError) DistributorError() {}
 
 // TooManyClustersDistributorPushError is an implementation of Error,
-// corresponding to distributor.tooManyClustersError.
+// meaning that there are too many HA clusters (globalerror.TooManyHAClusters).
 type TooManyClustersDistributorPushError struct {
-	DistributorPushError
+	limit int
 }
 
-func NewTooManyClustersDistributorPushError(err error) TooManyClustersDistributorPushError {
+func NewTooManyClustersError(limit int) TooManyClustersDistributorPushError {
 	return TooManyClustersDistributorPushError{
-		DistributorPushError{
-			err: err,
-		},
+		limit: limit,
 	}
 }
+
+// Error makes TooManyClustersDistributorPushError implement error interface.
+func (e TooManyClustersDistributorPushError) Error() string {
+	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
+		validation.HATrackerMaxClustersFlag)
+}
+
+// DistributorError makes TooManyClustersDistributorPushError implement Error interface.
+func (e TooManyClustersDistributorPushError) DistributorError() {}
 
 // ValidationDistributorPushError is an implementation of Error,
 // used to represent all implementations of validation.ValidationError.
