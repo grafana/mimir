@@ -45,21 +45,21 @@ func TestNewTooManyClustersError(t *testing.T) {
 
 func TestNewValidationDistributorPushError(t *testing.T) {
 	originalErr := validation.ValidationError(errors.New(errMsg))
-	err := NewValidationDistributorPushError(originalErr)
+	err := NewValidationError(originalErr)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
 }
 
 func TestNewIngestionRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewIngestionRateLimitedError(10, 10)
-	err := NewIngestionRateDistributorPushError(10, 10)
+	err := NewIngestionRateError(10, 10)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
 }
 
 func TestNewRequestRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewRequestRateLimitedError(10, 10)
-	err := NewRequestRateDistributorPushError(10, 10, false)
+	err := NewRequestRateError(10, 10, false)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
 }

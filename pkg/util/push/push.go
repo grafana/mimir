@@ -130,11 +130,10 @@ func handler(maxRecvMsgSize int,
 				code int
 				msg  string
 			)
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if ok {
+			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = getHTTPStatusAndMessage(err)
+				code, msg = distributorPushErrorHTTPStatus(err), err.Error()
 			}
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
@@ -144,18 +143,13 @@ func handler(maxRecvMsgSize int,
 	})
 }
 
-func getHTTPStatusAndMessage(err error) (int, string) {
-	httpStatus := distributorPushErrorHTTPStatus(err)
-	return httpStatus, err.Error()
-}
-
 func distributorPushErrorHTTPStatus(err error) int {
 	var (
-		replicasNotMatchErr distributorerror.ReplicasNotMatchDistributorPushError
-		tooManyClusterErr   distributorerror.TooManyClustersDistributorPushError
-		validationErr       distributorerror.ValidationDistributorPushError
-		ingestionRateErr    distributorerror.IngestionRateDistributorPushError
-		requestRateErr      distributorerror.RequestRateDistributorPushError
+		replicasNotMatchErr distributorerror.ReplicasNotMatchError
+		tooManyClusterErr   distributorerror.TooManyClustersError
+		validationErr       distributorerror.ValidationError
+		ingestionRateErr    distributorerror.IngestionRateError
+		requestRateErr      distributorerror.RequestRateError
 	)
 
 	switch {

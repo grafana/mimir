@@ -191,7 +191,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateDistributorPushError(20, 20).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateError(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -489,7 +489,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateDistributorPushError(
+				{expectedError: distributorerror.NewRequestRateError(
 					4,
 					2,
 					false,
@@ -514,7 +514,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateDistributorPushError(
+				{expectedError: distributorerror.NewRequestRateError(
 					2,
 					3,
 					false,
@@ -529,7 +529,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateDistributorPushError(
+				{expectedError: distributorerror.NewRequestRateError(
 					4,
 					2,
 					true,
@@ -593,10 +593,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 5)},
+				{samples: 2, metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 5)},
-				{metadata: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 5)},
+				{samples: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
+				{metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -606,10 +606,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 20)},
+				{samples: 5, metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 20)},
-				{metadata: 1, expectedError: distributorerror.NewIngestionRateDistributorPushError(10, 20)},
+				{samples: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
+				{metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
 			},
 		},
 	}
@@ -856,7 +856,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 		},
-		// A ReplicasNotMatchDistributorPushError indicates that we didn't accept this sample.
+		// A ReplicasNotMatchError indicates that we didn't accept this sample.
 		{
 			enableTracker:   true,
 			acceptedReplica: "instance2",
@@ -883,7 +883,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			testReplica:     "instance1234567890123456789012345678901234567890",
 			cluster:         "cluster0",
 			samples:         5,
-			expectedErr: distributorerror.NewValidationDistributorPushError(
+			expectedErr: distributorerror.NewValidationError(
 				validation.ValidationError(errors.New("received a series whose label value length exceeds the limit, value: 'instance1234567890123456789012345678901234567890'")),
 			),
 		},
@@ -1276,7 +1276,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			pushReq := push.NewParsedRequest(req)
 			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errExpected {
-				var validationPushError distributorerror.ValidationDistributorPushError
+				var validationPushError distributorerror.ValidationError
 				assert.ErrorAs(t, err, &validationPushError)
 				assert.Equal(t, tc.errMessage, validationPushError.Error())
 			} else {
@@ -1348,7 +1348,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			pushReq := push.NewParsedRequest(tc.req)
 			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errMsg != "" {
-				var validationPushErr distributorerror.ValidationDistributorPushError
+				var validationPushErr distributorerror.ValidationError
 				assert.ErrorAs(t, err, &validationPushErr)
 				assert.Contains(t, validationPushErr.Error(), tc.errMsg)
 				assert.Contains(t, validationPushErr.Error(), tc.errID)
@@ -1418,7 +1418,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			pushReq := push.NewParsedRequest(tc.req)
 			err := ds[0].prePushValidationMiddleware(ds[0].push)(ctx, pushReq)
 			if tc.errMsg != "" {
-				var validationPushErr distributorerror.ValidationDistributorPushError
+				var validationPushErr distributorerror.ValidationError
 				require.ErrorAs(t, err, &validationPushErr)
 				assert.Contains(t, validationPushErr.Error(), tc.errMsg)
 				assert.Contains(t, validationPushErr.Error(), tc.errID)
@@ -4212,7 +4212,7 @@ func TestDistributorValidation(t *testing.T) {
 			if tc.expectedErr == "" {
 				require.NoError(t, err)
 			} else {
-				var distributorError distributorerror.ValidationDistributorPushError
+				var distributorError distributorerror.ValidationError
 				assert.ErrorAs(t, err, &distributorError)
 				assert.ErrorContains(t, distributorError, tc.expectedErr)
 			}

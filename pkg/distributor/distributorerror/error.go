@@ -32,52 +32,52 @@ func NewDistributorPushError(err error) DistributorPushError {
 	}
 }
 
-// ReplicasNotMatchDistributorPushError is an implementation of Error,
+// ReplicasNotMatchError is an implementation of Error,
 // meaning that replicas do not match.
-type ReplicasNotMatchDistributorPushError struct {
+type ReplicasNotMatchError struct {
 	replica, elected string
 }
 
-func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatchDistributorPushError {
-	return ReplicasNotMatchDistributorPushError{
+func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatchError {
+	return ReplicasNotMatchError{
 		replica: replica,
 		elected: elected,
 	}
 }
 
-// Error makes ReplicasNotMatchDistributorPushError implement error interface.
-func (e ReplicasNotMatchDistributorPushError) Error() string {
+// Error makes ReplicasNotMatchError implement error interface.
+func (e ReplicasNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// TooManyClustersDistributorPushError is an implementation of Error,
+// TooManyClustersError is an implementation of Error,
 // meaning that there are too many HA clusters (globalerror.TooManyHAClusters).
-type TooManyClustersDistributorPushError struct {
+type TooManyClustersError struct {
 	limit int
 }
 
-func NewTooManyClustersError(limit int) TooManyClustersDistributorPushError {
-	return TooManyClustersDistributorPushError{
+func NewTooManyClustersError(limit int) TooManyClustersError {
+	return TooManyClustersError{
 		limit: limit,
 	}
 }
 
-// Error makes TooManyClustersDistributorPushError implement error interface.
-func (e TooManyClustersDistributorPushError) Error() string {
+// Error makes TooManyClustersError implement error interface.
+func (e TooManyClustersError) Error() string {
 	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
 		validation.HATrackerMaxClustersFlag)
 }
 
-// ValidationDistributorPushError is an implementation of Error,
+// ValidationError is an implementation of Error,
 // used to represent all implementations of validation.ValidationError.
-type ValidationDistributorPushError struct {
+type ValidationError struct {
 	DistributorPushError
 	err string
 }
 
-func NewValidationDistributorPushError(err validation.ValidationError) ValidationDistributorPushError {
-	return ValidationDistributorPushError{
+func NewValidationError(err validation.ValidationError) ValidationError {
+	return ValidationError{
 		DistributorPushError: DistributorPushError{
 			err: err,
 		},
@@ -85,18 +85,18 @@ func NewValidationDistributorPushError(err validation.ValidationError) Validatio
 	}
 }
 
-func (e ValidationDistributorPushError) Error() string {
+func (e ValidationError) Error() string {
 	return e.err
 }
 
-// IngestionRateDistributorPushError is an implementation of Error,
+// IngestionRateError is an implementation of Error,
 // used to represent the ingestion rate limited error (globalerror.IngestionRateLimited).
-type IngestionRateDistributorPushError struct {
+type IngestionRateError struct {
 	DistributorPushError
 }
 
-func NewIngestionRateDistributorPushError(limit float64, burst int) IngestionRateDistributorPushError {
-	return IngestionRateDistributorPushError{
+func NewIngestionRateError(limit float64, burst int) IngestionRateError {
+	return IngestionRateError{
 		DistributorPushError{
 			err: validation.NewIngestionRateLimitedError(
 				limit,
@@ -106,15 +106,15 @@ func NewIngestionRateDistributorPushError(limit float64, burst int) IngestionRat
 	}
 }
 
-// RequestRateDistributorPushError is an implementation of Error,
+// RequestRateError is an implementation of Error,
 // used to represent the request rate limited error (globalerror.RequestRateLimited).
-type RequestRateDistributorPushError struct {
+type RequestRateError struct {
 	DistributorPushError
 	serviceOverloadErrorEnabled bool
 }
 
-func NewRequestRateDistributorPushError(limit float64, burst int, enableServiceOverloadError bool) RequestRateDistributorPushError {
-	return RequestRateDistributorPushError{
+func NewRequestRateError(limit float64, burst int, enableServiceOverloadError bool) RequestRateError {
+	return RequestRateError{
 		DistributorPushError: DistributorPushError{
 			err: validation.NewRequestRateLimitedError(
 				limit,
@@ -125,6 +125,6 @@ func NewRequestRateDistributorPushError(limit float64, burst int, enableServiceO
 	}
 }
 
-func (e RequestRateDistributorPushError) ServiceOverloadErrorEnabled() bool {
+func (e RequestRateError) ServiceOverloadErrorEnabled() bool {
 	return e.serviceOverloadErrorEnabled
 }

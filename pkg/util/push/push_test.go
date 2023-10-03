@@ -798,7 +798,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 }
 
-func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
+func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
 	testCases := []struct {
@@ -813,13 +813,13 @@ func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
-			name:               "a ReplicasNotMatchDistributorPushError gets translated into an HTTP 202",
+			name:               "a ReplicasNotMatchError gets translated into an HTTP 202",
 			err:                distributorerror.NewReplicasNotMatchError("a", "b"),
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   "replicas did not mach, rejecting sample: replica=a, elected=b",
 		},
 		{
-			name:               "a TooManyClustersDistributorPushError gets translated into an HTTP 429",
+			name:               "a TooManyClustersError gets translated into an HTTP 429",
 			err:                distributorerror.NewTooManyClustersError(1),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg: globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
@@ -828,25 +828,25 @@ func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
 			),
 		},
 		{
-			name:               "a ValidationDistributorPushError gets translated into an HTTP 400",
-			err:                distributorerror.NewValidationDistributorPushError(validation.ValidationError(originalErr)),
+			name:               "a ValidationError gets translated into an HTTP 400",
+			err:                distributorerror.NewValidationError(validation.ValidationError(originalErr)),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "an IngestionRateDistributorPushError gets translated into an HTTP 429",
-			err:                distributorerror.NewIngestionRateDistributorPushError(10, 10),
+			name:               "an IngestionRateError gets translated into an HTTP 429",
+			err:                distributorerror.NewIngestionRateError(10, 10),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   validation.NewIngestionRateLimitedError(10, 10).Error(),
 		},
 		{
-			name:               "a RequestRateDistributorPushError with ServiceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                distributorerror.NewRequestRateDistributorPushError(10, 10, true),
+			name:               "a RequestRateError with ServiceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                distributorerror.NewRequestRateError(10, 10, true),
 			expectedHTTPStatus: StatusServiceOverloaded,
 			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
 		},
 		{
-			name:               "a RequestRateDistributorPushError without ServiceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                distributorerror.NewRequestRateDistributorPushError(10, 10, false),
+			name:               "a RequestRateError without ServiceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                distributorerror.NewRequestRateError(10, 10, false),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
 		},
@@ -858,7 +858,7 @@ func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		status, msg := getHTTPStatusAndMessage(tc.err)
+		status, msg := distributorPushErrorHTTPStatus(tc.err), tc.err.Error()
 		assert.Equal(t, tc.expectedHTTPStatus, status)
 		expectedErrMsg := tc.expectedErrorMsg
 		if expectedErrMsg == "" {
