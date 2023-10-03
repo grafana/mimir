@@ -142,7 +142,9 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 				reader.reset()
 
 				for i, idx := range loadIdxs {
-					reader.addLoad(chunks.ChunkRef(i), idx.seriesEntry, idx.chunkEntry, idx.length)
+					if err := reader.addLoad(chunks.ChunkRef(i), idx.seriesEntry, idx.chunkEntry, idx.length); err != nil {
+						b.Fatalf("error adding load: %v", err)
+					}
 				}
 				var res = make([]seriesChunks, 1)
 				res[0].chks = make([]storepb.AggrChunk, len(loadIdxs))
