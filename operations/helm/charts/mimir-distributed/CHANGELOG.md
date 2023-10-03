@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.1`. #6022 #6110
-* [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to $5948. 
+* [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 
 ## 5.1.0
 
