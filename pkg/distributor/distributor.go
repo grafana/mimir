@@ -739,7 +739,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 				return tooManyClustersErr
 			}
 
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		if removeReplica {
@@ -1035,17 +1035,15 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return distributorerror.NewDistributorPushError(
-				util_log.DoNotLogError{
-					Err: errMaxInflightRequestsReached,
-				},
-			)
+			return util_log.DoNotLogError{
+				Err: errMaxInflightRequestsReached,
+			}
 		}
 
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return distributorerror.NewDistributorPushError(errMaxIngestionRateReached)
+				return errMaxIngestionRateReached
 			}
 		}
 
@@ -1080,7 +1078,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return distributorerror.NewDistributorPushError(errMaxInflightRequestsBytesReached)
+			return errMaxInflightRequestsBytesReached
 		}
 
 		cleanupInDefer = false

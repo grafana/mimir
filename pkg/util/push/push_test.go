@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -813,6 +814,11 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
+			name:               "a DoNotLog error gets translated into a HTTP 500",
+			err:                log.DoNotLogError{Err: originalErr},
+			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
 			name:               "a ReplicasNotMatchError gets translated into an HTTP 202",
 			err:                distributorerror.NewReplicasNotMatchError("a", "b"),
 			expectedHTTPStatus: http.StatusAccepted,
@@ -849,11 +855,6 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			err:                distributorerror.NewRequestRateError(10, 10, false),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
-		},
-		{
-			name:               "a DistributorPushError gets translated into an HTTP 500",
-			err:                distributorerror.NewDistributorPushError(originalErr),
-			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 	}
 

@@ -9,27 +9,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// DistributorPushError is a generic error returned on
-// distributor's write path.
-type DistributorPushError struct {
+type distributorPushError struct {
 	err error
 }
 
-// Error makes DistributorPushError implement error interface.
-func (e DistributorPushError) Error() string {
+// Error makes distributorPushError implement error interface.
+func (e distributorPushError) Error() string {
 	return e.err.Error()
 }
 
-// Unwrap makes DistributorPushError implement Wrapper interface.
-func (e DistributorPushError) Unwrap() error {
+// Unwrap makes distributorPushError implement Wrapper interface.
+func (e distributorPushError) Unwrap() error {
 	return e.err
-}
-
-// NewDistributorPushError wraps the given error into a DistributorPushError.
-func NewDistributorPushError(err error) DistributorPushError {
-	return DistributorPushError{
-		err: err,
-	}
 }
 
 // ReplicasNotMatchError is an implementation of Error,
@@ -72,13 +63,13 @@ func (e TooManyClustersError) Error() string {
 // ValidationError is an implementation of Error,
 // used to represent all implementations of validation.ValidationError.
 type ValidationError struct {
-	DistributorPushError
+	distributorPushError
 	err string
 }
 
 func NewValidationError(err validation.ValidationError) ValidationError {
 	return ValidationError{
-		DistributorPushError: DistributorPushError{
+		distributorPushError: distributorPushError{
 			err: err,
 		},
 		err: err.Error(),
@@ -92,12 +83,12 @@ func (e ValidationError) Error() string {
 // IngestionRateError is an implementation of Error,
 // used to represent the ingestion rate limited error (globalerror.IngestionRateLimited).
 type IngestionRateError struct {
-	DistributorPushError
+	distributorPushError
 }
 
 func NewIngestionRateError(limit float64, burst int) IngestionRateError {
 	return IngestionRateError{
-		DistributorPushError{
+		distributorPushError{
 			err: validation.NewIngestionRateLimitedError(
 				limit,
 				burst,
@@ -109,13 +100,13 @@ func NewIngestionRateError(limit float64, burst int) IngestionRateError {
 // RequestRateError is an implementation of Error,
 // used to represent the request rate limited error (globalerror.RequestRateLimited).
 type RequestRateError struct {
-	DistributorPushError
+	distributorPushError
 	serviceOverloadErrorEnabled bool
 }
 
 func NewRequestRateError(limit float64, burst int, enableServiceOverloadError bool) RequestRateError {
 	return RequestRateError{
-		DistributorPushError: DistributorPushError{
+		distributorPushError: distributorPushError{
 			err: validation.NewRequestRateLimitedError(
 				limit,
 				burst,
