@@ -2710,6 +2710,7 @@ gateway:
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
+            listen [::]:{{ include "mimir.serverHttpListenPort" . }};
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
