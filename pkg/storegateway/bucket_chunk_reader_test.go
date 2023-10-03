@@ -101,13 +101,13 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 	const chunkSize = 256
 
-	bcs := []int{
+	benchCases := []int{
 		1000,
 		10_000,
 		100_000,
 		1_000_000,
 	}
-	for _, numChunks := range bcs {
+	for _, numChunks := range benchCases {
 		b.Run(fmt.Sprintf("blocks-%d", numChunks), func(b *testing.B) {
 			chunkObjs := make([]string, numChunks)
 			for i := 0; i < len(chunkObjs); i++ {
@@ -134,6 +134,8 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 				}
 			}
 
+			chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, seriesChunksSlabSize)
+
 			// Run the benchmark.
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -148,8 +150,6 @@ func BenchmarkBucketChunkReader_loadChunks(b *testing.B) {
 				}
 				var res = make([]seriesChunks, 1)
 				res[0].chks = make([]storepb.AggrChunk, len(loadIdxs))
-
-				chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, seriesChunksSlabSize)
 
 				err := reader.load(res, chunksPool, newSafeQueryStats())
 				if err != nil {
