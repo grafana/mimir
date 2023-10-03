@@ -535,6 +535,19 @@
     //    },
     distributor_instance_limits: null,
 
+    // Controls whether the TSDB Head early compaction is enabled in the ingester.
+    ingester_tsdb_head_early_compaction_enabled: false,
+    ingester_tsdb_head_early_compaction_reduction_percentage: 15,
+
+    // The default threshold to triger the TSDB Head early compaction is once the ingester in-memory
+    // series reach the 66% of the configured hard limit on max in-memory series. If the limit is not
+    // configured, then we just use a constant default value.
+    ingester_tsdb_head_early_compaction_min_in_memory_series:
+      if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
+        std.ceil($._config.ingester_instance_limits.max_series / 1.5)
+      else
+        2000000,
+
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],

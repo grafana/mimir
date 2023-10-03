@@ -61,11 +61,11 @@ type RequestQueue struct {
 
 	connectedQuerierWorkers *atomic.Int32
 
-	stopRequested               chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted               chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	querierOperations           chan querierOperation
-	enqueueRequests             chan enqueueRequest
-	availableQuerierConnections chan *querierConnection
+	stopRequested              chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted              chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	querierOperations          chan querierOperation
+	requestsToEnqueue          chan requestToEnqueue
+	nextRequestForQuerierCalls chan *nextRequestForQuerierCall
 
 	queueLength       *prometheus.GaugeVec   // Per user and reason.
 	discardedRequests *prometheus.CounterVec // Per user.
@@ -87,7 +87,7 @@ const (
 	forgetDisconnected
 )
 
-type enqueueRequest struct {
+type requestToEnqueue struct {
 	tenantID    TenantID
 	req         Request
 	maxQueriers int
@@ -108,9 +108,9 @@ func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, que
 		stopCompleted: make(chan struct{}),
 
 		// These channels must not be buffered so that we can detect when dispatcherLoop() has finished.
-		querierOperations:           make(chan querierOperation),
-		enqueueRequests:             make(chan enqueueRequest),
-		availableQuerierConnections: make(chan *querierConnection),
+		querierOperations:          make(chan querierOperation),
+		requestsToEnqueue:          make(chan requestToEnqueue),
+		nextRequestForQuerierCalls: make(chan *nextRequestForQuerierCall),
 	}
 
 	q.Service = services.NewTimerService(forgetCheckPeriod, q.starting, q.forgetDisconnectedQueriers, q.stop).WithName("request queue")
@@ -128,7 +128,7 @@ func (q *RequestQueue) starting(_ context.Context) error {
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
 	queueBroker := newQueueBroker(q.maxOutstandingPerTenant, q.forgetDelay)
-	waitingQuerierConnections := list.New()
+	waitingGetNextRequestForQuerierCalls := list.New()
 
 	for {
 		needToDispatchQueries := false
@@ -164,29 +164,29 @@ func (q *RequestQueue) dispatcherLoop() {
 			default:
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
 			}
-		case r := <-q.enqueueRequests:
+		case r := <-q.requestsToEnqueue:
 			err := q.handleEnqueueRequest(queueBroker, r)
 			r.processed <- err
 
 			if err == nil {
 				needToDispatchQueries = true
 			}
-		case querierConn := <-q.availableQuerierConnections:
-			if !q.dispatchRequestToQuerier(queueBroker, querierConn) {
+		case call := <-q.nextRequestForQuerierCalls:
+			if !q.tryDispatchRequest(queueBroker, call) {
 				// No requests available for this querier connection right now. Add it to the list to try later.
-				querierConn.element = waitingQuerierConnections.PushBack(querierConn)
+				waitingGetNextRequestForQuerierCalls.PushBack(call)
 			}
 		}
 
 		if needToDispatchQueries {
-			currentElement := waitingQuerierConnections.Front()
+			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
 			for currentElement != nil && queueBroker.len() > 0 {
-				querierConn := currentElement.Value.(*querierConnection)
+				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.dispatchRequestToQuerier(queueBroker, querierConn) {
-					waitingQuerierConnections.Remove(currentElement)
+				if q.tryDispatchRequest(queueBroker, call) {
+					waitingGetNextRequestForQuerierCalls.Remove(currentElement)
 				}
 
 				currentElement = nextElement
@@ -195,11 +195,11 @@ func (q *RequestQueue) dispatcherLoop() {
 
 		if stopping && (queueBroker.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
-			currentElement := waitingQuerierConnections.Front()
+			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
 			for currentElement != nil {
-				querierConn := currentElement.Value.(*querierConnection)
-				querierConn.sendError(ErrStopped)
+				call := currentElement.Value.(*nextRequestForQuerierCall)
+				call.sendError(ErrStopped)
 				currentElement = currentElement.Next()
 			}
 
@@ -210,8 +210,8 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueRequest) error {
-	queue := broker.getOrAddTenantQueue(TenantID(r.tenantID), r.maxQueriers)
+func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqueue) error {
+	queue := broker.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
 	if queue == nil {
 		// This can only happen if tenantID is "".
 		return errors.New("no queue found")
@@ -233,18 +233,18 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r enqueueReques
 	return nil
 }
 
-// dispatchRequestToQuerier finds and forwards a request to a querier, if a suitable request is available.
-// Returns true if this querier should be removed from the list of waiting queriers (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn *querierConnection) bool {
-	queue, tenantID, idx, err := broker.getNextQueueForQuerier(querierConn.lastUserIndex.last, querierConn.querierID)
+// tryDispatchRequest finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
+// Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
+func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequestForQuerierCall) bool {
+	queue, tenantID, idx, err := broker.getNextQueueForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
-		querierConn.sendError(err)
+		call.sendError(err)
 		// ...and remove the waiting GetNextRequestForQuerier call from our list.
 		return true
 	}
 
-	querierConn.lastUserIndex.last = idx
+	call.lastUserIndex.last = idx
 	if queue == nil {
 		// Nothing available for this querier, try again next time.
 		return false
@@ -253,9 +253,9 @@ func (q *RequestQueue) dispatchRequestToQuerier(broker *queueBroker, querierConn
 	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty broker.
 	queueElement := queue.Front()
 
-	requestSent := querierConn.send(nextRequestForQuerier{
+	requestSent := call.send(nextRequestForQuerier{
 		req:           queueElement.Value,
-		lastUserIndex: querierConn.lastUserIndex,
+		lastUserIndex: call.lastUserIndex,
 		err:           nil,
 	})
 
@@ -285,7 +285,7 @@ func (q *RequestQueue) EnqueueRequest(tenantID string, req Request, maxQueriers 
 		q.enqueueDuration.Observe(time.Since(start).Seconds())
 	}()
 
-	r := enqueueRequest{
+	r := requestToEnqueue{
 		tenantID:    TenantID(tenantID),
 		req:         req,
 		maxQueriers: maxQueriers,
@@ -294,7 +294,7 @@ func (q *RequestQueue) EnqueueRequest(tenantID string, req Request, maxQueriers 
 	}
 
 	select {
-	case q.enqueueRequests <- r:
+	case q.requestsToEnqueue <- r:
 		return <-r.processed
 	case <-q.stopCompleted:
 		return ErrStopped
@@ -305,7 +305,7 @@ func (q *RequestQueue) EnqueueRequest(tenantID string, req Request, maxQueriers 
 // By passing user index from previous call of this method, querier guarantees that it iterates over all users fairly.
 // If querier finds that request from the user is already expired, it can get a request for the same user by using UserIndex.ReuseLastUser.
 func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIndex, querierID string) (Request, UserIndex, error) {
-	querierConn := &querierConnection{
+	call := &nextRequestForQuerierCall{
 		ctx:           ctx,
 		querierID:     QuerierID(querierID),
 		lastUserIndex: last,
@@ -313,10 +313,10 @@ func (q *RequestQueue) GetNextRequestForQuerier(ctx context.Context, last UserIn
 	}
 
 	select {
-	case q.availableQuerierConnections <- querierConn:
+	case q.nextRequestForQuerierCalls <- call:
 		// The dispatcher now knows we're waiting. Either we'll get a request to send to a querier, or we'll cancel.
 		select {
-		case result := <-querierConn.processed:
+		case result := <-call.processed:
 			return result.req, result.lastUserIndex, result.err
 		case <-ctx.Done():
 			return nil, last, ctx.Err()
@@ -371,17 +371,16 @@ func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {
 	return float64(q.connectedQuerierWorkers.Load())
 }
 
-type querierConnection struct {
+type nextRequestForQuerierCall struct {
 	ctx           context.Context
 	querierID     QuerierID
 	lastUserIndex UserIndex
 	processed     chan nextRequestForQuerier
 
 	haveUsed bool // Must be set to true after sending a message to processed, to ensure we only ever try to send one message to processed.
-	element  *list.Element
 }
 
-func (q *querierConnection) sendError(err error) {
+func (q *nextRequestForQuerierCall) sendError(err error) {
 	// If GetNextRequestForQuerier is already gone, we don't care, so ignore the result from send.
 	_ = q.send(nextRequestForQuerier{err: err})
 }
@@ -389,7 +388,7 @@ func (q *querierConnection) sendError(err error) {
 // send sends req to the GetNextRequestForQuerier call that is waiting for a new query.
 // Returns true if sending succeeds, or false otherwise (eg. because the GetNextRequestForQuerier call has already returned due to a context
 // cancellation).
-func (q *querierConnection) send(req nextRequestForQuerier) bool {
+func (q *nextRequestForQuerierCall) send(req nextRequestForQuerier) bool {
 	if q.haveUsed {
 		panic("bug: should not try to send multiple messages to a querier")
 	}

@@ -9,6 +9,7 @@
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
 * [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
 * [CHANGE] Query-frontend: removed `cortex_query_frontend_workers_enqueued_requests_total`. Use `cortex_query_frontend_enqueue_duration_seconds_count` instead. #6121
+* [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
@@ -17,6 +18,7 @@
 * [ENHANCEMENT] Store-gateway: add metric `cortex_bucket_store_blocks_loaded_by_duration` for counting the loaded number of blocks based on their duration. #6074  #6129
 * [ENHANCEMENT] Expose `/sync/mutex/wait/total:seconds` Go runtime metric as `go_sync_mutex_wait_total_seconds_total` from all components. #5879
 * [ENHANCEMENT] Query-scheduler: improve latency with many concurrent queriers. #5880
+* [ENHANCEMENT] Ruler: add new per-tenant `cortex_ruler_queries_zero_fetched_series_total` metric to track rules that fetched no series. #5925
 * [ENHANCEMENT] Implement support for `limit`, `limit_per_metric` and `metric` parameters for `<Prometheus HTTP prefix>/api/v1/metadata` endpoint. #5890
 * [ENHANCEMENT] Distributor: add experimental support for storing metadata when ingesting metrics via OTLP. This makes metrics description and type available when ingesting metrics via OTLP. Enable with `-distributor.enable-otlp-metadata-storage=true`. #5693 #6035
 * [ENHANCEMENT] Ingester: added support for sampling errors, which can be enabled by setting `-ingester.error-sample-rate`. This way each error will be logged once in the configured number of times. All the discarded samples will still be tracked by the `cortex_discarded_samples_total` metric. #5584 #6014
@@ -40,10 +42,14 @@
 
 ### Jsonnet
 
+* [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
+* [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
+  * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)
+  * `ingester_tsdb_head_early_compaction_reduction_percentage`
+  * `ingester_tsdb_head_early_compaction_min_in_memory_series`
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
 * [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler` `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler` and `consul` deployments, to ensure they don't become completely unavailable during a rollout. #5924
 * [ENHANCEMENT] Update rollout-operator to `v0.8.1`. #6022 #6110
-* [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 
 ### Mimirtool
 

@@ -13,7 +13,5 @@ mimir {
 
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
-
-    ingester_stream_chunks_when_using_blocks: false,
   },
 }

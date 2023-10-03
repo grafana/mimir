@@ -980,6 +980,8 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
+The names of the templates in `template_files` must be valid file names and not contain any path separators. For example, both `/templates/my-template.tpl` and `./my-template.tpl` are invalid, whereas `my-template.tpl` is valid.
+
 This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
