@@ -179,6 +179,7 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
 			log.Error(err)
+			level.Error(log).Log("msg", "received error while streaming chunks from store-gateway", "err", err)
 		}
 	}()
 }

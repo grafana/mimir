@@ -90,6 +90,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 		onError := func(err error) {
 			s.errorChan <- err
 			log.Error(err)
+			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
 		}
 
 		totalSeries := 0
