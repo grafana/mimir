@@ -407,7 +407,7 @@ func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 
 	s, err := reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has series with index 0")
+	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream has series with index 0")
 }
 
 func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
@@ -426,7 +426,7 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has already been exhausted")
+	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream has already been exhausted (was expecting 1 series)")
 }
 
 func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) {
@@ -445,7 +445,7 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
+	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
 }
@@ -466,7 +466,7 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 
 	s, err := reader.GetChunks(0)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
+	require.EqualError(t, err, "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
 }
