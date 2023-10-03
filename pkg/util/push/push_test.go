@@ -30,8 +30,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	distributor_error "github.com/grafana/mimir/pkg/util/error"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -813,40 +813,40 @@ func TestHandler_GetHTTPStatusAndMessage(t *testing.T) {
 		},
 		{
 			name:               "a ReplicasNotMatchDistributorPushError gets translated into an HTTP 202",
-			err:                distributor_error.NewReplicasNotMatchDistributorPushError(originalErr),
+			err:                distributorerror.NewReplicasNotMatchDistributorPushError(originalErr),
 			expectedHTTPStatus: http.StatusAccepted,
 		},
 		{
 			name:               "a TooManyClustersDistributorPushError gets translated into an HTTP 429",
-			err:                distributor_error.NewTooManyClustersDistributorPushError(originalErr),
+			err:                distributorerror.NewTooManyClustersDistributorPushError(originalErr),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 		},
 		{
 			name:               "a ValidationDistributorPushError gets translated into an HTTP 400",
-			err:                distributor_error.NewValidationDistributorPushError(validation.ValidationError(originalErr)),
+			err:                distributorerror.NewValidationDistributorPushError(validation.ValidationError(originalErr)),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
 			name:               "an IngestionRateDistributorPushError gets translated into an HTTP 429",
-			err:                distributor_error.NewIngestionRateDistributorPushError(10, 10),
+			err:                distributorerror.NewIngestionRateDistributorPushError(10, 10),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   validation.NewIngestionRateLimitedError(10, 10).Error(),
 		},
 		{
 			name:               "a RequestRateDistributorPushError with ServiceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                distributor_error.NewRequestRateDistributorPushError(10, 10, true),
-			expectedHTTPStatus: StatusServiceOverload,
+			err:                distributorerror.NewRequestRateDistributorPushError(10, 10, true),
+			expectedHTTPStatus: StatusServiceOverloaded,
 			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
 		},
 		{
 			name:               "a RequestRateDistributorPushError without ServiceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                distributor_error.NewRequestRateDistributorPushError(10, 10, false),
+			err:                distributorerror.NewRequestRateDistributorPushError(10, 10, false),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   validation.NewRequestRateLimitedError(10, 10).Error(),
 		},
 		{
 			name:               "a DistributorPushError gets translated into an HTTP 500",
-			err:                distributor_error.NewDistributorPushError(originalErr),
+			err:                distributorerror.NewDistributorPushError(originalErr),
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 	}

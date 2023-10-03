@@ -40,10 +40,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	distributor_error "github.com/grafana/mimir/pkg/util/error"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -694,12 +694,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
@@ -729,15 +729,15 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			if errors.Is(err, &replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return distributor_error.NewReplicasNotMatchDistributorPushError(err)
+				return distributorerror.NewReplicasNotMatchDistributorPushError(err)
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return distributor_error.NewTooManyClustersDistributorPushError(err)
+				return distributorerror.NewTooManyClustersDistributorPushError(err)
 			}
 
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		if removeReplica {
@@ -768,12 +768,12 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		var removeTsIndexes []int
@@ -837,12 +837,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		now := mtime.Now()
@@ -904,7 +904,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The series labels may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributor_error.NewValidationDistributorPushError(validationErr)
+					firstPartialErr = distributorerror.NewValidationDistributorPushError(validationErr)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -926,7 +926,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				if firstPartialErr == nil {
 					// The metadata info may be retained by validationErr but that's not a problem for this
 					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributor_error.NewValidationDistributorPushError(validationErr)
+					firstPartialErr = distributorerror.NewValidationDistributorPushError(validationErr)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -948,7 +948,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributor_error.NewIngestionRateDistributorPushError(
+			return distributorerror.NewIngestionRateDistributorPushError(
 				d.limits.IngestionRate(userID),
 				d.limits.IngestionBurstSize(userID),
 			)
@@ -981,12 +981,12 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		numSamples := 0
@@ -1033,7 +1033,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return distributor_error.NewDistributorPushError(
+			return distributorerror.NewDistributorPushError(
 				util_log.DoNotLogError{
 					Err: errMaxInflightRequestsReached,
 				},
@@ -1043,20 +1043,20 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if il.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return distributor_error.NewDistributorPushError(errMaxIngestionRateReached)
+				return distributorerror.NewDistributorPushError(errMaxIngestionRateReached)
 			}
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 
 		now := mtime.Now()
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributor_error.NewRequestRateDistributorPushError(
+			return distributorerror.NewRequestRateDistributorPushError(
 				d.limits.RequestRate(userID),
 				d.limits.RequestBurstSize(userID),
 				d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID),
@@ -1068,7 +1068,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributor_error.NewDistributorPushError(err)
+			return distributorerror.NewDistributorPushError(err)
 		}
 		reqSize := int64(req.Size())
 		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
@@ -1078,7 +1078,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return distributor_error.NewDistributorPushError(errMaxInflightRequestsBytesReached)
+			return distributorerror.NewDistributorPushError(errMaxInflightRequestsBytesReached)
 		}
 
 		cleanupInDefer = false
@@ -1105,30 +1105,37 @@ func (d *Distributor) handlePushError(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return err
 	}
-	var distributorError distributor_error.DistributorError
-	if errors.As(err, &distributorError) {
-		switch distributorError := distributorError.(type) {
-		case distributor_error.ReplicasNotMatchDistributorPushError:
-			return httpgrpc.Errorf(http.StatusAccepted, distributorError.Error())
-		case distributor_error.TooManyClustersDistributorPushError:
-			return httpgrpc.Errorf(http.StatusTooManyRequests, distributorError.Error())
-		case distributor_error.ValidationDistributorPushError:
-			return httpgrpc.Errorf(http.StatusBadRequest, distributorError.Error())
-		case distributor_error.IngestionRateDistributorPushError:
-			// Return a 429 here to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return httpgrpc.Errorf(http.StatusTooManyRequests, distributorError.Error())
-		case distributor_error.RequestRateDistributorPushError:
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if distributorError.ServiceOverloadErrorEnabled() {
-				return httpgrpc.Errorf(push.StatusServiceOverload, distributorError.Error())
-			}
-			return httpgrpc.Errorf(http.StatusTooManyRequests, distributorError.Error())
+
+	var (
+		replicasNotMatchErr distributorerror.ReplicasNotMatchDistributorPushError
+		tooManyClusterErr   distributorerror.TooManyClustersDistributorPushError
+		validationErr       distributorerror.ValidationDistributorPushError
+		ingestionRateErr    distributorerror.IngestionRateDistributorPushError
+		requestRateErr      distributorerror.RequestRateDistributorPushError
+	)
+
+	switch {
+	case errors.As(err, &replicasNotMatchErr):
+		return httpgrpc.Errorf(http.StatusAccepted, replicasNotMatchErr.Error())
+	case errors.As(err, &tooManyClusterErr):
+		return httpgrpc.Errorf(http.StatusTooManyRequests, tooManyClusterErr.Error())
+	case errors.As(err, &validationErr):
+		return httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+	case errors.As(err, &ingestionRateErr):
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return httpgrpc.Errorf(http.StatusTooManyRequests, ingestionRateErr.Error())
+	case errors.As(err, &requestRateErr):
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if requestRateErr.ServiceOverloadErrorEnabled() {
+			return httpgrpc.Errorf(push.StatusServiceOverloaded, requestRateErr.Error())
 		}
+		return httpgrpc.Errorf(http.StatusTooManyRequests, requestRateErr.Error())
 	}
+
 	return err
 }
 

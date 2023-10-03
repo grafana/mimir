@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package error
+package distributorerror
 
 import "github.com/grafana/mimir/pkg/util/validation"
 
-type DistributorError interface {
+type Error interface {
 	error
 	DistributorError()
 }
@@ -26,12 +26,10 @@ func (e DistributorPushError) Unwrap() error {
 }
 
 // PushError makes DistributorPushError implement pusherror.Error interface.
-func (e DistributorPushError) PushError() {
-}
+func (e DistributorPushError) PushError() {}
 
-// DistributorError makes DistributorPushError implement DistributorError interface.
-func (e DistributorPushError) DistributorError() {
-}
+// Error makes DistributorPushError implement Error interface.
+func (e DistributorPushError) DistributorError() {}
 
 // NewDistributorPushError wraps the given error into a DistributorPushError.
 func NewDistributorPushError(err error) DistributorPushError {
@@ -40,7 +38,7 @@ func NewDistributorPushError(err error) DistributorPushError {
 	}
 }
 
-// ReplicasNotMatchDistributorPushError is an implementation of DistributorError,
+// ReplicasNotMatchDistributorPushError is an implementation of Error,
 // corresponding to distributor.replicasNotMatchError.
 type ReplicasNotMatchDistributorPushError struct {
 	DistributorPushError
@@ -54,7 +52,7 @@ func NewReplicasNotMatchDistributorPushError(err error) ReplicasNotMatchDistribu
 	}
 }
 
-// TooManyClustersDistributorPushError is an implementation of DistributorError,
+// TooManyClustersDistributorPushError is an implementation of Error,
 // corresponding to distributor.tooManyClustersError.
 type TooManyClustersDistributorPushError struct {
 	DistributorPushError
@@ -68,7 +66,7 @@ func NewTooManyClustersDistributorPushError(err error) TooManyClustersDistributo
 	}
 }
 
-// ValidationDistributorPushError is an implementation of DistributorError,
+// ValidationDistributorPushError is an implementation of Error,
 // used to represent all implementations of validation.ValidationError.
 type ValidationDistributorPushError struct {
 	DistributorPushError
@@ -88,7 +86,7 @@ func (e ValidationDistributorPushError) Error() string {
 	return e.err
 }
 
-// IngestionRateDistributorPushError is an implementation of DistributorError,
+// IngestionRateDistributorPushError is an implementation of Error,
 // used to represent the ingestion rate limited error (globalerror.IngestionRateLimited).
 type IngestionRateDistributorPushError struct {
 	DistributorPushError
@@ -105,7 +103,7 @@ func NewIngestionRateDistributorPushError(limit float64, burst int) IngestionRat
 	}
 }
 
-// RequestRateDistributorPushError is an implementation of DistributorError,
+// RequestRateDistributorPushError is an implementation of Error,
 // used to represent the request rate limited error (globalerror.RequestRateLimited).
 type RequestRateDistributorPushError struct {
 	DistributorPushError

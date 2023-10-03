@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package error
+package distributorerror
 
 import (
 	"context"
@@ -19,7 +19,7 @@ const (
 
 func TestDoNotLogDistributorPushError(t *testing.T) {
 	originalErr := errors.New(errMsg)
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	originalErr = log.DoNotLogError{
@@ -39,7 +39,7 @@ func TestDoNotLogDistributorPushError(t *testing.T) {
 
 func TestNewReplicasNotMatchDistributorPushError(t *testing.T) {
 	originalErr := errors.New(errMsg)
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	err := NewReplicasNotMatchDistributorPushError(originalErr)
@@ -50,7 +50,7 @@ func TestNewReplicasNotMatchDistributorPushError(t *testing.T) {
 
 func TestNewTooManyClustersDistributorPushError(t *testing.T) {
 	originalErr := errors.New(errMsg)
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	err := NewTooManyClustersDistributorPushError(originalErr)
@@ -61,7 +61,7 @@ func TestNewTooManyClustersDistributorPushError(t *testing.T) {
 
 func TestNewValidationDistributorPushError(t *testing.T) {
 	originalErr := validation.ValidationError(errors.New(errMsg))
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	err := NewValidationDistributorPushError(originalErr)
@@ -72,7 +72,7 @@ func TestNewValidationDistributorPushError(t *testing.T) {
 
 func TestNewIngestionRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewIngestionRateLimitedError(10, 10)
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	err := NewIngestionRateDistributorPushError(10, 10)
@@ -83,7 +83,7 @@ func TestNewIngestionRateDistributorPushError(t *testing.T) {
 
 func TestNewRequestRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewRequestRateLimitedError(10, 10)
-	var distributorError DistributorError
+	var distributorError Error
 	assert.False(t, errors.As(originalErr, &distributorError))
 
 	err := NewRequestRateDistributorPushError(10, 10, false)
