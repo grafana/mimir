@@ -694,12 +694,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
@@ -770,12 +770,12 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		var removeTsIndexes []int
@@ -839,12 +839,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		now := mtime.Now()
@@ -983,12 +983,12 @@ func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		numSamples := 0
@@ -1051,7 +1051,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 
 		now := mtime.Now()
@@ -1070,7 +1070,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
-			return distributorerror.NewDistributorPushError(err)
+			return err
 		}
 		reqSize := int64(req.Size())
 		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)

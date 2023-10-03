@@ -2641,7 +2641,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		reqs              []*mimirpb.WriteRequest
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
-		expectErrs        []distributorerror.Error
+		expectErrs        []error
 	}
 	testCases := []testCase{
 		{
@@ -2652,7 +2652,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{{}},
 			expectedReqs:      []*mimirpb.WriteRequest{{}},
 			expectedNextCalls: 1,
-			expectErrs:        []distributorerror.Error{nil},
+			expectErrs:        []error{nil},
 		}, {
 			name:              "no changes if accept HA samples is false",
 			ctx:               ctxWithUser,
@@ -2661,7 +2661,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []distributorerror.Error{nil},
+			expectErrs:        []error{nil},
 		}, {
 			name:              "remove replica label with HA tracker disabled",
 			ctx:               ctxWithUser,
@@ -2670,7 +2670,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []distributorerror.Error{nil},
+			expectErrs:        []error{nil},
 		}, {
 			name:              "do nothing without user in context, don't even call next",
 			ctx:               context.Background(),
@@ -2679,8 +2679,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
-			expectErrs: []distributorerror.Error{
-				distributorerror.NewDistributorPushError(user.ErrNoOrgID),
+			expectErrs: []error{
+				user.ErrNoOrgID,
 			},
 		}, {
 			name:            "perform HA deduplication",
@@ -2693,7 +2693,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs: []distributorerror.Error{
+			expectErrs: []error{
 				nil,
 				distributorerror.NewReplicasNotMatchError(
 					replica2,
@@ -2713,7 +2713,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs: []distributorerror.Error{
+			expectErrs: []error{
 				nil,
 				distributorerror.NewReplicasNotMatchError(
 					replica2,
@@ -2850,7 +2850,7 @@ func TestRelabelMiddleware(t *testing.T) {
 		dropLabels     []string
 		reqs           []*mimirpb.WriteRequest
 		expectedReqs   []*mimirpb.WriteRequest
-		expectErrs     []distributorerror.Error
+		expectErrs     []error
 	}
 	testCases := []testCase{
 		{
@@ -2860,7 +2860,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     nil,
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:     []distributorerror.Error{nil},
+			expectErrs:     []error{nil},
 		}, {
 			name:           "no user in context",
 			ctx:            context.Background(),
@@ -2868,8 +2868,8 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     nil,
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectedReqs:   nil,
-			expectErrs: []distributorerror.Error{
-				distributorerror.NewDistributorPushError(user.ErrNoOrgID),
+			expectErrs: []error{
+				user.ErrNoOrgID,
 			},
 		}, {
 			name:           "apply a relabel rule",
@@ -2878,7 +2878,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			dropLabels:     []string{"label1", "label3"},
 			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
 			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:     []distributorerror.Error{nil},
+			expectErrs:     []error{nil},
 		}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
@@ -2893,7 +2893,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			},
 			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
 			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:   []distributorerror.Error{nil},
+			expectErrs:   []error{nil},
 		}, {
 			name:       "drop entire series if they have no labels",
 			ctx:        ctxWithUser,
@@ -2910,7 +2910,7 @@ func TestRelabelMiddleware(t *testing.T) {
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
-			expectErrs: []distributorerror.Error{nil, nil, nil, nil},
+			expectErrs: []error{nil, nil, nil, nil},
 		}, {
 			name: metaLabelTenantID + " available and cleaned up afterwards",
 			ctx:  ctxWithUser,
@@ -2944,7 +2944,7 @@ func TestRelabelMiddleware(t *testing.T) {
 					1.23,
 				)},
 			}},
-			expectErrs: []distributorerror.Error{nil},
+			expectErrs: []error{nil},
 		},
 	}
 
