@@ -44,17 +44,17 @@ func TestNewValidationError(t *testing.T) {
 func TestNewIngestionRateError(t *testing.T) {
 	limit := 10.0
 	burst := 10
-	err := NewIngestionRateError(limit, burst)
+	err := NewIngestionRateLimitedError(limit, burst)
 	assert.Error(t, err)
-	expectedMsg := validation.FormatIngestionRateLimitedError(limit, burst)
+	expectedMsg := validation.FormatIngestionRateLimitedMessage(limit, burst)
 	assert.EqualError(t, err, expectedMsg)
 }
 
 func TestNewRequestRateError(t *testing.T) {
 	limit := 10.0
 	burst := 10
-	err := NewRequestRateError(limit, burst)
+	err := NewRequestRateLimitedError(limit, burst)
 	assert.Error(t, err)
-	expectedMsg := validation.FormatRequestRateLimitedError(limit, burst)
+	expectedMsg := validation.FormatRequestRateLimitedMessage(limit, burst)
 	assert.EqualError(t, err, expectedMsg)
 }

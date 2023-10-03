@@ -950,7 +950,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRateError(
+			return distributorerror.NewIngestionRateLimitedError(
 				d.limits.IngestionRate(userID),
 				d.limits.IngestionBurstSize(userID),
 			)
@@ -1056,7 +1056,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.NewRequestRateError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
+			return distributorerror.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1106,22 +1106,22 @@ func (d *Distributor) handlePushError(ctx context.Context, err error, limits *va
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
 		tooManyClusterErr   distributorerror.TooManyClusters
 		validationErr       distributorerror.Validation
-		ingestionRateErr    distributorerror.IngestionRate
-		requestRateErr      distributorerror.RequestRate
+		ingestionRateErr    distributorerror.IngestionRateLimited
+		requestRateErr      distributorerror.RequestRateLimited
 	)
 
 	switch {
 	case errors.As(err, &replicasNotMatchErr):
-		return httpgrpc.Errorf(http.StatusAccepted, replicasNotMatchErr.Error())
+		return httpgrpc.Errorf(http.StatusAccepted, err.Error())
 	case errors.As(err, &tooManyClusterErr):
-		return httpgrpc.Errorf(http.StatusTooManyRequests, tooManyClusterErr.Error())
+		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
 	case errors.As(err, &validationErr):
-		return httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+		return httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 	case errors.As(err, &ingestionRateErr):
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return httpgrpc.Errorf(http.StatusTooManyRequests, ingestionRateErr.Error())
+		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
 	case errors.As(err, &requestRateErr):
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
@@ -1133,9 +1133,9 @@ func (d *Distributor) handlePushError(ctx context.Context, err error, limits *va
 		}
 
 		if serviceOverloadErrorEnabled {
-			return httpgrpc.Errorf(push.StatusServiceOverloaded, requestRateErr.Error())
+			return httpgrpc.Errorf(push.StatusServiceOverloaded, err.Error())
 		}
-		return httpgrpc.Errorf(http.StatusTooManyRequests, requestRateErr.Error())
+		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
 	}
 
 	return err

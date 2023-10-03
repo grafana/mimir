@@ -842,24 +842,24 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "an IngestionRate gets translated into an HTTP 429",
-			err:                distributorerror.NewIngestionRateError(10, 10),
+			name:               "an IngestionRateLimited gets translated into an HTTP 429",
+			err:                distributorerror.NewIngestionRateLimitedError(10, 10),
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedErrorMsg:   validation.FormatIngestionRateLimitedError(10, 10),
+			expectedErrorMsg:   validation.FormatIngestionRateLimitedMessage(10, 10),
 		},
 		{
-			name:                        "a RequestRate with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         distributorerror.NewRequestRateError(10, 10),
+			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                         distributorerror.NewRequestRateLimitedError(10, 10),
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
-			expectedErrorMsg:            validation.FormatRequestRateLimitedError(10, 10),
+			expectedErrorMsg:            validation.FormatRequestRateLimitedMessage(10, 10),
 		},
 		{
-			name:                        "a RequestRate without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         distributorerror.NewRequestRateError(10, 10),
+			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                         distributorerror.NewRequestRateLimitedError(10, 10),
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedErrorMsg:            validation.FormatRequestRateLimitedError(10, 10),
+			expectedErrorMsg:            validation.FormatRequestRateLimitedMessage(10, 10),
 		},
 	}
 

@@ -153,8 +153,8 @@ func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *vali
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
 		tooManyClusterErr   distributorerror.TooManyClusters
 		validationErr       distributorerror.Validation
-		ingestionRateErr    distributorerror.IngestionRate
-		requestRateErr      distributorerror.RequestRate
+		ingestionRateErr    distributorerror.IngestionRateLimited
+		requestRateErr      distributorerror.RequestRateLimited
 	)
 
 	switch {

@@ -293,7 +293,7 @@ func NewMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int)
 		maxQueryExpressionSizeBytesFlag))
 }
 
-func FormatRequestRateLimitedError(limit float64, burst int) string {
+func FormatRequestRateLimitedMessage(limit float64, burst int) string {
 	return globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d", limit, burst),
 		requestRateFlag,
@@ -301,7 +301,7 @@ func FormatRequestRateLimitedError(limit float64, burst int) string {
 	)
 }
 
-func FormatIngestionRateLimitedError(limit float64, burst int) string {
+func FormatIngestionRateLimitedMessage(limit float64, burst int) string {
 	return globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors", limit, burst),
 		ingestionRateFlag,

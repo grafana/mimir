@@ -191,7 +191,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateError(20, 20).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimitedError(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -489,7 +489,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateError(4, 2)},
+				{expectedError: distributorerror.NewRequestRateLimitedError(4, 2)},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -510,7 +510,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateError(2, 3)},
+				{expectedError: distributorerror.NewRequestRateLimitedError(2, 3)},
 			},
 		},
 		"request limit is reached return 529 when enable service overload error set to true": {
@@ -521,7 +521,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: distributorerror.NewRequestRateError(4, 2)},
+				{expectedError: distributorerror.NewRequestRateLimitedError(4, 2)},
 			},
 		},
 	}
@@ -581,10 +581,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
+				{samples: 2, metadata: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 5)},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
-				{metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 5)},
+				{samples: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 5)},
+				{metadata: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 5)},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -594,10 +594,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
+				{samples: 5, metadata: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 20)},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
-				{metadata: 1, expectedError: distributorerror.NewIngestionRateError(10, 20)},
+				{samples: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 20)},
+				{metadata: 1, expectedError: distributorerror.NewIngestionRateLimitedError(10, 20)},
 			},
 		},
 	}
