@@ -9,11 +9,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type Error interface {
-	error
-	DistributorError()
-}
-
 // DistributorPushError is a generic error returned on
 // distributor's write path.
 type DistributorPushError struct {
@@ -29,9 +24,6 @@ func (e DistributorPushError) Error() string {
 func (e DistributorPushError) Unwrap() error {
 	return e.err
 }
-
-// Error makes DistributorPushError implement Error interface.
-func (e DistributorPushError) DistributorError() {}
 
 // NewDistributorPushError wraps the given error into a DistributorPushError.
 func NewDistributorPushError(err error) DistributorPushError {
@@ -58,9 +50,6 @@ func (e ReplicasNotMatchDistributorPushError) Error() string {
 	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// DistributorError makes ReplicasNotMatchDistributorPushError implement Error interface.
-func (e ReplicasNotMatchDistributorPushError) DistributorError() {}
-
 // TooManyClustersDistributorPushError is an implementation of Error,
 // meaning that there are too many HA clusters (globalerror.TooManyHAClusters).
 type TooManyClustersDistributorPushError struct {
@@ -79,9 +68,6 @@ func (e TooManyClustersDistributorPushError) Error() string {
 		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
 		validation.HATrackerMaxClustersFlag)
 }
-
-// DistributorError makes TooManyClustersDistributorPushError implement Error interface.
-func (e TooManyClustersDistributorPushError) DistributorError() {}
 
 // ValidationDistributorPushError is an implementation of Error,
 // used to represent all implementations of validation.ValidationError.

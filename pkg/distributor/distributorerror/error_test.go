@@ -19,9 +19,6 @@ const (
 
 func TestDoNotLogDistributorPushError(t *testing.T) {
 	originalErr := errors.New(errMsg)
-	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
 	originalErr = log.DoNotLogError{
 		Err: originalErr,
 	}
@@ -30,7 +27,6 @@ func TestDoNotLogDistributorPushError(t *testing.T) {
 	assert.Error(t, err)
 
 	assert.True(t, errors.Is(err, originalErr))
-	assert.ErrorAs(t, err, &distributorError)
 
 	var doNotLogErr log.DoNotLogError
 	assert.ErrorAs(t, err, &doNotLogErr)
@@ -38,48 +34,32 @@ func TestDoNotLogDistributorPushError(t *testing.T) {
 }
 
 func TestNewReplicasNotMatchError(t *testing.T) {
-	var distributorError Error
 	err := NewReplicasNotMatchError("a", "b")
 	assert.Error(t, err)
-	assert.ErrorAs(t, err, &distributorError)
 }
 
 func TestNewTooManyClustersError(t *testing.T) {
-	var distributorError Error
 	err := NewTooManyClustersError(1)
 	assert.Error(t, err)
-	assert.ErrorAs(t, err, &distributorError)
 }
 
 func TestNewValidationDistributorPushError(t *testing.T) {
 	originalErr := validation.ValidationError(errors.New(errMsg))
-	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
 	err := NewValidationDistributorPushError(originalErr)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
-	assert.ErrorAs(t, err, &distributorError)
 }
 
 func TestNewIngestionRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewIngestionRateLimitedError(10, 10)
-	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
 	err := NewIngestionRateDistributorPushError(10, 10)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
-	assert.ErrorAs(t, err, &distributorError)
 }
 
 func TestNewRequestRateDistributorPushError(t *testing.T) {
 	originalErr := validation.NewRequestRateLimitedError(10, 10)
-	var distributorError Error
-	assert.False(t, errors.As(originalErr, &distributorError))
-
 	err := NewRequestRateDistributorPushError(10, 10, false)
 	assert.Error(t, err)
 	assert.True(t, errors.Is(err, originalErr))
-	assert.ErrorAs(t, err, &distributorError)
 }
