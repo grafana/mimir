@@ -43,8 +43,6 @@ var bufferPool = sync.Pool{
 const (
 	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
 	statusClientClosedRequest     = 499
-	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded = 529
 )
 
 // Handler is a http.Handler which accepts WriteRequests.
@@ -149,41 +147,13 @@ func handler(
 }
 
 func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
-	var (
-		replicasNotMatchErr distributorerror.ReplicasNotMatch
-		tooManyClustersErr  distributorerror.TooManyClusters
-		validationErr       distributorerror.Validation
-		ingestionRateErr    distributorerror.IngestionRateLimited
-		requestRateErr      distributorerror.RequestRateLimited
-	)
-
-	switch {
-	case errors.As(pushErr, &replicasNotMatchErr):
-		return http.StatusAccepted
-	case errors.As(pushErr, &tooManyClustersErr):
-		return http.StatusBadRequest
-	case errors.As(pushErr, &validationErr):
-		return http.StatusBadRequest
-	case errors.As(pushErr, &ingestionRateErr):
-		// Return a 429 here to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return http.StatusTooManyRequests
-	case errors.As(pushErr, &requestRateErr):
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		serviceOverloadErrorEnabled := false
-		userID, err := tenant.TenantID(ctx)
-		if err == nil {
-			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-		}
-
-		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded
-		}
-		return http.StatusTooManyRequests
-	default:
-		return http.StatusInternalServerError
+	serviceOverloadErrorEnabled := false
+	userID, err := tenant.TenantID(ctx)
+	if err == nil {
+		serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
+	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+		return httpStatus
+	}
+	return http.StatusInternalServerError
 }

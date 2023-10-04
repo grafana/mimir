@@ -851,7 +851,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
 			err:                         distributorerror.NewRequestRateLimitedError(10, 10),
 			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          StatusServiceOverloaded,
+			expectedHTTPStatus:          distributorerror.StatusServiceOverloaded,
 			expectedErrorMsg:            validation.FormatRequestRateLimitedMessage(10, 10),
 		},
 		{

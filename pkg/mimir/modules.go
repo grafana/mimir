@@ -112,7 +112,7 @@ func newDefaultConfig() *Config {
 func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 
-	a, err := api.New(t.Cfg.API, t.Cfg.Server, t.Server, t.Overrides, util_log.Logger)
+	a, err := api.New(t.Cfg.API, t.Cfg.Server, t.Server, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +440,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
-	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer)
+	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
 
 	return nil, nil
 }
@@ -629,7 +629,7 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	if t.ActivityTracker != nil {
 		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
 	}
-	t.API.RegisterIngester(ing, t.Cfg.Distributor)
+	t.API.RegisterIngester(ing, t.Cfg.Distributor, t.Overrides)
 	return nil, nil
 }
 

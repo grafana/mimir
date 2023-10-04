@@ -48,9 +48,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
-
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -521,7 +520,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(push.StatusServiceOverloaded, distributorerror.NewRequestRateLimitedError(4, 2).Error())},
+				{expectedError: httpgrpc.Errorf(distributorerror.StatusServiceOverloaded, distributorerror.NewRequestRateLimitedError(4, 2).Error())},
 			},
 		},
 	}

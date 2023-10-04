@@ -1095,52 +1095,20 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	return nil, handledErr
 }
 
-// TODO: this method is almost identical copy of push.distributorPushErrorHTTPStatus
-// with the only difference that push.distributorPushErrorHTTPStatus translates
-// unrecognized errors in HTTP 500 errors, while handlePushError retruns those errors
-// without any HTTP status. handlePushError will soon be de-released, since
-// Push is supposed to return gRPC and not HTTP status codes.
 func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr
 	}
 
-	var (
-		replicasNotMatchErr distributorerror.ReplicasNotMatch
-		tooManyClustersErr  distributorerror.TooManyClusters
-		validationErr       distributorerror.Validation
-		ingestionRateErr    distributorerror.IngestionRateLimited
-		requestRateErr      distributorerror.RequestRateLimited
-	)
-
-	switch {
-	case errors.As(pushErr, &replicasNotMatchErr):
-		return httpgrpc.Errorf(http.StatusAccepted, pushErr.Error())
-	case errors.As(pushErr, &tooManyClustersErr):
-		return httpgrpc.Errorf(http.StatusBadRequest, pushErr.Error())
-	case errors.As(pushErr, &validationErr):
-		return httpgrpc.Errorf(http.StatusBadRequest, pushErr.Error())
-	case errors.As(pushErr, &ingestionRateErr):
-		// Return a 429 here to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
-	case errors.As(pushErr, &requestRateErr):
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		serviceOverloadErrorEnabled := false
-		userID, err := tenant.TenantID(ctx)
-		if err == nil {
-			serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-		}
-
-		if serviceOverloadErrorEnabled {
-			return httpgrpc.Errorf(push.StatusServiceOverloaded, pushErr.Error())
-		}
-		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
+	serviceOverloadErrorEnabled := false
+	userID, err := tenant.TenantID(ctx)
+	if err == nil {
+		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-
+	httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled)
+	if ok {
+		return httpgrpc.Errorf(httpStatus, pushErr.Error())
+	}
 	return pushErr
 }
 
