@@ -19,30 +19,35 @@ const (
 // ReplicasNotMatch is an error stating that replicas do not match.
 // This error is not exposed in the Error catalog.
 type ReplicasNotMatch struct {
-	error
+	replica, elected string
 }
 
 func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatch {
 	return ReplicasNotMatch{
-		error: fmt.Errorf("replicas did not match, rejecting sample: replica=%s, elected=%s", replica, elected),
+		replica: replica,
+		elected: elected,
 	}
+}
+
+func (e ReplicasNotMatch) Error() string {
+	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
 // TooManyClusters is an error stating that there are too many HA clusters.
 // In the Error catalog, the ID of this error is globalerror.TooManyHAClusters.
 type TooManyClusters struct {
-	error
+	limit int
 }
 
 func NewTooManyClustersError(limit int) TooManyClusters {
-	return TooManyClusters{
-		error: errors.New(
-			globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-				fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", limit),
-				validation.HATrackerMaxClustersFlag,
-			),
-		),
-	}
+	return TooManyClusters{limit: limit}
+}
+
+func (e TooManyClusters) Error() string {
+	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
+		validation.HATrackerMaxClustersFlag,
+	)
 }
 
 // Validation is an error, used to represent all validation errors from the validation package.

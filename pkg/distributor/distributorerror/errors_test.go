@@ -21,7 +21,7 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 	elected := "b"
 	err := NewReplicasNotMatchError(replica, elected)
 	assert.Error(t, err)
-	expectedMsg := fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", replica, elected)
+	expectedMsg := fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", replica, elected)
 	assert.EqualError(t, err, expectedMsg)
 
 	anotherErr := NewReplicasNotMatchError("c", "d")
