@@ -24,7 +24,7 @@ type ReplicasNotMatch struct {
 
 func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatch {
 	return ReplicasNotMatch{
-		error: fmt.Errorf("replicas did not mach, rejecting sample: replica=%s, elected=%s", replica, elected),
+		error: fmt.Errorf("replicas did not match, rejecting sample: replica=%s, elected=%s", replica, elected),
 	}
 }
 
