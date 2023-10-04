@@ -20,6 +20,18 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 	assert.Error(t, err)
 	expectedMsg := fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", replica, elected)
 	assert.EqualError(t, err, expectedMsg)
+
+	anotherErr := NewReplicasNotMatchError("c", "d")
+	assert.NotErrorIs(t, err, anotherErr)
+
+	var replicasNotMatch ReplicasNotMatch
+	var tooManyClusters TooManyClusters
+	assert.True(t, errors.As(err, &replicasNotMatch))
+	assert.False(t, errors.As(err, &tooManyClusters))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &replicasNotMatch))
 }
 
 func TestNewTooManyClustersError(t *testing.T) {
@@ -31,6 +43,18 @@ func TestNewTooManyClustersError(t *testing.T) {
 		validation.HATrackerMaxClustersFlag,
 	)
 	assert.EqualError(t, err, expectedMsg)
+
+	anotherErr := NewTooManyClustersError(2)
+	assert.NotErrorIs(t, err, anotherErr)
+
+	var tooManyClusters TooManyClusters
+	var replicasNotMatch ReplicasNotMatch
+	assert.True(t, errors.As(err, &tooManyClusters))
+	assert.False(t, errors.As(err, &replicasNotMatch))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &tooManyClusters))
 }
 
 func TestNewValidationError(t *testing.T) {
@@ -39,6 +63,20 @@ func TestNewValidationError(t *testing.T) {
 	err := NewValidationError(validationErr)
 	assert.Error(t, err)
 	assert.EqualError(t, err, validationMsg)
+
+	anotherErr := NewValidationError(
+		errors.New("this is another validation error"),
+	)
+	assert.NotErrorIs(t, err, anotherErr)
+
+	var validation Validation
+	var replicasNotMatch ReplicasNotMatch
+	assert.True(t, errors.As(err, &validation))
+	assert.False(t, errors.As(err, &replicasNotMatch))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &validation))
 }
 
 func TestNewIngestionRateError(t *testing.T) {
@@ -48,6 +86,18 @@ func TestNewIngestionRateError(t *testing.T) {
 	assert.Error(t, err)
 	expectedMsg := validation.FormatIngestionRateLimitedMessage(limit, burst)
 	assert.EqualError(t, err, expectedMsg)
+
+	anotherErr := NewIngestionRateLimitedError(15.0, 15)
+	assert.NotErrorIs(t, err, anotherErr)
+
+	var ingestionRateLimited IngestionRateLimited
+	var replicasNotMatch ReplicasNotMatch
+	assert.True(t, errors.As(err, &ingestionRateLimited))
+	assert.False(t, errors.As(err, &replicasNotMatch))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &ingestionRateLimited))
 }
 
 func TestNewRequestRateError(t *testing.T) {
@@ -57,4 +107,16 @@ func TestNewRequestRateError(t *testing.T) {
 	assert.Error(t, err)
 	expectedMsg := validation.FormatRequestRateLimitedMessage(limit, burst)
 	assert.EqualError(t, err, expectedMsg)
+
+	anotherErr := NewRequestRateLimitedError(15.0, 15)
+	assert.NotErrorIs(t, err, anotherErr)
+
+	var requestRateLimited RequestRateLimited
+	var replicasNotMatch ReplicasNotMatch
+	assert.True(t, errors.As(err, &requestRateLimited))
+	assert.False(t, errors.As(err, &replicasNotMatch))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &requestRateLimited))
 }
