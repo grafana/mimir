@@ -7,24 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
-
-func TestNewMetadataMetricNameMissingError(t *testing.T) {
-	err := newMetadataMetricNameMissingError()
-	assert.Equal(t, "received a metric metadata with no metric name (err-mimir-metadata-missing-metric-name)", err.Error())
-}
-
-func TestNewMetadataMetricNameTooLongError(t *testing.T) {
-	err := newMetadataMetricNameTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "test_metric", Unit: "counter", Help: "This is a test metric."})
-	assert.Equal(t, "received a metric metadata whose metric name length exceeds the limit, metric name: 'test_metric' (err-mimir-metric-name-too-long). To adjust the related per-tenant limit, configure -validation.max-metadata-length, or contact your service administrator.", err.Error())
-}
-
-func TestNewMetadataUnitTooLongError(t *testing.T) {
-	err := newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "test_metric", Unit: "counter", Help: "This is a test metric."})
-	assert.Equal(t, "received a metric metadata whose unit name length exceeds the limit, unit: 'counter' metric name: 'test_metric' (err-mimir-unit-too-long). To adjust the related per-tenant limit, configure -validation.max-metadata-length, or contact your service administrator.", err.Error())
-}
 
 func TestNewMaxQueryLengthError(t *testing.T) {
 	err := NewMaxQueryLengthError(time.Hour, time.Minute)

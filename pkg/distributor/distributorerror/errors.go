@@ -56,7 +56,9 @@ type Validation struct {
 	error
 }
 
-func NewValidationError(err error) Validation { return Validation{error: err} }
+func NewValidationError(format string, args ...any) Validation {
+	return Validation{error: fmt.Errorf(format, args...)}
+}
 
 // IngestionRateLimited is an error used to represent the ingestion rate limited error.
 type IngestionRateLimited struct {

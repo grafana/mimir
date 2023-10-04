@@ -62,14 +62,11 @@ func TestNewTooManyClustersError(t *testing.T) {
 
 func TestNewValidationError(t *testing.T) {
 	validationMsg := "this is a validation error"
-	validationErr := errors.New(validationMsg)
-	err := NewValidationError(validationErr)
+	err := NewValidationError(validationMsg)
 	assert.Error(t, err)
 	assert.EqualError(t, err, validationMsg)
 
-	anotherErr := NewValidationError(
-		errors.New("this is another validation error"),
-	)
+	anotherErr := NewValidationError("this is another validation error")
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var validation Validation
@@ -127,7 +124,8 @@ func TestNewRequestRateError(t *testing.T) {
 }
 
 func TestToHTTPStatusHandler(t *testing.T) {
-	originalErr := errors.New("this is an error")
+	originalMsg := "this is an error"
+	originalErr := errors.New(originalMsg)
 	flag := "a.b.c"
 	testCases := []struct {
 		name                        string
@@ -174,13 +172,13 @@ func TestToHTTPStatusHandler(t *testing.T) {
 		},
 		{
 			name:               "a Validation gets translated into 400, true",
-			err:                NewValidationError(originalErr),
+			err:                NewValidationError(originalMsg),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of a Validation gets translated into 400, true",
-			err:                log.DoNotLogError{Err: NewValidationError(originalErr)},
+			err:                log.DoNotLogError{Err: NewValidationError(originalMsg)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},

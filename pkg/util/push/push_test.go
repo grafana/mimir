@@ -838,7 +838,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 		},
 		{
 			name:               "a Validation gets translated into an HTTP 400",
-			err:                distributorerror.NewValidationError(originalErr),
+			err:                distributorerror.NewValidationError(originalMsg),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
