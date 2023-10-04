@@ -6,6 +6,7 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,266 +14,150 @@ import (
 
 	"github.com/prometheus/common/model"
 
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
-// ValidationError is an error returned by series validation.
-//
-//nolint:revive // ignore stutter warning
-type ValidationError error
-
-// genericValidationError is a basic implementation of ValidationError which can be used when the
-// error format only contains the cause and the series.
-type genericValidationError struct {
-	message string
-	cause   string
-	series  []mimirpb.LabelAdapter
+func genericValidationError(format string, cause string, series []mimirpb.LabelAdapter) error {
+	return fmt.Errorf(format, cause, formatLabelSet(series))
 }
 
-func (e genericValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.cause, formatLabelSet(e.series))
+func newLabelNameTooLongError(series []mimirpb.LabelAdapter, labelName string) distributorerror.Validation {
+	labelNameTooLongMsgFormat := globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
+		"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
+		maxLabelNameLengthFlag,
+	)
+	return distributorerror.NewValidationError(genericValidationError(labelNameTooLongMsgFormat, labelName, series))
 }
 
-var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
-	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
-	maxLabelNameLengthFlag)
-
-func newLabelNameTooLongError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
-	return genericValidationError{
-		message: labelNameTooLongMsgFormat,
-		cause:   labelName,
-		series:  series,
-	}
+func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string) distributorerror.Validation {
+	return distributorerror.NewValidationError(
+		errors.New(
+			globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+				fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", labelValue, formatLabelSet(series)),
+				maxLabelValueLengthFlag,
+			),
+		),
+	)
 }
 
-// labelValueTooLongError is a customized ValidationError, in that the cause and the series are
-// are formatted in different order in Error.
-type labelValueTooLongError struct {
-	labelValue string
-	series     []mimirpb.LabelAdapter
+func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) distributorerror.Validation {
+	invalidLabelMsgFormat := globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
+	return distributorerror.NewValidationError(genericValidationError(invalidLabelMsgFormat, labelName, series))
 }
 
-func (e labelValueTooLongError) Error() string {
-	return globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)),
-		maxLabelValueLengthFlag)
+func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) distributorerror.Validation {
+	duplicateLabelMsgFormat := globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
+	return distributorerror.NewValidationError(genericValidationError(duplicateLabelMsgFormat, labelName, series))
 }
 
-func newLabelValueTooLongError(series []mimirpb.LabelAdapter, labelValue string) ValidationError {
-	return labelValueTooLongError{
-		labelValue: labelValue,
-		series:     series,
-	}
-}
-
-var invalidLabelMsgFormat = globalerror.SeriesInvalidLabel.Message(
-	"received a series with an invalid label: '%.200s' series: '%.200s'")
-
-func newInvalidLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
-	return genericValidationError{
-		message: invalidLabelMsgFormat,
-		cause:   labelName,
-		series:  series,
-	}
-}
-
-var duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message(
-	"received a series with duplicate label name, label: '%.200s' series: '%.200s'")
-
-func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
-	return genericValidationError{
-		message: duplicateLabelMsgFormat,
-		cause:   labelName,
-		series:  series,
-	}
-}
-
-type tooManyLabelsError struct {
-	series []mimirpb.LabelAdapter
-	limit  int
-}
-
-func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) ValidationError {
-	return tooManyLabelsError{
-		series: series,
-		limit:  limit,
-	}
-}
-
-func (e tooManyLabelsError) Error() string {
-	metric := mimirpb.FromLabelAdaptersToMetric(e.series).String()
+func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) distributorerror.Validation {
+	metric := mimirpb.FromLabelAdaptersToMetric(series).String()
 	ellipsis := ""
 
 	if utf8.RuneCountInString(metric) > 200 {
 		ellipsis = "\u2026"
 	}
 
-	return globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'", len(e.series), e.limit, metric, ellipsis),
-		maxLabelNamesPerSeriesFlag)
+	return distributorerror.NewValidationError(
+		errors.New(
+			globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
+				fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'", len(series), limit, metric, ellipsis),
+				maxLabelNamesPerSeriesFlag,
+			),
+		),
+	)
 }
 
-type noMetricNameError struct{}
-
-func newNoMetricNameError() ValidationError {
-	return noMetricNameError{}
+func newNoMetricNameError() distributorerror.Validation {
+	return distributorerror.NewValidationError(
+		errors.New(
+			globalerror.MissingMetricName.Message("received series has no metric name"),
+		),
+	)
 }
 
-func (e noMetricNameError) Error() string {
-	return globalerror.MissingMetricName.Message("received series has no metric name")
+func newInvalidMetricNameError(metricName string) distributorerror.Validation {
+	return distributorerror.NewValidationError(
+		errors.New(
+			globalerror.InvalidMetricName.Message(fmt.Sprintf("received a series with invalid metric name: '%.200s'", metricName)),
+		),
+	)
 }
 
-type invalidMetricNameError struct {
-	metricName string
+func newMaxNativeHistogramBucketsError(seriesLabels []mimirpb.LabelAdapter, timestamp int64, bucketCount, bucketLimit int) distributorerror.Validation {
+	return distributorerror.NewValidationError(
+		fmt.Errorf("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d (%s)",
+			timestamp,
+			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+			bucketCount,
+			bucketLimit,
+			globalerror.MaxNativeHistogramBuckets,
+		),
+	)
 }
 
-func newInvalidMetricNameError(metricName string) ValidationError {
-	return invalidMetricNameError{
-		metricName: metricName,
-	}
+func newSampleTimestampTooNewError(metricName string, timestamp int64) distributorerror.Validation {
+	sampleTimestampTooNewMsgFormat := globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
+		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
+		creationGracePeriodFlag,
+	)
+	return distributorerror.NewValidationError(fmt.Errorf(sampleTimestampTooNewMsgFormat, timestamp, metricName))
 }
 
-func (e invalidMetricNameError) Error() string {
-	return globalerror.InvalidMetricName.Message(fmt.Sprintf("received a series with invalid metric name: '%.200s'", e.metricName))
+func exemplarValidationError(format string, timestamp int64, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+	return fmt.Errorf(format, timestamp, mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(), mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String())
 }
 
-// sampleValidationError is a ValidationError implementation suitable for sample validation errors.
-type sampleValidationError struct {
-	message    string
-	metricName string
-	timestamp  int64
+func newExemplarEmptyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) distributorerror.Validation {
+	exemplarEmptyLabelsMsgFormat := globalerror.ExemplarLabelsMissing.Message(
+		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
+	)
+	return distributorerror.NewValidationError(exemplarValidationError(exemplarEmptyLabelsMsgFormat, timestamp, seriesLabels, exemplarLabels))
 }
 
-func (e sampleValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
+func newExemplarMissingTimestampError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) distributorerror.Validation {
+	exemplarMissingTimestampMsgFormat := globalerror.ExemplarTimestampInvalid.Message(
+		"received an exemplar with no timestamp, timestamp: %d series: %s labels: %s",
+	)
+	return distributorerror.NewValidationError(exemplarValidationError(exemplarMissingTimestampMsgFormat, timestamp, seriesLabels, exemplarLabels))
 }
 
-type maxNativeHistogramBucketsError struct {
-	seriesLabels []mimirpb.LabelAdapter
-	timestamp    int64
-	bucketCount  int
-	bucketLimit  int
+func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) distributorerror.Validation {
+	exemplarMaxLabelLengthMsgFormat := globalerror.ExemplarLabelsTooLong.Message(
+		fmt.Sprintf("received an exemplar where the size of its combined labels exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength),
+	)
+	return distributorerror.NewValidationError(exemplarValidationError(exemplarMaxLabelLengthMsgFormat, timestamp, seriesLabels, exemplarLabels))
 }
 
-func newMaxNativeHistogramBucketsError(seriesLabels []mimirpb.LabelAdapter, timestamp int64, bucketCount, bucketLimit int) maxNativeHistogramBucketsError {
-	return maxNativeHistogramBucketsError{
-		seriesLabels: seriesLabels,
-		timestamp:    timestamp,
-		bucketCount:  bucketCount,
-		bucketLimit:  bucketLimit,
-	}
+func newMetadataMetricNameMissingError() distributorerror.Validation {
+	return distributorerror.NewValidationError(
+		errors.New(
+			globalerror.MetricMetadataMissingMetricName.Message("received a metric metadata with no metric name"),
+		),
+	)
 }
 
-func (e maxNativeHistogramBucketsError) Error() string {
-	return fmt.Sprintf("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d (%s)",
-		e.timestamp, mimirpb.FromLabelAdaptersToLabels(e.seriesLabels).String(), e.bucketCount, e.bucketLimit, globalerror.MaxNativeHistogramBuckets)
+func metadataValidationError(format, cause, metricName string) error {
+	return fmt.Errorf(format, cause, metricName)
 }
 
-var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
-	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
-	creationGracePeriodFlag)
-
-func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
-	return sampleValidationError{
-		message:    sampleTimestampTooNewMsgFormat,
-		metricName: metricName,
-		timestamp:  timestamp,
-	}
+func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) distributorerror.Validation {
+	metadataMetricNameTooLongMsgFormat := globalerror.MetricMetadataMetricNameTooLong.MessageWithPerTenantLimitConfig(
+		// When formatting this error the "cause" will always be an empty string.
+		"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
+		maxMetadataLengthFlag,
+	)
+	return distributorerror.NewValidationError(metadataValidationError(metadataMetricNameTooLongMsgFormat, "", metadata.GetMetricFamilyName()))
 }
 
-// exemplarValidationError is a ValidationError implementation suitable for exemplar validation errors.
-type exemplarValidationError struct {
-	message        string
-	seriesLabels   []mimirpb.LabelAdapter
-	exemplarLabels []mimirpb.LabelAdapter
-	timestamp      int64
-}
-
-func (e exemplarValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.timestamp, mimirpb.FromLabelAdaptersToLabels(e.seriesLabels).String(), mimirpb.FromLabelAdaptersToLabels(e.exemplarLabels).String())
-}
-
-var exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
-	"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s")
-
-func newExemplarEmptyLabelsError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
-	return exemplarValidationError{
-		message:        exemplarEmptyLabelsMsgFormat,
-		seriesLabels:   seriesLabels,
-		exemplarLabels: exemplarLabels,
-		timestamp:      timestamp,
-	}
-}
-
-var exemplarMissingTimestampMsgFormat = globalerror.ExemplarTimestampInvalid.Message(
-	"received an exemplar with no timestamp, timestamp: %d series: %s labels: %s")
-
-func newExemplarMissingTimestampError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
-	return exemplarValidationError{
-		message:        exemplarMissingTimestampMsgFormat,
-		seriesLabels:   seriesLabels,
-		exemplarLabels: exemplarLabels,
-		timestamp:      timestamp,
-	}
-}
-
-var exemplarMaxLabelLengthMsgFormat = globalerror.ExemplarLabelsTooLong.Message(
-	fmt.Sprintf("received an exemplar where the size of its combined labels exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength))
-
-func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exemplarLabels []mimirpb.LabelAdapter, timestamp int64) ValidationError {
-	return exemplarValidationError{
-		message:        exemplarMaxLabelLengthMsgFormat,
-		seriesLabels:   seriesLabels,
-		exemplarLabels: exemplarLabels,
-		timestamp:      timestamp,
-	}
-}
-
-type metadataMetricNameMissingError struct{}
-
-func newMetadataMetricNameMissingError() ValidationError {
-	return metadataMetricNameMissingError{}
-}
-
-func (e metadataMetricNameMissingError) Error() string {
-	return globalerror.MetricMetadataMissingMetricName.Message("received a metric metadata with no metric name")
-}
-
-// metadataValidationError is a ValidationError implementation suitable for metadata validation errors.
-type metadataValidationError struct {
-	message    string
-	cause      string
-	metricName string
-}
-
-func (e metadataValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.cause, e.metricName)
-}
-
-var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithPerTenantLimitConfig(
-	// When formatting this error the "cause" will always be an empty string.
-	"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
-	maxMetadataLengthFlag)
-
-func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
-	return metadataValidationError{
-		message:    metadataMetricNameTooLongMsgFormat,
-		cause:      "",
-		metricName: metadata.GetMetricFamilyName(),
-	}
-}
-
-var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
-	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
-	maxMetadataLengthFlag)
-
-func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
-	return metadataValidationError{
-		message:    metadataUnitTooLongMsgFormat,
-		cause:      metadata.GetUnit(),
-		metricName: metadata.GetMetricFamilyName(),
-	}
+func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) distributorerror.Validation {
+	metadataUnitTooLongMsgFormat := globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
+		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
+		maxMetadataLengthFlag,
+	)
+	return distributorerror.NewValidationError(metadataValidationError(metadataUnitTooLongMsgFormat, metadata.GetUnit(), metadata.GetMetricFamilyName()))
 }
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
@@ -293,20 +178,22 @@ func NewMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int)
 		maxQueryExpressionSizeBytesFlag))
 }
 
-func FormatRequestRateLimitedMessage(limit float64, burst int) string {
-	return globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d", limit, burst),
+func NewRequestRateLimitedError(limit float64, burst int) distributorerror.RequestRateLimited {
+	format := globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d",
 		requestRateFlag,
 		requestBurstSizeFlag,
 	)
+	return distributorerror.NewRequestRateLimitedError(format, limit, burst)
 }
 
-func FormatIngestionRateLimitedMessage(limit float64, burst int) string {
-	return globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors", limit, burst),
+func NewIngestionRateLimitedError(limit float64, burst int) distributorerror.IngestionRateLimited {
+	format := globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors",
 		ingestionRateFlag,
 		ingestionBurstSizeFlag,
 	)
+	return distributorerror.NewIngestionRateLimitedError(format, limit, burst)
 }
 
 func NewQueryBlockedError() LimitError {

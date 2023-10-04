@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
@@ -602,7 +603,7 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), distributorerror.NewTooManyClustersError(2).Error())
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), distributorerror.NewTooManyClustersError(2, validation.HATrackerMaxClustersFlag).Error())
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
@@ -627,7 +628,7 @@ func TestHAClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), distributorerror.NewTooManyClustersError(2).Error())
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), distributorerror.NewTooManyClustersError(2, validation.HATrackerMaxClustersFlag).Error())
 
 	now = now.Add(5 * time.Second)
 

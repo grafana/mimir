@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -435,7 +436,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	h.electedLock.Unlock()
 	// If we have reached the limit for number of clusters, error out now.
 	if limit := h.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
-		return distributorerror.NewTooManyClustersError(limit)
+		return distributorerror.NewTooManyClustersError(limit, validation.HATrackerMaxClustersFlag)
 	}
 
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)

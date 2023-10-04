@@ -730,13 +730,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			if errors.As(err, &replicasNotMatchErr) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return replicasNotMatchErr
 			}
 
 			var tooManyClustersErr distributorerror.TooManyClusters
 			if errors.As(err, &tooManyClustersErr) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return tooManyClustersErr
 			}
 
 			return err
@@ -904,9 +902,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
 				if firstPartialErr == nil {
-					// The series labels may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidationError(validationErr)
+					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+					firstPartialErr = validationErr
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -926,9 +923,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		for mIdx, m := range req.Metadata {
 			if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
-					// The metadata info may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = distributorerror.NewValidationError(validationErr)
+					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+					firstPartialErr = validationErr
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -950,10 +946,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRateLimitedError(
-				d.limits.IngestionRate(userID),
-				d.limits.IngestionBurstSize(userID),
-			)
+			return validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1054,7 +1047,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
+			return validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation

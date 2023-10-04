@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -37,16 +36,17 @@ func (e ReplicasNotMatch) Error() string {
 // In the Error catalog, the ID of this error is globalerror.TooManyHAClusters.
 type TooManyClusters struct {
 	limit int
+	flag  string
 }
 
-func NewTooManyClustersError(limit int) TooManyClusters {
-	return TooManyClusters{limit: limit}
+func NewTooManyClustersError(limit int, flag string) TooManyClusters {
+	return TooManyClusters{limit: limit, flag: flag}
 }
 
 func (e TooManyClusters) Error() string {
 	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
-		validation.HATrackerMaxClustersFlag,
+		e.flag,
 	)
 }
 
@@ -58,36 +58,42 @@ type Validation struct {
 
 func NewValidationError(err error) Validation { return Validation{error: err} }
 
-func (v Validation) Error() string {
-	return v.error.Error()
-}
-
 // IngestionRateLimited is an error used to represent the ingestion rate limited error.
-// In the error catalog, the ID of this error is globalerror.IngestionRateLimited.
 type IngestionRateLimited struct {
-	error
+	format string
+	limit  float64
+	burst  int
 }
 
-func NewIngestionRateLimitedError(limit float64, burst int) IngestionRateLimited {
+func NewIngestionRateLimitedError(format string, limit float64, burst int) IngestionRateLimited {
 	return IngestionRateLimited{
-		error: errors.New(
-			validation.FormatIngestionRateLimitedMessage(limit, burst),
-		),
+		format: format,
+		limit:  limit,
+		burst:  burst,
 	}
+}
+
+func (e IngestionRateLimited) Error() string {
+	return fmt.Sprintf(e.format, e.limit, e.burst)
 }
 
 // RequestRateLimited is an error used to represent the request rate limited error.
-// In the error catalog, the ID of this error is globalerror.RequestRateLimited.
 type RequestRateLimited struct {
-	error
+	format string
+	limit  float64
+	burst  int
 }
 
-func NewRequestRateLimitedError(limit float64, burst int) RequestRateLimited {
+func NewRequestRateLimitedError(format string, limit float64, burst int) RequestRateLimited {
 	return RequestRateLimited{
-		error: errors.New(
-			validation.FormatRequestRateLimitedMessage(limit, burst),
-		),
+		format: format,
+		limit:  limit,
+		burst:  burst,
 	}
+}
+
+func (e RequestRateLimited) Error() string {
+	return fmt.Sprintf(e.format, e.limit, e.burst)
 }
 
 // ToHTTPStatus converts the given error into an appropriate HTTP status corresponding

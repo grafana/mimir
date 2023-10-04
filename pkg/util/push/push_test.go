@@ -33,7 +33,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -804,6 +803,10 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
+	replicasNotMatchErr := distributorerror.NewReplicasNotMatchError("a", "b")
+	tooManyClustersErr := distributorerror.NewTooManyClustersError(1, "a.b.c")
+	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimitedError("%v - %d", 10.0, 10)
+	requestRateLimitedErr := distributorerror.NewRequestRateLimitedError("%v - %d", 10.0, 10)
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -823,43 +826,40 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 		},
 		{
 			name:               "a ReplicasNotMatch gets translated into an HTTP 202",
-			err:                distributorerror.NewReplicasNotMatchError("a", "b"),
+			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
-			expectedErrorMsg:   "replicas did not mach, rejecting sample: replica=a, elected=b",
+			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		{
 			name:               "a TooManyClusters gets translated into an HTTP 400",
-			err:                distributorerror.NewTooManyClustersError(1),
+			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedErrorMsg: globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: 1)",
-				validation.HATrackerMaxClustersFlag,
-			),
+			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		{
 			name:               "a Validation gets translated into an HTTP 400",
-			err:                distributorerror.NewValidationError(validation.ValidationError(originalErr)),
+			err:                distributorerror.NewValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
 			name:               "an IngestionRateLimited gets translated into an HTTP 429",
-			err:                distributorerror.NewIngestionRateLimitedError(10, 10),
+			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
-			expectedErrorMsg:   validation.FormatIngestionRateLimitedMessage(10, 10),
+			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		{
 			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         distributorerror.NewRequestRateLimitedError(10, 10),
+			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          distributorerror.StatusServiceOverloaded,
-			expectedErrorMsg:            validation.FormatRequestRateLimitedMessage(10, 10),
+			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		{
 			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         distributorerror.NewRequestRateLimitedError(10, 10),
+			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
-			expectedErrorMsg:            validation.FormatRequestRateLimitedMessage(10, 10),
+			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 	}
 
