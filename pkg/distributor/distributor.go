@@ -1093,13 +1093,13 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if pushErr == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := d.handlePushError(ctx, pushErr, nil)
+	handledErr := d.handlePushError(ctx, pushErr)
 	return nil, handledErr
 }
 
-func (d *Distributor) handlePushError(ctx context.Context, err error, limits *validation.Overrides) error {
-	if errors.Is(err, context.Canceled) {
-		return err
+func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
+	if errors.Is(pushErr, context.Canceled) {
+		return pushErr
 	}
 
 	var (
@@ -1111,34 +1111,34 @@ func (d *Distributor) handlePushError(ctx context.Context, err error, limits *va
 	)
 
 	switch {
-	case errors.As(err, &replicasNotMatchErr):
-		return httpgrpc.Errorf(http.StatusAccepted, err.Error())
-	case errors.As(err, &tooManyClusterErr):
-		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
-	case errors.As(err, &validationErr):
-		return httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-	case errors.As(err, &ingestionRateErr):
+	case errors.As(pushErr, &replicasNotMatchErr):
+		return httpgrpc.Errorf(http.StatusAccepted, pushErr.Error())
+	case errors.As(pushErr, &tooManyClusterErr):
+		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
+	case errors.As(pushErr, &validationErr):
+		return httpgrpc.Errorf(http.StatusBadRequest, pushErr.Error())
+	case errors.As(pushErr, &ingestionRateErr):
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
-	case errors.As(err, &requestRateErr):
+		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
+	case errors.As(pushErr, &requestRateErr):
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		serviceOverloadErrorEnabled := false
 		userID, err := tenant.TenantID(ctx)
 		if err == nil {
-			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+			serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 		}
 
 		if serviceOverloadErrorEnabled {
-			return httpgrpc.Errorf(push.StatusServiceOverloaded, err.Error())
+			return httpgrpc.Errorf(push.StatusServiceOverloaded, pushErr.Error())
 		}
-		return httpgrpc.Errorf(http.StatusTooManyRequests, err.Error())
+		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
 	}
 
-	return err
+	return pushErr
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
