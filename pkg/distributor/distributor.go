@@ -1104,7 +1104,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 
 	var (
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
-		tooManyClusterErr   distributorerror.TooManyClusters
+		tooManyClustersErr  distributorerror.TooManyClusters
 		validationErr       distributorerror.Validation
 		ingestionRateErr    distributorerror.IngestionRateLimited
 		requestRateErr      distributorerror.RequestRateLimited
@@ -1113,8 +1113,8 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	switch {
 	case errors.As(pushErr, &replicasNotMatchErr):
 		return httpgrpc.Errorf(http.StatusAccepted, pushErr.Error())
-	case errors.As(pushErr, &tooManyClusterErr):
-		return httpgrpc.Errorf(http.StatusTooManyRequests, pushErr.Error())
+	case errors.As(pushErr, &tooManyClustersErr):
+		return httpgrpc.Errorf(http.StatusBadRequest, pushErr.Error())
 	case errors.As(pushErr, &validationErr):
 		return httpgrpc.Errorf(http.StatusBadRequest, pushErr.Error())
 	case errors.As(pushErr, &ingestionRateErr):

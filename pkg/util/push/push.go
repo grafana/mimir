@@ -151,7 +151,7 @@ func handler(
 func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *validation.Overrides) int {
 	var (
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
-		tooManyClusterErr   distributorerror.TooManyClusters
+		tooManyClustersErr  distributorerror.TooManyClusters
 		validationErr       distributorerror.Validation
 		ingestionRateErr    distributorerror.IngestionRateLimited
 		requestRateErr      distributorerror.RequestRateLimited
@@ -160,8 +160,8 @@ func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *vali
 	switch {
 	case errors.As(err, &replicasNotMatchErr):
 		return http.StatusAccepted
-	case errors.As(err, &tooManyClusterErr):
-		return http.StatusTooManyRequests
+	case errors.As(err, &tooManyClustersErr):
+		return http.StatusBadRequest
 	case errors.As(err, &validationErr):
 		return http.StatusBadRequest
 	case errors.As(err, &ingestionRateErr):

@@ -828,9 +828,9 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   "replicas did not mach, rejecting sample: replica=a, elected=b",
 		},
 		{
-			name:               "a TooManyClusters gets translated into an HTTP 429",
+			name:               "a TooManyClusters gets translated into an HTTP 400",
 			err:                distributorerror.NewTooManyClustersError(1),
-			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg: globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
 				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: 1)",
 				validation.HATrackerMaxClustersFlag,
