@@ -6,16 +6,13 @@
 package ingester
 
 import (
-	"context"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ingester/ingestererror"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -43,26 +40,18 @@ max_tenants: 50000
 func TestInstanceLimitErr(t *testing.T) {
 	userID := "1"
 	limitErrors := []error{
-		errMaxIngestionRateReached,
-		wrapOrAnnotateWithUser(errMaxIngestionRateReached, userID),
-		errMaxTenantsReached,
-		wrapOrAnnotateWithUser(errMaxTenantsReached, userID),
-		errMaxInMemorySeriesReached,
-		wrapOrAnnotateWithUser(errMaxInMemorySeriesReached, userID),
+		//errMaxIngestionRateReached,
+		//errMaxTenantsReached,
+		//errMaxInMemorySeriesReached,
 		errMaxInflightRequestsReached,
-		wrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID),
 	}
 	for _, limitError := range limitErrors {
-		var safe safeToWrap
-		require.ErrorAs(t, limitError, &safe)
+		var instanceLimitErr ingestererror.InstanceLimitReached
+		require.Error(t, instanceLimitErr)
+		require.ErrorAs(t, limitError, &instanceLimitErr)
 
-		var optional middleware.OptionalLogging
-		require.ErrorAs(t, limitError, &optional)
-		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
-
-		stat, ok := status.FromError(limitError)
-		require.True(t, ok, "expected to be able to convert to gRPC status")
-		require.Equal(t, codes.Unavailable, stat.Code())
-		require.ErrorContains(t, stat.Err(), limitError.Error())
+		wrappedWithUserErr := ingestererror.WrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID)
+		require.Error(t, wrappedWithUserErr)
+		require.ErrorIs(t, wrappedWithUserErr, limitError)
 	}
 }

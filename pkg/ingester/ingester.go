@@ -53,6 +53,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/ingestererror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -758,7 +759,7 @@ type pushStats struct {
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 func (i *Ingester) StartPushRequest() error {
-	if err := i.checkRunning(); err != nil {
+	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 
@@ -826,12 +827,20 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		return wrapOrAnnotateWithUser(err, userID)
+		return ingestererror.WrapOrAnnotateWithUser(
+			err,
+			userID,
+		)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return ingestererror.WrapOrAnnotateWithUser(
+			ingestererror.NewTSDBUnavailableError(
+				err,
+			),
+			userID,
+		)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -871,7 +880,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			level.Warn(i.logger).Log("msg", "failed to rollback appender on error", "user", userID, "err", err)
 		}
 
-		return wrapOrAnnotateWithUser(err, userID)
+		return ingestererror.WrapOrAnnotateWithUser(err, userID)
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
@@ -2119,7 +2128,10 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	// may have data loss or TSDB WAL corruption if the TSDB is created before/during
 	// a transfer in occurs.
 	if ingesterState := i.lifecycler.GetState(); !force && ingesterState != ring.ACTIVE {
-		return nil, fmt.Errorf(errTSDBCreateIncompatibleState, ingesterState)
+		return nil, ingestererror.NewSafeToWrapError(
+			errTSDBCreateIncompatibleState,
+			ingesterState.String(),
+		)
 	}
 
 	gl := i.getInstanceLimits()
@@ -3114,6 +3126,24 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// checkAvailable checks whether the ingester is available, and if it is not the case
+// returns an ingestererror.Unavailable error.
+// Using block store, the ingester is available only when it is in a Running state.
+// The ingester is not available when stopping to prevent any read or writes to the
+// TSDB after the ingester has closed them.
+func (i *Ingester) checkAvailable() error {
+	s := i.State()
+	i.lifecycler.State()
+	if s == services.Running {
+		return nil
+	}
+	return ingestererror.NewUnavailableError(
+		s.String(),
+	)
+}
+
+// TODO checkRunning should be removed once the error handling improvement is completed.
+// TODO return gRPC errors only at the topmost level.
 // Using block store, the ingester is only available when it is in a Running state. The ingester is not available
 // when stopping to prevent any read or writes to the TSDB after the ingester has closed them.
 func (i *Ingester) checkRunning() error {
@@ -3127,10 +3157,40 @@ func (i *Ingester) checkRunning() error {
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return &mimirpb.WriteResponse{}, nil
 	}
-	return &mimirpb.WriteResponse{}, nil
+	handledErr := i.handlePushError(err)
+	return nil, handledErr
+}
+
+func (i *Ingester) handlePushError(err error) error {
+	var (
+		unavailableErr   ingestererror.Unavailable
+		instanceLimitErr ingestererror.InstanceLimitReached
+		tsdbUnavailable  ingestererror.TSDBUnavailable
+	)
+	switch {
+	case errors.As(err, &unavailableErr):
+		return newErrorWithStatus(
+			err,
+			codes.Unavailable,
+		)
+	case errors.As(err, &instanceLimitErr):
+		return newErrorWithStatus(
+			util_log.DoNotLogError{
+				Err: err,
+			},
+			codes.Unavailable,
+		)
+	case errors.As(err, &tsdbUnavailable):
+		return newErrorWithHTTPStatus(
+			err,
+			http.StatusServiceUnavailable,
+		)
+	default:
+		return err
+	}
 }
 
 // pushMetadata returns number of ingested metadata.

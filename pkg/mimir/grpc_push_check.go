@@ -34,7 +34,9 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(methodName string) error {
 			return errNoIngester
 		}
 
-		return ing.StartPushRequest()
+		if err := ing.StartPushRequest(); err != nil {
+			return status.Error(codes.Unavailable, err.Error())
+		}
 	}
 	return nil
 }

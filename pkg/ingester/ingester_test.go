@@ -60,6 +60,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/ingestererror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -2617,15 +2618,15 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 	}{
 		"not allow to create TSDB if in PENDING state": {
 			state:       ring.PENDING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.PENDING),
+			expectedErr: ingestererror.NewSafeToWrapError(errTSDBCreateIncompatibleState, ring.PENDING),
 		},
 		"not allow to create TSDB if in JOINING state": {
 			state:       ring.JOINING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.JOINING),
+			expectedErr: ingestererror.NewSafeToWrapError(errTSDBCreateIncompatibleState, ring.JOINING),
 		},
 		"not allow to create TSDB if in LEAVING state": {
 			state:       ring.LEAVING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.LEAVING),
+			expectedErr: ingestererror.NewSafeToWrapError(errTSDBCreateIncompatibleState, ring.LEAVING),
 		},
 		"allow to create TSDB if in ACTIVE state": {
 			state:       ring.ACTIVE,
@@ -5663,7 +5664,16 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
-	require.Equal(t, newErrorWithHTTPStatus(wrapOrAnnotateWithUser(errTSDBForcedCompaction, userID), http.StatusServiceUnavailable), err)
+	expectedErr := newErrorWithHTTPStatus(
+		ingestererror.WrapOrAnnotateWithUser(
+			ingestererror.NewTSDBUnavailableError(
+				errTSDBForcedCompaction,
+			),
+			userID,
+		),
+		http.StatusServiceUnavailable,
+	)
+	require.Equal(t, expectedErr, err)
 
 	// Ingestion is successful after a flush.
 	ok, _ = db.changeState(forceCompacting, active)
@@ -5874,8 +5884,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							assert.ErrorIs(t, err, testData.expectedErr)
 							var optional middleware.OptionalLogging
 							assert.ErrorAs(t, err, &optional)
-							var safe safeToWrap
-							assert.ErrorAs(t, err, &safe)
 							s, ok := status.FromError(err)
 							require.True(t, ok, "expected to be able to convert to gRPC status")
 							assert.Equal(t, codes.Unavailable, s.Code())
@@ -6211,8 +6219,6 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsReached)
-		var safe safeToWrap
-		require.ErrorAs(t, err, &safe)
 
 		var optional middleware.OptionalLogging
 		require.ErrorAs(t, err, &optional)
