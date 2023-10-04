@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -47,7 +48,8 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	factory := newStoreGatewayClientFactory(cfg, reg)
 
 	for i := 0; i < 2; i++ {
-		client, err := factory(listener.Addr().String())
+		inst := ring.InstanceDesc{Addr: listener.Addr().String()}
+		client, err := factory.FromInstance(inst)
 		require.NoError(t, err)
 		defer client.Close() //nolint:errcheck
 

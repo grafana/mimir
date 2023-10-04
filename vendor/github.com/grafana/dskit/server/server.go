@@ -417,15 +417,18 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		RegisterInstrumentationWithGatherer(router, gatherer)
 	}
 
-	var sourceIPs *middleware.SourceIPExtractor
-	if cfg.LogSourceIPs {
-		sourceIPs, err = middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
-		if err != nil {
-			return nil, fmt.Errorf("error setting up source IP extraction: %v", err)
-		}
+	sourceIPs, err := middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
+	if err != nil {
+		return nil, fmt.Errorf("error setting up source IP extraction: %v", err)
+	}
+	logSourceIPs := sourceIPs
+	if !cfg.LogSourceIPs {
+		// We always include the source IPs for traces,
+		// but only want to log them in the middleware if that is enabled.
+		logSourceIPs = nil
 	}
 
-	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, sourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
+	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
 	defaultHTTPMiddleware := []middleware.Interface{

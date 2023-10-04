@@ -222,7 +222,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		log.Span.SetTag("ingester_address", ing.Addr)
 		log.Span.SetTag("ingester_zone", ing.Zone)
 
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
+		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
 			return ingesterQueryResult{}, err
 		}
