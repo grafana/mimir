@@ -946,7 +946,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
+			return distributorerror.NewIngestionRateLimitedError(validation.IngestionRateLimitedMsgFormat, d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1047,7 +1047,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
+			return distributorerror.NewRequestRateLimitedError(validation.RequestRateLimitedMsgFormat, d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation

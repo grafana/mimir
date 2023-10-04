@@ -13,7 +13,6 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -62,6 +61,16 @@ var (
 		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 		maxMetadataLengthFlag,
 	)
+	IngestionRateLimitedMsgFormat = globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors",
+		ingestionRateFlag,
+		ingestionBurstSizeFlag,
+	)
+	RequestRateLimitedMsgFormat = globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d",
+		RequestRateFlag,
+		RequestBurstSizeFlag,
+	)
 )
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
@@ -80,24 +89,6 @@ func NewMaxQueryExpressionSizeBytesError(actualSizeBytes, maxQuerySizeBytes int)
 	return LimitError(globalerror.MaxQueryExpressionSizeBytes.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the raw query size in bytes exceeds the limit (query size: %d, limit: %d)", actualSizeBytes, maxQuerySizeBytes),
 		maxQueryExpressionSizeBytesFlag))
-}
-
-func NewRequestRateLimitedError(limit float64, burst int) distributorerror.RequestRateLimited {
-	format := globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
-		"the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d",
-		requestRateFlag,
-		requestBurstSizeFlag,
-	)
-	return distributorerror.NewRequestRateLimitedError(format, limit, burst)
-}
-
-func NewIngestionRateLimitedError(limit float64, burst int) distributorerror.IngestionRateLimited {
-	format := globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
-		"the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors",
-		ingestionRateFlag,
-		ingestionBurstSizeFlag,
-	)
-	return distributorerror.NewIngestionRateLimitedError(format, limit, burst)
 }
 
 func NewQueryBlockedError() LimitError {
