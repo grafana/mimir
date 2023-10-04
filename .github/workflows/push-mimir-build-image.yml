@@ -68,6 +68,7 @@ jobs:
           fi
 
       - name: Add Comment to the PR
+        if: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
         id: notification
         run: | 
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
@@ -79,7 +80,7 @@ jobs:
           fi
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           IMAGE: ${{ steps.prepare.outputs.image }}
 
