@@ -4,12 +4,15 @@ package distributorerror
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -119,4 +122,111 @@ func TestNewRequestRateError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &requestRateLimited))
+}
+
+func TestToHTTPStatusHandler(t *testing.T) {
+	originalErr := errors.New("this is an error")
+	testCases := []struct {
+		name                        string
+		err                         error
+		serviceOverloadErrorEnabled bool
+		expectedHTTPStatus          int
+		expectedOutcome             bool
+	}{
+		{
+			name:               "a generic error gets translated into -1, false",
+			err:                originalErr,
+			expectedHTTPStatus: -1,
+			expectedOutcome:    false,
+		},
+		{
+			name:               "a DoNotLog error of a generic error gets translated into a -1, false",
+			err:                log.DoNotLogError{Err: originalErr},
+			expectedHTTPStatus: -1,
+			expectedOutcome:    false,
+		},
+		{
+			name:               "a ReplicasNotMatch gets translated into 202, true",
+			err:                NewReplicasNotMatchError("a", "b"),
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a DoNotLog error of a ReplicasNotMatch gets translated into 202, true",
+			err:                log.DoNotLogError{Err: NewReplicasNotMatchError("a", "b")},
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a TooManyClusters gets translated into 400, true",
+			err:                NewTooManyClustersError(1),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a DoNotLog error of a TooManyClusters gets translated into 400, true",
+			err:                log.DoNotLogError{Err: NewTooManyClustersError(1)},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a Validation gets translated into 400, true",
+			err:                NewValidationError(validation.ValidationError(originalErr)),
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a DoNotLog error of a Validation gets translated into 400, true",
+			err:                log.DoNotLogError{Err: NewValidationError(validation.ValidationError(originalErr))},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "an IngestionRateLimited gets translated into an HTTP 429",
+			err:                NewIngestionRateLimitedError(10, 10),
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedOutcome:    true,
+		},
+		{
+			name:               "a DoNotLog error of an IngestionRateLimited gets translated into an HTTP 429",
+			err:                log.DoNotLogError{Err: NewIngestionRateLimitedError(10, 10)},
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedOutcome:    true,
+		},
+		{
+			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                         NewRequestRateLimitedError(10, 10),
+			serviceOverloadErrorEnabled: true,
+			expectedHTTPStatus:          StatusServiceOverloaded,
+			expectedOutcome:             true,
+		},
+		{
+			name:                        "a DoNotLog error of a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                         log.DoNotLogError{Err: NewRequestRateLimitedError(10, 10)},
+			serviceOverloadErrorEnabled: true,
+			expectedHTTPStatus:          StatusServiceOverloaded,
+			expectedOutcome:             true,
+		},
+		{
+			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                         NewRequestRateLimitedError(10, 10),
+			serviceOverloadErrorEnabled: false,
+			expectedHTTPStatus:          http.StatusTooManyRequests,
+			expectedOutcome:             true,
+		},
+		{
+			name:                        "a DoNotLog error of a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                         log.DoNotLogError{Err: NewRequestRateLimitedError(10, 10)},
+			serviceOverloadErrorEnabled: false,
+			expectedHTTPStatus:          http.StatusTooManyRequests,
+			expectedOutcome:             true,
+		},
+	}
+
+	for tn, tc := range testCases {
+		fmt.Println(tn)
+		httpStatus, outcome := ToHTTPStatus(tc.err, tc.serviceOverloadErrorEnabled)
+		require.Equal(t, tc.expectedHTTPStatus, httpStatus)
+		require.Equal(t, tc.expectedOutcome, outcome)
+	}
 }
