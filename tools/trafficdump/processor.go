@@ -58,8 +58,8 @@ func (p *processor) run() {
 }
 
 func (p *processor) print(req *request, resp *response) {
-	if req != nil && req.PushRequest != nil && req.PushRequest.cleanup != nil {
-		defer req.PushRequest.cleanup()
+	if req != nil && req.cleanup != nil {
+		defer req.cleanup()
 	}
 
 	if req != nil && req.ignored {
