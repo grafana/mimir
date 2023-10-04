@@ -1035,9 +1035,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		il := d.getInstanceLimits()
 		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return util_log.DoNotLogError{
-				Err: errMaxInflightRequestsReached,
-			}
+			return util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
 		}
 
 		if il.MaxIngestionRate > 0 {
@@ -1097,6 +1095,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	return nil, handledErr
 }
 
+// TODO: this method is almost identical copy of push.distributorPushErrorHTTPStatus
+// with the only difference that push.distributorPushErrorHTTPStatus translates
+// unrecognized errors in HTTP 500 errors, while handlePushError retruns those errors
+// without any HTTP status. handlePushError will soon be de-released, since
+// Push is supposed to return gRPC and not HTTP status codes.
 func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
 	if errors.Is(pushErr, context.Canceled) {
 		return pushErr

@@ -148,7 +148,7 @@ func handler(
 	})
 }
 
-func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *validation.Overrides) int {
+func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
 	var (
 		replicasNotMatchErr distributorerror.ReplicasNotMatch
 		tooManyClustersErr  distributorerror.TooManyClusters
@@ -158,18 +158,18 @@ func distributorPushErrorHTTPStatus(ctx context.Context, err error, limits *vali
 	)
 
 	switch {
-	case errors.As(err, &replicasNotMatchErr):
+	case errors.As(pushErr, &replicasNotMatchErr):
 		return http.StatusAccepted
-	case errors.As(err, &tooManyClustersErr):
+	case errors.As(pushErr, &tooManyClustersErr):
 		return http.StatusBadRequest
-	case errors.As(err, &validationErr):
+	case errors.As(pushErr, &validationErr):
 		return http.StatusBadRequest
-	case errors.As(err, &ingestionRateErr):
+	case errors.As(pushErr, &ingestionRateErr):
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		return http.StatusTooManyRequests
-	case errors.As(err, &requestRateErr):
+	case errors.As(pushErr, &requestRateErr):
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
