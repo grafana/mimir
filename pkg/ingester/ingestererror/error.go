@@ -3,6 +3,12 @@ package ingestererror
 import (
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/prometheus/common/model"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 const (
@@ -77,6 +83,120 @@ func NewTSDBUnavailableError(err error) TSDBUnavailable {
 	return TSDBUnavailable{
 		safeToWrapError(
 			err.Error(),
+		),
+	}
+}
+
+// BadData is a safeToWrap error indicating a problem with a sample or an exemplar.
+type BadData struct {
+	safeToWrapError
+}
+
+func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) BadData {
+	return BadData{
+		safeToWrapError(
+			fmt.Sprintf("%v. The affected sample has timestamp %s and is from series %s",
+				errID.Message(errMsg),
+				timestamp.Time().UTC().Format(time.RFC3339Nano),
+				mimirpb.FromLabelAdaptersToLabels(labels).String(),
+			),
+		),
+	}
+}
+
+func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) BadData {
+	return BadData{
+		safeToWrapError(
+			fmt.Sprintf("%v. The affected exemplar is %s with timestamp %s for series %s",
+				errID.Message(errMsg),
+				mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+				timestamp.Time().UTC().Format(time.RFC3339Nano),
+				mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+			),
+		),
+	}
+}
+
+func NewSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) BadData {
+	return newSampleError(
+		globalerror.SampleTimestampTooOld,
+		"the sample has been rejected because its timestamp is too old",
+		timestamp,
+		labels,
+	)
+}
+
+func NewSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) BadData {
+	return newSampleError(
+		globalerror.SampleTimestampTooOld,
+		fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s",
+			model.Duration(oooTimeWindow).String(),
+		),
+		timestamp,
+		labels,
+	)
+}
+
+func NewSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) BadData {
+	return newSampleError(
+		globalerror.SampleTooFarInFuture,
+		"received a sample whose timestamp is too far in the future",
+		timestamp,
+		labels,
+	)
+}
+
+func NewSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) BadData {
+	return newSampleError(
+		globalerror.SampleOutOfOrder,
+		"the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed",
+		timestamp,
+		labels,
+	)
+}
+
+func NewSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) BadData {
+	return newSampleError(
+		globalerror.SampleDuplicateTimestamp,
+		"the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested",
+		timestamp,
+		labels,
+	)
+}
+
+func NewExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) BadData {
+	return newExemplarError(
+		globalerror.ExemplarSeriesMissing,
+		"the exemplar has been rejected because the related series has not been ingested yet",
+		timestamp,
+		seriesLabels,
+		exemplarLabels,
+	)
+}
+
+func NewExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) BadData {
+	return newExemplarError(
+		globalerror.ExemplarTooFarInFuture,
+		"received an exemplar whose timestamp is too far in the future",
+		timestamp,
+		seriesLabels,
+		exemplarLabels,
+	)
+}
+
+func NewTSDBExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+	if ingestErr == nil {
+		return nil
+	}
+
+	return BadData{
+		safeToWrapError(
+			fmt.Sprintf("err: %v. timestamp=%s, series=%s, exemplar=%s",
+				ingestErr,
+				timestamp.Time().UTC().Format(time.RFC3339Nano),
+				mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+				mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+			),
 		),
 	}
 }

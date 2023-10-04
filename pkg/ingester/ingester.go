@@ -983,35 +983,61 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels))
+				return i.errorSamplers.sampleTimestampTooOld.WrapError(
+					ingestererror.NewSampleTimestampTooOldError(
+						model.Time(timestamp),
+						labels,
+					),
+				)
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleOutOfOrder.WrapError(newIngestErrSampleOutOfOrder(model.Time(timestamp), labels))
+				return i.errorSamplers.sampleOutOfOrder.WrapError(
+					ingestererror.NewSampleOutOfOrderError(
+						model.Time(timestamp),
+						labels,
+					),
+				)
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
 			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOldOOOEnabled.WrapError(newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow))
+				return i.errorSamplers.sampleTimestampTooOldOOOEnabled.WrapError(
+					ingestererror.NewSampleTimestampTooOldOOOEnabledError(
+						model.Time(timestamp),
+						labels,
+						outOfOrderWindow,
+					),
+				)
 			})
 			return true
 
 		case globalerror.SampleTooFarInFuture:
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooFarInFuture.WrapError(newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels))
+				return i.errorSamplers.sampleTimestampTooFarInFuture.WrapError(
+					ingestererror.NewSampleTimestampTooFarInFutureError(
+						model.Time(timestamp),
+						labels,
+					),
+				)
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
 			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleDuplicateTimestamp.WrapError(newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels))
+				return i.errorSamplers.sampleDuplicateTimestamp.WrapError(
+					ingestererror.NewSampleDuplicateTimestampError(
+						model.Time(timestamp),
+						labels,
+					),
+				)
 			})
 			return true
 
@@ -1066,7 +1092,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 
 				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
+					return i.errorSamplers.sampleTimestampTooOld.WrapError(
+						ingestererror.NewSampleTimestampTooOldError(
+							model.Time(firstTimestamp),
+							ts.Labels,
+						),
+					)
 				})
 				continue
 			}
@@ -1081,7 +1112,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				firstTimestamp := ts.Samples[0].TimestampMs
 
 				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
+					return i.errorSamplers.sampleTimestampTooOld.WrapError(
+						ingestererror.NewSampleTimestampTooOldError(
+							model.Time(firstTimestamp),
+							ts.Labels,
+						),
+					)
 				})
 				continue
 			}
@@ -1200,7 +1236,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			// already exist.  If it does not then drop.
 			if ref == 0 {
 				updateFirstPartial(func() error {
-					return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
+					return ingestererror.NewExemplarMissingSeriesError(
+						model.Time(ts.Exemplars[0].TimestampMs),
+						ts.Labels,
+						ts.Exemplars[0].Labels,
+					)
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
@@ -1208,7 +1248,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					if ex.TimestampMs > maxTimestampMs {
 						stats.failedExemplarsCount++
 						updateFirstPartial(func() error {
-							return newIngestErrExemplarTimestampTooFarInFuture(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+							return ingestererror.NewExemplarTimestampTooFarInFutureError(
+								model.Time(ex.TimestampMs),
+								ts.Labels,
+								ex.Labels,
+							)
 						})
 						continue
 					}
@@ -1228,7 +1272,12 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 					// Error adding exemplar
 					updateFirstPartial(func() error {
-						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						return ingestererror.NewTSDBExemplarOtherErr(
+							err,
+							model.Time(ex.TimestampMs),
+							ts.Labels,
+							ex.Labels,
+						)
 					})
 					stats.failedExemplarsCount++
 				}
