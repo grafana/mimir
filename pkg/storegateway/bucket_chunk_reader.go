@@ -211,7 +211,7 @@ func populateChunk(out *storepb.AggrChunk, in rawChunk) error {
 		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 	}
 
-	out.Raw = &storepb.Chunk{Type: enc, Data: in.Bytes()}
+	out.Raw = storepb.Chunk{Type: enc, Data: in.Bytes()}
 	return nil
 }
 

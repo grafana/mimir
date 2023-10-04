@@ -435,9 +435,6 @@ func initializeChunks(refs []seriesChunkRef, chunks []storepb.AggrChunk) {
 	for cIdx := range chunks {
 		chunks[cIdx].MinTime = refs[cIdx].minTime
 		chunks[cIdx].MaxTime = refs[cIdx].maxTime
-		if chunks[cIdx].Raw == nil {
-			chunks[cIdx].Raw = &storepb.Chunk{}
-		}
 	}
 }
 

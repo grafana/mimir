@@ -81,7 +81,7 @@ func TestSeriesChunksSet(t *testing.T) {
 
 					set.series[i].chks[j].MinTime = 10
 					set.series[i].chks[j].MaxTime = 10
-					set.series[i].chks[j].Raw = &storepb.Chunk{Data: []byte{1, 2, 3}}
+					set.series[i].chks[j].Raw = storepb.Chunk{Data: []byte{1, 2, 3}}
 				}
 			}
 
@@ -783,7 +783,7 @@ func (f *chunkReaderMock) load(result []seriesChunks, chunksPool *pool.SafeSlabP
 		chunkData := f.chunks[chunkRef].Raw.Data
 		copiedChunkData := chunksPool.Get(len(chunkData))
 		copy(copiedChunkData, chunkData)
-		result[indices.seriesEntry].chks[indices.chunkEntry].Raw = &storepb.Chunk{Data: copiedChunkData}
+		result[indices.seriesEntry].chks[indices.chunkEntry].Raw = storepb.Chunk{Data: copiedChunkData}
 	}
 	return nil
 }
@@ -819,7 +819,7 @@ func generateSeriesEntriesWithChunksSize(t testing.TB, numSeries, numChunksPerSe
 			series.chks = append(series.chks, storepb.AggrChunk{
 				MinTime: int64(10 * j),
 				MaxTime: int64(10 * (j + 1)),
-				Raw:     &storepb.Chunk{Data: chunkBytes},
+				Raw:     storepb.Chunk{Data: chunkBytes},
 			})
 		}
 		out = append(out, series)
