@@ -1163,6 +1163,8 @@ github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndr
 github.com/posener/complete v1.2.3/go.mod h1:WZIdtGGp+qx0sLrYKtIRAruyNpv6hFCicSgv7Sy7s/s=
 github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37 h1:04hr5+8tKUyzD72u7wEsMa88oNDValRE48XWT+9trpA=
 github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37/go.mod h1:QtbJShIif+fPgjXVPy3mEJaNebBHSU5NkoFtzsUS1c0=
+github.com/prometheus/alertmanager v0.25.1 h1:LGBNMspOfv8h7brb+LWj2wnwBCg2ZuuKWTh6CAVw2/Y=
+github.com/prometheus/alertmanager v0.25.1/go.mod h1:MEZ3rFVHqKZsw7IcNS/m4AWZeXThmJhumpiWR4eHU/w=
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.0.0/go.mod h1:db9x61etRT2tGnBNRi70OPL5FsnadC4Ky3P0J6CfImo=
 github.com/prometheus/client_golang v1.4.0/go.mod h1:e9GMxYsXl05ICDXkRhurwBS4Q3OK1iX/F2sw+iXX5zU=

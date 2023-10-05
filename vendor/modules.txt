@@ -613,11 +613,10 @@ github.com/hashicorp/go-sockaddr
 ## explicit
 # github.com/hashicorp/golang-lru v0.6.0
 ## explicit; go 1.12
+github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/golang-lru/v2 v2.0.2
 ## explicit; go 1.18
-github.com/hashicorp/golang-lru/v2
-github.com/hashicorp/golang-lru/v2/simplelru
 # github.com/hashicorp/hcl v1.0.1-vault-5
 ## explicit; go 1.15
 github.com/hashicorp/hcl
@@ -768,7 +767,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
+# github.com/prometheus/alertmanager v0.25.1
 ## explicit; go 1.18
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
