@@ -795,8 +795,8 @@ github.com/modern-go/reflect2
 # github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
 ## explicit
 github.com/monochromegane/go-gitignore
-# github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
-## explicit; go 1.18
+# github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 => github.com/charleskorn/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+## explicit
 github.com/munnerz/goautoneg
 # github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 ## explicit
@@ -1501,5 +1501,5 @@ sigs.k8s.io/yaml
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
-# github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
+# github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
