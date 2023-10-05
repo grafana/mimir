@@ -36,9 +36,9 @@ type authMethod interface {
 type AuthConfig struct {
 	AuthType string `yaml:"type" category:"experimental"`
 
-	AuthAppRole    AuthAppRole    `yaml:"app_role,omitempty" category:"experimental"`
+	AuthAppRole    AuthAppRole    `yaml:"approle,omitempty" category:"experimental"`
 	AuthKubernetes AuthKubernetes `yaml:"kubernetes,omitempty" category:"experimental"`
-	AuthUserPass   AuthUserPass   `yaml:"user_pass,omitempty" category:"experimental"`
+	AuthUserPass   AuthUserPass   `yaml:"userpass,omitempty" category:"experimental"`
 	AuthToken      AuthToken      `yaml:"token,omitempty" category:"experimental"`
 }
 

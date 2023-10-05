@@ -166,7 +166,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesChunks, 
 			return errors.Wrap(err, "read chunk")
 		}
 
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), rawChunk(cb))
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunkEntry]), cb)
 		if err != nil {
 			return errors.Wrap(err, "populate chunk")
 		}
@@ -198,7 +198,7 @@ func (r *bucketChunkReader) fetchChunkRemainder(ctx context.Context, seq int, of
 }
 
 // populateChunk retains in.Bytes() in out.Raw.
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk) error {
+func populateChunk(out *storepb.AggrChunk, in rawChunk) error {
 	var enc storepb.Chunk_Encoding
 	switch in.Encoding() {
 	case chunkenc.EncXOR:

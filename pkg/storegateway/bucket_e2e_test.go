@@ -977,7 +977,7 @@ func numObservationsForSummaries(t *testing.T, summaryName string, metrics dskit
 		summaryData.AddSummary(metric.GetSummary())
 	}
 	m := &dto.Metric{}
-	require.NoError(t, summaryData.Metric(&prometheus.Desc{}).Write(m))
+	require.NoError(t, summaryData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetSummary().GetSampleCount()
 }
 
@@ -989,6 +989,6 @@ func numObservationsForHistogram(t *testing.T, histogramName string, metrics dsk
 		histogramData.AddHistogram(metric.GetHistogram())
 	}
 	m := &dto.Metric{}
-	require.NoError(t, histogramData.Metric(&prometheus.Desc{}).Write(m))
+	require.NoError(t, histogramData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetHistogram().GetSampleCount()
 }

@@ -1813,9 +1813,9 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			limits.IngestionRate = float64(rate.Inf) // Unlimited.
 			testData.prepareConfig(&limits)
 
-			distributorCfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
+			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 				return &noopIngester{}, nil
-			}
+			})
 
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(b, err)
@@ -3076,9 +3076,9 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		return ingestersRing.InstancesCount()
 	})
 
-	factory := func(addr string) (ring_client.PoolClient, error) {
-		return ingestersByAddr[addr], nil
-	}
+	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+		return ingestersByAddr[inst.Addr], nil
+	})
 
 	distributors := make([]*Distributor, 0, cfg.numDistributors)
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)

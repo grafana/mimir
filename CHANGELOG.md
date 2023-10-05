@@ -9,6 +9,7 @@
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
 * [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
 * [CHANGE] Query-frontend: removed `cortex_query_frontend_workers_enqueued_requests_total`. Use `cortex_query_frontend_enqueue_duration_seconds_count` instead. #6121
+* [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
@@ -28,6 +29,7 @@
 * [ENHANCEMENT] Ingester: add the experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to enforce a limit in bytes on the `PostingsForMatchers()` cache used by ingesters (the cache limit is per TSDB head and block basis, not a global one). The experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` have been deprecated. #6151
 * [ENHANCEMENT] Ingester: use the `PostingsForMatchers()` in-memory cache for label values queries with matchers too. #6151
 * [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168
+* [ENHANCEMENT] Distributor: Include ingester IDs in circuit breaker related metrics and logs. #6206
 * [ENHANCEMENT] Query-frontend: add `instance_enable_ipv6` to support IPv6. #6111
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
@@ -42,16 +44,21 @@
 
 ### Jsonnet
 
+* [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
+* [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
+  * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)
+  * `ingester_tsdb_head_early_compaction_reduction_percentage`
+  * `ingester_tsdb_head_early_compaction_min_in_memory_series`
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
 * [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler` `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler` and `consul` deployments, to ensure they don't become completely unavailable during a rollout. #5924
 * [ENHANCEMENT] Update rollout-operator to `v0.8.1`. #6022 #6110
-* [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 
 ### Mimirtool
 
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 * [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
 * [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6009
+* [BUGFIX] Fix template files full path being sent in `mimirtool alertmanager load` command. #6138
 
 ### Mimir Continuous Test
 
@@ -60,6 +67,8 @@
 ### Documentation
 
 ### Tools
+
+* [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
 
 ## 2.10.0
 

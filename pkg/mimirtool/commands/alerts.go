@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
 
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
-	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	loadalertCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 
 	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
@@ -125,15 +126,30 @@ func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]strin
 		return "", nil, err
 	}
 
+	templates, err := a.readAlertManagerConfigTemplates()
+	if err != nil {
+		return "", nil, err
+	}
+
+	return cfg, templates, nil
+}
+
+func (a *AlertmanagerCommand) readAlertManagerConfigTemplates() (map[string]string, error) {
 	templates := map[string]string{}
+	originalPaths := map[string]string{}
 	for _, f := range a.TemplateFiles {
 		tmpl, err := os.ReadFile(f)
 		if err != nil {
-			return "", nil, errors.Wrap(err, "unable to load template file: "+f)
+			return nil, errors.Wrap(err, "unable to load template file: "+f)
 		}
-		templates[f] = string(tmpl)
+		name := filepath.Base(f)
+		if _, ok := templates[name]; ok {
+			return nil, errors.Errorf("cannot have multiple templates with same file names but different paths: %s collides with %s", f, originalPaths[name])
+		}
+		templates[name] = string(tmpl)
+		originalPaths[name] = f
 	}
-	return cfg, templates, nil
+	return templates, nil
 }
 
 func (a *AlertmanagerCommand) verifyAlertmanagerConfig(_ *kingpin.ParseContext) error {

@@ -239,7 +239,7 @@ vault:
     # CLI flag: -vault.auth.type
     [type: <string> | default = ""]
 
-    app_role:
+    approle:
       # (experimental) Role ID of the AppRole
       # CLI flag: -vault.auth.approle.role-id
       [role_id: <string> | default = ""]
@@ -279,7 +279,7 @@ vault:
       # CLI flag: -vault.auth.kubernetes.mount-path
       [mount_path: <string> | default = ""]
 
-    user_pass:
+    userpass:
       # (experimental) The userpass auth method username
       # CLI flag: -vault.auth.userpass.username
       [username: <string> | default = ""]
@@ -3783,7 +3783,7 @@ tsdb:
   # triggered only if the estimated series reduction is at least the configured
   # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
-  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 10]
+  [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
 ```
 
 ### compactor
