@@ -827,18 +827,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
-		return ingestererror.WrapOrAnnotateWithUser(
-			err,
-			userID,
-		)
+		return ingestererror.WrapOrAnnotateWithUser(err, userID)
 	}
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
 		return ingestererror.WrapOrAnnotateWithUser(
-			ingestererror.NewTSDBUnavailableError(
-				err,
-			),
+			ingestererror.NewTSDBUnavailableError(err),
 			userID,
 		)
 	}
@@ -924,7 +919,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	if firstPartialErr != nil {
 		code := http.StatusBadRequest
-		errWithUser := wrapOrAnnotateWithUser(firstPartialErr, userID)
+		errWithUser := ingestererror.WrapOrAnnotateWithUser(firstPartialErr, userID)
 		return newErrorWithHTTPStatus(errWithUser, code)
 	}
 
@@ -3214,25 +3209,18 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) handlePushError(err error) error {
-	var (
-		unavailableErr   ingestererror.Unavailable
-		instanceLimitErr ingestererror.InstanceLimitReached
-		tsdbUnavailable  ingestererror.TSDBUnavailable
-	)
 	switch {
-	case errors.As(err, &unavailableErr):
+	case errors.As(err, &ingestererror.Unavailable{}):
 		return newErrorWithStatus(
 			err,
 			codes.Unavailable,
 		)
-	case errors.As(err, &instanceLimitErr):
+	case errors.As(err, &ingestererror.InstanceLimitReached{}):
 		return newErrorWithStatus(
-			util_log.DoNotLogError{
-				Err: err,
-			},
+			util_log.DoNotLogError{Err: err},
 			codes.Unavailable,
 		)
-	case errors.As(err, &tsdbUnavailable):
+	case errors.As(err, &ingestererror.TSDBUnavailable{}):
 		return newErrorWithHTTPStatus(
 			err,
 			http.StatusServiceUnavailable,

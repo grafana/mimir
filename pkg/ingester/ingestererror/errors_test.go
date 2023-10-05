@@ -44,8 +44,7 @@ func TestUnavailableError(t *testing.T) {
 	require.Error(t, err)
 	expectedMsg := fmt.Sprintf(integerUnavailableMsgFormat, state)
 	require.EqualError(t, err, expectedMsg)
-	checkSafeToWrap(t, err)
-
+	
 	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 }
@@ -55,7 +54,6 @@ func TestInstanceLimitReachedError(t *testing.T) {
 	err := NewInstanceLimitReachedError(limitErrorMessage)
 	require.Error(t, err)
 	require.EqualError(t, err, limitErrorMessage)
-	checkSafeToWrap(t, err)
 
 	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
@@ -66,9 +64,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	err := NewTSDBUnavailableError(tsdbErr)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, tsdbErr)
-	checkSafeToWrap(t, err)
 	require.EqualError(t, err, tsdbErr.Error())
-	checkSafeToWrap(t, err)
 
 	wrappedErr := WrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
