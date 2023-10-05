@@ -15,18 +15,18 @@ import (
 )
 
 type S3ClientConfig struct {
-	BucketName string
-	Endpoint   string
-	AccessKey  string
-	SecretKey  string
-	Secure     bool
+	BucketName      string
+	Endpoint        string
+	AccessKeyID     string
+	SecretAccessKey string
+	Secure          bool
 }
 
 func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.BucketName, prefix+"bucket-name", "", "The name of the bucket (not prefixed by a scheme).")
 	f.StringVar(&c.Endpoint, prefix+"endpoint", "", "The endpoint to contact when accessing the bucket.")
-	f.StringVar(&c.AccessKey, prefix+"access-key", "", "The access key used in AWS Signature Version 4 authentication.")
-	f.StringVar(&c.SecretKey, prefix+"secret-key", "", "The secret key used in AWS Signature Version 4 authentication.")
+	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication.")
+	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication.")
 	f.BoolVar(&c.Secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the Bucket. If false, insecure HTTP is used.")
 }
 
@@ -37,10 +37,10 @@ func (c *S3ClientConfig) Validate(prefix string) error {
 	if c.Endpoint == "" {
 		return errors.New(prefix + "endpoint is missing")
 	}
-	if c.AccessKey == "" {
+	if c.AccessKeyID == "" {
 		return errors.New(prefix + "access-key is missing")
 	}
-	if c.SecretKey == "" {
+	if c.SecretAccessKey == "" {
 		return errors.New(prefix + "secret-key is missing")
 	}
 	return nil
@@ -48,7 +48,7 @@ func (c *S3ClientConfig) Validate(prefix string) error {
 
 func (c *S3ClientConfig) ToBucket() (Bucket, error) {
 	client, err := minio.New(c.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(c.AccessKey, c.SecretKey, ""),
+		Creds:  credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
 		Secure: c.Secure,
 	})
 	if err != nil {

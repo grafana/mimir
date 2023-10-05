@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -27,14 +26,14 @@ type azureBucket struct {
 }
 
 type AzureClientConfig struct {
-	ContainerURL      string
+	ContainerName     string
 	AccountName       string
 	AccountKey        string
 	CopyStatusBackoff backoff.Config
 }
 
 func (c *AzureClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
-	f.StringVar(&c.ContainerURL, prefix+"container-url", "", "The container URL for Azure Blob Storage.")
+	f.StringVar(&c.ContainerName, prefix+"container-name", "", "The container name for Azure Blob Storage.")
 	f.StringVar(&c.AccountName, prefix+"account-name", "", "The storage account name for Azure Blob Storage.")
 	f.StringVar(&c.AccountKey, prefix+"account-key", "", "The storage account key for Azure Blob Storage.")
 	f.DurationVar(&c.CopyStatusBackoff.MinBackoff, prefix+"copy-status-backoff-min-duration", 15*time.Second, "The minimum amount of time to back off per copy operation sourced from this bucket.")
@@ -43,28 +42,21 @@ func (c *AzureClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 }
 
 func (c *AzureClientConfig) Validate(prefix string) error {
+	if c.ContainerName == "" {
+		return fmt.Errorf("the Azure container name (%s) is required", prefix+"account-name")
+	}
 	if c.AccountName == "" {
-		return fmt.Errorf("the Azure bucket's account name (%s) is required", prefix+"account-name")
+		return fmt.Errorf("the Azure storage account name (%s) is required", prefix+"account-name")
 	}
 	if c.AccountKey == "" {
-		return fmt.Errorf("the Azure bucket's account key (%s) is required", prefix+"account-key")
+		return fmt.Errorf("the Azure storage account key (%s) is required", prefix+"account-key")
 	}
 	return nil
 }
 
 func (c *AzureClientConfig) ToBucket() (Bucket, error) {
-	urlParts, err := blob.ParseURL(c.ContainerURL)
-	if err != nil {
-		return nil, err
-	}
-	containerName := urlParts.ContainerName
-	if containerName == "" {
-		return nil, errors.New("container name missing from Azure bucket URL")
-	}
-	serviceURL, found := strings.CutSuffix(c.ContainerURL, containerName)
-	if !found {
-		return nil, errors.New("malformed or unexpected Azure bucket URL")
-	}
+	// Docs: https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#resource-uri-syntax
+	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", c.AccountName)
 	keyCred, err := azblob.NewSharedKeyCredential(c.AccountName, c.AccountKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get Azure shared key credential")
@@ -73,14 +65,14 @@ func (c *AzureClientConfig) ToBucket() (Bucket, error) {
 	if err != nil {
 		return nil, err
 	}
-	containerClient, err := container.NewClientWithSharedKeyCredential(c.ContainerURL, keyCred, nil)
+	containerClient, err := container.NewClientWithSharedKeyCredential(c.ContainerName, keyCred, nil)
 	if err != nil {
 		return nil, err
 	}
 	return &azureBucket{
 		Client:                  *client,
 		containerClient:         *containerClient,
-		containerName:           containerName,
+		containerName:           c.ContainerName,
 		copyStatusBackoffConfig: c.CopyStatusBackoff,
 	}, nil
 }

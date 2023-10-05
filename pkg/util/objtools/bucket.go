@@ -10,14 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/pkg/errors"
 )
 
 const (
-	serviceGCS = "gcs" // Google Cloud Storage
-	serviceABS = "abs" // Azure Blob Storage
-	serviceS3  = "s3"  // Amazon Simple Storage Service
-	Delim      = "/"   // Used by Mimir to delimit tenants and blocks, and objects within blocks.
+	Delim = "/" // Used by Mimir to delimit tenants and blocks, and objects within blocks.
 )
 
 // Bucket is an object storage interface intended to be used by tools that require functionality that isn't in objstore
@@ -104,7 +102,7 @@ type VersionInfo struct {
 }
 
 type BucketConfig struct {
-	service string
+	backend string
 	azure   AzureClientConfig
 	gcs     GCSClientConfig
 	s3      S3ClientConfig
@@ -122,13 +120,13 @@ func ifNotEmptySuffix(s, suffix string) string {
 }
 
 func (c *BucketConfig) registerFlags(descriptor string, f *flag.FlagSet) {
-	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, "-")
-	acceptedServices := fmt.Sprintf("%s, %s or %s.", serviceABS, serviceGCS, serviceS3)
-	f.StringVar(&c.service, descriptorFlagPrefix+"service", "",
-		fmt.Sprintf("The %sobject storage service. Accepted values are: %s", ifNotEmptySuffix(descriptor, " "), acceptedServices))
-	c.azure.RegisterFlags("azure-"+descriptorFlagPrefix, f)
-	c.gcs.RegisterFlags("gcs-"+descriptorFlagPrefix, f)
-	c.s3.RegisterFlags("s3-"+descriptorFlagPrefix, f)
+	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
+	acceptedBackends := fmt.Sprintf("%s, %s or %s.", bucket.Azure, bucket.GCS, bucket.S3)
+	f.StringVar(&c.backend, descriptorFlagPrefix+"backend", "",
+		fmt.Sprintf("The %sobject storage backend. Accepted values are: %s", ifNotEmptySuffix(descriptor, " "), acceptedBackends))
+	c.azure.RegisterFlags(bucket.Azure+"."+descriptorFlagPrefix, f)
+	c.gcs.RegisterFlags(bucket.GCS+"."+descriptorFlagPrefix, f)
+	c.s3.RegisterFlags(bucket.S3+"."+descriptorFlagPrefix, f)
 }
 
 func (c *BucketConfig) Validate() error {
@@ -136,32 +134,32 @@ func (c *BucketConfig) Validate() error {
 }
 
 func (c *BucketConfig) validate(descriptor string) error {
-	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, "-")
-	if c.service == "" {
-		return fmt.Errorf("--" + descriptorFlagPrefix + "service is missing")
+	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
+	if c.backend == "" {
+		return fmt.Errorf("--" + descriptorFlagPrefix + "backend is missing")
 	}
-	switch c.service {
-	case serviceABS:
-		return c.azure.Validate("azure-" + descriptorFlagPrefix)
-	case serviceGCS:
-		return c.gcs.Validate("gcs-" + descriptorFlagPrefix)
-	case serviceS3:
-		return c.s3.Validate("s3-" + descriptorFlagPrefix)
+	switch c.backend {
+	case bucket.Azure:
+		return c.azure.Validate(bucket.Azure + "." + descriptorFlagPrefix)
+	case bucket.GCS:
+		return c.gcs.Validate(bucket.GCS + "." + descriptorFlagPrefix)
+	case bucket.S3:
+		return c.s3.Validate(bucket.S3 + "." + descriptorFlagPrefix)
 	default:
-		return fmt.Errorf("unknown service provided in --" + descriptorFlagPrefix + "service")
+		return fmt.Errorf("unknown backend provided in --" + descriptorFlagPrefix + "backend")
 	}
 }
 
 func (c *BucketConfig) ToBucket(ctx context.Context) (Bucket, error) {
-	switch c.service {
-	case serviceABS:
+	switch c.backend {
+	case bucket.Azure:
 		return c.azure.ToBucket()
-	case serviceGCS:
+	case bucket.GCS:
 		return c.gcs.ToBucket(ctx)
-	case serviceS3:
+	case bucket.S3:
 		return c.s3.ToBucket()
 	default:
-		return nil, fmt.Errorf("unknown service: %v", c.service)
+		return nil, fmt.Errorf("unknown backend: %v", c.backend)
 	}
 }
 
@@ -172,7 +170,7 @@ type CopyBucketConfig struct {
 }
 
 func (c *CopyBucketConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same service. Client side copying is always used when copying between different services.")
+	f.BoolVar(&c.clientSideCopy, "client-side-copy", false, "Use client side copying. This option is only respected if copying between two buckets of the same backend service. Client side copying is always used when copying between different backend services.")
 	c.source.registerFlags("source", f)
 	c.destination.registerFlags("destination", f)
 }
@@ -201,7 +199,7 @@ func (c *CopyBucketConfig) ToBuckets(ctx context.Context) (source Bucket, destin
 type CopyFunc func(context.Context, string, CopyOptions) error
 
 func (c *CopyBucketConfig) toCopyFunc(source Bucket, destination Bucket) CopyFunc {
-	if c.clientSideCopy || c.source.service != c.destination.service {
+	if c.clientSideCopy || c.source.backend != c.destination.backend {
 		return func(ctx context.Context, objectName string, options CopyOptions) error {
 			return source.ClientSideCopy(ctx, objectName, destination, options)
 		}
