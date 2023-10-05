@@ -10,10 +10,10 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/netutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
