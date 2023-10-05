@@ -12,6 +12,7 @@
         "enabled": false
       }
     ],
+    "branchPrefix": "deps-update/",
     "vulnerabilityAlerts": {
       "enabled": true,
       "labels": ["security-update"]
