@@ -199,7 +199,7 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return distributorerror.NewValidationError(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
+		return distributorerror.ValidationErrorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
 	return nil
@@ -212,7 +212,7 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		return distributorerror.NewValidationError(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
+		return distributorerror.ValidationErrorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
@@ -224,13 +224,7 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 		}
 		if bucketCount > bucketLimit {
 			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-			return distributorerror.NewValidationError(
-				maxNativeHistogramBucketsMsgFormat,
-				s.Timestamp,
-				mimirpb.FromLabelAdaptersToLabels(ls).String(),
-				bucketCount,
-				bucketLimit,
-			)
+			return distributorerror.ValidationErrorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
 		}
 	}
 
@@ -242,12 +236,12 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
-		return distributorerror.NewValidationError(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{}).String())
+		return distributorerror.ValidationErrorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{}).String())
 	}
 
 	if e.TimestampMs == 0 {
 		m.timestampInvalid.WithLabelValues(userID).Inc()
-		return distributorerror.NewValidationError(exemplarMissingTimestampMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return distributorerror.ValidationErrorf(exemplarMissingTimestampMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
 	}
 
 	// Exemplar label length does not include chars involved in text
@@ -269,12 +263,12 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
 		m.labelsTooLong.WithLabelValues(userID).Inc()
-		return distributorerror.NewValidationError(exemplarMaxLabelLengthMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return distributorerror.ValidationErrorf(exemplarMaxLabelLengthMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
 	}
 
 	if !foundValidLabel {
 		m.labelsBlank.WithLabelValues(userID).Inc()
-		return distributorerror.NewValidationError(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return distributorerror.ValidationErrorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
 	}
 
 	return nil
@@ -307,19 +301,19 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
-		return distributorerror.NewValidationError(noMetricNameMsgFormat)
+		return distributorerror.ValidationErrorf(noMetricNameMsgFormat)
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return distributorerror.NewValidationError(invalidMetricNameMsgFormat, unsafeMetricName)
+		return distributorerror.ValidationErrorf(invalidMetricNameMsgFormat, unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
 	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
 		m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
 		metric, ellipsis := getMetricAndEllipsis(ls)
-		return distributorerror.NewValidationError(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
+		return distributorerror.ValidationErrorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
 	}
 
 	maxLabelNameLength := cfg.MaxLabelNameLength(userID)
@@ -328,16 +322,16 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
-			return distributorerror.NewValidationError(invalidLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return distributorerror.ValidationErrorf(invalidLabelMsgFormat, l.Name, formatLabelSet(ls))
 		} else if len(l.Name) > maxLabelNameLength {
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
-			return distributorerror.NewValidationError(labelNameTooLongMsgFormat, l.Name, formatLabelSet(ls))
+			return distributorerror.ValidationErrorf(labelNameTooLongMsgFormat, l.Name, formatLabelSet(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return distributorerror.NewValidationError(labelValueTooLongMsgFormat, l.Value, formatLabelSet(ls))
+			return distributorerror.ValidationErrorf(labelValueTooLongMsgFormat, l.Value, formatLabelSet(ls))
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
-			return distributorerror.NewValidationError(duplicateLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return distributorerror.ValidationErrorf(duplicateLabelMsgFormat, l.Name, formatLabelSet(ls))
 		}
 
 		lastLabelName = l.Name
@@ -376,7 +370,7 @@ type MetadataValidationConfig interface {
 func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		m.missingMetricName.WithLabelValues(userID).Inc()
-		return distributorerror.NewValidationError(metadataMetricNameMissingMsgFormat)
+		return distributorerror.ValidationErrorf(metadataMetricNameMissingMsgFormat)
 	}
 
 	maxMetadataValueLength := cfg.MaxMetadataLength(userID)
@@ -395,10 +389,10 @@ func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidati
 	var err error
 	if len(metadata.GetMetricFamilyName()) > maxMetadataValueLength {
 		m.metricNameTooLong.WithLabelValues(userID).Inc()
-		err = distributorerror.NewValidationError(metadataMetricNameTooLongMsgFormat, "", metadata.GetMetricFamilyName())
+		err = distributorerror.ValidationErrorf(metadataMetricNameTooLongMsgFormat, "", metadata.GetMetricFamilyName())
 	} else if len(metadata.Unit) > maxMetadataValueLength {
 		m.unitTooLong.WithLabelValues(userID).Inc()
-		err = distributorerror.NewValidationError(metadataUnitTooLongMsgFormat, metadata.GetUnit(), metadata.GetMetricFamilyName())
+		err = distributorerror.ValidationErrorf(metadataUnitTooLongMsgFormat, metadata.GetUnit(), metadata.GetMetricFamilyName())
 	}
 
 	return err

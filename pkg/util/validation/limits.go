@@ -44,8 +44,8 @@ const (
 	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
 	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
-	RequestRateFlag                          = "distributor.request-rate-limit"
-	RequestBurstSizeFlag                     = "distributor.request-burst-size"
+	requestRateFlag                          = "distributor.request-rate-limit"
+	requestBurstSizeFlag                     = "distributor.request-burst-size"
 	ingestionRateFlag                        = "distributor.ingestion-rate-limit"
 	ingestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
 	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
@@ -188,8 +188,8 @@ type Limits struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.")
-	f.Float64Var(&l.RequestRate, RequestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
-	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
+	f.Float64Var(&l.RequestRate, requestRateFlag, 0, "Per-tenant push request rate limit in requests per second. 0 to disable.")
+	f.IntVar(&l.RequestBurstSize, requestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, ingestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
 	f.IntVar(&l.IngestionBurstSize, ingestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")

@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
-	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
 const (
@@ -16,48 +14,55 @@ const (
 )
 
 // ReplicasNotMatch is an error stating that replicas do not match.
-// This error is not exposed in the Error catalog.
 type ReplicasNotMatch struct {
-	replica, elected string
+	replica, elected, format string
 }
 
-func NewReplicasNotMatchError(replica, elected string) ReplicasNotMatch {
+// ReplicasNotMatchErrorf formats and returns a ReplicasNotMatch error.
+// The error message is formatted according to the given format specifier, replica and elected.
+// In order to print the limit and the burst, the format specifier must contain two %s verbs.
+func ReplicasNotMatchErrorf(format, replica, elected string) ReplicasNotMatch {
 	return ReplicasNotMatch{
 		replica: replica,
 		elected: elected,
+		format:  format,
 	}
 }
 
 func (e ReplicasNotMatch) Error() string {
-	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
+	return fmt.Sprintf(e.format, e.replica, e.elected)
 }
 
 // TooManyClusters is an error stating that there are too many HA clusters.
-// In the Error catalog, the ID of this error is globalerror.TooManyHAClusters.
 type TooManyClusters struct {
-	limit int
-	flag  string
+	limit  int
+	format string
 }
 
-func NewTooManyClustersError(limit int, flag string) TooManyClusters {
-	return TooManyClusters{limit: limit, flag: flag}
+// TooManyClustersErrorf formats and returns a TooManyClusters error.
+// The error message is formatted according to the given format specifier and limit.
+// In order to print the limit, the format specifier must contain a %d verb.
+func TooManyClustersErrorf(format string, limit int) TooManyClusters {
+	return TooManyClusters{limit: limit, format: format}
 }
 
 func (e TooManyClusters) Error() string {
-	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
-		e.flag,
-	)
+	return fmt.Sprintf(e.format, e.limit)
 }
 
 // Validation is an error, used to represent all validation errors from the validation package.
-// All of those errors have an ID exposed in the Error catalog.
 type Validation struct {
 	error
 }
 
-func NewValidationError(format string, args ...any) Validation {
-	return Validation{error: fmt.Errorf(format, args...)}
+// ValidationErrorf formats and returns a Validation error.
+// The error message is formatted according to the given format specifier and arguments.
+// The new error does not retain any of the passed parameters.
+func ValidationErrorf(format string, args ...any) Validation {
+	// In order to ensure that no label is retained, we first create a string out of the
+	// given format and args, and then create an error containing that message.
+	msg := fmt.Sprintf(format, args...)
+	return Validation{error: errors.New(msg)}
 }
 
 // IngestionRateLimited is an error used to represent the ingestion rate limited error.
@@ -67,7 +72,10 @@ type IngestionRateLimited struct {
 	burst  int
 }
 
-func NewIngestionRateLimitedError(format string, limit float64, burst int) IngestionRateLimited {
+// IngestionRateLimitedErrorf formats and returns a IngestionRateLimited error.
+// The error message is formatted according to the given format specifier, limit and burst.
+// In order to print the limit and the burst, the format specifier must contain %v and %d verbs.
+func IngestionRateLimitedErrorf(format string, limit float64, burst int) IngestionRateLimited {
 	return IngestionRateLimited{
 		format: format,
 		limit:  limit,
@@ -86,7 +94,10 @@ type RequestRateLimited struct {
 	burst  int
 }
 
-func NewRequestRateLimitedError(format string, limit float64, burst int) RequestRateLimited {
+// RequestRateLimitedErrorf formats and returns a RequestRateLimited error.
+// The error message is formatted according to the given format specifier, limit and burst.
+// In order to print the limit and the burst, the format specifier must contain %v and %d verbs.
+func RequestRateLimitedErrorf(format string, limit float64, burst int) RequestRateLimited {
 	return RequestRateLimited{
 		format: format,
 		limit:  limit,

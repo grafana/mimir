@@ -803,10 +803,10 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	replicasNotMatchErr := distributorerror.NewReplicasNotMatchError("a", "b")
-	tooManyClustersErr := distributorerror.NewTooManyClustersError(1, "a.b.c")
-	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimitedError("%v - %d", 10.0, 10)
-	requestRateLimitedErr := distributorerror.NewRequestRateLimitedError("%v - %d", 10.0, 10)
+	replicasNotMatchErr := distributorerror.ReplicasNotMatchErrorf("%s - %s", "a", "b")
+	tooManyClustersErr := distributorerror.TooManyClustersErrorf("limit %d", 1)
+	ingestionRateLimitedErr := distributorerror.IngestionRateLimitedErrorf("%v - %d", 10.0, 10)
+	requestRateLimitedErr := distributorerror.RequestRateLimitedErrorf("%v - %d", 10.0, 10)
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -838,7 +838,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 		},
 		{
 			name:               "a Validation gets translated into an HTTP 400",
-			err:                distributorerror.NewValidationError(originalMsg),
+			err:                distributorerror.ValidationErrorf(originalMsg),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{

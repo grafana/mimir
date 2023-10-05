@@ -68,8 +68,8 @@ var (
 	)
 	RequestRateLimitedMsgFormat = globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
 		"the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d",
-		RequestRateFlag,
-		RequestBurstSizeFlag,
+		requestRateFlag,
+		requestBurstSizeFlag,
 	)
 )
 

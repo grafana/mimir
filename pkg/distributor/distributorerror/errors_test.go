@@ -11,19 +11,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
 func TestNewReplicasNotMatchError(t *testing.T) {
 	replica := "a"
 	elected := "b"
-	err := NewReplicasNotMatchError(replica, elected)
+	format := "%s - %s"
+	err := ReplicasNotMatchErrorf(format, replica, elected)
 	assert.Error(t, err)
-	expectedMsg := fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", replica, elected)
+	expectedMsg := fmt.Sprintf(format, replica, elected)
 	assert.EqualError(t, err, expectedMsg)
 
-	anotherErr := NewReplicasNotMatchError("c", "d")
+	anotherErr := ReplicasNotMatchErrorf("%s - %s", "c", "d")
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var replicasNotMatch ReplicasNotMatch
@@ -38,16 +38,13 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 
 func TestNewTooManyClustersError(t *testing.T) {
 	limit := 1
-	flag := "a.b.c"
-	err := NewTooManyClustersError(limit, flag)
+	format := "this is a limit %d"
+	err := TooManyClustersErrorf(format, limit)
 	assert.Error(t, err)
-	expectedMsg := globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", limit),
-		flag,
-	)
+	expectedMsg := fmt.Sprintf(format, limit)
 	assert.EqualError(t, err, expectedMsg)
 
-	anotherErr := NewTooManyClustersError(2, flag)
+	anotherErr := TooManyClustersErrorf(format, 2)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var tooManyClusters TooManyClusters
@@ -62,11 +59,17 @@ func TestNewTooManyClustersError(t *testing.T) {
 
 func TestNewValidationError(t *testing.T) {
 	validationMsg := "this is a validation error"
-	err := NewValidationError(validationMsg)
-	assert.Error(t, err)
-	assert.EqualError(t, err, validationMsg)
+	firstErr := errors.New(validationMsg)
+	format := "this is a bad format %w"
+	secondErr := fmt.Errorf(format, firstErr)
+	assert.ErrorIs(t, secondErr, firstErr)
 
-	anotherErr := NewValidationError("this is another validation error")
+	err := ValidationErrorf(format, firstErr)
+	assert.Error(t, err)
+	assert.NotErrorIs(t, err, firstErr)
+	assert.EqualError(t, err, fmt.Sprintf(format, firstErr))
+
+	anotherErr := ValidationErrorf("this is another validation error")
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var validation Validation
@@ -83,12 +86,12 @@ func TestNewIngestionRateError(t *testing.T) {
 	format := "values are limit: %v, burst: %d"
 	limit := 10.0
 	burst := 10
-	err := NewIngestionRateLimitedError(format, limit, burst)
+	err := IngestionRateLimitedErrorf(format, limit, burst)
 	assert.Error(t, err)
 	expectedMsg := fmt.Sprintf(format, limit, burst)
 	assert.EqualError(t, err, expectedMsg)
 
-	anotherErr := NewIngestionRateLimitedError(format, 15.0, 15)
+	anotherErr := IngestionRateLimitedErrorf(format, 15.0, 15)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var ingestionRateLimited IngestionRateLimited
@@ -105,12 +108,12 @@ func TestNewRequestRateError(t *testing.T) {
 	format := "values are limit: %v, burst: %d"
 	limit := 10.0
 	burst := 10
-	err := NewRequestRateLimitedError(format, limit, burst)
+	err := RequestRateLimitedErrorf(format, limit, burst)
 	assert.Error(t, err)
 	expectedMsg := fmt.Sprintf(format, limit, burst)
 	assert.EqualError(t, err, expectedMsg)
 
-	anotherErr := NewRequestRateLimitedError(format, 15.0, 15)
+	anotherErr := RequestRateLimitedErrorf(format, 15.0, 15)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	var requestRateLimited RequestRateLimited
@@ -126,7 +129,6 @@ func TestNewRequestRateError(t *testing.T) {
 func TestToHTTPStatusHandler(t *testing.T) {
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	flag := "a.b.c"
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -148,76 +150,76 @@ func TestToHTTPStatusHandler(t *testing.T) {
 		},
 		{
 			name:               "a ReplicasNotMatch gets translated into 202, true",
-			err:                NewReplicasNotMatchError("a", "b"),
+			err:                ReplicasNotMatchErrorf("%s - %s", "a", "b"),
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of a ReplicasNotMatch gets translated into 202, true",
-			err:                log.DoNotLogError{Err: NewReplicasNotMatchError("a", "b")},
+			err:                log.DoNotLogError{Err: ReplicasNotMatchErrorf("%s - %s", "a", "b")},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a TooManyClusters gets translated into 400, true",
-			err:                NewTooManyClustersError(1, flag),
+			err:                TooManyClustersErrorf("limit %d", 1),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of a TooManyClusters gets translated into 400, true",
-			err:                log.DoNotLogError{Err: NewTooManyClustersError(1, flag)},
+			err:                log.DoNotLogError{Err: TooManyClustersErrorf("limit %d", 1)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a Validation gets translated into 400, true",
-			err:                NewValidationError(originalMsg),
+			err:                ValidationErrorf(originalMsg),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of a Validation gets translated into 400, true",
-			err:                log.DoNotLogError{Err: NewValidationError(originalMsg)},
+			err:                log.DoNotLogError{Err: ValidationErrorf(originalMsg)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "an IngestionRateLimited gets translated into an HTTP 429",
-			err:                NewIngestionRateLimitedError("%v - %d", 10, 10),
+			err:                IngestionRateLimitedErrorf("%v - %d", 10, 10),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of an IngestionRateLimited gets translated into an HTTP 429",
-			err:                log.DoNotLogError{Err: NewIngestionRateLimitedError("%v - %d", 10, 10)},
+			err:                log.DoNotLogError{Err: IngestionRateLimitedErrorf("%v - %d", 10, 10)},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedOutcome:    true,
 		},
 		{
 			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         NewRequestRateLimitedError("%v - %d", 10, 10),
+			err:                         RequestRateLimitedErrorf("%v - %d", 10, 10),
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a DoNotLog error of a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         log.DoNotLogError{Err: NewRequestRateLimitedError("%v - %d", 10, 10)},
+			err:                         log.DoNotLogError{Err: RequestRateLimitedErrorf("%v - %d", 10, 10)},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         NewRequestRateLimitedError("%v - %d", 10, 10),
+			err:                         RequestRateLimitedErrorf("%v - %d", 10, 10),
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a DoNotLog error of a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         log.DoNotLogError{Err: NewRequestRateLimitedError("%v - %d", 10, 10)},
+			err:                         log.DoNotLogError{Err: RequestRateLimitedErrorf("%v - %d", 10, 10)},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedOutcome:             true,
