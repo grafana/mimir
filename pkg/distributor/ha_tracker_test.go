@@ -604,12 +604,14 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
-	expectedErr := distributorerror.TooManyClustersErrorf(
-		globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-			"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
-			validation.HATrackerMaxClustersFlag,
+	expectedErr := distributorerror.NewTooManyClusters(
+		fmt.Sprintf(
+			globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
+				validation.HATrackerMaxClustersFlag,
+			),
+			2,
 		),
-		2,
 	)
 	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), expectedErr.Error())
 
@@ -636,12 +638,14 @@ func TestHAClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
-	expectedErr = distributorerror.TooManyClustersErrorf(
-		globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-			"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
-			validation.HATrackerMaxClustersFlag,
+	expectedErr = distributorerror.NewTooManyClusters(
+		fmt.Sprintf(
+			globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
+				validation.HATrackerMaxClustersFlag,
+			),
+			2,
 		),
-		2,
 	)
 	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), expectedErr.Error())
 

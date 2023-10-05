@@ -6,6 +6,7 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,7 +19,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -72,17 +72,17 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{},
 			false,
-			distributorerror.ValidationErrorf(noMetricNameMsgFormat),
+			errors.New(noMetricNameMsgFormat),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
 			false,
-			distributorerror.ValidationErrorf(invalidMetricNameMsgFormat, " "),
+			fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
 			false,
-			distributorerror.ValidationErrorf(
+			fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
 				formatLabelSet(
@@ -101,7 +101,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
 			false,
-			distributorerror.ValidationErrorf(
+			fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
 				formatLabelSet(
@@ -115,7 +115,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
 			false,
-			distributorerror.ValidationErrorf(
+			fmt.Errorf(
 				labelValueTooLongMsgFormat,
 				"test_value_please_ignore_no_really_nothing_to_see_here",
 				formatLabelSet(
@@ -129,7 +129,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
 			false,
-			distributorerror.ValidationErrorf(
+			fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -275,13 +275,13 @@ func TestValidateMetadata(t *testing.T) {
 		{
 			"with no metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
-			distributorerror.ValidationErrorf(metadataMetricNameMissingMsgFormat),
+			errors.New(metadataMetricNameMissingMsgFormat),
 			nil,
 		},
 		{
 			"with a long metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
-			distributorerror.ValidationErrorf(metadataMetricNameTooLongMsgFormat, "", "go_goroutines_and_routines_and_routines"),
+			fmt.Errorf(metadataMetricNameTooLongMsgFormat, "", "go_goroutines_and_routines_and_routines"),
 			nil,
 		},
 		{
@@ -305,7 +305,7 @@ func TestValidateMetadata(t *testing.T) {
 		{
 			"with a long unit",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
-			distributorerror.ValidationErrorf(metadataUnitTooLongMsgFormat, "a_made_up_unit_that_is_really_long", "go_goroutines"),
+			fmt.Errorf(metadataUnitTooLongMsgFormat, "a_made_up_unit_that_is_really_long", "go_goroutines"),
 			nil,
 		},
 	} {
@@ -351,7 +351,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
-	expected := distributorerror.ValidationErrorf(
+	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
 		formatLabelSet(
@@ -368,7 +368,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
 	}, false)
-	expected = distributorerror.ValidationErrorf(
+	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
 		formatLabelSet(
