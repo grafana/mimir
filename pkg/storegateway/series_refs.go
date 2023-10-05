@@ -181,7 +181,7 @@ type seriesChunkRef struct {
 }
 
 // Compare returns > 0 if r should be before other when sorting seriesChunkRef,
-// 0 if they're equal or < 0 if m should be after other.
+// 0 if they're equal or < 0 if r should be after other.
 func (r seriesChunkRef) Compare(other seriesChunkRef) int {
 	if r.minTime < other.minTime {
 		return 1
