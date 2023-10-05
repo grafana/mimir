@@ -79,6 +79,7 @@ If something is not clear, you can get back to this document to learn more about
     git push -u origin release-<version>
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
+  - [ ] Adjust the settings in the `renovate.json` configuration on the main branch to ensure that dependency updates maintain the latest two minor versions. For instance, if the current release version is 3.0, this means keeping versions 3.0 and the latest minor version from major version 2, such as 2.10.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.

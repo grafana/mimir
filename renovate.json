@@ -1,0 +1,20 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+      "config:base"
+    ],
+    "prHourlyLimit": 4,
+    "baseBranches": ["main", "release-2.10", "release-2.9"],
+    "packageRules": [
+      {
+        "matchBaseBranches": ["release-2.10","release-2.9"],
+        "packagePatterns": ["*"],
+        "enabled": false
+      }
+    ],
+    "vulnerabilityAlerts": {
+      "enabled": true,
+      "labels": ["security-update"]
+    },
+    "osvVulnerabilityAlerts": true
+  }
