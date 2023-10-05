@@ -1415,10 +1415,10 @@ Usage of ./cmd/mimir/mimir:
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
   -log.rate-limit-enabled
     	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-burst-size int
+    	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
   -log.rate-limit-logs-per-second float
     	[experimental] Maximum number of messages per second to be logged. (default 10000)
-  -log.rate-limit-logs-per-second-burst int
-    	[experimental] Burst size, i.e., maximum number of messages that can be logged in a second, temporarily exceeding the configured maximum logs per second. (default 25000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int

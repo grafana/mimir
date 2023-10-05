@@ -27,10 +27,10 @@ var (
 )
 
 type RateLimitedLoggerCfg struct {
-	Enabled            bool
-	LogsPerSecond      float64
-	LogsPerSecondBurst int
-	Registry           prometheus.Registerer
+	Enabled       bool
+	LogsPerSecond float64
+	LogsBurstSize int
+	Registry      prometheus.Registerer
 }
 
 // InitLogger initialises the global gokit logger (util_log.Logger) and returns that logger.
@@ -41,7 +41,7 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	if rateLimitedCfg.Enabled {
 		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
-		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsPerSecondBurst, rateLimitedCfg.Registry)
+		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
 	} else {
 		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
 		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))

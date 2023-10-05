@@ -30,10 +30,10 @@ func ExampleInitLogger() {
 	cfg := server.Config{}
 	_ = cfg.LogLevel.Set("info")
 	rateLimitedCfg := log.RateLimitedLoggerCfg{
-		Enabled:            true,
-		LogsPerSecond:      1,
-		LogsPerSecondBurst: 4,
-		Registry:           prometheus.NewPedanticRegistry(),
+		Enabled:       true,
+		LogsPerSecond: 1,
+		LogsBurstSize: 4,
+		Registry:      prometheus.NewPedanticRegistry(),
 	}
 	cfg.Log = log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, rateLimitedCfg)
 
