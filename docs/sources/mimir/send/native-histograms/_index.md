@@ -19,7 +19,7 @@ Native histograms are different from classic Prometheus histograms in a number o
 
 1. Native histogram bucket boundaries are calculated with a formula depending on the scale (resolution) of the native histogram and are not user defined. The calculation produces exponentially increasing bucket boundaries. For more detail see [Bucket boundary calculation](#bucket-boundary-calculation).
 1. Native histogram bucket boundaries may change (widen) dynamically if observations result in too many buckets. For more detail see [Limiting the number of buckets](#limiting-the-number-of-buckets).
-1. Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only had an upper bound called `le` and counted all observations in the bucket and all lower buckets (cummulative).
+1. Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only had an upper bound called `le` and counted all observations in the bucket and all lower buckets (cumulative).
 1. An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and count of observations are stored in a single new data type - and not in separate time series using the float data type. Thus there are no `<metric>_bucket`, `<metric>_sum`, `<metric>_count` series, only `<metric>`.
 1. Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. There are also a couple of new [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
@@ -41,13 +41,13 @@ This section describes the pros and cons of using native histograms compared to 
 1. If converting from an externally represented histogram with specific bucket boundaries, there is generally no precise match with the bucket boundaries of the native histogram and interpolation has to be applied.
 1. There is no way to set an arbitrary bucket boundary, e.g. one that is particularly interesting for an SLO definition. Ratios of observations above or below a given threshold generally have to be estimated by interpolation, rather than being precise as it is the case for a classic histogram with a configured bucket boundary at the given threshold.
 
-All three problems are mitigated by high resolution, which native histograms can provide it much lower resource costs compared to classic histograms.
+All three problems are mitigated by high resolution, which native histograms can provide at a much lower resource costs compared to classic histograms.
 
 ## Use native histograms
 
 ### Instrument application with Prometheus client libraries
 
-The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [GO client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
+The following examples have some reasonable defaults to define a new native histogram metric. The examples use the [Go client library](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#Histogram) version 1.16 and the [Java client library](https://prometheus.github.io/client_java/api/io/prometheus/metrics/core/metrics/Histogram.Builder.html) 1.0.
 
 {{% admonition type="note" %}}
 Native histogram options can be added to existing classic histograms to get both the classic and native histogram at the same time. See [Migrate from classic histograms](#migrate-from-classic-histograms).
@@ -168,10 +168,10 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
 It is perfectly possible to keep the custom bucket definition of a classic histogram and add native histogram buckets at the same time. This can ease the migration process, which can look like this in general:
 
 1. Add native histogram definition to an existing histogram in the instrumentation.
-1. Let Prometheus or Grafana Agent scrape both classic and native histogram.
+1. Let Prometheus or Grafana Agent scrape both classic and native histograms for metrics that have both defined.
 1. Send native histograms to remote write - if classic histogram is scraped, it is sent by default.
 1. Start modifying the recording rules, alerts, dashboards to use the new native histograms.
-1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation.
+1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
 
 Code examples:
 
@@ -204,7 +204,7 @@ static final Histogram requestLatency = Histogram.build()
 
 ## Bucket boundary calculation
 
-This section assumes that you are famliar with basic algebra. Native histogram bucket boundaries are calculated from an exponential formula with a base of 2.
+This section assumes that you are familiar with basic algebra. Native histogram bucket boundaries are calculated from an exponential formula with a base of 2.
 
 Native histogram samples have three different kind of buckets, for any observed value the value is counted towards one kind of bucket.
 
@@ -220,7 +220,7 @@ Native histogram samples have three different kind of buckets, for any observed 
 
   ![Positive bucket definition](pos-bucket-def.svg)
 
-  where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions bellow 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
+  where the _index_ can be a positive or negative integer resulting in boundaries above 1 and fractions below 1. The _schema_ either directly specified out of `[-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]` at instrumentation time or it is the largest number chosen from the list in such way that
 
   [//]: # "LaTeX equation source: 2^{2^{-schema}} <= factor"
 
@@ -243,7 +243,7 @@ Native histogram samples have three different kind of buckets, for any observed 
   | 1 | 1.4142 | | 8 | 1.0027 |
   | 2 | 1.1892 |
 
-- Negative buckets, which contain the count of observations with a negative value that is smaller or equal to the upper bound and larger than the lower bound of a bucket.
+- Negative buckets, which contain the count of observations with a negative value that is smaller than the upper bound and greater than or equal to the lower bound of a bucket.
 
   [//]: # "LaTeX equation source: -{\\left( 2^{2^{-schema}} \right)}^{index} \leq v < -{\left( 2^{2^{-schema}}\right)}^{index-1}"
 
@@ -255,13 +255,13 @@ Native histogram samples have three different kind of buckets, for any observed 
 
 The server scraping or receiving native histograms over remote write may limit the number of native histogram buckets it accepts. The server may reject or downscale (reduce resolution and merge adjacent buckets). Even if that wasn't the case, storing and emitting potentially unlimited number of buckets isn't practical.
 
-The intrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used (e.g. `NativeHistogramMaxBucketNumber` in GO).
+The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used (e.g. `NativeHistogramMaxBucketNumber` in Go).
 
 Once the set maximum is exceeded, the following strategy is enacted:
 
-1. First, if the last reset (or the creation) of the histogram is at least the minimum reset duration ago, then the whole histogram is reset to its initial state (including classic buckets). This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in GO).
+1. First, if the last reset (or the creation) of the histogram is at least the minimum reset duration ago, then the whole histogram is reset to its initial state (including classic buckets). This only works if the minimum reset duration was set (`NativeHistogramMinResetDuration` in Go).
 
-1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of buckets to or below the maximum bucket number, but not to more than the maximum zaro threashold (`NativeHistogramMaxZeroThreshold` in GO). Thus, if the threashold is at or above the maximum threashold already nothing happens at this step.
+1. If less time has passed, or if the minimum reset duration is zero, no reset is performed. Instead, the zero threshold is increased sufficiently to reduce the number of buckets to or below the maximum bucket number, but not to more than the maximum zero threshold (`NativeHistogramMaxZeroThreshold` in Go). Thus, if the threshold is at or above the maximum threshold already nothing happens at this step.
 
 1. After that, if the number of buckets still exceeds maximum bucket number, the resolution of the histogram is reduced by doubling the width of all the buckets (up to a growth factor between one bucket to the next of 2^(2^4) = 65536, see above in [Bucket boundary calculation](#bucket-boundary-calculation)).
 
