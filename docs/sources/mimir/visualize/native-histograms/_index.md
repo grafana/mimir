@@ -75,7 +75,7 @@ There are a number of things to note here:
 - The previous classic histograms had no such function, meaning that in case the bucket boundaries didn't line up with the requested boundaries (like in the example above), you were out of luck and had to either accept the result as is, or do the estimation yourself.
 
 {{% admonition type="note" %}}
-Never use the `histogram_fraction` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which probably not what you want.
+Never use the `histogram_fraction` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which is probably not what you want.
 {{% /admonition %}}
 
 ### Quantiles
@@ -91,5 +91,9 @@ histogram_quantile(0.95, sum by (le) (rate(request_duration_seconds_bucket[5m]))
 ```
 
 {{% admonition type="note" %}}
-Never use the `histogram_quantile` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which probably not what you want.
+Never use the `histogram_quantile` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which is probably not what you want.
 {{% /admonition %}}
+
+## Grafana
+
+The functions `histogram_count`, `histogram_sum`, `histogram_fraction` and `histogram_quantile` will result in normal floating point series which you can plot as usual.
