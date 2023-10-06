@@ -45,7 +45,7 @@ spec:
         []
       containers:
         - name: nginx
-          image: docker.io/nginxinc/nginx-unprivileged:1.24-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
           imagePullPolicy: IfNotPresent
           args:
           volumeMounts:
