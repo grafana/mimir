@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM node:17-bullseye
+FROM node:20-bullseye
 
 # Install chromium along with its dependencies.
 RUN apt-get update && apt-get install -y \
