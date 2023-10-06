@@ -10,7 +10,7 @@ cloud.google.com/go/compute/internal
 # cloud.google.com/go/compute/metadata v0.2.3
 ## explicit; go 1.19
 cloud.google.com/go/compute/metadata
-# cloud.google.com/go/iam v1.1.1
+# cloud.google.com/go/iam v1.1.2
 ## explicit; go 1.19
 cloud.google.com/go/iam
 cloud.google.com/go/iam/apiv1/iampb
@@ -614,8 +614,8 @@ github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
 github.com/grafana/dskit/tracing
 github.com/grafana/dskit/user
-# github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292
-## explicit; go 1.17
+# github.com/grafana/e2e v0.1.1
+## explicit; go 1.18
 github.com/grafana/e2e
 github.com/grafana/e2e/cache
 github.com/grafana/e2e/db

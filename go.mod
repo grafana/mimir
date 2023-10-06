@@ -21,7 +21,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20231003142331-80423d8864b9
-	github.com/grafana/e2e v0.1.1-0.20230828072146-510b1706a292
+	github.com/grafana/e2e v0.1.1
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.63
@@ -102,7 +102,7 @@ require (
 	cloud.google.com/go v0.110.7 // indirect
 	cloud.google.com/go/compute v1.23.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
-	cloud.google.com/go/iam v1.1.1 // indirect
+	cloud.google.com/go/iam v1.1.2 // indirect
 	github.com/DmitriyVTitov/size v1.5.0 // indirect
 	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
