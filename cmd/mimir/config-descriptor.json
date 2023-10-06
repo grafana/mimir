@@ -4513,7 +4513,7 @@
           "desc": "Enable using a IPv6 instance address. (default false)",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "instance-enable-ipv6",
+          "fieldFlag": "query-frontend.instance-enable-ipv6",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
         },

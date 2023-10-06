@@ -1407,8 +1407,6 @@ Usage of ./cmd/mimir/mimir:
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
-  -instance-enable-ipv6
-    	Enable using a IPv6 instance address. (default false)
   -log.buffered
     	[deprecated] Use a buffered logger to reduce write contention. (default true)
   -log.format string
@@ -1753,6 +1751,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-frontend.instance-addr string
     	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
+  -query-frontend.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -query-frontend.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
   -query-frontend.instance-port int
