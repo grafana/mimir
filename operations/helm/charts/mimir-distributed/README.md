@@ -25,7 +25,7 @@ Kubernetes: `^1.20.0-0`
 | Repository | Name | Version |
 |------------|------|---------|
 | https://charts.min.io/ | minio(minio) | 5.0.14 |
-| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.2.8 |
+| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.3.5 |
 | https://grafana.github.io/helm-charts | rollout_operator(rollout-operator) | 0.9.1 |
 
 # Contributing and releasing
