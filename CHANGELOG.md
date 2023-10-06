@@ -223,6 +223,7 @@
 * [BUGFIX] Alerts: fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts. #5396
 * [BUGFIX] Alerts: Fix `MimirGossipMembersMismatch` to include `admin-api` and custom compactor pods. `admin-api` is a GEM component. #5641 #5797
 * [BUGFIX] Dashboards: fix autoscaling dashboard panels that could show multiple series for a single component. #5810
+* [BUGFIX] Dashboards: fix ruler-querier scaling metric panel query and split into CPU and memory scaling metric panels. #5739
 
 ### Jsonnet
 
@@ -255,7 +256,9 @@
 * [ENHANCEMENT] Add _config.commonConfig to allow adding common configuration parameters for all Mimir components. #5703
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
+* [ENHANCEMENT] Add autoscaling on memory for ruler-queriers. #5739
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
+* [BUGFIX] Autoscaling: treat OOMing containers as though they are using their full memory request. #5739
 
 ### Mimirtool
 
