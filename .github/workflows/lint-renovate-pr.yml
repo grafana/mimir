@@ -1,0 +1,70 @@
+name: Lint and Update renovate PR
+
+# configure trigger by pull request
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs: 
+  prepare:
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Get build image from Makefile
+        id: build_image_step
+        run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
+    outputs:
+      build_image: ${{ steps.build_image_step.outputs.build_image }}
+
+  lint_and_update:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    container:
+      image: ${{ needs.prepare.outputs.build_image }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+
+      - name: Run Git Config
+        run: |
+          git config --global --add safe.directory '*'
+          git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+          git config --global user.name "${{ github.event.pull_request.user.login }}"
+
+      - name: Checkout Pull Request Branch
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+
+      - name: Run make targets
+        id: update
+        run: |
+          make BUILD_IN_CONTAINER=false doc
+          make BUILD_IN_CONTAINER=false build-helm-tests
+      
+      - name: Check Updates
+        id: check_updates
+        run: |
+          if ./tools/find-diff-or-untracked.sh operations/helm/; then
+            echo "diff=0" >> "$GITHUB_OUTPUT" # Script success, no change
+          else
+            echo "diff=1" >> "$GITHUB_OUTPUT" # Script failed, changes exist
+          fi
+
+      - name: Update PR
+        id: update_pr
+        if: steps.check_updates.outputs.diff != '0'
+        run: |
+            echo "Add commit to fix linting errors"
+            git add operations/helm/
+            git commit -m "Update build with linting fixes"
+            git push
