@@ -33,7 +33,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:9.4.3
+    image: grafana/grafana:9.5.12
     ports:
       - 3000:3000
     volumes:
