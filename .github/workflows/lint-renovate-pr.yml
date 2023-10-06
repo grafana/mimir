@@ -1,9 +1,11 @@
-name: Lint and Update renovate PR
+name: Regenerate docs and helm tests
 
 # configure trigger by pull request
 on:
   pull_request:
     types: [opened, synchronize]
+    paths:
+      - 'operations/helm/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -51,8 +53,7 @@ jobs:
       - name: Run make targets
         id: update
         run: |
-          make BUILD_IN_CONTAINER=false doc
-          make BUILD_IN_CONTAINER=false build-helm-tests
+          make BUILD_IN_CONTAINER=false doc build-helm-tests
       
       - name: Check Updates
         id: check_updates
@@ -67,7 +68,7 @@ jobs:
         id: update_pr
         if: steps.check_updates.outputs.diff != '0'
         run: |
-            echo "Add commit to fix linting errors"
+            echo "Add commit for regenerating helm tests and docs"
             git add operations/helm/
             git commit -m "Update build with linting fixes"
             git push
