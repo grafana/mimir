@@ -6,10 +6,12 @@
 package validation
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -70,20 +72,26 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{},
 			false,
-			newNoMetricNameError(),
+			errors.New(noMetricNameMsgFormat),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
 			false,
-			newInvalidMetricNameError(" "),
+			fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
 			false,
-			newInvalidLabelError([]mimirpb.LabelAdapter{
-				{Name: model.MetricNameLabel, Value: "valid"},
-				{Name: "foo ", Value: "bar"},
-			}, "foo "),
+			fmt.Errorf(
+				invalidLabelMsgFormat,
+				"foo ",
+				formatLabelSet(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "valid"},
+						{Name: "foo ", Value: "bar"},
+					},
+				),
+			),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
@@ -93,27 +101,45 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
 			false,
-			newLabelNameTooLongError([]mimirpb.LabelAdapter{
-				{Name: model.MetricNameLabel, Value: "badLabelName"},
-				{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
-			}, "this_is_a_really_really_long_name_that_should_cause_an_error"),
+			fmt.Errorf(
+				labelNameTooLongMsgFormat,
+				"this_is_a_really_really_long_name_that_should_cause_an_error",
+				formatLabelSet(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "badLabelName"},
+						{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
+					},
+				),
+			),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
 			false,
-			newLabelValueTooLongError([]mimirpb.LabelAdapter{
-				{Name: model.MetricNameLabel, Value: "badLabelValue"},
-				{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
-			}, "test_value_please_ignore_no_really_nothing_to_see_here"),
+			fmt.Errorf(
+				labelValueTooLongMsgFormat,
+				"test_value_please_ignore_no_really_nothing_to_see_here",
+				formatLabelSet(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "badLabelValue"},
+						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
+					},
+				),
+			),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
 			false,
-			newTooManyLabelsError([]mimirpb.LabelAdapter{
-				{Name: model.MetricNameLabel, Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "blip", Value: "blop"},
-			}, 2),
+			fmt.Errorf(
+				tooManyLabelsMsgFormat,
+				tooManyLabelsArgs(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "foo"},
+						{Name: "bar", Value: "baz"},
+						{Name: "blip", Value: "blop"},
+					},
+					2,
+				)...,
+			),
 		},
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
@@ -249,13 +275,13 @@ func TestValidateMetadata(t *testing.T) {
 		{
 			"with no metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
-			newMetadataMetricNameMissingError(),
+			errors.New(metadataMetricNameMissingMsgFormat),
 			nil,
 		},
 		{
 			"with a long metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
-			newMetadataMetricNameTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines"}),
+			fmt.Errorf(metadataMetricNameTooLongMsgFormat, "", "go_goroutines_and_routines_and_routines"),
 			nil,
 		},
 		{
@@ -279,7 +305,7 @@ func TestValidateMetadata(t *testing.T) {
 		{
 			"with a long unit",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
-			newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Unit: "a_made_up_unit_that_is_really_long"}),
+			fmt.Errorf(metadataUnitTooLongMsgFormat, "a_made_up_unit_that_is_really_long", "go_goroutines"),
 			nil,
 		},
 	} {
@@ -325,10 +351,16 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
-	expected := newDuplicatedLabelError([]mimirpb.LabelAdapter{
-		{Name: model.MetricNameLabel, Value: "a"},
-		{Name: model.MetricNameLabel, Value: "b"},
-	}, model.MetricNameLabel)
+	expected := fmt.Errorf(
+		duplicateLabelMsgFormat,
+		model.MetricNameLabel,
+		formatLabelSet(
+			[]mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: "a"},
+				{Name: model.MetricNameLabel, Value: "b"},
+			},
+		),
+	)
 	assert.Equal(t, expected, actual)
 
 	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
@@ -336,11 +368,17 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
 	}, false)
-	expected = newDuplicatedLabelError([]mimirpb.LabelAdapter{
-		{Name: model.MetricNameLabel, Value: "a"},
-		{Name: "a", Value: "a"},
-		{Name: "a", Value: "a"},
-	}, "a")
+	expected = fmt.Errorf(
+		duplicateLabelMsgFormat,
+		"a",
+		formatLabelSet(
+			[]mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: "a"},
+				{Name: "a", Value: "a"},
+				{Name: "a", Value: "a"},
+			},
+		),
+	)
 	assert.Equal(t, expected, actual)
 }
 
@@ -492,4 +530,15 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
 	`), "cortex_discarded_samples_total"))
+}
+
+func tooManyLabelsArgs(series []mimirpb.LabelAdapter, limit int) []any {
+	metric := mimirpb.FromLabelAdaptersToMetric(series).String()
+	ellipsis := ""
+
+	if utf8.RuneCountInString(metric) > 200 {
+		ellipsis = "\u2026"
+	}
+
+	return []any{len(series), limit, metric, ellipsis}
 }
