@@ -50,12 +50,12 @@ func main() {
 
 	// Parse CLI arguments.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "failed while parsing flags"))
 		os.Exit(1)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "configuration validation failed"))
 		os.Exit(1)
 	}
 
@@ -70,6 +70,7 @@ func main() {
 func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 	sourceBucket, destBucket, copyFunc, err := cfg.copyConfig.ToBuckets(ctx)
 	if err != nil {
+		slog.Error("failed to construct object storage clients")
 		return err
 	}
 
@@ -78,16 +79,18 @@ func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 
 	sourceNames, err := listNames(ctx, sourceBucket, sourcePrefix)
 	if err != nil {
+		slog.Error("failed to list source bucket", "prefix", sourcePrefix)
 		return err
 	}
 
 	var exists map[string]struct{}
-	if cfg.overwrite {
-		destNames, err := listNames(ctx, destBucket, sourcePrefix)
+	if !cfg.overwrite {
+		destNames, err := listNames(ctx, destBucket, destinationPrefix)
 		if err != nil {
+			slog.Error("failed to list destination bucket", "prefix", destinationPrefix)
 			return err
 		}
-		exists := make(map[string]struct{}, len(destNames))
+		exists = make(map[string]struct{}, len(destNames))
 		for _, name := range destNames {
 			exists[name] = struct{}{}
 		}

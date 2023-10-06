@@ -56,18 +56,18 @@ func (c *AzureClientConfig) Validate(prefix string) error {
 
 func (c *AzureClientConfig) ToBucket() (Bucket, error) {
 	// Docs: https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#resource-uri-syntax
-	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", c.AccountName)
+	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net/", c.AccountName)
 	keyCred, err := azblob.NewSharedKeyCredential(c.AccountName, c.AccountKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get Azure shared key credential")
 	}
 	client, err := azblob.NewClientWithSharedKeyCredential(serviceURL, keyCred, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to construct azure client")
 	}
-	containerClient, err := container.NewClientWithSharedKeyCredential(c.ContainerName, keyCred, nil)
+	containerClient, err := container.NewClientWithSharedKeyCredential(serviceURL+c.ContainerName, keyCred, nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to construct azure container client")
 	}
 	return &azureBucket{
 		Client:                  *client,
@@ -197,6 +197,23 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 	return errors.Wrap(body.Close(), "failed closing Azure source object reader")
 }
 
+func unpackBlobItem(blobItem *container.BlobItem, isVersioned bool) ObjectAttributes {
+	attributes := ObjectAttributes{
+		Name:         *blobItem.Name,
+		LastModified: *blobItem.Properties.LastModified,
+	}
+
+	if isVersioned {
+		attributes.VersionInfo = VersionInfo{
+			VersionID:        *blobItem.VersionID,
+			IsCurrent:        *blobItem.IsCurrentVersion,
+			RequiresUndelete: *blobItem.Deleted,
+		}
+	}
+
+	return attributes
+}
+
 func (bkt *azureBucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
 	objects := make([]ObjectAttributes, 0, 10)
 	var prefixes []string
@@ -214,15 +231,7 @@ func (bkt *azureBucket) List(ctx context.Context, options ListOptions) (*ListRes
 				return nil, err
 			}
 			for _, blobItem := range page.Segment.BlobItems {
-				objects = append(objects, ObjectAttributes{
-					Name:         *blobItem.Name,
-					LastModified: *blobItem.Properties.LastModified,
-					VersionInfo: VersionInfo{
-						VersionID:        *blobItem.VersionID,
-						IsCurrent:        *blobItem.IsCurrentVersion,
-						RequiresUndelete: *blobItem.Deleted,
-					},
-				})
+				objects = append(objects, unpackBlobItem(blobItem, options.Versioned))
 			}
 		}
 	} else {
@@ -240,15 +249,7 @@ func (bkt *azureBucket) List(ctx context.Context, options ListOptions) (*ListRes
 				return nil, err
 			}
 			for _, blobItem := range page.Segment.BlobItems {
-				objects = append(objects, ObjectAttributes{
-					Name:         *blobItem.Name,
-					LastModified: *blobItem.Properties.LastModified,
-					VersionInfo: VersionInfo{
-						VersionID:        *blobItem.VersionID,
-						IsCurrent:        *blobItem.IsCurrentVersion,
-						RequiresUndelete: *blobItem.Deleted,
-					},
-				})
+				objects = append(objects, unpackBlobItem(blobItem, options.Versioned))
 			}
 			for _, blobPrefix := range page.Segment.BlobPrefixes {
 				prefixes = append(prefixes, *blobPrefix.Name)
