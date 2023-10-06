@@ -4,10 +4,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: gateway-nginx-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: gateway-nginx-values
     heritage: Helm
 spec:
