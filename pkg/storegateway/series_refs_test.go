@@ -1408,7 +1408,7 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 	if !assert.Len(t, actual, len(expected)) {
 		return
 	}
-	if !strategy.isOverlapMintMaxt() {
+	if strategy.isOnEntireBlock() {
 		// Adjust minT and maxT because we will use them to filter out chunks returned by prometheus
 		minT, maxT = math.MinInt64, math.MaxInt64
 	}

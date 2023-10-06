@@ -817,8 +817,12 @@ func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
 	return s&overlapMintMaxt != 0
 }
 
+func (s seriesIteratorStrategy) isOnEntireBlock() bool {
+	return !s.isOverlapMintMaxt()
+}
+
 func (s seriesIteratorStrategy) isNoChunkRefsOnEntireBlock() bool {
-	return s.isNoChunkRefs() && !s.isOverlapMintMaxt()
+	return s.isNoChunkRefs() && s.isOnEntireBlock()
 }
 
 func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
@@ -840,7 +844,7 @@ func newLoadingSeriesChunkRefsSetIterator(
 	tenantID string,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if !strategy.isOverlapMintMaxt() {
+	if strategy.isOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
 	return &loadingSeriesChunkRefsSetIterator{
@@ -976,6 +980,11 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
 			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime)
+		default:
+			// What's left is "no chunk refs on entire block."
+			// In this case we don't have to do anything with the chunk metas because we know they all
+			// qualify and that we don't have to parse and return them.
+			// The case of no chunks at all for this series is already covered by loadSeries and series.lset will be empty.
 		}
 		symbolizedSet.series = append(symbolizedSet.series, series)
 	}
