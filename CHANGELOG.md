@@ -29,7 +29,7 @@
 * [ENHANCEMENT] Packaging: add logrotate config file. #6142
 * [ENHANCEMENT] Ingester: add the experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to enforce a limit in bytes on the `PostingsForMatchers()` cache used by ingesters (the cache limit is per TSDB head and block basis, not a global one). The experimental configuration options `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` have been deprecated. #6151
 * [ENHANCEMENT] Ingester: use the `PostingsForMatchers()` in-memory cache for label values queries with matchers too. #6151
-* [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168
+* [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168 #6250
 * [ENHANCEMENT] Distributor: Include ingester IDs in circuit breaker related metrics and logs. #6206
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
