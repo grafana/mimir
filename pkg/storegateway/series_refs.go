@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -841,6 +840,9 @@ func newLoadingSeriesChunkRefsSetIterator(
 	tenantID string,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
+	if !strategy.isOverlapMintMaxt() {
+		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
+	}
 	return &loadingSeriesChunkRefsSetIterator{
 		ctx:                 ctx,
 		postingsSetIterator: postingsSetIterator,
@@ -972,13 +974,8 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 				series.lset = nil // setting the labels to nil ends up skipping the series
 			}
 		case !s.strategy.isNoChunkRefs():
-			minTime, maxTime := s.minTime, s.maxTime
-			if !s.strategy.isOverlapMintMaxt() {
-				minTime, maxTime = math.MinInt64, math.MaxInt64
-			}
-
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.refs = metasToChunkRefs(metas, s.blockID, minTime, maxTime)
+			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime)
 		}
 		symbolizedSet.series = append(symbolizedSet.series, series)
 	}
