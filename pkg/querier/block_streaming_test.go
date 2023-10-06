@@ -246,7 +246,7 @@ func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, 
 	return []storepb.AggrChunk{{
 		MinTime: mint,
 		MaxTime: maxt,
-		Raw:     &storepb.Chunk{Data: chk.Bytes()},
+		Raw:     storepb.Chunk{Data: chk.Bytes()},
 	}}, nil
 }
 
@@ -542,7 +542,7 @@ func createChunk(t *testing.T, time int64, value float64) storepb.AggrChunk {
 	return storepb.AggrChunk{
 		MinTime: time,
 		MaxTime: time,
-		Raw: &storepb.Chunk{
+		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: promChunk.Bytes(),
 		},
