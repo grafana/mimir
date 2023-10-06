@@ -263,7 +263,7 @@ replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691
 // + https://github.com/go-yaml/yaml/pull/876
-replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
+replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml/v3 v3.0.1
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup-golang-1.19.2)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
