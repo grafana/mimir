@@ -70,5 +70,5 @@ jobs:
         run: |
             echo "Add commit for regenerating helm tests and docs"
             git add operations/helm/
-            git commit -m "Update build with linting fixes"
+            git commit -m "Update build with regenerated helm tests and docs"
             git push
