@@ -83,6 +83,7 @@
 * [ENHANCEMENT] Alerts: Add `MimirStoreGatewayTooManyFailedOperations` warning alert that triggers when Mimir store-gateway report error when interacting with the object storage. #6831
 * [ENHANCEMENT] Querier HPA: improved scaling metric and scaling policies, in order to scale up and down more gradually. #6971
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
+* [FEATURE] servicemonitor in jsonnet deployment
 
 ### Mimirtool
 

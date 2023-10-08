@@ -555,6 +555,8 @@
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
+
+    service_monitor_enabled: false,
   },
 
   // Check configured deployment mode to ensure configuration is correct and consistent.

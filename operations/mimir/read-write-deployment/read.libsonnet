@@ -72,4 +72,7 @@
 
   mimir_read_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirPdb('mimir-read'),
+
+  mimir_read_service_monitor: if !($._config.is_read_write_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('mimir-read', 'mimir-read-http-metrics'),
 }

@@ -97,4 +97,7 @@
 
   alertmanager_pdb: if !$._config.is_microservices_deployment_mode || !$._config.alertmanager_enabled then null else
     $.newMimirPdb('alertmanager'),
+
+  alertmanager_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.alertmanager_enabled && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('alertmanager', 'alertmanager-http-metrics'),
 }

@@ -100,4 +100,7 @@
     // block available, so the disruption budget depends on the blocks replication factor.
     local maxUnavailable = if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1;
     $.newMimirPdb('store-gateway', maxUnavailable),
+
+  store_gateway_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('store-gateway', 'store-gateway-http-metrics'),
 }

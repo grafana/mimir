@@ -153,4 +153,7 @@
 
   mimir_backend_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupPDB('mimir-backend', 1),
+
+  mimir_backend_service_monitor: if !($._config.is_read_write_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('mimir-backend', 'mimir-backend-http-metrics'),
 }

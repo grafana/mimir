@@ -67,4 +67,7 @@
 
   ruler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     $.newMimirPdb('ruler'),
+
+  ruler_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.ruler_enabled && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('ruler', 'ruler-http-metrics'),
 }

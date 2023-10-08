@@ -1,5 +1,6 @@
 {
   local container = $.core.v1.container,
+  local service = $.core.v1.service,
 
   query_frontend_args::
     $._config.commonConfig +
@@ -58,8 +59,12 @@
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
-    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment),
+    $.newMimirDiscoveryService('query-frontend-discovery', $.query_frontend_deployment) +
+    if $._config.service_monitor_enabled then service.mixin.metadata.withLabelsMixin({ 'prometheus.io/service-monitor': 'false' }) else {},
 
   query_frontend_pdb: if !$._config.is_microservices_deployment_mode then null else
     $.newMimirPdb('query-frontend'),
+
+  query_frontend_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('query-frontend', 'query-frontend-http-metrics'),
 }

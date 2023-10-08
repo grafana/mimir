@@ -103,4 +103,7 @@
 
   ingester_pdb: if !$._config.is_microservices_deployment_mode then null else
     self.newIngesterPdb(name),
+
+  ingester_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('ingester', 'ingester-http-metrics'),
 }

@@ -80,4 +80,7 @@
 
   distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
     $.newMimirPdb('distributor'),
+
+  distributor_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('distributor', 'distributor-http-metrics'),
 }

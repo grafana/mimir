@@ -115,4 +115,7 @@
 
   compactor_pdb: if !$._config.is_microservices_deployment_mode then null else
     $.newMimirPdb('compactor'),
+
+  compactor_service_monitor: if !($._config.is_microservices_deployment_mode && $._config.service_monitor_enabled) then null else
+    $.newMimirServiceMonitor('compactor', 'compactor-http-metrics'),
 }
