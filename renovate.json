@@ -10,6 +10,11 @@
         "matchBaseBranches": ["release-2.10","release-2.9"],
         "packagePatterns": ["*"],
         "enabled": false
+      },
+      {
+        "packagePatterns": ["*"],
+        "matchCurrentVersion": "/^v\\d+.\\d+.\\d+-(\\d+\\.)?\\d{14}-[a-f0-9]+/",
+        "enabled": false
       }
     ],
     "branchPrefix": "deps-update/",
