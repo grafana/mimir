@@ -3,7 +3,7 @@
     "extends": [
       "config:base"
     ],
-    "prHourlyLimit": 1,
+    "prHourlyLimit": 4,
     "baseBranches": ["main", "release-2.10", "release-2.9"],
     "packageRules": [
       {
