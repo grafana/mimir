@@ -10,6 +10,17 @@
         "matchBaseBranches": ["release-2.10","release-2.9"],
         "packagePatterns": ["*"],
         "enabled": false
+      },
+      {
+        "packagePatterns": [
+          "github.com/grafana/mimir-prometheus",
+          "github.com/grafana/memberlist",
+          "github.com/grafana/regexp",
+          "github.com/colega/go-yaml-yaml",
+          "github.com/charleskorn/goautoneg",
+          "github.com/grafana/opentracing-contrib-go-stdlib"
+        ],
+        "enabled": false
       }
     ],
     "branchPrefix": "deps-update/",
@@ -18,4 +29,4 @@
       "labels": ["security-update"]
     },
     "osvVulnerabilityAlerts": true
-  }
+}
