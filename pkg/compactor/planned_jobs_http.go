@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"

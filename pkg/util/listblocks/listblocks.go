@@ -12,7 +12,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	"github.com/grafana/dskit/concurrency"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
