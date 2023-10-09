@@ -504,6 +504,8 @@ github.com/google/go-cmp/cmp/internal/value
 # github.com/google/go-github/v32 v32.1.0
 ## explicit; go 1.13
 github.com/google/go-github/v32/github
+# github.com/google/go-github/v55 v55.0.0
+## explicit; go 1.17
 # github.com/google/go-querystring v1.1.0
 ## explicit; go 1.10
 github.com/google/go-querystring/query
