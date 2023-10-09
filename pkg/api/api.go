@@ -259,7 +259,7 @@ type Ingester interface {
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
-func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config, limits *validation.Overrides) {
+func (a *API) RegisterIngester(i Ingester) {
 	client.RegisterIngesterServer(a.server.GRPC, i)
 
 	a.indexPage.AddLinks(dangerousWeight, "Dangerous", []IndexPageLink{
@@ -270,7 +270,6 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config, limits
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
-	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, limits, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
 	a.RegisterRoute("/ingester/tsdb_metrics", http.HandlerFunc(i.UserRegistryHandler), true, true, "GET")
 
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
