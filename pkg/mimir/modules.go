@@ -629,7 +629,7 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	if t.ActivityTracker != nil {
 		ing = ingester.NewIngesterActivityTracker(t.Ingester, t.ActivityTracker)
 	}
-	t.API.RegisterIngester(ing, t.Cfg.Distributor, t.Overrides)
+	t.API.RegisterIngester(ing)
 	return nil, nil
 }
 
