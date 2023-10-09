@@ -16,7 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	dskit_concurrency "github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
