@@ -56,7 +56,7 @@ func (vm validateMetadataCfg) MaxMetadataLength(_ string) int {
 
 func TestValidateLabels(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	s := NewSampleValidationMetrics(reg)
+	s := newSampleValidationMetrics(reg)
 
 	var cfg validateLabelsCfg
 	userID := "testUser"
@@ -168,7 +168,7 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
-	s.DeleteUserMetrics(userID)
+	s.deleteUserMetrics(userID)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -179,7 +179,7 @@ func TestValidateLabels(t *testing.T) {
 
 func TestValidateExemplars(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	m := NewExemplarValidationMetrics(reg)
+	m := newExemplarValidationMetrics(reg)
 
 	userID := "testUser"
 
@@ -244,7 +244,7 @@ func TestValidateExemplars(t *testing.T) {
 		`), "cortex_discarded_exemplars_total"))
 
 	// Delete test user and verify only different remaining
-	m.DeleteUserMetrics(userID)
+	m.deleteUserMetrics(userID)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
@@ -254,7 +254,7 @@ func TestValidateExemplars(t *testing.T) {
 
 func TestValidateMetadata(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	m := NewMetadataValidationMetrics(reg)
+	m := newMetadataValidationMetrics(reg)
 
 	userID := "testUser"
 	var cfg validateMetadataCfg
@@ -331,7 +331,7 @@ func TestValidateMetadata(t *testing.T) {
 			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
 	`), "cortex_discarded_metadata_total"))
 
-	m.DeleteUserMetrics(userID)
+	m.deleteUserMetrics(userID)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
@@ -348,7 +348,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := validateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
@@ -364,7 +364,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	)
 	assert.Equal(t, expected, actual)
 
-	actual = validateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
@@ -383,15 +383,15 @@ func TestValidateLabelDuplication(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-type sampleValidationConfig struct {
+type sampleValidationCfg struct {
 	maxNativeHistogramBuckets int
 }
 
-func (c sampleValidationConfig) CreationGracePeriod(_ string) time.Duration {
+func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
 	return 0
 }
 
-func (c sampleValidationConfig) MaxNativeHistogramBuckets(_ string) int {
+func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
 }
 
@@ -505,12 +505,12 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	}
 
 	registry := prometheus.NewRegistry()
-	metrics := NewSampleValidationMetrics(registry)
+	metrics := newSampleValidationMetrics(registry)
 
 	for _, limit := range []int{0, 1, 2} {
 		for name, h := range testCases {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
-				var cfg sampleValidationConfig
+				var cfg sampleValidationCfg
 				cfg.maxNativeHistogramBuckets = limit
 
 				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{

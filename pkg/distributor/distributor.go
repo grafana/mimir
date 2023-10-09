@@ -141,9 +141,9 @@ type Distributor struct {
 	// Metrics for data rejected for hitting per-instance limits
 	rejectedRequests *prometheus.CounterVec
 
-	sampleValidationMetrics   *SampleValidationMetrics
-	exemplarValidationMetrics *ExemplarValidationMetrics
-	metadataValidationMetrics *MetadataValidationMetrics
+	sampleValidationMetrics   *sampleValidationMetrics
+	exemplarValidationMetrics *exemplarValidationMetrics
+	metadataValidationMetrics *metadataValidationMetrics
 
 	PushWithMiddlewares push.Func
 
@@ -338,9 +338,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Requests discarded for hitting per-instance limits",
 		}, []string{"reason"}),
 
-		sampleValidationMetrics:   NewSampleValidationMetrics(reg),
-		exemplarValidationMetrics: NewExemplarValidationMetrics(reg),
-		metadataValidationMetrics: NewMetadataValidationMetrics(reg),
+		sampleValidationMetrics:   newSampleValidationMetrics(reg),
+		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
+		metadataValidationMetrics: newMetadataValidationMetrics(reg),
 	}
 
 	// Initialize expected rejected request labels
@@ -528,16 +528,16 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
-	d.sampleValidationMetrics.DeleteUserMetrics(userID)
-	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
-	d.metadataValidationMetrics.DeleteUserMetrics(userID)
+	d.sampleValidationMetrics.deleteUserMetrics(userID)
+	d.exemplarValidationMetrics.deleteUserMetrics(userID)
+	d.metadataValidationMetrics.deleteUserMetrics(userID)
 }
 
 func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
-	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
+	d.sampleValidationMetrics.deleteUserMetricsForGroup(userID, group)
 }
 
 // Called after distributor is asked to stop via StopAsync.

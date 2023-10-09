@@ -104,14 +104,14 @@ var (
 	)
 )
 
-// SampleValidationConfig helps with getting required config to validate sample.
-type SampleValidationConfig interface {
+// sampleValidationConfig helps with getting required config to validate sample.
+type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
 }
 
-// SampleValidationMetrics is a collection of metrics used during sample validation.
-type SampleValidationMetrics struct {
+// sampleValidationMetrics is a collection of metrics used during sample validation.
+type sampleValidationMetrics struct {
 	missingMetricName         *prometheus.CounterVec
 	invalidMetricName         *prometheus.CounterVec
 	maxLabelNamesPerSeries    *prometheus.CounterVec
@@ -123,7 +123,7 @@ type SampleValidationMetrics struct {
 	tooFarInFuture            *prometheus.CounterVec
 }
 
-func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	filter := prometheus.Labels{"user": userID}
 	m.missingMetricName.DeletePartialMatch(filter)
 	m.invalidMetricName.DeletePartialMatch(filter)
@@ -136,7 +136,7 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
 
-func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string) {
+func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string) {
 	m.missingMetricName.DeleteLabelValues(userID, group)
 	m.invalidMetricName.DeleteLabelValues(userID, group)
 	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
@@ -148,8 +148,8 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
 
-func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
-	return &SampleValidationMetrics{
+func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
+	return &sampleValidationMetrics{
 		missingMetricName:         util.DiscardedSamplesCounter(r, reasonMissingMetricName),
 		invalidMetricName:         util.DiscardedSamplesCounter(r, reasonInvalidMetricName),
 		maxLabelNamesPerSeries:    util.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
@@ -162,8 +162,8 @@ func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetric
 	}
 }
 
-// ExemplarValidationMetrics is a collection of metrics used by exemplar validation.
-type ExemplarValidationMetrics struct {
+// exemplarValidationMetrics is a collection of metrics used by exemplar validation.
+type exemplarValidationMetrics struct {
 	labelsMissing    *prometheus.CounterVec
 	timestampInvalid *prometheus.CounterVec
 	labelsTooLong    *prometheus.CounterVec
@@ -172,7 +172,7 @@ type ExemplarValidationMetrics struct {
 	tooFarInFuture   *prometheus.CounterVec
 }
 
-func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelsMissing.DeleteLabelValues(userID)
 	m.timestampInvalid.DeleteLabelValues(userID)
 	m.labelsTooLong.DeleteLabelValues(userID)
@@ -181,8 +181,8 @@ func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeleteLabelValues(userID)
 }
 
-func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMetrics {
-	return &ExemplarValidationMetrics{
+func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
+	return &exemplarValidationMetrics{
 		labelsMissing:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
 		timestampInvalid: util.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
 		labelsTooLong:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
@@ -195,7 +195,7 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 // validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -208,7 +208,7 @@ func validateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -233,7 +233,7 @@ func validateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 
 // validateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func validateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
+func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
 		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{}).String())
@@ -276,7 +276,7 @@ func validateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 
 // validateExemplarTimestamp returns true if the exemplar timestamp is between minTS and maxTS.
 // This is separate from validateExemplar() so we can silently drop old ones, not log an error.
-func validateExemplarTimestamp(m *ExemplarValidationMetrics, userID string, minTS, maxTS int64, e mimirpb.Exemplar) bool {
+func validateExemplarTimestamp(m *exemplarValidationMetrics, userID string, minTS, maxTS int64, e mimirpb.Exemplar) bool {
 	if e.TimestampMs < minTS {
 		m.tooOld.WithLabelValues(userID).Inc()
 		return false
@@ -288,8 +288,8 @@ func validateExemplarTimestamp(m *ExemplarValidationMetrics, userID string, minT
 	return true
 }
 
-// LabelValidationConfig helps with getting required config to validate labels.
-type LabelValidationConfig interface {
+// labelValidationConfig helps with getting required config to validate labels.
+type labelValidationConfig interface {
 	MaxLabelNamesPerSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
@@ -297,7 +297,7 @@ type LabelValidationConfig interface {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
@@ -339,35 +339,35 @@ func validateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	return nil
 }
 
-// MetadataValidationMetrics is a collection of metrics used by metadata validation.
-type MetadataValidationMetrics struct {
+// metadataValidationMetrics is a collection of metrics used by metadata validation.
+type metadataValidationMetrics struct {
 	missingMetricName *prometheus.CounterVec
 	metricNameTooLong *prometheus.CounterVec
 	unitTooLong       *prometheus.CounterVec
 }
 
-func (m *MetadataValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *metadataValidationMetrics) deleteUserMetrics(userID string) {
 	m.missingMetricName.DeleteLabelValues(userID)
 	m.metricNameTooLong.DeleteLabelValues(userID)
 	m.unitTooLong.DeleteLabelValues(userID)
 }
 
-func NewMetadataValidationMetrics(r prometheus.Registerer) *MetadataValidationMetrics {
-	return &MetadataValidationMetrics{
+func newMetadataValidationMetrics(r prometheus.Registerer) *metadataValidationMetrics {
+	return &metadataValidationMetrics{
 		missingMetricName: util.DiscardedMetadataCounter(r, reasonMissingMetricName),
 		metricNameTooLong: util.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
 		unitTooLong:       util.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
 	}
 }
 
-// MetadataValidationConfig helps with getting required config to validate metadata.
-type MetadataValidationConfig interface {
+// metadataValidationConfig helps with getting required config to validate metadata.
+type metadataValidationConfig interface {
 	EnforceMetadataMetricName(userID string) bool
 	MaxMetadataLength(userID string) int
 }
 
 // cleanAndValidateMetadata returns an err if a metric metadata is invalid.
-func cleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		m.missingMetricName.WithLabelValues(userID).Inc()
 		return errors.New(metadataMetricNameMissingMsgFormat)
