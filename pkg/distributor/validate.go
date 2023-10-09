@@ -3,26 +3,25 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package validation
+package distributor
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
-	discardReasonLabel = "reason"
-
 	// The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
 	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
 	ExemplarMaxLabelSetLength = 128
@@ -52,67 +51,66 @@ var (
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
 	reasonMetadataUnitTooLong       = globalerror.MetricMetadataUnitTooLong.LabelValue()
 
-	// ReasonRateLimited is one of the values for the reason to discard samples.
+	// reasonRateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
-	ReasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
+	reasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
 
-	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
-	ReasonTooManyHAClusters = "too_many_ha_clusters"
+	// reasonTooManyHAClusters is one of the reasons for discarding samples.
+	reasonTooManyHAClusters = "too_many_ha_clusters"
+
+	labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
+		"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
+		validation.MaxLabelNameLengthFlag,
+	)
+	labelValueTooLongMsgFormat = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+		"received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'",
+		validation.MaxLabelValueLengthFlag,
+	)
+	invalidLabelMsgFormat   = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
+	duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
+	tooManyLabelsMsgFormat  = globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
+		"received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s%s'",
+		validation.MaxLabelNamesPerSeriesFlag,
+	)
+	noMetricNameMsgFormat              = globalerror.MissingMetricName.Message("received series has no metric name")
+	invalidMetricNameMsgFormat         = globalerror.InvalidMetricName.Message("received a series with invalid metric name: '%.200s'")
+	maxNativeHistogramBucketsMsgFormat = fmt.Sprintf(
+		"received a native histogram sample with too many buckets, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
+		globalerror.MaxNativeHistogramBuckets,
+	)
+	sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
+		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
+		validation.CreationGracePeriodFlag,
+	)
+	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
+		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
+	)
+	exemplarMissingTimestampMsgFormat = globalerror.ExemplarTimestampInvalid.Message(
+		"received an exemplar with no timestamp, timestamp: %d series: %s labels: %s",
+	)
+	exemplarMaxLabelLengthMsgFormat = globalerror.ExemplarLabelsTooLong.Message(
+		fmt.Sprintf("received an exemplar where the size of its combined labels exceeds the limit of %d characters, timestamp: %%d series: %%s labels: %%s", ExemplarMaxLabelSetLength),
+	)
+	metadataMetricNameMissingMsgFormat = globalerror.MetricMetadataMissingMetricName.Message("received a metric metadata with no metric name")
+	metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithPerTenantLimitConfig(
+		// When formatting this error the "cause" will always be an empty string.
+		"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
+		validation.MaxMetadataLengthFlag,
+	)
+	metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
+		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
+		validation.MaxMetadataLengthFlag,
+	)
 )
 
-// DiscardedRequestsCounter creates per-user counter vector for requests discarded for a given reason.
-func DiscardedRequestsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "cortex_discarded_requests_total",
-			Help: "The total number of requests that were discarded due to rate limiting.",
-			ConstLabels: map[string]string{
-				discardReasonLabel: reason,
-			},
-		}, []string{"user"})
-}
-
-// DiscardedSamplesCounter creates per-user counter vector for samples discarded for a given reason.
-func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_discarded_samples_total",
-		Help: "The total number of samples that were discarded.",
-		ConstLabels: map[string]string{
-			discardReasonLabel: reason,
-		},
-	}, []string{"user", "group"})
-}
-
-// DiscardedExemplarsCounter creates per-user counter vector for exemplars discarded for a given reason.
-func DiscardedExemplarsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_discarded_exemplars_total",
-		Help: "The total number of exemplars that were discarded.",
-		ConstLabels: map[string]string{
-			discardReasonLabel: reason,
-		},
-	}, []string{"user"})
-}
-
-// DiscardedMetadataCounter creates per-user counter vector for metadata discarded for a given reason.
-func DiscardedMetadataCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_discarded_metadata_total",
-		Help: "The total number of metadata that were discarded.",
-		ConstLabels: map[string]string{
-			discardReasonLabel: reason,
-		},
-	}, []string{"user"})
-}
-
-// SampleValidationConfig helps with getting required config to validate sample.
-type SampleValidationConfig interface {
+// sampleValidationConfig helps with getting required config to validate sample.
+type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
 }
 
-// SampleValidationMetrics is a collection of metrics used during sample validation.
-type SampleValidationMetrics struct {
+// sampleValidationMetrics is a collection of metrics used during sample validation.
+type sampleValidationMetrics struct {
 	missingMetricName         *prometheus.CounterVec
 	invalidMetricName         *prometheus.CounterVec
 	maxLabelNamesPerSeries    *prometheus.CounterVec
@@ -124,7 +122,7 @@ type SampleValidationMetrics struct {
 	tooFarInFuture            *prometheus.CounterVec
 }
 
-func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	filter := prometheus.Labels{"user": userID}
 	m.missingMetricName.DeletePartialMatch(filter)
 	m.invalidMetricName.DeletePartialMatch(filter)
@@ -137,7 +135,7 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
 
-func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string) {
+func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string) {
 	m.missingMetricName.DeleteLabelValues(userID, group)
 	m.invalidMetricName.DeleteLabelValues(userID, group)
 	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
@@ -149,22 +147,22 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 }
 
-func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
-	return &SampleValidationMetrics{
-		missingMetricName:         DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:         DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries:    DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:              DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:          DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:         DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		maxNativeHistogramBuckets: DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
-		duplicateLabelNames:       DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:            DiscardedSamplesCounter(r, reasonTooFarInFuture),
+func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
+	return &sampleValidationMetrics{
+		missingMetricName:         validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
+		invalidMetricName:         validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:    validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		invalidLabel:              validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
+		labelNameTooLong:          validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		labelValueTooLong:         validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets: validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		duplicateLabelNames:       validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		tooFarInFuture:            validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
 
-// ExemplarValidationMetrics is a collection of metrics used by exemplar validation.
-type ExemplarValidationMetrics struct {
+// exemplarValidationMetrics is a collection of metrics used by exemplar validation.
+type exemplarValidationMetrics struct {
 	labelsMissing    *prometheus.CounterVec
 	timestampInvalid *prometheus.CounterVec
 	labelsTooLong    *prometheus.CounterVec
@@ -173,7 +171,7 @@ type ExemplarValidationMetrics struct {
 	tooFarInFuture   *prometheus.CounterVec
 }
 
-func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 	m.labelsMissing.DeleteLabelValues(userID)
 	m.timestampInvalid.DeleteLabelValues(userID)
 	m.labelsTooLong.DeleteLabelValues(userID)
@@ -182,21 +180,21 @@ func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeleteLabelValues(userID)
 }
 
-func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMetrics {
-	return &ExemplarValidationMetrics{
-		labelsMissing:    DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
-		timestampInvalid: DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
-		labelsTooLong:    DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
-		labelsBlank:      DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
-		tooOld:           DiscardedExemplarsCounter(r, reasonExemplarTooOld),
-		tooFarInFuture:   DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
+	return &exemplarValidationMetrics{
+		labelsMissing:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
+		timestampInvalid: validation.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
+		labelsTooLong:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
+		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
+		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
+		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
 	}
 }
 
-// ValidateSample returns an err if the sample is invalid.
+// validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -206,10 +204,10 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 	return nil
 }
 
-// ValidateSampleHistogram returns an err if the sample is invalid.
+// validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -232,9 +230,9 @@ func ValidateSampleHistogram(m *SampleValidationMetrics, now model.Time, cfg Sam
 	return nil
 }
 
-// ValidateExemplar returns an error if the exemplar is invalid.
+// validateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
+func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
 		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{}).String())
@@ -275,9 +273,9 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 	return nil
 }
 
-// ValidateExemplarTimestamp returns true if the exemplar timestamp is between minTS and maxTS.
-// This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
-func ValidateExemplarTimestamp(m *ExemplarValidationMetrics, userID string, minTS, maxTS int64, e mimirpb.Exemplar) bool {
+// validateExemplarTimestamp returns true if the exemplar timestamp is between minTS and maxTS.
+// This is separate from validateExemplar() so we can silently drop old ones, not log an error.
+func validateExemplarTimestamp(m *exemplarValidationMetrics, userID string, minTS, maxTS int64, e mimirpb.Exemplar) bool {
 	if e.TimestampMs < minTS {
 		m.tooOld.WithLabelValues(userID).Inc()
 		return false
@@ -289,16 +287,16 @@ func ValidateExemplarTimestamp(m *ExemplarValidationMetrics, userID string, minT
 	return true
 }
 
-// LabelValidationConfig helps with getting required config to validate labels.
-type LabelValidationConfig interface {
+// labelValidationConfig helps with getting required config to validate labels.
+type labelValidationConfig interface {
 	MaxLabelNamesPerSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
 }
 
-// ValidateLabels returns an err if the labels are invalid.
+// validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
@@ -340,35 +338,35 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	return nil
 }
 
-// MetadataValidationMetrics is a collection of metrics used by metadata validation.
-type MetadataValidationMetrics struct {
+// metadataValidationMetrics is a collection of metrics used by metadata validation.
+type metadataValidationMetrics struct {
 	missingMetricName *prometheus.CounterVec
 	metricNameTooLong *prometheus.CounterVec
 	unitTooLong       *prometheus.CounterVec
 }
 
-func (m *MetadataValidationMetrics) DeleteUserMetrics(userID string) {
+func (m *metadataValidationMetrics) deleteUserMetrics(userID string) {
 	m.missingMetricName.DeleteLabelValues(userID)
 	m.metricNameTooLong.DeleteLabelValues(userID)
 	m.unitTooLong.DeleteLabelValues(userID)
 }
 
-func NewMetadataValidationMetrics(r prometheus.Registerer) *MetadataValidationMetrics {
-	return &MetadataValidationMetrics{
-		missingMetricName: DiscardedMetadataCounter(r, reasonMissingMetricName),
-		metricNameTooLong: DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
-		unitTooLong:       DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
+func newMetadataValidationMetrics(r prometheus.Registerer) *metadataValidationMetrics {
+	return &metadataValidationMetrics{
+		missingMetricName: validation.DiscardedMetadataCounter(r, reasonMissingMetricName),
+		metricNameTooLong: validation.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
+		unitTooLong:       validation.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
 	}
 }
 
-// MetadataValidationConfig helps with getting required config to validate metadata.
-type MetadataValidationConfig interface {
+// metadataValidationConfig helps with getting required config to validate metadata.
+type metadataValidationConfig interface {
 	EnforceMetadataMetricName(userID string) bool
 	MaxMetadataLength(userID string) int
 }
 
-// CleanAndValidateMetadata returns an err if a metric metadata is invalid.
-func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+// cleanAndValidateMetadata returns an err if a metric metadata is invalid.
+func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		m.missingMetricName.WithLabelValues(userID).Inc()
 		return errors.New(metadataMetricNameMissingMsgFormat)
@@ -397,4 +395,40 @@ func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidati
 	}
 
 	return err
+}
+
+// formatLabelSet formats label adapters as a metric name with labels, while preserving
+// label order, and keeping duplicates. If there are multiple "__name__" labels, only
+// first one is used as metric name, other ones will be included as regular labels.
+func formatLabelSet(ls []mimirpb.LabelAdapter) string {
+	metricName, hasMetricName := "", false
+
+	labelStrings := make([]string, 0, len(ls))
+	for _, l := range ls {
+		if l.Name == model.MetricNameLabel && !hasMetricName && l.Value != "" {
+			metricName = l.Value
+			hasMetricName = true
+		} else {
+			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", l.Name, l.Value))
+		}
+	}
+
+	if len(labelStrings) == 0 {
+		if hasMetricName {
+			return metricName
+		}
+		return "{}"
+	}
+
+	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ", "))
+}
+
+func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
+	metric := mimirpb.FromLabelAdaptersToMetric(ls).String()
+	ellipsis := ""
+
+	if utf8.RuneCountInString(metric) > 200 {
+		ellipsis = "\u2026"
+	}
+	return metric, ellipsis
 }
