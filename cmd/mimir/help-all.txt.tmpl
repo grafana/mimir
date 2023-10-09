@@ -1117,6 +1117,8 @@ Usage of ./cmd/mimir/mimir:
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
+  -distributor.limit-inflight-requests-using-grpc-method-limiter
+    	[experimental] Use experimental method of limiting push requests.
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.remote-timeout duration

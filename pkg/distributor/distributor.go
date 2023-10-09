@@ -39,6 +39,8 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -186,7 +188,8 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
-	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -201,6 +204,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1031,8 +1035,13 @@ type requestState struct {
 //
 // This method creates requestState object and stores it in the context. This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
+//
+// This method returns errors with gRPC status code.
 func (d *Distributor) StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error) {
 	ctx, _, err := d.startPushRequest(ctx, requestSize)
+	if err != nil {
+		return ctx, status.Error(codes.Unavailable, err.Error())
+	}
 	return ctx, err
 }
 

@@ -5047,24 +5047,25 @@ func TestStartFinishRequest(t *testing.T) {
 		},
 
 		"too many inflight requests": {
-			inflightRequestsBeforePush:    inflightLimit,
-			expectedStartSizeKnownError:   errMaxInflightRequestsReached,
-			expectedStartSizeUnknownError: errMaxInflightRequestsReached,
-			expectedPushError:             errMaxInflightRequestsReached,
+			inflightRequestsBeforePush:     inflightLimit,
+			inflightRequestsSizeBeforePush: 0,
+			expectedStartSizeKnownError:    status.Error(codes.Unavailable, errMaxInflightRequestsReached.Error()),
+			expectedStartSizeUnknownError:  status.Error(codes.Unavailable, errMaxInflightRequestsReached.Error()),
+			expectedPushError:              errMaxInflightRequestsReached,
 		},
 
 		"too many inflight bytes requests": {
 			inflightRequestsBeforePush:     1,
 			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
-			expectedStartSizeKnownError:    errMaxInflightRequestsBytesReached,
+			expectedStartSizeKnownError:    status.Error(codes.Unavailable, errMaxInflightRequestsBytesReached.Error()),
 			expectedStartSizeUnknownError:  nil,
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
 		"high ingestion rate": {
 			addIngestionRateBeforePush:    100 * ingestionRateLimit,
-			expectedStartSizeKnownError:   errMaxIngestionRateReached,
-			expectedStartSizeUnknownError: errMaxIngestionRateReached,
+			expectedStartSizeKnownError:   status.Error(codes.Unavailable, errMaxIngestionRateReached.Error()),
+			expectedStartSizeUnknownError: status.Error(codes.Unavailable, errMaxIngestionRateReached.Error()),
 			expectedPushError:             errMaxIngestionRateReached,
 		},
 	}
@@ -5126,6 +5127,11 @@ func TestStartFinishRequest(t *testing.T) {
 							require.NoError(t, err)
 						} else {
 							require.ErrorIs(t, err, expectedStartError)
+
+							// Verify that errors returned by StartPushRequest method are true gRPC status errors.
+							require.Error(t, err)
+							_, ok := status.FromError(err)
+							require.True(t, ok)
 						}
 					}
 
