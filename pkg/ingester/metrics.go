@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type ingesterMetrics struct {
@@ -327,8 +327,8 @@ func newIngesterMetrics(
 			Help: "Requests rejected for hitting per-instance limits",
 		}, []string{"reason"}),
 
-		discardedMetadataPerUserMetadataLimit:   util.DiscardedMetadataCounter(r, perUserMetadataLimit),
-		discardedMetadataPerMetricMetadataLimit: util.DiscardedMetadataCounter(r, perMetricMetadataLimit),
+		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
+		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_prepare_shutdown_requested",
@@ -386,13 +386,13 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    util.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
-		sampleOutOfOrder:     util.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
-		sampleTooOld:         util.DiscardedSamplesCounter(r, reasonSampleTooOld),
-		sampleTooFarInFuture: util.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
-		newValueForTimestamp: util.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
-		perUserSeriesLimit:   util.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
-		perMetricSeriesLimit: util.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
+		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
+		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
+		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
+		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 	}
 }
 

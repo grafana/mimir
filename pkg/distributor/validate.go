@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -150,15 +149,15 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 
 func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
 	return &sampleValidationMetrics{
-		missingMetricName:         util.DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:         util.DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries:    util.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:              util.DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:          util.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:         util.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		maxNativeHistogramBuckets: util.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
-		duplicateLabelNames:       util.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:            util.DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		missingMetricName:         validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
+		invalidMetricName:         validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:    validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		invalidLabel:              validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
+		labelNameTooLong:          validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		labelValueTooLong:         validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets: validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		duplicateLabelNames:       validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		tooFarInFuture:            validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
 
@@ -183,12 +182,12 @@ func (m *exemplarValidationMetrics) deleteUserMetrics(userID string) {
 
 func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMetrics {
 	return &exemplarValidationMetrics{
-		labelsMissing:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
-		timestampInvalid: util.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
-		labelsTooLong:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
-		labelsBlank:      util.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
-		tooOld:           util.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
-		tooFarInFuture:   util.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+		labelsMissing:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
+		timestampInvalid: validation.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
+		labelsTooLong:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
+		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
+		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
+		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
 	}
 }
 
@@ -354,9 +353,9 @@ func (m *metadataValidationMetrics) deleteUserMetrics(userID string) {
 
 func newMetadataValidationMetrics(r prometheus.Registerer) *metadataValidationMetrics {
 	return &metadataValidationMetrics{
-		missingMetricName: util.DiscardedMetadataCounter(r, reasonMissingMetricName),
-		metricNameTooLong: util.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
-		unitTooLong:       util.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
+		missingMetricName: validation.DiscardedMetadataCounter(r, reasonMissingMetricName),
+		metricNameTooLong: validation.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
+		unitTooLong:       validation.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
 	}
 }
 

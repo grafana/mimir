@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package util
+package validation
 
 import (
 	"github.com/prometheus/client_golang/prometheus"

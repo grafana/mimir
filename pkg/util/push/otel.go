@@ -49,7 +49,7 @@ func OTLPHandler(
 	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
-	discardedDueToOtelParseError := util.DiscardedSamplesCounter(reg, otelParseError)
+	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
