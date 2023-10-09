@@ -26,7 +26,7 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.63
 	github.com/mitchellh/go-wordwrap v1.0.1
-	github.com/oklog/ulid v1.3.1
+	github.com/oklog/ulid/v2 v2.1.0
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
@@ -68,6 +68,7 @@ require (
 	github.com/hashicorp/vault/api v1.10.0
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
+	github.com/oklog/ulid v1.3.1
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.84.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.84.0
 	github.com/prometheus/procfs v0.12.0
