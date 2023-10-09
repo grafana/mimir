@@ -13,27 +13,30 @@ weight: 100
 
 # Send native histograms to Mimir
 
-Prometheus native histograms is a data type in the Prometheus ecosystem that enables producing, storing and querying high resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
+Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store,  and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
 
 Native histograms are different from classic Prometheus histograms in a number of ways:
 
-1. Native histogram bucket boundaries are calculated with a formula depending on the scale (resolution) of the native histogram and are not user defined. The calculation produces exponentially increasing bucket boundaries. For more detail see [Bucket boundary calculation](#bucket-boundary-calculation).
-1. Native histogram bucket boundaries may change (widen) dynamically if observations result in too many buckets. For more detail see [Limiting the number of buckets](#limiting-the-number-of-buckets).
-1. Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only had an upper bound called `le` and counted all observations in the bucket and all lower buckets (cumulative).
-1. An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and count of observations are stored in a single new data type - and not in separate time series using the float data type. Thus there are no `<metric>_bucket`, `<metric>_sum`, `<metric>_count` series, only `<metric>`.
-1. Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. There are also a couple of new [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
+* Native histogram bucket boundaries are calculated by a formula that depends on the scale (resolution) of the native histogram, and are not user defined. The calculation produces exponentially increasing bucket boundaries. For details, see [Bucket boundary calculation](#bucket-boundary-calculation).
+* Native histogram bucket boundaries might change (widen) dynamically if the observations result in too many buckets. For details, see [Limiting the number of buckets](#limiting-the-number-of-buckets).
+* Native histogram bucket counters only count observations inside the bucket boundaries, whereas the classic histogram buckets only have an upper bound called `le` and count all observations in the bucket and all lower buckets (cumulative).
+* An instance of a native histogram metric only requires a single time series, because the buckets, sum of observations, and the count of observations are stored in a single data type rather than in separate time series using the `float` data type. Thus, there are no `<metric>_bucket`, `<metric>_sum`, and `<metric>_count` series. There is only `<metric>` time series.
+* Querying native histograms via the Prometheus query language (PromQL) uses a different syntax. For details, see [functions](https://prometheus.io/docs/prometheus/latest/querying/functions/).
 
-For an introduction to native histograms, watch the following presentation: [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk).
+For an introduction to native histograms, watch the [Native Histograms in Prometheus](https://www.youtube.com/watch?v=AcmABV6NCYk) presentation.
 
-## Pros and cons
+## Advantages and disadvantages
 
-This section describes the pros and cons of using native histograms compared to the classic Prometheus histograms. For more information and real example, see [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
+There are advantages and disadvantages of using native histograms compared to the classic Prometheus histograms. For more information and a real example, see the [Prometheus Native Histograms in Production](https://www.youtube.com/watch?v=TgINvIK9SYc&t=127s) video.
 
-### Pros
+### Advantages
 
-1. Simpler instrumentation. No need to think about bucket boundaries, they are automatic.
-1. Better resolution in practice as custom bucket layouts are usually not that high resolution.
-1. Native histograms are compatible with each other due to the automatic layout, thus they can be easily combined. Caveat: the operation might scale down an operand to lower resolution to match the other operand.
+* Simpler instrumentation: you do not need to think about bucket boundaries because they are created automatically.
+* Better resolution in practice: custom bucket layouts are usually not high resolution.
+* Native histograms are compatible with each other: they have an automatic layout, which makes them easy to combine. 
+  {{% admonition type="note" %}}
+  The operation might scale down an operand to lower resolution to match the other operand.
+  {{% /admonition %}}
 
 ### Cons
 
