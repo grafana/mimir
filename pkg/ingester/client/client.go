@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -31,18 +32,18 @@ type closableHealthAndIngesterClient struct {
 }
 
 // MakeIngesterClient makes a new IngesterClient
-func MakeIngesterClient(addr string, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
+func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	logger = log.With(logger, "component", "ingester-client")
 	unary, stream := grpcclient.Instrument(metrics.requestDuration)
 	if cfg.CircuitBreaker.Enabled {
-		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(addr, cfg.CircuitBreaker, metrics, logger)}, unary...)
+		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpc.Dial(addr, dialOpts...)
+	conn, err := grpc.Dial(inst.Addr, dialOpts...)
 	if err != nil {
 		return nil, err
 	}

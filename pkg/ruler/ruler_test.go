@@ -107,9 +107,9 @@ type mockRulerClientsPool struct {
 	numberOfCalls atomic.Int32
 }
 
-func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
+func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
 	for _, r := range p.rulerAddrMap {
-		if r.lifecycler.GetInstanceAddr() == addr {
+		if r.lifecycler.GetInstanceAddr() == inst.Addr {
 			return &mockRulerClient{
 				ruler:           r,
 				rulesCallsCount: &p.numberOfCalls,
@@ -117,7 +117,7 @@ func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unable to find ruler for addr %s", addr)
+	return nil, fmt.Errorf("unable to find ruler for addr %s %s", inst.Id, inst.Addr)
 }
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {

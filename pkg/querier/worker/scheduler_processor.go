@@ -69,7 +69,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		HealthCheckTimeout: 1 * time.Second,
 	}
 
-	p.frontendPool = client.NewPool("frontend", poolConfig, nil, p.createFrontendClient, frontendClientsGauge, log)
+	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)
 	return p, []services.Service{p.frontendPool}
 }
 

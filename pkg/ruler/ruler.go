@@ -925,10 +925,10 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	ring := ring.ReadRing(r.ring)
+	rr := ring.ReadRing(r.ring)
 
 	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
-		ring = r.ring.ShuffleShard(userID, shardSize)
+		rr = r.ring.ShuffleShard(userID, shardSize)
 	}
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
@@ -943,7 +943,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	err = r.forEachRulerInTheRing(ctx, ring, RuleEvalRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+	err = r.forEachRulerInTheRing(ctx, rr, RuleEvalRingOp, func(ctx context.Context, rulerInst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		// Fail if we have not been able to get the client for a ruler.
 		if rulerClientErr != nil {
 			return err
@@ -951,7 +951,7 @@ func (r *Ruler) GetRules(ctx context.Context, req RulesRequest) ([]*GroupStateDe
 
 		newGrps, err := rulerClient.Rules(ctx, &req)
 		if err != nil {
-			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", rulerAddr)
+			return errors.Wrapf(err, "unable to retrieve rules from ruler %s %s", rulerInst.Id, rulerInst.Addr)
 		}
 
 		mergedMx.Lock()
@@ -1268,7 +1268,7 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 	// the client-side gRPC instrumentation fails.
 	ctx = user.InjectOrgID(ctx, "")
 
-	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error {
+	errs.Add(r.forEachRulerInTheRing(ctx, r.ring, RuleSyncRingOp, func(ctx context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error {
 		var err error
 
 		if rulerClientErr != nil {
@@ -1294,23 +1294,21 @@ func (r *Ruler) notifySyncRules(ctx context.Context, userIDs []string) {
 
 // forEachRulerInTheRing calls f() for each ruler in the ring which is part of the replication set for the input op.
 // The execution breaks on first error returned by f().
-func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, rulerAddr string, rulerClient RulerClient, rulerClientErr error) error) error {
+func (r *Ruler) forEachRulerInTheRing(ctx context.Context, ring ring.ReadRing, op ring.Operation, f func(_ context.Context, inst *ring.InstanceDesc, rulerClient RulerClient, rulerClientErr error) error) error {
 	rulers, err := ring.GetReplicationSetForOperation(op)
 	if err != nil {
 		return err
 	}
 
-	addrs := rulers.GetAddresses()
-
 	// The execution breaks on first error encountered.
-	return concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
-		rulerAddr := addrs[idx]
+	return concurrency.ForEachJob(ctx, len(rulers.Instances), len(rulers.Instances), func(ctx context.Context, idx int) error {
+		rulerInst := rulers.Instances[idx]
 
-		rulerClient, err := r.clientsPool.GetClientFor(rulerAddr)
+		rulerClient, err := r.clientsPool.GetClientForInstance(rulerInst)
 		if err != nil {
-			return f(ctx, rulerAddr, nil, errors.Wrapf(err, "unable to get client for ruler %s", rulerAddr))
+			return f(ctx, &rulerInst, nil, errors.Wrapf(err, "unable to get client for ruler %s %s", rulerInst.Id, rulerInst.Addr))
 		}
 
-		return f(ctx, rulerAddr, rulerClient, nil)
+		return f(ctx, &rulerInst, rulerClient, nil)
 	})
 }

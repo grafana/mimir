@@ -49,3 +49,7 @@ type PageUsers struct {
 	Page       int    `json:"page"`
 	PerPage    int    `json:"perPage"`
 }
+
+type UserPassword struct {
+	Password string `json:"password"`
+}

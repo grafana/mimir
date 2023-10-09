@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
 
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -425,7 +426,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
-			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
+			err = distributorerror.NewReplicasDidNotMatch(replica, entry.elected.Replica)
 		}
 		h.electedLock.Unlock()
 		return err
@@ -436,7 +437,15 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	h.electedLock.Unlock()
 	// If we have reached the limit for number of clusters, error out now.
 	if limit := h.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
-		return tooManyClustersError{limit: limit}
+		return distributorerror.NewTooManyClusters(
+			fmt.Sprintf(
+				globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+					"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
+					validation.HATrackerMaxClustersFlag,
+				),
+				limit,
+			),
+		)
 	}
 
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)
@@ -503,43 +512,6 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		h.electedLock.Unlock()
 	}
 	return err
-}
-
-type replicasNotMatchError struct {
-	replica, elected string
-}
-
-func (e replicasNotMatchError) Error() string {
-	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
-}
-
-// Needed for errors.Is to work properly.
-func (e replicasNotMatchError) Is(err error) bool {
-	_, ok1 := err.(replicasNotMatchError)
-	_, ok2 := err.(*replicasNotMatchError)
-	return ok1 || ok2
-}
-
-// IsOperationAborted returns whether the error has been caused by an operation intentionally aborted.
-func (e replicasNotMatchError) IsOperationAborted() bool {
-	return true
-}
-
-type tooManyClustersError struct {
-	limit int
-}
-
-func (e tooManyClustersError) Error() string {
-	return globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)", e.limit),
-		validation.HATrackerMaxClustersFlag)
-}
-
-// Needed for errors.Is to work properly.
-func (e tooManyClustersError) Is(err error) bool {
-	_, ok1 := err.(tooManyClustersError)
-	_, ok2 := err.(*tooManyClustersError)
-	return ok1 || ok2
 }
 
 func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {

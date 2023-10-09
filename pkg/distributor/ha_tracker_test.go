@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -29,8 +28,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
@@ -602,7 +604,16 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), tooManyClustersError{limit: 2}.Error())
+	expectedErr := distributorerror.NewTooManyClusters(
+		fmt.Sprintf(
+			globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
+				validation.HATrackerMaxClustersFlag,
+			),
+			2,
+		),
+	)
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), expectedErr.Error())
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
@@ -627,7 +638,16 @@ func TestHAClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
-	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), tooManyClustersError{limit: 2}.Error())
+	expectedErr = distributorerror.NewTooManyClusters(
+		fmt.Sprintf(
+			globalerror.TooManyHAClusters.MessageWithPerTenantLimitConfig(
+				"the write request has been rejected because the maximum number of high-availability (HA) clusters has been reached for this tenant (limit: %d)",
+				validation.HATrackerMaxClustersFlag,
+			),
+			2,
+		),
+	)
+	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), expectedErr.Error())
 
 	now = now.Add(5 * time.Second)
 
@@ -648,34 +668,6 @@ func waitForClustersUpdate(t *testing.T, expected int, tr *haTracker, userID str
 
 		return len(tr.clusters[userID])
 	})
-}
-
-func TestTooManyClustersError(t *testing.T) {
-	var err error = tooManyClustersError{limit: 10}
-	assert.True(t, errors.Is(err, tooManyClustersError{}))
-	assert.True(t, errors.Is(err, &tooManyClustersError{}))
-
-	err = &tooManyClustersError{limit: 20}
-	assert.True(t, errors.Is(err, tooManyClustersError{}))
-	assert.True(t, errors.Is(err, &tooManyClustersError{}))
-
-	err = replicasNotMatchError{replica: "a", elected: "b"}
-	assert.False(t, errors.Is(err, tooManyClustersError{}))
-	assert.False(t, errors.Is(err, &tooManyClustersError{}))
-}
-
-func TestReplicasNotMatchError(t *testing.T) {
-	var err error = replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
-
-	err = &replicasNotMatchError{replica: "a", elected: "b"}
-	assert.True(t, errors.Is(err, replicasNotMatchError{}))
-	assert.True(t, errors.Is(err, &replicasNotMatchError{}))
-
-	err = tooManyClustersError{limit: 10}
-	assert.False(t, errors.Is(err, replicasNotMatchError{}))
-	assert.False(t, errors.Is(err, &replicasNotMatchError{}))
 }
 
 type trackerLimits struct {

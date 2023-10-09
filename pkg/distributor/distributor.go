@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -77,9 +78,6 @@ const (
 	// Size of "slab" when using pooled buffers for marshaling write requests. When handling single Push request
 	// buffers for multiple write requests sent to ingesters will be allocated from single "slab", if there is enough space.
 	writeRequestSlabPoolSize = 512 * 1024
-
-	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	statusServiceOverload = 529
 )
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -227,9 +225,9 @@ const (
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
-		cfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(addr, clientConfig, clientMetrics, log)
-		}
+		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+		})
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
@@ -728,15 +726,13 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			if errors.Is(err, replicasNotMatchError{}) {
+			if errors.As(err, &distributorerror.ReplicasDidNotMatch{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
-			if errors.Is(err, tooManyClustersError{}) {
+			if errors.As(err, &distributorerror.TooManyClusters{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				return httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
 			return err
@@ -904,9 +900,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
 				if firstPartialErr == nil {
-					// The series labels may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+					firstPartialErr = distributorerror.NewValidation(validationErr)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -926,9 +921,8 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		for mIdx, m := range req.Metadata {
 			if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
-					// The metadata info may be retained by validationErr but that's not a problem for this
-					// use case because we format it calling Error() and then we discard it.
-					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
+					firstPartialErr = distributorerror.NewValidation(validationErr)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -950,10 +944,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			// Return a 429 here to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
+			return distributorerror.NewIngestionRateLimited(validation.FormatIngestionRateLimitedMessage(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)))
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1054,13 +1045,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			if d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID) {
-				return httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
-			}
-			return httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
+			return distributorerror.RequestRateLimitedErrorf(validation.FormatRequestRateLimitedMessage(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1093,11 +1078,28 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
 
-	err := d.PushWithMiddlewares(ctx, pushReq)
-	if err != nil {
-		return nil, err
+	pushErr := d.PushWithMiddlewares(ctx, pushReq)
+	if pushErr == nil {
+		return &mimirpb.WriteResponse{}, nil
 	}
-	return &mimirpb.WriteResponse{}, nil
+	handledErr := d.handlePushError(ctx, pushErr)
+	return nil, handledErr
+}
+
+func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error {
+	if errors.Is(pushErr, context.Canceled) {
+		return pushErr
+	}
+
+	serviceOverloadErrorEnabled := false
+	userID, err := tenant.TenantID(ctx)
+	if err == nil {
+		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+	}
+	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+		return httpgrpc.Errorf(httpStatus, pushErr.Error())
+	}
+	return pushErr
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
@@ -1236,7 +1238,7 @@ func copyString(s string) string {
 }
 
 func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
-	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
+	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
 	}
@@ -1267,7 +1269,7 @@ func handleIngesterPushError(err error) error {
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
 func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (T, error)) ([]T, error) {
 	wrappedF := func(ctx context.Context, ing *ring.InstanceDesc) (T, error) {
-		client, err := d.ingesterPool.GetClientFor(ing.Addr)
+		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
 			var empty T
 			return empty, err
@@ -1498,7 +1500,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	}
 
 	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
-		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return struct{}{}, err
 		}
@@ -1788,7 +1790,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 		CountMethod: ingesterCountMethod,
 	}
 	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
-		poolClient, err := d.ingesterPool.GetClientFor(desc.Addr)
+		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return zonedUserStatsResponse{}, err
 		}
@@ -1849,7 +1851,7 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 		return nil, err
 	}
 	for _, ingester := range replicationSet.Instances {
-		client, err := d.ingesterPool.GetClientFor(ingester.Addr)
+		client, err := d.ingesterPool.GetClientForInstance(ingester)
 		if err != nil {
 			return nil, err
 		}

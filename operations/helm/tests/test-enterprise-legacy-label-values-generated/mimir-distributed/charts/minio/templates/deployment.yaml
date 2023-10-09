@@ -4,10 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-enterprise-legacy-label-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: test-enterprise-legacy-label-values
     heritage: Helm
 spec:
@@ -28,19 +27,19 @@ spec:
         app: minio
         release: test-enterprise-legacy-label-values
       annotations:
-        checksum/secrets: c4bf6f1c5d502bad582ac170432a67bb2427da1b444114f73de252359032b546
-        checksum/config: 8cbe3df74881b81f876fb304a059e442c242fdbcabfc8dd4451bd75add683f4e
+        checksum/secrets: 1b8bd095e5db5e240fd4efaa94ea91455ee88ea3539e056bb1d6b55710ef1dde
+        checksum/config: 14247d8260d49cdfff7b0192c73c8584ddac040809273f65e8210773b0589056
     spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-
+      
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-02-10T18-48-39Z"
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
