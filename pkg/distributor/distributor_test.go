@@ -5026,6 +5026,7 @@ func TestStartFinishRequest(t *testing.T) {
 	type testCase struct {
 		inflightRequestsBeforePush     int
 		inflightRequestsSizeBeforePush int64
+		addIngestionRateBeforePush     int64
 
 		expectedStartSizeKnownError   error
 		expectedStartSizeUnknownError error
@@ -5033,33 +5034,38 @@ func TestStartFinishRequest(t *testing.T) {
 	}
 
 	const (
-		inflightLimit     = 5
-		infligtBytesLimit = 1024
+		inflightLimit      = 5
+		inflightBytesLimit = 1024
+		ingestionRateLimit = 100
 	)
 
 	testcases := map[string]testCase{
 		"request succeeds": {
-			inflightRequestsBeforePush:     0,
-			inflightRequestsSizeBeforePush: 0,
-			expectedStartSizeKnownError:    nil,
-			expectedStartSizeUnknownError:  nil,
-			expectedPushError:              nil,
+			expectedStartSizeKnownError:   nil,
+			expectedStartSizeUnknownError: nil,
+			expectedPushError:             nil,
 		},
 
 		"too many inflight requests": {
-			inflightRequestsBeforePush:     inflightLimit,
-			inflightRequestsSizeBeforePush: 0,
-			expectedStartSizeKnownError:    errMaxInflightRequestsReached,
-			expectedStartSizeUnknownError:  errMaxInflightRequestsReached,
-			expectedPushError:              errMaxInflightRequestsReached,
+			inflightRequestsBeforePush:    inflightLimit,
+			expectedStartSizeKnownError:   errMaxInflightRequestsReached,
+			expectedStartSizeUnknownError: errMaxInflightRequestsReached,
+			expectedPushError:             errMaxInflightRequestsReached,
 		},
 
 		"too many inflight bytes requests": {
 			inflightRequestsBeforePush:     1,
-			inflightRequestsSizeBeforePush: 2 * infligtBytesLimit,
+			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
 			expectedStartSizeKnownError:    errMaxInflightRequestsBytesReached,
 			expectedStartSizeUnknownError:  nil,
 			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"high ingestion rate": {
+			addIngestionRateBeforePush:    100 * ingestionRateLimit,
+			expectedStartSizeKnownError:   errMaxIngestionRateReached,
+			expectedStartSizeUnknownError: errMaxIngestionRateReached,
+			expectedPushError:             errMaxIngestionRateReached,
 		},
 	}
 
@@ -5093,13 +5099,16 @@ func TestStartFinishRequest(t *testing.T) {
 						limits:                   &limits,
 						enableTracker:            true,
 						maxInflightRequests:      inflightLimit,
-						maxInflightRequestsBytes: infligtBytesLimit,
+						maxInflightRequestsBytes: inflightBytesLimit,
+						maxIngestionRate:         ingestionRateLimit,
 					})
 					wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
 
 					// Setup inflight values before calling push.
 					ds[0].inflightPushRequests.Add(int64(tc.inflightRequestsBeforePush))
 					ds[0].inflightPushRequestsBytes.Add(tc.inflightRequestsSizeBeforePush)
+					ds[0].ingestionRate.Add(tc.addIngestionRateBeforePush)
+					ds[0].ingestionRate.Tick()
 
 					ctx := user.InjectOrgID(context.Background(), "user")
 					if externalCheck {
