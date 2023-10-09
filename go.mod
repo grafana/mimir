@@ -35,7 +35,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/common v0.44.0
-	github.com/prometheus/prometheus v1.99.0
+	github.com/prometheus/prometheus v2.5.0+incompatible
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/afero v1.10.0
