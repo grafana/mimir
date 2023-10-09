@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type validateLabelsCfg struct {
@@ -152,7 +152,7 @@ func TestValidateLabels(t *testing.T) {
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
-	randomReason := validation.DiscardedSamplesCounter(reg, "random reason")
+	randomReason := util.DiscardedSamplesCounter(reg, "random reason")
 	randomReason.WithLabelValues("different user", "custom label").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -230,7 +230,7 @@ func TestValidateExemplars(t *testing.T) {
 		assert.NoError(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
 	}
 
-	validation.DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	util.DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
@@ -319,7 +319,7 @@ func TestValidateMetadata(t *testing.T) {
 		})
 	}
 
-	validation.DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	util.DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.

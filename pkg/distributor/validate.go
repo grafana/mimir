@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -51,12 +52,12 @@ var (
 	reasonMetadataMetricNameTooLong = globalerror.MetricMetadataMetricNameTooLong.LabelValue()
 	reasonMetadataUnitTooLong       = globalerror.MetricMetadataUnitTooLong.LabelValue()
 
-	// ReasonRateLimited is one of the values for the reason to discard samples.
+	// reasonRateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
-	ReasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
+	reasonRateLimited = "rate_limited" // same for request and ingestion which are separate errors, so not using metricReasonFromErrorID with global error
 
-	// ReasonTooManyHAClusters is one of the reasons for discarding samples.
-	ReasonTooManyHAClusters = "too_many_ha_clusters"
+	// reasonTooManyHAClusters is one of the reasons for discarding samples.
+	reasonTooManyHAClusters = "too_many_ha_clusters"
 
 	labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
 		"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
@@ -149,15 +150,15 @@ func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string
 
 func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
 	return &SampleValidationMetrics{
-		missingMetricName:         validation.DiscardedSamplesCounter(r, reasonMissingMetricName),
-		invalidMetricName:         validation.DiscardedSamplesCounter(r, reasonInvalidMetricName),
-		maxLabelNamesPerSeries:    validation.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
-		invalidLabel:              validation.DiscardedSamplesCounter(r, reasonInvalidLabel),
-		labelNameTooLong:          validation.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
-		labelValueTooLong:         validation.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
-		maxNativeHistogramBuckets: validation.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
-		duplicateLabelNames:       validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
-		tooFarInFuture:            validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		missingMetricName:         util.DiscardedSamplesCounter(r, reasonMissingMetricName),
+		invalidMetricName:         util.DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		maxLabelNamesPerSeries:    util.DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		invalidLabel:              util.DiscardedSamplesCounter(r, reasonInvalidLabel),
+		labelNameTooLong:          util.DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		labelValueTooLong:         util.DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		maxNativeHistogramBuckets: util.DiscardedSamplesCounter(r, reasonMaxNativeHistogramBuckets),
+		duplicateLabelNames:       util.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		tooFarInFuture:            util.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 	}
 }
 
@@ -182,12 +183,12 @@ func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
 
 func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMetrics {
 	return &ExemplarValidationMetrics{
-		labelsMissing:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
-		timestampInvalid: validation.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
-		labelsTooLong:    validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
-		labelsBlank:      validation.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
-		tooOld:           validation.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
-		tooFarInFuture:   validation.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
+		labelsMissing:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
+		timestampInvalid: util.DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
+		labelsTooLong:    util.DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
+		labelsBlank:      util.DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
+		tooOld:           util.DiscardedExemplarsCounter(r, reasonExemplarTooOld),
+		tooFarInFuture:   util.DiscardedExemplarsCounter(r, reasonExemplarTooFarInFuture),
 	}
 }
 
@@ -353,9 +354,9 @@ func (m *MetadataValidationMetrics) DeleteUserMetrics(userID string) {
 
 func NewMetadataValidationMetrics(r prometheus.Registerer) *MetadataValidationMetrics {
 	return &MetadataValidationMetrics{
-		missingMetricName: validation.DiscardedMetadataCounter(r, reasonMissingMetricName),
-		metricNameTooLong: validation.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
-		unitTooLong:       validation.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
+		missingMetricName: util.DiscardedMetadataCounter(r, reasonMissingMetricName),
+		metricNameTooLong: util.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
+		unitTooLong:       util.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
 	}
 }
 

@@ -327,11 +327,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
 
-		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, ReasonTooManyHAClusters),
-		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, ReasonRateLimited),
-		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, ReasonRateLimited),
-		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, ReasonRateLimited),
-		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, ReasonRateLimited),
+		discardedSamplesTooManyHaClusters: util.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
+		discardedSamplesRateLimited:       util.DiscardedSamplesCounter(reg, reasonRateLimited),
+		discardedRequestsRateLimited:      util.DiscardedRequestsCounter(reg, reasonRateLimited),
+		discardedExemplarsRateLimited:     util.DiscardedExemplarsCounter(reg, reasonRateLimited),
+		discardedMetadataRateLimited:      util.DiscardedMetadataCounter(reg, reasonRateLimited),
 
 		rejectedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_instance_rejected_requests_total",
