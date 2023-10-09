@@ -131,6 +131,8 @@ github.com/alecthomas/chroma/lexers/y
 github.com/alecthomas/chroma/lexers/z
 github.com/alecthomas/chroma/quick
 github.com/alecthomas/chroma/styles
+# github.com/alecthomas/chroma/v2 v2.9.1
+## explicit; go 1.19
 # github.com/alecthomas/kingpin/v2 v2.3.2
 ## explicit; go 1.17
 github.com/alecthomas/kingpin/v2
@@ -317,8 +319,8 @@ github.com/dgraph-io/ristretto/z/simd
 # github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
 ## explicit
 github.com/dgryski/go-rendezvous
-# github.com/dlclark/regexp2 v1.4.0
-## explicit
+# github.com/dlclark/regexp2 v1.10.0
+## explicit; go 1.13
 github.com/dlclark/regexp2
 github.com/dlclark/regexp2/syntax
 # github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11
