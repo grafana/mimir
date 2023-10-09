@@ -34,12 +34,13 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 }
 
 func TestNewTooManyClustersError(t *testing.T) {
-	message := "this is an error"
-	err := NewTooManyClusters(message)
+	limit := 10
+	err := NewTooManyClusters(limit)
+	expectedErrorMsg := fmt.Sprintf(tooManyClustersMsgFormat, limit)
 	assert.Error(t, err)
-	assert.EqualError(t, err, message)
+	assert.EqualError(t, err, expectedErrorMsg)
 
-	anotherErr := NewTooManyClusters(message)
+	anotherErr := NewTooManyClusters(20)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	assert.True(t, errors.As(err, &TooManyClusters{}))
@@ -70,12 +71,14 @@ func TestNewValidationError(t *testing.T) {
 }
 
 func TestNewIngestionRateError(t *testing.T) {
-	errorMsg := "this is an ingestion rate limited error"
-	err := NewIngestionRateLimited(errorMsg)
+	limit := 10.0
+	burst := 10
+	err := NewIngestionRateLimited(limit, burst)
+	expectedErrorMsg := fmt.Sprintf(ingestionRateLimitedMsgFormat, limit, burst)
 	assert.Error(t, err)
-	assert.EqualError(t, err, errorMsg)
+	assert.EqualError(t, err, expectedErrorMsg)
 
-	anotherErr := NewIngestionRateLimited(errorMsg)
+	anotherErr := NewIngestionRateLimited(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	assert.True(t, errors.As(err, &IngestionRateLimited{}))
@@ -87,12 +90,14 @@ func TestNewIngestionRateError(t *testing.T) {
 }
 
 func TestNewRequestRateError(t *testing.T) {
-	errorMsg := "this is a request rate limited error"
-	err := RequestRateLimitedErrorf(errorMsg)
+	limit := 10.0
+	burst := 10
+	err := NewRequestRateLimited(limit, burst)
+	expectedErrorMsg := fmt.Sprintf(requestRateLimitedMsgFormat, limit, burst)
 	assert.Error(t, err)
-	assert.EqualError(t, err, errorMsg)
+	assert.EqualError(t, err, expectedErrorMsg)
 
-	anotherErr := RequestRateLimitedErrorf(errorMsg)
+	anotherErr := NewRequestRateLimited(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)
 
 	assert.True(t, errors.As(err, &RequestRateLimited{}))
@@ -139,13 +144,13 @@ func TestToHTTPStatusHandler(t *testing.T) {
 		},
 		{
 			name:               "a TooManyClusters gets translated into 400, true",
-			err:                NewTooManyClusters("limit %d"),
+			err:                NewTooManyClusters(10),
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of a TooManyClusters gets translated into 400, true",
-			err:                log.DoNotLogError{Err: NewTooManyClusters("limit %d")},
+			err:                log.DoNotLogError{Err: NewTooManyClusters(10)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedOutcome:    true,
 		},
@@ -163,40 +168,40 @@ func TestToHTTPStatusHandler(t *testing.T) {
 		},
 		{
 			name:               "an IngestionRateLimited gets translated into an HTTP 429",
-			err:                NewIngestionRateLimited("%v - %d"),
+			err:                NewIngestionRateLimited(10, 10),
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedOutcome:    true,
 		},
 		{
 			name:               "a DoNotLog error of an IngestionRateLimited gets translated into an HTTP 429",
-			err:                log.DoNotLogError{Err: NewIngestionRateLimited("%v - %d")},
+			err:                log.DoNotLogError{Err: NewIngestionRateLimited(10, 10)},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedOutcome:    true,
 		},
 		{
 			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         RequestRateLimitedErrorf("%v - %d"),
+			err:                         NewRequestRateLimited(10, 10),
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a DoNotLog error of a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
-			err:                         log.DoNotLogError{Err: RequestRateLimitedErrorf("%v - %d")},
+			err:                         log.DoNotLogError{Err: NewRequestRateLimited(10, 10)},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         RequestRateLimitedErrorf("%v - %d"),
+			err:                         NewRequestRateLimited(10, 10),
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedOutcome:             true,
 		},
 		{
 			name:                        "a DoNotLog error of a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
-			err:                         log.DoNotLogError{Err: RequestRateLimitedErrorf("%v - %d")},
+			err:                         log.DoNotLogError{Err: NewRequestRateLimited(10, 10)},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedOutcome:             true,

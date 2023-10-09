@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package validation
+package distributor
 
 import (
 	"errors"
@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type validateLabelsCfg struct {
@@ -147,11 +148,11 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
-	randomReason := DiscardedSamplesCounter(reg, "random reason")
+	randomReason := validation.DiscardedSamplesCounter(reg, "random reason")
 	randomReason.WithLabelValues("different user", "custom label").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -209,7 +210,7 @@ func TestValidateExemplars(t *testing.T) {
 	}
 
 	for _, ie := range invalidExemplars {
-		assert.Error(t, ValidateExemplar(m, userID, []mimirpb.LabelAdapter{}, ie))
+		assert.Error(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ie))
 	}
 
 	validExemplars := []mimirpb.Exemplar{
@@ -226,10 +227,10 @@ func TestValidateExemplars(t *testing.T) {
 	}
 
 	for _, ve := range validExemplars {
-		assert.NoError(t, ValidateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
+		assert.NoError(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
 	}
 
-	DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	validation.DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
@@ -310,7 +311,7 @@ func TestValidateMetadata(t *testing.T) {
 		},
 	} {
 		t.Run(c.desc, func(t *testing.T) {
-			err := CleanAndValidateMetadata(m, cfg, userID, c.metadata)
+			err := cleanAndValidateMetadata(m, cfg, userID, c.metadata)
 			assert.Equal(t, c.err, err, "wrong error")
 			if err == nil {
 				assert.Equal(t, c.metadataOut, c.metadata)
@@ -318,7 +319,7 @@ func TestValidateMetadata(t *testing.T) {
 		})
 	}
 
-	DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
+	validation.DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
@@ -347,7 +348,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual := validateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
@@ -363,7 +364,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	)
 	assert.Equal(t, expected, actual)
 
-	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual = validateLabels(NewSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
@@ -512,7 +513,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 				var cfg sampleValidationConfig
 				cfg.maxNativeHistogramBuckets = limit
 
-				err := ValidateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
+				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
 					{Name: model.MetricNameLabel, Value: "a"},
 					{Name: "a", Value: "a"}}, h)
 

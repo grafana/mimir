@@ -804,9 +804,9 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
 	replicasNotMatchErr := distributorerror.NewReplicasDidNotMatch("a", "b")
-	tooManyClustersErr := distributorerror.NewTooManyClusters(originalMsg)
-	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimited(originalMsg)
-	requestRateLimitedErr := distributorerror.RequestRateLimitedErrorf(originalMsg)
+	tooManyClustersErr := distributorerror.NewTooManyClusters(10)
+	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimited(10, 10)
+	requestRateLimitedErr := distributorerror.NewRequestRateLimited(10, 10)
 	testCases := []struct {
 		name                        string
 		err                         error

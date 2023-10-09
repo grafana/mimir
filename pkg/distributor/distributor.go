@@ -141,9 +141,9 @@ type Distributor struct {
 	// Metrics for data rejected for hitting per-instance limits
 	rejectedRequests *prometheus.CounterVec
 
-	sampleValidationMetrics   *validation.SampleValidationMetrics
-	exemplarValidationMetrics *validation.ExemplarValidationMetrics
-	metadataValidationMetrics *validation.MetadataValidationMetrics
+	sampleValidationMetrics   *SampleValidationMetrics
+	exemplarValidationMetrics *ExemplarValidationMetrics
+	metadataValidationMetrics *MetadataValidationMetrics
 
 	PushWithMiddlewares push.Func
 
@@ -327,20 +327,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
 
-		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, validation.ReasonTooManyHAClusters),
-		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, validation.ReasonRateLimited),
-		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, validation.ReasonRateLimited),
-		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, validation.ReasonRateLimited),
-		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, validation.ReasonRateLimited),
+		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, ReasonTooManyHAClusters),
+		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, ReasonRateLimited),
+		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, ReasonRateLimited),
+		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, ReasonRateLimited),
+		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, ReasonRateLimited),
 
 		rejectedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_instance_rejected_requests_total",
 			Help: "Requests discarded for hitting per-instance limits",
 		}, []string{"reason"}),
 
-		sampleValidationMetrics:   validation.NewSampleValidationMetrics(reg),
-		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
-		metadataValidationMetrics: validation.NewMetadataValidationMetrics(reg),
+		sampleValidationMetrics:   NewSampleValidationMetrics(reg),
+		exemplarValidationMetrics: NewExemplarValidationMetrics(reg),
+		metadataValidationMetrics: NewMetadataValidationMetrics(reg),
 	}
 
 	// Initialize expected rejected request labels
@@ -608,7 +608,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -621,7 +621,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
+		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -632,7 +632,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
 			return err
 		}
 	}
@@ -644,14 +644,14 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
-		if err := validation.ValidateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
+		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
 			// remote write implementation only populates one or the other,
 			// there never will be any.
 			return err
 		}
-		if !validation.ValidateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
+		if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
 			ts.DeleteExemplarByMovingLast(i)
 			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
 			continue
@@ -919,7 +919,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		}
 
 		for mIdx, m := range req.Metadata {
-			if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
+			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = distributorerror.NewValidation(validationErr)
@@ -944,7 +944,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRateLimited(validation.FormatIngestionRateLimitedMessage(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)))
+			return distributorerror.NewIngestionRateLimited(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1045,7 +1045,7 @@ func (d *Distributor) limitsMiddleware(next push.Func) push.Func {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.RequestRateLimitedErrorf(validation.FormatRequestRateLimitedMessage(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)))
+			return distributorerror.NewRequestRateLimited(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
