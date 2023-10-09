@@ -5009,3 +5009,133 @@ func countCalls(ingesters []mockIngester, name string) int {
 
 	return count
 }
+
+func TestStartFinishRequest(t *testing.T) {
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+		}
+	}
+
+	// Pretend push went OK, make sure to call CleanUp.
+	finishPush := func(ctx context.Context, pushReq *Request) error {
+		defer pushReq.CleanUp()
+		return nil
+	}
+
+	type testCase struct {
+		inflightRequestsBeforePush     int
+		inflightRequestsSizeBeforePush int64
+
+		expectedStartSizeKnownError   error
+		expectedStartSizeUnknownError error
+		expectedPushError             error
+	}
+
+	const (
+		inflightLimit     = 5
+		infligtBytesLimit = 1024
+	)
+
+	testcases := map[string]testCase{
+		"request succeeds": {
+			inflightRequestsBeforePush:     0,
+			inflightRequestsSizeBeforePush: 0,
+			expectedStartSizeKnownError:    nil,
+			expectedStartSizeUnknownError:  nil,
+			expectedPushError:              nil,
+		},
+
+		"too many inflight requests": {
+			inflightRequestsBeforePush:     inflightLimit,
+			inflightRequestsSizeBeforePush: 0,
+			expectedStartSizeKnownError:    errMaxInflightRequestsReached,
+			expectedStartSizeUnknownError:  errMaxInflightRequestsReached,
+			expectedPushError:              errMaxInflightRequestsReached,
+		},
+
+		"too many inflight bytes requests": {
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: 2 * infligtBytesLimit,
+			expectedStartSizeKnownError:    errMaxInflightRequestsBytesReached,
+			expectedStartSizeUnknownError:  nil,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+	}
+
+	for name, tc := range testcases {
+		for _, externalCheck := range []bool{false, true} {
+			for _, externalSizeKnown := range []bool{false, true} {
+				if !externalCheck && externalSizeKnown {
+					continue
+				}
+
+				tname := name
+				if externalCheck {
+					if externalSizeKnown {
+						tname = tname + ",external,size known"
+					} else {
+						tname = tname + ",external,size unknown"
+					}
+				} else {
+					tname = tname + ",internal"
+				}
+
+				t.Run(tname, func(t *testing.T) {
+					pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
+
+					var limits validation.Limits
+					flagext.DefaultValues(&limits)
+
+					// Prepare distributor and wrap the mock push function with its middlewares.
+					ds, _, _ := prepare(t, prepConfig{
+						numDistributors:          1,
+						limits:                   &limits,
+						enableTracker:            true,
+						maxInflightRequests:      inflightLimit,
+						maxInflightRequestsBytes: infligtBytesLimit,
+					})
+					wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+
+					// Setup inflight values before calling push.
+					ds[0].inflightPushRequests.Add(int64(tc.inflightRequestsBeforePush))
+					ds[0].inflightPushRequestsBytes.Add(tc.inflightRequestsSizeBeforePush)
+
+					ctx := user.InjectOrgID(context.Background(), "user")
+					if externalCheck {
+						var err error
+						size := int64(0)
+						expectedStartError := tc.expectedStartSizeUnknownError
+						if externalSizeKnown {
+							size = int64(pushReq.Size())
+							expectedStartError = tc.expectedStartSizeKnownError
+						}
+
+						ctx, err = ds[0].StartPushRequest(ctx, size)
+
+						if expectedStartError == nil {
+							require.NoError(t, err)
+						} else {
+							require.ErrorIs(t, err, expectedStartError)
+						}
+					}
+
+					err := wrappedPush(ctx, NewParsedRequest(pushReq))
+					if tc.expectedPushError == nil {
+						require.NoError(t, err)
+					} else {
+						require.ErrorIs(t, err, tc.expectedPushError)
+					}
+
+					if externalCheck {
+						ds[0].FinishPushRequest(ctx)
+					}
+
+					// Verify that inflight metrics are the same as before the request.
+					require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
+					require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
+				})
+			}
+		}
+	}
+}

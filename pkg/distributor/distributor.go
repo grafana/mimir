@@ -1005,35 +1005,145 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
+type ctxKey int
+
+const requestStateKey ctxKey = 1
+
+// requestState represents state of checks for given request. If this object is stored in context,
+// it means that request has been checked against inflight requests limit, and FinishPushRequest,
+// cleanupAfterPushFinished (or both) must be called for given context.
+type requestState struct {
+	// If set to true, push request will perform cleanup of inflight metrics after request has actually finished
+	// (which can be after push handler returns).
+	pushHandlerPerformsCleanup bool
+
+	// If positive, it means that request size has been checked and added to inflightPushRequestsBytes.
+	requestSize int64
+}
+
+// StartPushRequest does limits checks at the beginning of Push request in distributor.
+//
+// This can be called from different places, even multiple times for the same request:
+//
+// * from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata in gRPC request provided enough information to do the check.
+//
+// * from Distributor's limitsMiddleware method.
+//
+// This method creates requestState object and stores it in the context. This object describes which checks were already performed on the request,
+// and which component is responsible for doing a cleanup.
+func (d *Distributor) StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error) {
+	ctx, _, err := d.startPushRequest(ctx, requestSize)
+	return ctx, err
+}
+
+func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (context.Context, *requestState, error) {
+	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if alreadyInContext {
+		return ctx, rs, nil
+	}
+
+	cleanupInDefer := true
+
+	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
+	inflight := d.inflightPushRequests.Inc()
+	defer func() {
+		if cleanupInDefer {
+			d.inflightPushRequests.Dec()
+		}
+	}()
+
+	il := d.getInstanceLimits()
+	if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errMaxInflightRequestsReached
+	}
+
+	if il.MaxIngestionRate > 0 {
+		if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
+			return ctx, nil, errMaxIngestionRateReached
+		}
+	}
+
+	rs = &requestState{}
+
+	// If we know the request size already, we can check it.
+	if requestSize > 0 {
+		if err := d.checkRequestSize(rs, requestSize); err != nil {
+			return ctx, nil, err
+		}
+	}
+
+	ctx = context.WithValue(ctx, requestStateKey, rs)
+
+	cleanupInDefer = false
+	return ctx, rs, nil
+}
+
+func (d *Distributor) checkRequestSize(rs *requestState, requestSize int64) error {
+	// If request size was already checked, don't check it again.
+	if rs.requestSize > 0 {
+		return nil
+	}
+
+	inflightBytes := d.inflightPushRequestsBytes.Add(requestSize)
+	il := d.getInstanceLimits()
+
+	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+		d.inflightPushRequestsBytes.Sub(requestSize)
+
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
+		return errMaxInflightRequestsBytesReached
+	}
+
+	rs.requestSize = requestSize
+	return nil
+}
+
+// FinishPushRequest is a counter-part to StartPushRequest, and must be called exactly once while handling the push request,
+// on the same goroutine as push method itself.
+func (d *Distributor) FinishPushRequest(ctx context.Context) {
+	rs, ok := ctx.Value(requestStateKey).(*requestState)
+	if !ok {
+		return
+	}
+
+	if rs.pushHandlerPerformsCleanup {
+		return
+	}
+
+	d.cleanupAfterPushFinished(rs)
+}
+
+func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
+	d.inflightPushRequests.Dec()
+	if rs.requestSize > 0 {
+		d.inflightPushRequestsBytes.Sub(rs.requestSize)
+	}
+}
+
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
-		inflight := d.inflightPushRequests.Inc()
+		// We don't know request size yet, will check it later.
+		ctx, rs, err := d.startPushRequest(ctx, -1)
+		if err != nil {
+			return util_log.DoNotLogError{Err: err}
+		}
 
+		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
 		pushReq.AddCleanup(func() {
-			d.inflightPushRequests.Dec()
+			d.cleanupAfterPushFinished(rs)
 		})
+
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
 				pushReq.CleanUp()
 			}
 		}()
-
-		il := d.getInstanceLimits()
-		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
-		}
-
-		if il.MaxIngestionRate > 0 {
-			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return errMaxIngestionRateReached
-			}
-		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1054,15 +1164,9 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return err
 		}
-		reqSize := int64(req.Size())
-		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
-		pushReq.AddCleanup(func() {
-			d.inflightPushRequestsBytes.Sub(reqSize)
-		})
 
-		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return errMaxInflightRequestsBytesReached
+		if err := d.checkRequestSize(rs, int64(req.Size())); err != nil {
+			return err
 		}
 
 		cleanupInDefer = false
