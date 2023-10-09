@@ -20,7 +20,6 @@
           "github.com/charleskorn/goautoneg",
           "github.com/grafana/opentracing-contrib-go-stdlib"
         ],
-        "matchCurrentVersion": "/^v\\d+.\\d+.\\d+-(\\d+\\.)?\\d{14}-[a-f0-9]+/",
         "enabled": false
       }
     ],
