@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/tsdb"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"

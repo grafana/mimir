@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 )
 
 func main() {
