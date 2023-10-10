@@ -71,7 +71,7 @@ The current team members are:
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 - Vernon Miller [@aldernero](https://github.com/aldernero) ([Grafana Labs](https://grafana.com/))
-- Ying [@ying-jeanne](https://github.com/ying-jeanne) ([Grafana Labs](https://grafana.com/))
+- Ying-jeanne Wang [@ying-jeanne](https://github.com/ying-jeanne) ([Grafana Labs](https://grafana.com/))
 - Đurica Yuri Nikolić [@duricanikolic](https://github.com/duricanikolic) ([Grafana Labs](https://grafana.com/))
 
 Previous team members:
