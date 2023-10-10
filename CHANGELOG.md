@@ -33,7 +33,7 @@
 * [ENHANCEMENT] Ingester: use the `PostingsForMatchers()` in-memory cache for label values queries with matchers too. #6151
 * [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168 #6250
 * [ENHANCEMENT] Distributor: Include ingester IDs in circuit breaker related metrics and logs. #6206
-* [ENHANCEMENT] Querier: improve errors and logging when streaming chunks from ingesters and store-gateways. #6194
+* [ENHANCEMENT] Querier: improve errors and logging when streaming chunks from ingesters and store-gateways. #6194 #6309
 * [ENHANCEMENT] All: added an experimental `-server.grpc.num-workers` flag that configures the number of long-living workers used to process gRPC requests. This could decrease the CPU usage by reducing the number of stack allocations. #6311
 * [ENHANCEMENT] All: improved IPv6 support by using the proper host:port formatting. #6311
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
