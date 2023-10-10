@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
+* [BUGFIX] Ingester: fix panic in WAL replay of certain native histograms. #6086
 
 ## 2.10.0
 
