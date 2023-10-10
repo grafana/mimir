@@ -141,6 +141,7 @@ The following features are currently experimental:
     - `log.rate-limit-logs-per-second-burst`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
+- Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)
 
 ## Deprecated features
 
