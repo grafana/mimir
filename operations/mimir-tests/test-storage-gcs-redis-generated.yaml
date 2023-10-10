@@ -1096,8 +1096,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.redis.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.redis.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=redis
         - -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size=150
         - -blocks-storage.bucket-store.metadata-cache.redis.endpoint=redis-metadata.default.svc.cluster.local:6379

@@ -546,8 +546,8 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -708,8 +708,8 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket
@@ -870,8 +870,8 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data/alertmanager
         - -alertmanager.web.external-url=http://test/alertmanager
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.s3.bucket-name=blocks-bucket

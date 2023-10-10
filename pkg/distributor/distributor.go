@@ -1307,7 +1307,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelValuesResponse, error) {
 		return client.LabelValues(ctx, req)
 	})
 	if err != nil {
@@ -1316,7 +1316,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 	valueSet := map[string]struct{}{}
 	for _, resp := range resps {
-		for _, v := range resp.(*ingester_client.LabelValuesResponse).LabelValues {
+		for _, v := range resp.LabelValues {
 			valueSet[v] = struct{}{}
 		}
 	}
@@ -1349,7 +1349,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	}
 	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
 	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
-	_, err = forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	_, err = forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (ingester_client.Ingester_LabelNamesAndValuesClient, error) {
 		stream, err := client.LabelNamesAndValues(ctx, req)
 		if err != nil {
 			return nil, err
@@ -1669,7 +1669,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelNamesResponse, error) {
 		return client.LabelNames(ctx, req)
 	})
 	if err != nil {
@@ -1678,7 +1678,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 	valueSet := map[string]struct{}{}
 	for _, resp := range resps {
-		for _, v := range resp.(*ingester_client.LabelNamesResponse).LabelNames {
+		for _, v := range resp.LabelNames {
 			valueSet[v] = struct{}{}
 		}
 	}
@@ -1705,7 +1705,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
 		return client.MetricsForLabelMatchers(ctx, req)
 	})
 	if err != nil {
@@ -1714,7 +1714,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 	metrics := map[uint64]labels.Labels{}
 	for _, resp := range resps {
-		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp.(*ingester_client.MetricsForLabelMatchersResponse))
+		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp)
 		for _, m := range ms {
 			metrics[labels.StableHash(m)] = m
 		}
@@ -1734,7 +1734,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsMetadataResponse, error) {
 		return client.MetricsMetadata(ctx, req)
 	})
 	if err != nil {
@@ -1743,8 +1743,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 	result := []scrape.MetricMetadata{}
 	dedupTracker := map[mimirpb.MetricMetadata]struct{}{}
-	for _, resp := range resps {
-		r := resp.(*ingester_client.MetricsMetadataResponse)
+	for _, r := range resps {
 		for _, m := range r.Metadata {
 			// Given we look across all ingesters - dedup the metadata.
 			_, ok := dedupTracker[*m]
