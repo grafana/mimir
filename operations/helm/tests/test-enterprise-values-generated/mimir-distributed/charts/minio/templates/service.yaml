@@ -4,10 +4,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: test-enterprise-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: test-enterprise-values
     heritage: Helm
     monitoring: "true"

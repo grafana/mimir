@@ -24,10 +24,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func (g seriesChunkRefsRange) refAt(i int) chunks.ChunkRef {
-	return chunkRef(g.segmentFile, g.refs[i].segFileOffset)
-}
-
 func TestBucketChunkReader_refetchChunks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -77,16 +73,11 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 			chunkrModifiedLen := block.chunkReader(ctx)
 
 			for sIdx, seriesRef := range seriesRefs {
-				for _, r := range seriesRef.chunksRanges {
-					existingChunksNum := len(loadedChunksCorrectLen[sIdx].chks)
-
-					loadedChunksCorrectLen[sIdx].chks = append(loadedChunksCorrectLen[sIdx].chks, make([]storepb.AggrChunk, len(r.refs))...)
-					loadedChunksModifiedLen[sIdx].chks = append(loadedChunksModifiedLen[sIdx].chks, make([]storepb.AggrChunk, len(r.refs))...)
-
-					for cIdx, c := range r.refs {
-						assert.NoError(t, chunkrCorrectLen.addLoad(r.refAt(cIdx), sIdx, existingChunksNum+cIdx, c.length))
-						assert.NoError(t, chunkrModifiedLen.addLoad(r.refAt(cIdx), sIdx, existingChunksNum+cIdx, skewChunkLen(c.length)))
-					}
+				loadedChunksCorrectLen[sIdx].chks = append(loadedChunksCorrectLen[sIdx].chks, make([]storepb.AggrChunk, len(seriesRef.refs))...)
+				loadedChunksModifiedLen[sIdx].chks = append(loadedChunksModifiedLen[sIdx].chks, make([]storepb.AggrChunk, len(seriesRef.refs))...)
+				for cIdx, r := range seriesRef.refs {
+					assert.NoError(t, chunkrCorrectLen.addLoad(r.ref(), sIdx, cIdx, r.length))
+					assert.NoError(t, chunkrModifiedLen.addLoad(r.ref(), sIdx, cIdx, skewChunkLen(r.length)))
 				}
 			}
 

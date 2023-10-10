@@ -93,7 +93,7 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 
 	iterator := series.Iterator(nil)
 	require.NotNil(t, iterator)
-	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from stream, but the stream has already been exhausted")
+	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from ingester chunks stream, but the stream has already been exhausted (was expecting 0 series)")
 }
 
 func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {

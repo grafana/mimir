@@ -10,6 +10,12 @@
 
   _config+: {
     store_gateway_automated_downscale_enabled: false,
+
+    // Allow to selectively enable it on a per-zone basis.
+    store_gateway_automated_downscale_zone_a_enabled: $._config.store_gateway_automated_downscale_enabled,
+    store_gateway_automated_downscale_zone_b_enabled: $._config.store_gateway_automated_downscale_enabled,
+    store_gateway_automated_downscale_zone_c_enabled: $._config.store_gateway_automated_downscale_enabled,
+
     // Give more time if lazy-loading is disabled.
     store_gateway_automated_downscale_min_time_between_zones: if $._config.store_gateway_lazy_loading_enabled then '15m' else '60m',
   },
@@ -34,13 +40,13 @@
   // Store-gateway prepare-downscale configuration
   store_gateway_zone_a_statefulset: overrideSuperIfExists(
     'store_gateway_zone_a_statefulset',
-    if !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
+    if !$._config.store_gateway_automated_downscale_zone_a_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations
   ),
 
   store_gateway_zone_b_statefulset: overrideSuperIfExists(
     'store_gateway_zone_b_statefulset',
-    if !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
+    if !$._config.store_gateway_automated_downscale_zone_b_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
       statefulSet.mixin.metadata.withAnnotationsMixin({
@@ -50,7 +56,7 @@
 
   store_gateway_zone_c_statefulset: overrideSuperIfExists(
     'store_gateway_zone_c_statefulset',
-    if !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
+    if !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else
       prepareDownscaleLabelsAnnotations +
       $.removeReplicasFromSpec +
       statefulSet.mixin.metadata.withAnnotationsMixin({
@@ -58,13 +64,19 @@
       }),
   ),
 
-  store_gateway_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
-    // When prepare-downscale webhook is in use, we don't need the auto-forget feature to ensure
-    // store-gateways are removed from the ring, because the shutdown endpoint (called by the
-    // rollout-operator) will do it. For this reason, we disable the auto-forget which has the benefit
-    // of not causing some store-gateways getting overwhelmed (due to increased owned blocks) when several
-    // store-gateways in a zone are unhealthy for an extended period of time (e.g. when running 1 out of 3
-    // zones on spot VMs).
+  // When prepare-downscale webhook is in use, we don't need the auto-forget feature to ensure
+  // store-gateways are removed from the ring, because the shutdown endpoint (called by the
+  // rollout-operator) will do it. For this reason, we disable the auto-forget which has the benefit
+  // of not causing some store-gateways getting overwhelmed (due to increased owned blocks) when several
+  // store-gateways in a zone are unhealthy for an extended period of time (e.g. when running 1 out of 3
+  // zones on spot VMs).
+  store_gateway_zone_a_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_a_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+    'store-gateway.sharding-ring.auto-forget-enabled': false,
+  },
+  store_gateway_zone_b_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_b_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
+    'store-gateway.sharding-ring.auto-forget-enabled': false,
+  },
+  store_gateway_zone_c_args+:: if $._config.deployment_mode != 'microservices' || !$._config.store_gateway_automated_downscale_zone_c_enabled || !$._config.multi_zone_store_gateway_enabled then {} else {
     'store-gateway.sharding-ring.auto-forget-enabled': false,
   },
 }

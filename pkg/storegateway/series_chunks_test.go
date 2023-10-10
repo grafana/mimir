@@ -456,22 +456,6 @@ type testBlockSeries struct {
 	chks []storepb.AggrChunk
 }
 
-func (b testBlock) toSeriesChunksOverlapping(seriesIdx int, minT, maxT int64) seriesChunks {
-	s := b.series[seriesIdx]
-	var filtered []storepb.AggrChunk
-	for _, c := range s.chks {
-		if c.MinTime > maxT || c.MaxTime < minT {
-			continue
-		}
-		filtered = append(filtered, c)
-	}
-
-	return seriesChunks{
-		lset: s.lset,
-		chks: filtered,
-	}
-}
-
 func (b testBlock) seriesChunks(seriesIdx int) seriesChunks {
 	return seriesChunks{
 		lset: b.series[seriesIdx].lset,
@@ -479,59 +463,24 @@ func (b testBlock) seriesChunks(seriesIdx int) seriesChunks {
 	}
 }
 
-func (b testBlock) toSeriesChunkRefsWithNRanges(seriesIndex, numRanges int) seriesChunkRefs {
-	return b.toSeriesChunkRefsWithNRangesOverlapping(seriesIndex, numRanges, 0, 100000)
-}
-
-func (b testBlock) toSeriesChunkRefsWithNRangesOverlapping(seriesIndex, numRanges int, minT, maxT int64) seriesChunkRefs {
+func (b testBlock) toSeriesChunkRefs(seriesIndex int) seriesChunkRefs {
 	series := b.series[seriesIndex]
 
-	ranges := make([]seriesChunkRefsRange, numRanges)
-	chunksPerRange := len(series.refs) / numRanges
-	for i := range ranges {
-		ranges[i].blockID = b.ulid
-		ranges[i].segmentFile = uint32(chunkSegmentFile(series.refs[i*chunksPerRange]))
-		for j := 0; j < chunksPerRange; j++ {
-			ranges[i].refs = append(ranges[i].refs, seriesChunkRef{
-				segFileOffset: chunkOffset(series.refs[i*chunksPerRange+j]),
-				minTime:       series.chks[i*chunksPerRange+j].MinTime,
-				maxTime:       series.chks[i*chunksPerRange+j].MaxTime,
-			})
-		}
-	}
-
-	// Account for integer division (e.g. 10 chunks in 3 ranges)
-	for i := chunksPerRange * len(ranges); i < len(series.refs); i++ {
-		ranges[len(ranges)-1].refs = append(ranges[len(ranges)-1].refs, seriesChunkRef{
+	chunkRefs := make([]seriesChunkRef, len(series.chks))
+	for i, c := range series.chks {
+		chunkRefs[i] = seriesChunkRef{
+			blockID:       b.ulid,
 			segFileOffset: chunkOffset(series.refs[i]),
-			minTime:       series.chks[i].MinTime,
-			maxTime:       series.chks[i].MaxTime,
-		})
-	}
-
-	for rIdx := 0; rIdx < len(ranges); {
-		someChunkOverlaps := false
-		for _, c := range ranges[rIdx].refs {
-			if c.minTime <= maxT && c.maxTime >= minT {
-				someChunkOverlaps = true
-				break
-			}
-		}
-		if !someChunkOverlaps {
-			ranges = append(ranges[:rIdx], ranges[rIdx+1:]...)
-		} else {
-			rIdx++
+			segmentFile:   uint32(chunkSegmentFile(series.refs[i])),
+			minTime:       c.MinTime,
+			maxTime:       c.MaxTime,
 		}
 	}
 
 	return seriesChunkRefs{
-		lset:         series.lset,
-		chunksRanges: ranges,
+		lset: series.lset,
+		refs: chunkRefs,
 	}
-}
-
-func (b testBlock) toSeriesChunkRefs(seriesIndex int) seriesChunkRefs {
-	return b.toSeriesChunkRefsWithNRanges(seriesIndex, 1)
 }
 
 func TestLoadingSeriesChunksSetIterator(t *testing.T) {
@@ -549,7 +498,6 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 		existingBlocks      []testBlock
 		setsToLoad          []seriesChunkRefsSet
 		expectedSets        []seriesChunksSet
-		minT, maxT          int64 // optional; if empty, select a wide time range
 		addLoadErr, loadErr error
 		expectedErr         string
 	}
@@ -563,30 +511,6 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				},
 				expectedSets: []seriesChunksSet{
 					{series: []seriesChunks{block1.seriesChunks(0), block1.seriesChunks(1)}},
-				},
-			},
-		},
-		"loads single set from single block with multiple ranges": {
-			{
-				existingBlocks: []testBlock{block1},
-				setsToLoad: []seriesChunkRefsSet{
-					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 10), block1.toSeriesChunkRefsWithNRanges(1, 10)}},
-				},
-				expectedSets: []seriesChunksSet{
-					{series: []seriesChunks{block1.seriesChunks(0), block1.seriesChunks(1)}},
-				},
-			},
-		},
-		"loads single set from single block with multiple ranges with mint/maxt": {
-			{
-				existingBlocks: []testBlock{block1},
-				minT:           0,
-				maxT:           50,
-				setsToLoad: []seriesChunkRefsSet{
-					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 10), block1.toSeriesChunkRefsWithNRanges(1, 10)}},
-				},
-				expectedSets: []seriesChunksSet{
-					{series: []seriesChunks{block1.toSeriesChunksOverlapping(0, 0, 50), block1.toSeriesChunksOverlapping(1, 0, 50)}},
 				},
 			},
 		},
@@ -627,19 +551,6 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				},
 			},
 		},
-		"loads multiple sets from multiple blocks with multiple ranges": {
-			{
-				existingBlocks: []testBlock{block1, block2},
-				setsToLoad: []seriesChunkRefsSet{
-					{series: []seriesChunkRefs{block1.toSeriesChunkRefsWithNRanges(0, 4), block1.toSeriesChunkRefsWithNRanges(1, 4)}},
-					{series: []seriesChunkRefs{block2.toSeriesChunkRefsWithNRanges(0, 4), block2.toSeriesChunkRefsWithNRanges(1, 4)}},
-				},
-				expectedSets: []seriesChunksSet{
-					{series: []seriesChunks{block1.seriesChunks(0), block1.seriesChunks(1)}},
-					{series: []seriesChunks{block2.seriesChunks(0), block2.seriesChunks(1)}},
-				},
-			},
-		},
 		"loads sets from multiple blocks mixed": {
 			{
 				existingBlocks: []testBlock{block1, block2},
@@ -659,7 +570,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 				setsToLoad: []seriesChunkRefsSet{
 					{series: func() []seriesChunkRefs {
 						series := block1.toSeriesChunkRefs(0)
-						series.chunksRanges = append(series.chunksRanges, block2.toSeriesChunkRefs(0).chunksRanges...)
+						series.refs = append(series.refs, block2.toSeriesChunkRefs(0).refs...)
 						return []seriesChunkRefs{series}
 					}()},
 				},
@@ -667,46 +578,6 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 					{series: func() []seriesChunks {
 						series := block1.seriesChunks(0)
 						series.chks = append(series.chks, block2.seriesChunks(0).chks...)
-						return []seriesChunks{series}
-					}()},
-				},
-			},
-		},
-		"loads series with chunks from different blocks and multiple ranges": {
-			{
-				existingBlocks: []testBlock{block1, block2},
-				setsToLoad: []seriesChunkRefsSet{
-					{series: func() []seriesChunkRefs {
-						series := block1.toSeriesChunkRefsWithNRanges(0, 3)
-						series.chunksRanges = append(series.chunksRanges, block2.toSeriesChunkRefsWithNRanges(0, 4).chunksRanges...)
-						return []seriesChunkRefs{series}
-					}()},
-				},
-				expectedSets: []seriesChunksSet{
-					{series: func() []seriesChunks {
-						series := block1.seriesChunks(0)
-						series.chks = append(series.chks, block2.seriesChunks(0).chks...)
-						return []seriesChunks{series}
-					}()},
-				},
-			},
-		},
-		"loads series with chunks from different blocks and multiple chunks within minT/maxT": {
-			{
-				existingBlocks: []testBlock{block1, block2},
-				minT:           0,
-				maxT:           10,
-				setsToLoad: []seriesChunkRefsSet{
-					{series: func() []seriesChunkRefs {
-						series := block1.toSeriesChunkRefsWithNRanges(0, 3)
-						series.chunksRanges = append(series.chunksRanges, block2.toSeriesChunkRefsWithNRanges(0, 4).chunksRanges...)
-						return []seriesChunkRefs{series}
-					}()},
-				},
-				expectedSets: []seriesChunksSet{
-					{series: func() []seriesChunks {
-						series := block1.toSeriesChunksOverlapping(0, 0, 10)
-						series.chks = append(series.chks, block2.toSeriesChunksOverlapping(0, 0, 10).chks...)
 						return []seriesChunks{series}
 					}()},
 				},
@@ -754,13 +625,9 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 						readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
 					}
 					readers := newChunkReaders(readersMap)
-					minT, maxT := testCase.minT, testCase.maxT
-					if minT == 0 && maxT == 0 {
-						minT, maxT = 0, 100000 // select everything by default
-					}
 
 					// Run test
-					set := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", *readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats(), minT, maxT)
+					set := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", *readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), 100, newSafeQueryStats())
 					loadedSets := readAllSeriesChunksSets(set)
 
 					// Assertions
@@ -841,7 +708,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				batchSize := numSeriesPerSet
-				it := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", *chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats, 0, 10000)
+				it := newLoadingSeriesChunksSetIterator(context.Background(), log.NewNopLogger(), "tenant", *chunkReaders, newSliceSeriesChunkRefsSetIterator(nil, sets...), batchSize, stats)
 
 				actualSeries := 0
 				actualChunks := 0
