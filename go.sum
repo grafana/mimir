@@ -553,6 +553,8 @@ github.com/grafana/dskit v0.0.0-20231010092604-9b82fbd87ce1 h1:u46tR3g8obq3eXKj6
 github.com/grafana/dskit v0.0.0-20231010092604-9b82fbd87ce1/go.mod h1:byPCvaG/pqi33Kq+Wvkp7WhLfmrlyy0RAoYG4yRh01I=
 github.com/grafana/e2e v0.1.1 h1:/b6xcv5BtoBnx8cZnCiey9DbjEc8z7gXHO5edoeRYxc=
 github.com/grafana/e2e v0.1.1/go.mod h1:RpNLgae5VT+BUHvPE+/zSypmOXKwEu4t+tnEMS1ATaE=
+github.com/grafana/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:JF+4VMpZjM7tYiNK+eiCFxRtyC3MqR31TqFIXHqHk7M=
+github.com/grafana/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:jR4sUHX3BjZn+HBNSiamciwwM84hbbud+Vho36IT7u0=
 github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae h1:Yxbw9jKGJVC6qAK5Ubzzb/qZwM6rRMMqaDc/d4Vp3pM=
 github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae/go.mod h1:GFAN9Jn9t1cX7sNfc6ZoFyc4f7i8jtm3SajrWdZM2EE=
 github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1 h1:MLYY2R60/74hfYl5vRRmC2VDo0Yuql1QQ1ig8hnvgSI=

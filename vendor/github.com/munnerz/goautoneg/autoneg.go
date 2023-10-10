@@ -40,20 +40,42 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 package goautoneg
 
 import (
+	"sort"
 	"strconv"
 	"strings"
-
-	"golang.org/x/exp/slices"
 )
 
 // Structure to represent a clause in an HTTP Accept Header
 type Accept struct {
 	Type, SubType string
 	Q             float64
+	Params        map[string]string
 }
 
 // acceptSlice is defined to implement sort interface.
 type acceptSlice []Accept
+
+func (slice acceptSlice) Len() int {
+	return len(slice)
+}
+
+func (slice acceptSlice) Less(i, j int) bool {
+	ai, aj := slice[i], slice[j]
+	if ai.Q > aj.Q {
+		return true
+	}
+	if ai.Type != "*" && aj.Type == "*" {
+		return true
+	}
+	if ai.SubType != "*" && aj.SubType == "*" {
+		return true
+	}
+	return false
+}
+
+func (slice acceptSlice) Swap(i, j int) {
+	slice[i], slice[j] = slice[j], slice[i]
+}
 
 func stringTrimSpaceCutset(r rune) bool {
 	return r == ' '
@@ -113,6 +135,7 @@ func ParseAccept(header string) acceptSlice {
 			continue
 		}
 
+		a.Params = make(map[string]string)
 		for len(remainingPart) > 0 {
 			sp, remainingPart = nextSplitElement(remainingPart, ";")
 			sp0, spRemaining = nextSplitElement(sp, "=")
@@ -127,25 +150,15 @@ func ParseAccept(header string) acceptSlice {
 			token := strings.TrimFunc(sp0, stringTrimSpaceCutset)
 			if token == "q" {
 				a.Q, _ = strconv.ParseFloat(sp1, 32)
+			} else {
+				a.Params[token] = strings.TrimFunc(sp1, stringTrimSpaceCutset)
 			}
 		}
 
 		accept = append(accept, a)
 	}
 
-	slices.SortFunc(accept, func(a, b Accept) int {
-		if a.Q > b.Q {
-			return -1
-		}
-		if a.Type != "*" && b.Type == "*" {
-			return -1
-		}
-		if a.SubType != "*" && b.SubType == "*" {
-			return -1
-		}
-		return 1
-	})
-
+	sort.Sort(accept)
 	return accept
 }
 
