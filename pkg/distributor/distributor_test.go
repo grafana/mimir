@@ -1608,7 +1608,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 	for i := 0; i < len(extra); i += 2 {
 		ret[i+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
-	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) bool { return a.Name < b.Name })
+	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
 	return ret
 }
 
@@ -3591,8 +3591,8 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		series = append(series, ts)
 	}
 
-	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) bool {
-		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels)) < 0
+	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) int {
+		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels))
 	})
 
 	for seriesIndex, ts := range series {

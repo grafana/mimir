@@ -2772,8 +2772,15 @@ func filterUsersToCompactToReduceInMemorySeries(numMemorySeries, earlyCompaction
 
 	// Compact all TSDBs blocks required to get the number of in-memory series below the threshold and, in addition,
 	// all TSDBs where the estimated series reduction is greater than the minimum reduction percentage.
-	slices.SortFunc(estimations, func(a, b seriesReductionEstimation) bool {
-		return a.estimatedCount > b.estimatedCount
+	slices.SortFunc(estimations, func(a, b seriesReductionEstimation) int {
+		switch {
+		case b.estimatedCount < a.estimatedCount:
+			return -1
+		case b.estimatedCount > a.estimatedCount:
+			return -1
+		default:
+			return 0
+		}
 	})
 
 	for _, entry := range estimations {

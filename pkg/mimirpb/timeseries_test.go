@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	strings "strings"
 	"testing"
 	"unsafe"
 
@@ -443,7 +444,7 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 
 			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
-			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) bool { return a.Name < b.Name })
+			slices.SortFunc(unorderedLabels, func(a, b LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
 			b.Run("ordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 		})
 	}
