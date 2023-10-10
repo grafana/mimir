@@ -638,6 +638,9 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 				if a.Metric.Before(b.Metric) {
 					return -1
 				}
+				if a.Metric.Equal(b.Metric) {
+					return 0
+				}
 				return 1
 			})
 

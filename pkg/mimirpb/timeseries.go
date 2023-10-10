@@ -137,7 +137,14 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 	}
 
 	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
-		return strings.Compare(a.Name, b.Name)
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		default:
+			return 0
+		}
 	})
 	p.clearUnmarshalData()
 }

@@ -184,17 +184,22 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
-		nameCmp := strings.Compare(a.Name, b.Name)
-		if nameCmp != 0 {
-			return nameCmp
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		case a.Type < b.Type:
+			return -1
+		case a.Type > b.Type:
+			return 1
+		case a.Value < b.Value:
+			return -1
+		case a.Value > b.Value:
+			return 1
+		default:
+			return 0
 		}
-
-		typeCmp := int(a.Type) - int(b.Type)
-		if typeCmp != 0 {
-			return typeCmp
-		}
-
-		return strings.Compare(a.Value, b.Value)
 	})
 
 	return matchers, nil

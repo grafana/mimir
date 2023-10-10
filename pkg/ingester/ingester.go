@@ -2777,7 +2777,7 @@ func filterUsersToCompactToReduceInMemorySeries(numMemorySeries, earlyCompaction
 		case b.estimatedCount < a.estimatedCount:
 			return -1
 		case b.estimatedCount > a.estimatedCount:
-			return -1
+			return 1
 		default:
 			return 0
 		}
