@@ -1724,7 +1724,8 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -1767,7 +1768,8 @@
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

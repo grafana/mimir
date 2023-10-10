@@ -52,11 +52,11 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferStreamingChunksFromIngesters             bool          `yaml:"prefer_streaming_chunks_from_ingesters"`
+	PreferStreamingChunksFromIngesters             bool          `yaml:"prefer_streaming_chunks_from_ingesters" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
 	PreferStreamingChunksFromStoreGateways         bool          `yaml:"prefer_streaming_chunks_from_store_gateways" category:"experimental"`
 	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"experimental"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests"`
+	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
 	// PromQL engine config.
