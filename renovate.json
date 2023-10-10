@@ -17,7 +17,7 @@
           "github.com/grafana/memberlist",
           "github.com/grafana/regexp",
           "github.com/colega/go-yaml-yaml",
-          "github.com/charleskorn/goautoneg",
+          "github.com/grafana/goautoneg",
           "github.com/grafana/opentracing-contrib-go-stdlib"
         ],
         "enabled": false
