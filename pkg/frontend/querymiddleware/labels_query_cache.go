@@ -172,7 +172,10 @@ func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels
 		if idx < len(b) {
 			return -1
 		}
-		return 1
+		if idx < len(a) {
+			return 1
+		}
+		return 0
 	})
 
 	return matcherSets, nil
