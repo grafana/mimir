@@ -4510,7 +4510,7 @@
           "kind": "field",
           "name": "instance_enable_ipv6",
           "required": false,
-          "desc": "Enable using a IPv6 instance address. (default false)",
+          "desc": "Enable using a IPv6 instance address (default false). This only takes effect when query-frontend.instance-addr is empty, indicating that it has been auto-detected.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.instance-enable-ipv6",
