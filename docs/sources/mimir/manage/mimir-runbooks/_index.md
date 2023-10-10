@@ -302,7 +302,7 @@ This alert fires when a Mimir process has a number of memory map areas close to 
 How to **fix** it:
 
 - Increase the limit on your system: `sysctl --write vm.max_map_count=<NEW LIMIT>`
-- If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to lazy mmap index-headers at query time
+- If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=true` to lazy mmap index-headers at query time
 
 More information:
 
