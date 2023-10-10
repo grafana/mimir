@@ -2476,7 +2476,7 @@ Usage of ./cmd/mimir/mimir:
   -server.grpc.keepalive.timeout duration
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
-    	If non-zero, configures the amount of GRPC server workers used to serve the requests.
+    	[experimental] If non-zero, configures the amount of GRPC server workers used to serve the requests.
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration

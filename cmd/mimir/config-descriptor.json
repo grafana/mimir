@@ -568,7 +568,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "server.grpc.num-workers",
           "fieldType": "int",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
