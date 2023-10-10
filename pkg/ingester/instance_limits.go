@@ -10,7 +10,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ingester/ingestererror"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
@@ -23,30 +22,10 @@ const (
 
 // We don't include values in the messages for per-instance limits to avoid leaking Mimir cluster configuration to users.
 var (
-	errMaxIngestionRateReached = ingestererror.NewInstanceLimitReachedError(
-		globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig(
-			"the write request has been rejected because the ingester exceeded the samples ingestion rate limit",
-			maxIngestionRateFlag,
-		),
-	)
-	errMaxTenantsReached = ingestererror.NewInstanceLimitReachedError(
-		globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig(
-			"the write request has been rejected because the ingester exceeded the allowed number of tenants",
-			maxInMemoryTenantsFlag,
-		),
-	)
-	errMaxInMemorySeriesReached = ingestererror.NewInstanceLimitReachedError(
-		globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig(
-			"the write request has been rejected because the ingester exceeded the allowed number of in-memory series",
-			maxInMemorySeriesFlag,
-		),
-	)
-	errMaxInflightRequestsReached = ingestererror.NewInstanceLimitReachedError(
-		globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig(
-			"the write request has been rejected because the ingester exceeded the allowed number of inflight push requests",
-			maxInflightPushRequestsFlag,
-		),
-	)
+	errMaxIngestionRateReached    = newInstanceLimitReachedError(globalerror.IngesterMaxIngestionRate.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the samples ingestion rate limit", maxIngestionRateFlag))
+	errMaxTenantsReached          = newInstanceLimitReachedError(globalerror.IngesterMaxTenants.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of tenants", maxInMemoryTenantsFlag))
+	errMaxInMemorySeriesReached   = newInstanceLimitReachedError(globalerror.IngesterMaxInMemorySeries.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of in-memory series", maxInMemorySeriesFlag))
+	errMaxInflightRequestsReached = newInstanceLimitReachedError(globalerror.IngesterMaxInflightPushRequests.MessageWithPerInstanceLimitConfig("the write request has been rejected because the ingester exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
 )
 
 // InstanceLimits describes limits used by ingester. Reaching any of these will result in Push method to return

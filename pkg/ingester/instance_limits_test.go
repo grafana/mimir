@@ -11,8 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/mimir/pkg/ingester/ingestererror"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -40,17 +38,17 @@ max_tenants: 50000
 func TestInstanceLimitErr(t *testing.T) {
 	userID := "1"
 	limitErrors := []error{
-		//errMaxIngestionRateReached,
-		//errMaxTenantsReached,
-		//errMaxInMemorySeriesReached,
+		errMaxIngestionRateReached,
+		errMaxTenantsReached,
+		errMaxInMemorySeriesReached,
 		errMaxInflightRequestsReached,
 	}
 	for _, limitError := range limitErrors {
-		var instanceLimitErr ingestererror.InstanceLimitReached
+		var instanceLimitErr instanceLimitReachedError
 		require.Error(t, instanceLimitErr)
 		require.ErrorAs(t, limitError, &instanceLimitErr)
 
-		wrappedWithUserErr := ingestererror.WrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID)
+		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
 		require.Error(t, wrappedWithUserErr)
 		require.ErrorIs(t, wrappedWithUserErr, limitError)
 	}

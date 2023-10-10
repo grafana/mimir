@@ -23,25 +23,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+const (
+	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
+)
+
 var (
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
 	tooBusyError = newErrorWithHTTPStatus(
-		safeToWrapError("the ingester is currently too busy to process queries, try again later"),
+		errors.New("the ingester is currently too busy to process queries, try again later"),
 		http.StatusServiceUnavailable,
 	)
 )
-
-type safeToWrap interface {
-	safeToWrap()
-}
-
-type safeToWrapError string
-
-func (s safeToWrapError) safeToWrap() {}
-
-func (s safeToWrapError) Error() string {
-	return string(s)
-}
 
 // errorWithStatus is used for wrapping errors returned by ingester.
 type errorWithStatus struct {
@@ -78,111 +70,230 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 }
 
 // wrapOrAnnotateWithUser prepends the given userID to the given error.
-// If the error is safe, the returned error retains a reference to the former.
+// If the given error matches one of the errors from this package, the
+// returned error retains a reference to the former.
 func wrapOrAnnotateWithUser(err error, userID string) error {
-	// If this is a safe error, we wrap it with userID and return it, because
-	// it might contain extra information for gRPC and our logging middleware.
-	var safe safeToWrap
-	if errors.As(err, &safe) {
+	// If err matches one of the errors from this package,
+	// we wrap it with userID and return it.
+	if errors.As(err, &unavailableError{}) ||
+		errors.As(err, &tsdbUnavailableError{}) ||
+		errors.As(err, &instanceLimitReachedError{}) ||
+		errors.As(err, &validationError{}) ||
+		errors.As(err, &perUserLimitReachedError{}) ||
+		errors.As(err, &perMetricLimitReachedError{}) {
 		return fmt.Errorf("user=%s: %w", userID, err)
 	}
+
 	// Otherwise, we just annotate it with userID and return it.
 	return fmt.Errorf("user=%s: %s", userID, err)
 }
 
-func newIngestErrSample(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return safeToWrapError(
-		fmt.Sprintf("%v. The affected sample has timestamp %s and is from series %s",
+// validationError is an error indicating a problem with a sample or an exemplar.
+type validationError struct {
+	message string
+}
+
+func (e validationError) Error() string {
+	return e.message
+}
+
+func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
+	return validationError{
+		message: fmt.Sprintf(
+			"%v. The affected sample has timestamp %s and is from series %s",
 			errID.Message(errMsg),
 			timestamp.Time().UTC().Format(time.RFC3339Nano),
 			mimirpb.FromLabelAdaptersToLabels(labels).String(),
 		),
-	)
+	}
 }
 
-func newIngestErrSampleTimestampTooOld(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
+func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
+	return newSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
-func newIngestErrSampleTimestampTooOldOOOEnabled(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) error {
-	return newIngestErrSample(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
+func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) validationError {
+	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
-func newIngestErrSampleTimestampTooFarInFuture(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
+func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
+	return newSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
 }
 
-func newIngestErrSampleOutOfOrder(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
+func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
+	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newIngestErrSampleDuplicateTimestamp(timestamp model.Time, labels []mimirpb.LabelAdapter) error {
-	return newIngestErrSample(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
+func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
+	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
-func newIngestErrExemplar(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return safeToWrapError(
-		fmt.Sprintf("%v. The affected exemplar is %s with timestamp %s for series %s",
+func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) validationError {
+	return validationError{
+		message: fmt.Sprintf(
+			"%v. The affected exemplar is %s with timestamp %s for series %s",
 			errID.Message(errMsg),
 			mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 			timestamp.Time().UTC().Format(time.RFC3339Nano),
 			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
 		),
-	)
+	}
 }
 
-func newIngestErrExemplarMissingSeries(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return newIngestErrExemplar(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
+func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) validationError {
+	return newExemplarError(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
 }
 
-func newIngestErrExemplarTimestampTooFarInFuture(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return newIngestErrExemplar(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
+func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) validationError {
+	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
 
-func formatMaxSeriesPerUserError(limits *validation.Overrides, userID string) error {
-	globalLimit := limits.MaxGlobalSeriesPerUser(userID)
-	return safeToWrapError(
-		globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
-			fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
-			validation.MaxSeriesPerUserFlag,
+func newTSDBExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+	if ingestErr == nil {
+		return nil
+	}
+
+	return validationError{
+		message: fmt.Sprintf("err: %v. timestamp=%s, series=%s, exemplar=%s",
+			ingestErr,
+			timestamp.Time().UTC().Format(time.RFC3339Nano),
+			mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+			mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 		),
-	)
+	}
 }
 
-func formatMaxSeriesPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
-	globalLimit := limits.MaxGlobalSeriesPerMetric(userID)
-	return safeToWrapError(
-		fmt.Sprintf("%s This is for series %s",
+type limitKind int
+
+const (
+	seriesKind limitKind = iota
+	metadataKind
+)
+
+// perUserLimitReachedError is an error indicating that a per-user limit has been reached.
+type perUserLimitReachedError struct {
+	limit int
+	kind  limitKind
+}
+
+// newPerUserSeriesLimitReachedError creates a new perUserLimitReachedError indicating that a per-user series limit has been reached.
+func newPerUserSeriesLimitReachedError(limit int) perUserLimitReachedError {
+	return perUserLimitReachedError{
+		limit: limit,
+		kind:  seriesKind,
+	}
+}
+
+// newPerUserMetadataLimitReachedError creates a new perUserLimitReachedError indicating that a per-user metadata limit has been reached.
+func newPerUserMetadataLimitReachedError(limit int) perUserLimitReachedError {
+	return perUserLimitReachedError{
+		limit: limit,
+		kind:  metadataKind,
+	}
+}
+
+func (e perUserLimitReachedError) Error() string {
+	switch e.kind {
+	case seriesKind:
+		return globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
+			fmt.Sprintf("per-user series limit of %d exceeded", e.limit),
+			validation.MaxSeriesPerUserFlag,
+		)
+	case metadataKind:
+		return globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
+			fmt.Sprintf("per-user metric metadata limit of %d exceeded", e.limit),
+			validation.MaxMetadataPerUserFlag,
+		)
+	default:
+		return fmt.Sprintf("per-user limit unknown error kind: %d", e.kind)
+	}
+}
+
+// perMetricLimitReachedError is an error indicating that a per-metric limit has been reached.
+type perMetricLimitReachedError struct {
+	limit  int
+	series string
+	kind   limitKind
+}
+
+// newPerMetricSeriesLimitReachedError creates a new perMetricLimitReachedError indicating that a per-metric series limit has been reached.
+func newPerMetricSeriesLimitReachedError(limit int, labels labels.Labels) perMetricLimitReachedError {
+	return perMetricLimitReachedError{
+		limit:  limit,
+		series: labels.String(),
+		kind:   seriesKind,
+	}
+}
+
+// newPerMetricMetadataLimitReachedError creates a new perMetricLimitReachedError indicating that a per-metric metadata limit has been reached.
+func newPerMetricMetadataLimitReachedError(limit int, labels labels.Labels) perMetricLimitReachedError {
+	return perMetricLimitReachedError{
+		limit:  limit,
+		series: labels.String(),
+		kind:   metadataKind,
+	}
+}
+
+func (e perMetricLimitReachedError) Error() string {
+	switch e.kind {
+	case seriesKind:
+		return fmt.Sprintf("%s This is for series %s",
 			globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
-				fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
+				fmt.Sprintf("per-metric series limit of %d exceeded", e.limit),
 				validation.MaxSeriesPerMetricFlag,
 			),
-			labels.String(),
-		),
-	)
-}
-
-func formatMaxMetadataPerUserError(limits *validation.Overrides, userID string) error {
-	globalLimit := limits.MaxGlobalMetricsWithMetadataPerUser(userID)
-	return safeToWrapError(
-		globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
-			fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
-			validation.MaxMetadataPerUserFlag,
-		),
-	)
-}
-
-func formatMaxMetadataPerMetricError(limits *validation.Overrides, labels labels.Labels, userID string) error {
-	globalLimit := limits.MaxGlobalMetadataPerMetric(userID)
-	return safeToWrapError(
-		fmt.Sprintf("%s This is for series %s",
+			e.series,
+		)
+	case metadataKind:
+		return fmt.Sprintf("%s This is for series %s",
 			globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
-				fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
+				fmt.Sprintf("per-metric metadata limit of %d exceeded", e.limit),
 				validation.MaxMetadataPerMetricFlag,
 			),
-			labels.String(),
-		),
-	)
+			e.series,
+		)
+	default:
+		return fmt.Sprintf("per-metric limit unknown error kind: %d", e.kind)
+	}
+}
+
+// unavailableError is an error indicating that the ingester is unavailable.
+type unavailableError struct {
+	state string
+}
+
+func newUnavailableError(state string) unavailableError {
+	return unavailableError{state: state}
+}
+
+func (e unavailableError) Error() string {
+	return fmt.Sprintf(integerUnavailableMsgFormat, e.state)
+}
+
+// instanceLimitReachedError is an error indicating that an instance limit has been reached.
+type instanceLimitReachedError struct {
+	message string
+}
+
+func newInstanceLimitReachedError(message string) instanceLimitReachedError {
+	return instanceLimitReachedError{message: message}
+}
+
+func (e instanceLimitReachedError) Error() string {
+	return e.message
+}
+
+// tsdbUnavailableError is an error indicating that the TSDB is unavailable.
+type tsdbUnavailableError struct {
+	message string
+}
+
+func newTSDBUnavailableError(message string) tsdbUnavailableError {
+	return tsdbUnavailableError{message: message}
+}
+
+func (e tsdbUnavailableError) Error() string {
+	return e.message
 }
 
 type ingesterErrSamplers struct {
