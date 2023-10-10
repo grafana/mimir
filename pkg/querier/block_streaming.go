@@ -301,12 +301,12 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 					if _, ok := err.(validation.LimitError); ok {
 						return nil, err
 					}
-					return nil, errors.Wrapf(err, "attempted to read series at index %v from stream, but the stream has failed", seriesIndex)
+					return nil, errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)
 				}
 			default:
 			}
 
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+			return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 		}
 
 		s.chunksBatch = chks.Series
@@ -320,7 +320,7 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 	}
 
 	if chks.SeriesIndex != seriesIndex {
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, chks.SeriesIndex)
+		return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has series with index %v", seriesIndex, chks.SeriesIndex)
 	}
 
 	return chks.Chunks, nil
