@@ -159,7 +159,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, limits, queryMetrics, logger)
 
-	queryable := NewQueryable(distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
+	queryable := newQueryable(distributorQueryable, storeQueryable, iteratorFunc, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -199,8 +199,8 @@ func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	return storage.NewSeriesSetToChunkSet(q.Querier.Select(ctx, sortSeries, hints, matchers...))
 }
 
-// NewQueryable creates a new Queryable for Mimir.
-func NewQueryable(
+// newQueryable creates a new Queryable for Mimir.
+func newQueryable(
 	distributor storage.Queryable,
 	blockStore storage.Queryable,
 	chunkIterFn chunkIteratorFunc,
@@ -263,9 +263,9 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 	}
 
 	var queriers []storage.Querier
-	// distributor or blockStore queryables passed into NewQueryable should only be nil in tests;
+	// distributor or blockStore queryables passed into newQueryable should only be nil in tests;
 	// the decision of whether to construct the ingesters or block store queryables
-	// should be made here, not by the caller of NewQueryable
+	// should be made here, not by the caller of newQueryable
 	//
 	// queriers may further apply stricter internal logic and decide no-op for a given query
 
