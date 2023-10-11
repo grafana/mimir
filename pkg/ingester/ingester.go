@@ -115,6 +115,7 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+	tooBusyErrorMsg               = "the ingester is currently too busy to process queries, try again later"
 )
 
 var (
@@ -122,6 +123,11 @@ var (
 	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
 	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	tooBusyError = newErrorWithHTTPStatus(
+		errors.New(tooBusyErrorMsg),
+		http.StatusServiceUnavailable,
+	)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -1217,6 +1223,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 					// Error adding exemplar
 					updateFirstPartial(func() error {
+						if err == nil {
+							return nil
+						}
 						return newTSDBExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
 					stats.failedExemplarsCount++
@@ -3140,7 +3149,15 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func handlePushError(err error) error {
+	var (
+		badDataErr badDataError
+	)
 	switch {
+	case errors.As(err, &badDataErr):
+		return newErrorWithHTTPStatus(
+			err,
+			http.StatusBadRequest,
+		)
 	case errors.As(err, &unavailableError{}):
 		return newErrorWithStatus(
 			err,
@@ -3156,13 +3173,7 @@ func handlePushError(err error) error {
 			err,
 			http.StatusServiceUnavailable,
 		)
-	case errors.As(err, &validationError{}) ||
-		errors.As(err, &perUserLimitReachedError{}) ||
-		errors.As(err, &perMetricLimitReachedError{}):
-		return newErrorWithHTTPStatus(
-			err,
-			http.StatusBadRequest,
-		)
+
 	default:
 		return err
 	}

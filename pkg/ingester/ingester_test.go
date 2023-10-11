@@ -1924,7 +1924,10 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -1985,7 +1988,10 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2183,7 +2189,10 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2300,7 +2309,10 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2829,7 +2841,10 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3224,7 +3239,10 @@ func TestIngester_QueryStream(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err = i.QueryStream(&client.QueryRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3680,7 +3698,10 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -4992,7 +5013,10 @@ func Test_Ingester_UserStats(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -9059,7 +9083,7 @@ func TestIngester_HandlePushError(t *testing.T) {
 			),
 		},
 		{
-			name: "a perUserLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			name: "a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
 			err:  newPerUserSeriesLimitReachedError(10),
 			expectedTranslation: newErrorWithHTTPStatus(
 				newPerUserSeriesLimitReachedError(10),
@@ -9067,7 +9091,7 @@ func TestIngester_HandlePushError(t *testing.T) {
 			),
 		},
 		{
-			name: "a wrapped perUserLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			name: "a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
 			err:  fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
 			expectedTranslation: newErrorWithHTTPStatus(
 				fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
@@ -9075,7 +9099,7 @@ func TestIngester_HandlePushError(t *testing.T) {
 			),
 		},
 		{
-			name: "a perMetricLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			name: "a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
 			err:  newPerMetricSeriesLimitReachedError(10, labels),
 			expectedTranslation: newErrorWithHTTPStatus(
 				newPerMetricSeriesLimitReachedError(10, labels),
@@ -9083,7 +9107,7 @@ func TestIngester_HandlePushError(t *testing.T) {
 			),
 		},
 		{
-			name: "a wrapped perMetricLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			name: "a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
 			err:  fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
 			expectedTranslation: newErrorWithHTTPStatus(
 				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),

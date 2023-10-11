@@ -12,7 +12,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,10 +31,12 @@ func TestUnavailableError(t *testing.T) {
 	require.Error(t, err)
 	expectedMsg := fmt.Sprintf(integerUnavailableMsgFormat, state)
 	require.EqualError(t, err, expectedMsg)
+	checkSafeToWrap(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &unavailableError{})
+	checkSafeToWrap(t, wrappedErr)
 }
 
 func TestInstanceLimitReachedError(t *testing.T) {
@@ -43,10 +44,12 @@ func TestInstanceLimitReachedError(t *testing.T) {
 	err := newInstanceLimitReachedError(limitErrorMessage)
 	require.Error(t, err)
 	require.EqualError(t, err, limitErrorMessage)
+	checkSafeToWrap(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &instanceLimitReachedError{})
+	checkSafeToWrap(t, wrappedErr)
 }
 
 func TestNewTSDBUnavailableError(t *testing.T) {
@@ -54,6 +57,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	err := newTSDBUnavailableError(tsdbErrMsg)
 	require.Error(t, err)
 	require.EqualError(t, err, tsdbErrMsg)
+	checkSafeToWrap(t, err)
 
 	wrappedErr := fmt.Errorf("wrapped: %w", err)
 	require.ErrorIs(t, wrappedErr, err)
@@ -62,6 +66,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
 	require.ErrorAs(t, wrappedWithUserErr, &tsdbUnavailableError{})
+	checkSafeToWrap(t, wrappedErr)
 }
 
 func TestNewPerUserSeriesLimitError(t *testing.T) {
@@ -72,10 +77,14 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 		validation.MaxSeriesPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
+	checkSafeToWrap(t, err)
+	checkBadData(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &perUserLimitReachedError{})
+	require.ErrorAs(t, wrappedErr, &perUserSeriesLimitReachedError{})
+	checkSafeToWrap(t, wrappedErr)
+	checkBadData(t, wrappedErr)
 }
 
 func TestNewPerUserMetadataLimitError(t *testing.T) {
@@ -86,10 +95,14 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 		validation.MaxMetadataPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
+	checkSafeToWrap(t, err)
+	checkBadData(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &perUserLimitReachedError{})
+	require.ErrorAs(t, wrappedErr, &perUserMetadataLimitReachedError{})
+	checkSafeToWrap(t, wrappedErr)
+	checkBadData(t, wrappedErr)
 }
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
@@ -106,10 +119,14 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
+	checkSafeToWrap(t, err)
+	checkBadData(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &perMetricLimitReachedError{})
+	require.ErrorAs(t, wrappedErr, &perMetricSeriesLimitReachedError{})
+	checkSafeToWrap(t, wrappedErr)
+	checkBadData(t, wrappedErr)
 }
 
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
@@ -126,10 +143,14 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
+	checkSafeToWrap(t, err)
+	checkBadData(t, err)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
-	require.ErrorAs(t, wrappedErr, &perMetricLimitReachedError{})
+	require.ErrorAs(t, wrappedErr, &perMetricMetadataLimitReachedError{})
+	checkSafeToWrap(t, wrappedErr)
+	checkBadData(t, wrappedErr)
 }
 
 func TestNewValidationError(t *testing.T) {
@@ -176,11 +197,16 @@ func TestNewValidationError(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, tc.expectedMsg, tc.err.Error())
+			require.Equal(t, tc.expectedMsg, tc.err.Error())
+			checkSafeToWrap(t, tc.err)
+			checkBadData(t, tc.err)
 
 			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
-			require.ErrorAs(t, wrappedErr, &validationError{})
+			var validationErr validationError
+			require.ErrorAs(t, wrappedErr, &validationErr)
+			checkSafeToWrap(t, wrappedErr)
+			checkBadData(t, wrappedErr)
 		})
 	}
 }
@@ -231,4 +257,14 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.EqualError(t, wrappedSafeErr, expectedWrappedErrMsg)
 	require.ErrorIs(t, wrappedSafeErr, wrappingErr)
 	require.Equal(t, wrappingErr, errors.Unwrap(wrappedSafeErr))
+}
+
+func checkSafeToWrap(t *testing.T, err error) {
+	var safe safeToWrapError
+	require.ErrorAs(t, err, &safe)
+}
+
+func checkBadData(t *testing.T, err error) {
+	var badDataErr badDataError
+	require.ErrorAs(t, err, &badDataErr)
 }
