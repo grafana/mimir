@@ -5,6 +5,9 @@
     ],
     "prHourlyLimit": 1,
     "baseBranches": ["main", "release-2.10", "release-2.9"],
+    "postUpdateOptions": [
+      "gomodTidy",
+    ],
     "packageRules": [
       {
         "matchBaseBranches": ["release-2.10","release-2.9"],
