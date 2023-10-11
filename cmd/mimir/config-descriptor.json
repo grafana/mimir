@@ -729,6 +729,49 @@
         },
         {
           "kind": "block",
+          "name": "retry",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "retry_base",
+              "required": false,
+              "desc": "Base time to wait before retrying a 429/5xx request.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "distributor.retry.base",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "retry_strategy",
+              "required": false,
+              "desc": "Retry strategies for handling 429/5xx requests. Strategy 0 is not activated, Strategy 1 involves retrying after a duration within the range [1, retry.Base]. Strategy 2 entails retrying after a duration within the range [1, retry.Base * retry-Attempts]. Strategy 3, on the other hand, prescribes retrying after a duration within the range [1, retry.Base * 2^(retryAttempts-1)].",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.retry.strategy",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "retry_max_delay",
+              "required": false,
+              "desc": "Maximum time to wait before retrying a retryable request.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "distributor.retry.max-delay",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "ha_tracker",
           "required": false,
           "desc": "",

@@ -164,6 +164,16 @@
       - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
       - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
+  "grafana-agent-1":
+    "command":
+      - "-config.file=/etc/agent-config/grafana-agent.yaml"
+      - "-metrics.wal-directory=/tmp"
+      - "-server.http.address=127.0.0.1:9091"
+    "image": "grafana/agent:v0.37.3"
+    "ports":
+      - "9091:9091"
+    "volumes":
+      - "./config:/etc/agent-config"
   "ingester-1":
     "build":
       "context": "."
@@ -302,18 +312,6 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
-  "prometheus":
-    "command":
-      - "--config.file=/etc/prometheus/prometheus.yaml"
-      - "--enable-feature=exemplar-storage"
-      - "--enable-feature=native-histograms"
-    "image": "prom/prometheus:v2.47.2"
-    "ports":
-      - "9090:9090"
-    "volumes":
-      - "./config:/etc/prometheus"
-      - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/mixin/mimir-alerts.yaml"
-      - "../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml"
   "querier":
     "build":
       "context": "."

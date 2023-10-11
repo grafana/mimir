@@ -9,8 +9,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
@@ -18,6 +22,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 
+	glog "github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -51,9 +56,10 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
+	retryCfg *RetryConfig,
 	push PushFunc,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -79,6 +85,7 @@ func handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
+	retryCfg *RetryConfig,
 	push PushFunc,
 	parser parserFunc,
 ) http.Handler {
@@ -141,10 +148,75 @@ func handler(
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
-			addHeaders(w, err)
+			addHeaders(w, err, r, code, retryCfg, logger)
 			http.Error(w, msg, code)
 		}
 	})
+}
+
+// think about add another middlewre, in the end of middleware chain, to add retry-after header in response
+
+func calculateRetryAfter(req *http.Request, retryCfg *RetryConfig) string {
+	// 0 is no retry, 1 is cost, 2 is linear, 3 is exponential, 4 is random cost, 5 is random linear, 6 is random exponential
+	attemps := req.Header.Get("Retry-Attempt")
+	// default to Retry-Attempt 1
+	attemp := "1"
+	if attemps != "" {
+		attemp = attemps
+	}
+
+	retryAttemp, err := strconv.Atoi(attemp)
+	// If retry-attemp is not valid, set it to default 1
+	if attemp == "" || err != nil || retryAttemp < 1 {
+		retryAttemp = 1
+	}
+
+	var minRetry, maxRetry int64
+
+	switch retryCfg.Strategy {
+	case 0:
+		return ""
+	case 1:
+		minRetry = 1
+		maxRetry = int64(retryCfg.Base.Seconds())
+	case 2:
+		minRetry = 1
+		maxRetry = int64(retryCfg.Base.Seconds()) * int64(retryAttemp)
+	case 3:
+		minRetry = 1
+		maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
+	case 4:
+		minRetry = int64(0.5 * retryCfg.Base.Seconds())
+		maxRetry = int64(1.5 * retryCfg.Base.Seconds())
+	case 5:
+		base := retryCfg.Base * time.Duration(retryAttemp)
+		minRetry = int64(0.5 * base.Seconds())
+		maxRetry = int64(1.5 * base.Seconds())
+	case 6:
+		base := retryCfg.Base * time.Duration(math.Pow(2, float64(retryAttemp-1)))
+		minRetry = int64(0.5 * base.Seconds())
+		maxRetry = int64(1.5 * base.Seconds())
+	case 7:
+		minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
+		maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp)))
+	}
+
+	if maxRetry > int64(retryCfg.MaxDelay.Seconds()) {
+		maxRetry = int64(retryCfg.MaxDelay.Seconds())
+	}
+
+	if minRetry < 1 {
+		minRetry = 1
+	}
+
+	if minRetry >= maxRetry {
+		return strconv.FormatInt(maxRetry, 10)
+	}
+
+	// the delaySeconds is a random number between 1 and base
+	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
+
+	return strconv.FormatInt(delaySeconds, 10)
 }
 
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
@@ -160,20 +232,15 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		switch distributorErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED:
-			// Return a 429 here to tell the client it is going too fast.
+		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return http.StatusTooManyRequests
-		case mimirpb.REQUEST_RATE_LIMITED:
 			serviceOverloadErrorEnabled := false
 			userID, err := tenant.TenantID(ctx)
 			if err == nil {
 				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 			}
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 			if serviceOverloadErrorEnabled {
 				return StatusServiceOverloaded
 			}
@@ -190,9 +257,16 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error) {
+func addHeaders(w http.ResponseWriter, err error, r *http.Request, code int, retryCfg *RetryConfig, logger glog.Logger) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
+	}
+	if code == http.StatusTooManyRequests || code >= 500 && (retryCfg != nil && retryCfg.Strategy != 0) {
+		// If we are going to retry, set the Retry-After header.
+		// This is used by the client to determine how long to wait before retrying.
+		retrySeconds := calculateRetryAfter(r, retryCfg)
+		logger.Log("msg", "get retry-after", "retry-after", retrySeconds, "strategy", retryCfg.Strategy, "maxDelay", retryCfg.MaxDelay)
+		w.Header().Set("Retry-After", retrySeconds)
 	}
 }

@@ -3,10 +3,10 @@ server:
 
 prometheus:
   global:
-    scrape_interval: 3s
+    scrape_interval: 1s
     external_labels:
       scraped_by: grafana-agent
-      instance: grafana-agent
+      instance: grafana-agent-2
   configs:
     - name: local
       host_filter: false
