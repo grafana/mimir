@@ -44,9 +44,11 @@ ifneq (,$(findstring refs/tags/, $(GITHUB_REF)))
 	IMAGE_TAG_FROM_GIT_TAG := $(patsubst mimir-%,%,$(GIT_TAG))
 endif
 IMAGE_TAG ?= $(if $(IMAGE_TAG_FROM_GIT_TAG),$(IMAGE_TAG_FROM_GIT_TAG),$(shell ./tools/image-tag))
+IMAGE_TAG_RACE = race-$(IMAGE_TAG)
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
+UPTODATE_RACE := .uptodate_race
 
 # path to jsonnetfmt
 JSONNET_FMT := jsonnetfmt

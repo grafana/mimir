@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.9.2
+
+### Grafana Mimir
+
+* [CHANGE] Update Go version to 1.21.3. #6244 #6325
+
 ## 2.9.1
 
 ### Grafana Mimir
