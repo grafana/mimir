@@ -26,18 +26,6 @@ const (
 	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
 )
 
-// safeToWrapError is a marker interface for the errors that are safe to wrap.
-type safeToWrapError interface {
-	safeToWrap()
-}
-
-// badDataError is a marker interface for the errors representing bad data.
-// It is a safeToWrapError.
-type badDataError interface {
-	safeToWrapError
-	badData()
-}
-
 // errorWithStatus is used for wrapping errors returned by ingester.
 type errorWithStatus struct {
 	err    error // underlying error
@@ -72,6 +60,16 @@ func (e errorWithStatus) GRPCStatus() *status.Status {
 	return e.status
 }
 
+// safeToWrapError is a marker interface for the errors that are safe to wrap.
+type safeToWrapError interface {
+	safeToWrap()
+}
+
+// badDataError is a marker interface for the errors representing bad data.
+type badDataError interface {
+	badData()
+}
+
 // wrapOrAnnotateWithUser prepends the given userID to the given error.
 // If the given error matches one of the errors from this package, the
 // returned error retains a reference to the former.
@@ -87,15 +85,17 @@ func wrapOrAnnotateWithUser(err error, userID string) error {
 }
 
 // validationError is an error indicating a problem with a sample or an exemplar.
-// It is a badDataError.
 type validationError struct {
-	badDataError
 	message string
 }
 
 func (e validationError) Error() string {
 	return e.message
 }
+
+func (e validationError) safeToWrap() {}
+
+func (e validationError) badData() {}
 
 func newSampleError(prefixMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) validationError {
 	return validationError{
@@ -160,9 +160,7 @@ func newTSDBExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels
 }
 
 // perUserSeriesLimitReachedError is an error indicating that a per-user series limit has been reached.
-// It is a badDataError.
 type perUserSeriesLimitReachedError struct {
-	badDataError
 	limit int
 }
 
@@ -180,10 +178,12 @@ func (e perUserSeriesLimitReachedError) Error() string {
 	)
 }
 
+func (e perUserSeriesLimitReachedError) safeToWrap() {}
+
+func (e perUserSeriesLimitReachedError) badData() {}
+
 // perUserMetadataLimitReachedError is an error indicating that a per-user metadata limit has been reached.
-// It is a badDataError.
 type perUserMetadataLimitReachedError struct {
-	badDataError
 	limit int
 }
 
@@ -201,10 +201,12 @@ func (e perUserMetadataLimitReachedError) Error() string {
 	)
 }
 
-// perMetricMetadataLimitReachedError is an error indicating that a per-metric series limit has been reached.
-// It is a badDataError.
+func (e perUserMetadataLimitReachedError) safeToWrap() {}
+
+func (e perUserMetadataLimitReachedError) badData() {}
+
+// perMetricSeriesLimitReachedError is an error indicating that a per-metric series limit has been reached.
 type perMetricSeriesLimitReachedError struct {
-	badDataError
 	limit  int
 	series string
 }
@@ -227,10 +229,12 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 	)
 }
 
+func (e perMetricSeriesLimitReachedError) safeToWrap() {}
+
+func (e perMetricSeriesLimitReachedError) badData() {}
+
 // perMetricMetadataLimitReachedError is an error indicating that a per-metric metadata limit has been reached.
-// It is a badDataError.
 type perMetricMetadataLimitReachedError struct {
-	badDataError
 	limit  int
 	series string
 }
@@ -253,10 +257,13 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 	)
 }
 
+func (e perMetricMetadataLimitReachedError) safeToWrap() {}
+
+func (e perMetricMetadataLimitReachedError) badData() {}
+
 // unavailableError is an error indicating that the ingester is unavailable.
 // It is a safeToWrapError.
 type unavailableError struct {
-	safeToWrapError
 	state string
 }
 
@@ -268,10 +275,11 @@ func (e unavailableError) Error() string {
 	return fmt.Sprintf(integerUnavailableMsgFormat, e.state)
 }
 
+func (e unavailableError) safeToWrap() {}
+
 // instanceLimitReachedError is an error indicating that an instance limit has been reached.
 // It is a safeToWrapError.
 type instanceLimitReachedError struct {
-	safeToWrapError
 	message string
 }
 
@@ -283,10 +291,11 @@ func (e instanceLimitReachedError) Error() string {
 	return e.message
 }
 
+func (e instanceLimitReachedError) safeToWrap() {}
+
 // tsdbUnavailableError is an error indicating that the TSDB is unavailable.
 // It is a safeToWrapError.
 type tsdbUnavailableError struct {
-	safeToWrapError
 	message string
 }
 
@@ -297,6 +306,8 @@ func newTSDBUnavailableError(message string) tsdbUnavailableError {
 func (e tsdbUnavailableError) Error() string {
 	return e.message
 }
+
+func (e tsdbUnavailableError) safeToWrap() {}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
