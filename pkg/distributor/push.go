@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package push
+package distributor
 
 import (
 	"context"
@@ -25,8 +25,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// Func defines the type of the push. It is similar to http.HandlerFunc.
-type Func func(ctx context.Context, req *Request) error
+// pushFunc defines the type of the push. It is similar to http.HandlerFunc.
+type pushFunc func(ctx context.Context, req *Request) error
 
 // parserFunc defines how to read the body the request from an HTTP request
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
@@ -51,7 +51,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	push Func,
+	push pushFunc,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
@@ -79,7 +79,7 @@ func handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	push Func,
+	push pushFunc,
 	parser parserFunc,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

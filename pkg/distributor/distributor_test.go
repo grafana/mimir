@@ -57,7 +57,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -2704,7 +2703,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) error {
+			next := func(ctx context.Context, pushReq *Request) error {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
@@ -2728,7 +2727,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			var gotErrs []error
 			for _, req := range tc.reqs {
-				pushReq := push.NewParsedRequest(req)
+				pushReq := NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				handledErr := ds[0].handlePushError(tc.ctx, err)
@@ -2772,7 +2771,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *push.Request) error {
+	mockPush := func(ctx context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
 		writeReq, err := pushReq.WriteRequest()
 		require.NoError(t, err)
@@ -2800,7 +2799,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
+	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
@@ -2809,7 +2808,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
+	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -2931,7 +2930,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) error {
+			next := func(ctx context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -2951,7 +2950,7 @@ func TestRelabelMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := push.NewParsedRequest(req)
+				pushReq := NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -4732,7 +4731,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
 	distrib := d[0]
-	err := distrib.push(ctx, push.NewParsedRequest(req))
+	err := distrib.push(ctx, NewParsedRequest(req))
 	require.NoError(t, err)
 
 	// Verify that each ingester only received series and metadata that it should receive.

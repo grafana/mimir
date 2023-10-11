@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package push
+package distributor
 
 import (
 	"bytes"
@@ -155,7 +155,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		encoding    string
 		maxMsgSize  int
 
-		verifyFunc                Func
+		verifyFunc                pushFunc
 		responseCode              int
 		errMessage                string
 		enableOtelMetadataStorage bool
@@ -450,7 +450,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 		allowSkipLabelNameValidation              bool
 		req                                       *http.Request
 		includeAllowSkiplabelNameValidationHeader bool
-		verifyReqHandler                          Func
+		verifyReqHandler                          pushFunc
 		expectedStatusCode                        int
 	}{
 		{
@@ -555,7 +555,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	}
 }
 
-func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) Func {
+func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) pushFunc {
 	t.Helper()
 	return func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
@@ -570,7 +570,7 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 	}
 }
 
-func readBodyPushFunc(t *testing.T) Func {
+func readBodyPushFunc(t *testing.T) pushFunc {
 	t.Helper()
 	return func(ctx context.Context, req *Request) error {
 		_, err := req.WriteRequest()
