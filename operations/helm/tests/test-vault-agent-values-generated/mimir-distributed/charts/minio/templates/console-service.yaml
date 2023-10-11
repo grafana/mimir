@@ -4,10 +4,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: test-vault-agent-values-minio-console
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: test-vault-agent-values
     heritage: Helm
 spec:

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -89,7 +90,8 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 		onError := func(err error) {
 			s.errorChan <- err
-			log.Error(err)
+			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
+			ext.Error.Set(log.Span, true)
 		}
 
 		totalSeries := 0
@@ -169,12 +171,12 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 					if _, ok := err.(validation.LimitError); ok {
 						return nil, err
 					}
-					return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
+					return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
 				}
 			default:
 			}
 
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 		}
 
 		s.seriesBatch = batch
@@ -190,7 +192,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 	}
 
 	if series.SeriesIndex != seriesIndex {
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
+		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
 	return series.Chunks, nil

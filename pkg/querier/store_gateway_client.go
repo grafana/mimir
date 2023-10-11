@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,20 +32,20 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
-	return func(addr string) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, addr, requestDuration)
-	}
+	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration)
+	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
 	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}
 
-	conn, err := grpc.Dial(addr, opts...)
+	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial store-gateway %s", addr)
+		return nil, errors.Wrapf(err, "failed to dial store-gateway %s %s", inst.Id, inst.Addr)
 	}
 
 	return &storeGatewayClient{

@@ -23,10 +23,10 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		circuitBreakerTransitions: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_client_circuit_breaker_transitions_total",
 			Help: "Number times the circuit breaker has entered a state",
-		}, []string{"state"}),
+		}, []string{"ingester", "state"}),
 		circuitBreakerResults: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_client_circuit_breaker_results_total",
 			Help: "Results of executing requests via the circuit breaker",
-		}, []string{"result"}),
+		}, []string{"ingester", "result"}),
 	}
 }

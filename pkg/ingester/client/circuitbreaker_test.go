@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,8 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	conn := grpc.ClientConn{}
 	reg := prometheus.NewPedanticRegistry()
-	breaker := NewCircuitBreaker("test-1", CircuitBreakerConfig{
+	inst := ring.InstanceDesc{Id: "test", Addr: "localhost:8080"}
+	breaker := NewCircuitBreaker(inst, CircuitBreakerConfig{
 		Enabled:                   true,
 		FailureThreshold:          1,
 		FailureExecutionThreshold: 1,
@@ -92,8 +94,8 @@ func TestNewCircuitBreaker(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 # HELP cortex_ingester_client_circuit_breaker_results_total Results of executing requests via the circuit breaker
 # TYPE cortex_ingester_client_circuit_breaker_results_total counter
-cortex_ingester_client_circuit_breaker_results_total{result="circuit_breaker_open"} 1
-cortex_ingester_client_circuit_breaker_results_total{result="error"} 1
-cortex_ingester_client_circuit_breaker_results_total{result="success"} 1
+cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="circuit_breaker_open"} 1
+cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="error"} 1
+cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="success"} 1
 `), "cortex_ingester_client_circuit_breaker_results_total"))
 }

@@ -133,17 +133,17 @@ func ParseAccept(header string) acceptSlice {
 		accept = append(accept, a)
 	}
 
-	slices.SortFunc(accept, func(a, b Accept) bool {
+	slices.SortFunc(accept, func(a, b Accept) int {
 		if a.Q > b.Q {
-			return true
+			return -1
 		}
 		if a.Type != "*" && b.Type == "*" {
-			return true
+			return -1
 		}
 		if a.SubType != "*" && b.SubType == "*" {
-			return true
+			return -1
 		}
-		return false
+		return 1
 	})
 
 	return accept

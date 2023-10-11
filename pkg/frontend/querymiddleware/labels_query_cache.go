@@ -154,22 +154,28 @@ func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	for _, set := range matcherSets {
-		slices.SortFunc(set, func(a, b *labels.Matcher) bool {
-			return compareLabelMatchers(a, b) < 0
+		slices.SortFunc(set, func(a, b *labels.Matcher) int {
+			return compareLabelMatchers(a, b)
 		})
 	}
 
-	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) bool {
+	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) int {
 		idx := 0
 
 		for ; idx < len(a) && idx < len(b); idx++ {
 			if c := compareLabelMatchers(a[idx], b[idx]); c != 0 {
-				return c < 0
+				return c
 			}
 		}
 
 		// All label matchers are equal so far. Check which one has fewer matchers.
-		return idx < len(b)
+		if idx < len(b) {
+			return -1
+		}
+		if idx < len(a) {
+			return 1
+		}
+		return 0
 	})
 
 	return matcherSets, nil

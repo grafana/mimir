@@ -14,6 +14,10 @@ concurrency:
 jobs: 
   build_and_push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Allow PR modification for collaborators, forks should remain read-only
+      pull-requests: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -70,11 +74,11 @@ jobs:
         id: notification
         run: | 
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
-           gh pr comment $PR_URL --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
+           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
            a new commit will automatically be added to this PR with new image version \\\`$IMAGE:$TAG\\\`. This can take up to 1 hour."
           else
             echo "This PR will not trigger a build of mimir-build-image"
-            gh pr comment $PR_URL --body "**Not building new version of mimir-build-image**. This PR modifies \\\`mimir-build-image/Dockerfile\\\`, but the image \\\`$IMAGE:$TAG\\\` already exists."
+            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \\\`mimir-build-image/Dockerfile\\\`, but the image \\\`$IMAGE:$TAG\\\` already exists."
           fi
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
