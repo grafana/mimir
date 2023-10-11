@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Update Go version to 1.21.3. #6244 #6325
 * [BUGFIX] Query-frontend: Don't retry read requests rejected by the ingester due to utilization based read path limiting. #6032
 * [BUGFIX] Ingester: fix panic in WAL replay of certain native histograms. #6086
 
