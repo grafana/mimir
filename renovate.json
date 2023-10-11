@@ -28,7 +28,6 @@
     ],
     "branchPrefix": "deps-update/",
     "vulnerabilityAlerts": {
-      "schedule": null,
       "enabled": true,
       "labels": ["security-update"]
     },
