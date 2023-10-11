@@ -12,7 +12,7 @@
         "enabled": false
       },
       {
-        "packagePatterns": [
+        "matchPackageNames": [
           "github.com/grafana/mimir-prometheus",
           "github.com/grafana/memberlist",
           "github.com/grafana/regexp",
