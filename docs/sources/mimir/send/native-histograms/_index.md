@@ -38,7 +38,7 @@ There are advantages and disadvantages of using native histograms compared to th
   The operation might scale down an operand to lower resolution to match the other operand.
   {{% /admonition %}}
 
-### Cons
+### Disadvantages
 
 - Observations might be distributed in a way that is not a good fit for the exponential bucket schema, such as sound pressure measured in decibels, which are already logarithmic.
 - If converting from an externally represented histogram with specific bucket boundaries, there is generally no precise match with the bucket boundaries of the native histogram, and in which case you need to use interpolation.
@@ -106,7 +106,7 @@ Use the latest version of Prometheus or at least version 2.47.
    prometheus --enabled-feature native-histograms
    ```
 
-1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
+1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not effected. To keep scraping the classic histogram version of native histogram metrics you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
 
    ```yaml
    scrape_configs:
@@ -140,7 +140,7 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
    }
    ```
 
-1. The above flag will make Grafana Agent detect and scrape native histograms, but ignores classic histogram version of metrics. In case of a migration when a metric is both a classic and native histogram at the same time you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
+1. The above flag will make Prometheus detect and scrape native histograms, but ignores classic histogram version of those metrics that have native histogram defined as well. Classic histograms without native histogram definitions are not effected. To keep scraping the classic histogram version of native histogram metrics you need to set `scrape_classic_histograms` to `true` in your scrape jobs, for example:
 
    ```
    prometheus.scrape "myapp" {
@@ -172,9 +172,9 @@ It is perfectly possible to keep the custom bucket definition of a classic histo
 1. Let Prometheus or Grafana Agent scrape both classic and native histograms for metrics that have both defined.
 1. Send native histograms to remote write - if classic histogram is scraped, it is sent by default.
 1. Start modifying the recording rules, alerts, dashboards to use the new native histograms.
-1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
+1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Agent prometheus.relabel](https://grafana.com/docs/agent/latest/flow/reference/components/prometheus.relabel/) at the time of scraping. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
 
-Code examples:
+Code examples with both classic and native histogram defined for the same metric:
 
 {{< code >}}
 
@@ -256,7 +256,7 @@ Native histogram samples have three different kind of buckets, for any observed 
 
 The server scraping or receiving native histograms over remote write may limit the number of native histogram buckets it accepts. The server may reject or downscale (reduce resolution and merge adjacent buckets). Even if that wasn't the case, storing and emitting potentially unlimited number of buckets isn't practical.
 
-The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used (e.g. `NativeHistogramMaxBucketNumber` in Go).
+The instrumentation libraries of Prometheus have automation to keep the number of buckets down, provided that the maximum bucket number option is used, such as `NativeHistogramMaxBucketNumber` in Go.
 
 Once the set maximum is exceeded, the following strategy is enacted:
 
