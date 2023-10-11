@@ -75,6 +75,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #5956
+
 ### Tools
 
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
