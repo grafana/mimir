@@ -5,7 +5,8 @@
     ],
     "baseBranches": ["main", "release-2.10", "release-2.9"],
     "postUpdateOptions": [
-      "gomodTidy"
+      "gomodTidy",
+      "gomodUpdateImportPaths"
     ],
     "schedule": ["before 9am on Monday"],
     "packageRules": [
