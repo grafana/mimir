@@ -172,7 +172,7 @@ It is perfectly possible to keep the custom bucket definition of a classic histo
 1. Let Prometheus or Grafana Agent scrape both classic and native histograms for metrics that have both defined.
 1. Send native histograms to remote write - if classic histogram is scraped, it is sent by default.
 1. Start modifying the recording rules, alerts, dashboards to use the new native histograms.
-1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Agent prometheus.relabel](https://grafana.com/docs/agent/latest/flow/reference/components/prometheus.relabel/) at the time of scraping. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
+1. Once everything works, remove the custom bucket definition (`Buckets`/`classicUpperBounds`) from the instrumentation. Or drop the classic histogram series with [Prometheus relabeling](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config) or [Grafana Agent prometheus.relabel](/docs/agent/latest/flow/reference/components/prometheus.relabel/) at the time of scraping. Or stop scraping classic histogram version of metrics, however note that that will apply to all metrics of a scrape target.
 
 Code examples with both classic and native histogram defined for the same metric:
 
