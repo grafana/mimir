@@ -1344,7 +1344,7 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
 [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
-# (advanced) Enable using a IPv6 instance address. (default false)
+# (advanced) Enable using a IPv6 instance address (default false).
 # CLI flag: -query-frontend.instance-enable-ipv6
 [instance_enable_ipv6: <boolean> | default = false]
 
