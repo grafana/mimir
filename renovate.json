@@ -7,6 +7,12 @@
     "baseBranches": ["main", "release-2.10", "release-2.9"],
     "packageRules": [
       {
+        "enabled": false,
+        "groupName": "everything",
+        "matchPackagePatterns": ["*"],
+        "separateMajorMinor": false
+      },
+      {
         "matchBaseBranches": ["release-2.10","release-2.9"],
         "packagePatterns": ["*"],
         "enabled": false
