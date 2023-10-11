@@ -49,7 +49,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -189,7 +188,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(20, 20).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -487,7 +486,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewRequestRateLimited(4, 2).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewRequestRateLimited(4, 2).Error())},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -508,7 +507,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewRequestRateLimited(2, 3).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewRequestRateLimited(2, 3).Error())},
 			},
 		},
 		"request limit is reached return 529 when enable service overload error set to true": {
@@ -519,7 +518,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(distributorerror.StatusServiceOverloaded, distributorerror.NewRequestRateLimited(4, 2).Error())},
+				{expectedError: httpgrpc.Errorf(StatusServiceOverloaded, NewRequestRateLimited(4, 2).Error())},
 			},
 		},
 	}
@@ -580,10 +579,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 5).Error())},
+				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 5).Error())},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 5).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 5).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 5).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 5).Error())},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -593,10 +592,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 20).Error())},
+				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 20).Error())},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 20).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, distributorerror.NewIngestionRateLimited(10, 20).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 20).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, NewIngestionRateLimited(10, 20).Error())},
 			},
 		},
 	}

@@ -31,7 +31,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -803,10 +802,10 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	replicasNotMatchErr := distributorerror.NewReplicasDidNotMatch("a", "b")
-	tooManyClustersErr := distributorerror.NewTooManyClusters(10)
-	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimited(10, 10)
-	requestRateLimitedErr := distributorerror.NewRequestRateLimited(10, 10)
+	replicasNotMatchErr := NewReplicasDidNotMatch("a", "b")
+	tooManyClustersErr := NewTooManyClusters(10)
+	ingestionRateLimitedErr := NewIngestionRateLimited(10, 10)
+	requestRateLimitedErr := NewRequestRateLimited(10, 10)
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -838,7 +837,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 		},
 		{
 			name:               "a Validation gets translated into an HTTP 400",
-			err:                distributorerror.NewValidation(originalErr),
+			err:                NewValidation(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
@@ -851,7 +850,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          distributorerror.StatusServiceOverloaded,
+			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		{

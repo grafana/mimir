@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -152,8 +151,38 @@ func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *
 	if err == nil {
 		serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+	if httpStatus, ok := toHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
 		return httpStatus
 	}
 	return http.StatusInternalServerError
+}
+
+// toHTTPStatus converts the given error into an appropriate HTTP status corresponding
+// to that error, if the error is one of the errors from this package. In that case,
+// the resulting HTTP status is returned with status true. Otherwise, -1 and the status
+// false are returned.
+func toHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
+	switch {
+	case errors.As(pushErr, &ReplicasDidNotMatch{}):
+		return http.StatusAccepted, true
+	case errors.As(pushErr, &TooManyClusters{}):
+		return http.StatusBadRequest, true
+	case errors.As(pushErr, &Validation{}):
+		return http.StatusBadRequest, true
+	case errors.As(pushErr, &IngestionRateLimited{}):
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return http.StatusTooManyRequests, true
+	case errors.As(pushErr, &RequestRateLimited{}):
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if serviceOverloadErrorEnabled {
+			return StatusServiceOverloaded, true
+		}
+		return http.StatusTooManyRequests, true
+	default:
+		return -1, false
+	}
 }

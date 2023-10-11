@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package distributorerror
+package distributor
 
 import (
-	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -112,36 +110,4 @@ func NewRequestRateLimited(limit float64, burst int) RequestRateLimited {
 
 func (e RequestRateLimited) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
-}
-
-// ToHTTPStatus converts the given error into an appropriate HTTP status corresponding
-// to that error, if the error is one of the errors from this package. In that case,
-// the resulting HTTP status is returned with status true. Otherwise, -1 and the status
-// false are returned.
-// TODO Remove this method once HTTP status codes are removed from distributor.Push.
-// TODO This method should be moved into the push package.
-func ToHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
-	switch {
-	case errors.As(pushErr, &ReplicasDidNotMatch{}):
-		return http.StatusAccepted, true
-	case errors.As(pushErr, &TooManyClusters{}):
-		return http.StatusBadRequest, true
-	case errors.As(pushErr, &Validation{}):
-		return http.StatusBadRequest, true
-	case errors.As(pushErr, &IngestionRateLimited{}):
-		// Return a 429 here to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return http.StatusTooManyRequests, true
-	case errors.As(pushErr, &RequestRateLimited{}):
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded, true
-		}
-		return http.StatusTooManyRequests, true
-	default:
-		return -1, false
-	}
 }

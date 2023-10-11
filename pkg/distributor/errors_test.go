@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package distributorerror
+package distributor
 
 import (
 	"fmt"
@@ -209,7 +209,7 @@ func TestToHTTPStatusHandler(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		httpStatus, outcome := ToHTTPStatus(tc.err, tc.serviceOverloadErrorEnabled)
+		httpStatus, outcome := toHTTPStatus(tc.err, tc.serviceOverloadErrorEnabled)
 		require.Equal(t, tc.expectedHTTPStatus, httpStatus)
 		require.Equal(t, tc.expectedOutcome, outcome)
 	}

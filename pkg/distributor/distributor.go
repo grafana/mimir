@@ -40,7 +40,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -725,12 +724,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next pushFunc) pushFunc {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			if errors.As(err, &distributorerror.ReplicasDidNotMatch{}) {
+			if errors.As(err, &ReplicasDidNotMatch{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
 			}
 
-			if errors.As(err, &distributorerror.TooManyClusters{}) {
+			if errors.As(err, &TooManyClusters{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 			}
 
@@ -900,7 +899,7 @@ func (d *Distributor) prePushValidationMiddleware(next pushFunc) pushFunc {
 			if validationErr != nil {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = distributorerror.NewValidation(validationErr)
+					firstPartialErr = NewValidation(validationErr)
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -921,7 +920,7 @@ func (d *Distributor) prePushValidationMiddleware(next pushFunc) pushFunc {
 			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
-					firstPartialErr = distributorerror.NewValidation(validationErr)
+					firstPartialErr = NewValidation(validationErr)
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
@@ -943,7 +942,7 @@ func (d *Distributor) prePushValidationMiddleware(next pushFunc) pushFunc {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return distributorerror.NewIngestionRateLimited(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
+			return NewIngestionRateLimited(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1044,7 +1043,7 @@ func (d *Distributor) limitsMiddleware(next pushFunc) pushFunc {
 		if !d.requestRateLimiter.AllowN(now, userID, 1) {
 			d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
-			return distributorerror.NewRequestRateLimited(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
+			return NewRequestRateLimited(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID))
 		}
 
 		// Note that we don't enforce the per-user ingestion rate limit here since we need to apply validation
@@ -1095,7 +1094,7 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	if err == nil {
 		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+	if httpStatus, ok := toHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
 		return httpgrpc.Errorf(httpStatus, pushErr.Error())
 	}
 	return pushErr
