@@ -124,6 +124,11 @@ func (b *SSEBucketClient) IsObjNotFoundErr(err error) bool {
 	return b.bucket.IsObjNotFoundErr(err)
 }
 
+// IsAccessDeniedErr implements objstore.Bucket.
+func (b *SSEBucketClient) IsAccessDeniedErr(err error) bool {
+	return b.bucket.IsAccessDeniedErr(err)
+}
+
 // Attributes implements objstore.Bucket.
 func (b *SSEBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.bucket.Attributes(ctx, name)

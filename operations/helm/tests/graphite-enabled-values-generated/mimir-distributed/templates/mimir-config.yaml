@@ -107,11 +107,11 @@ data:
           memcached:
             addresses: dnssrvnoa+graphite-enabled-values-mimir-gr-aggr-cache.citestns.svc:11211
             timeout: 1s
-        graphite_fallback: http://graphite-enabled-values-mimir-graphite-web.citestns.svc:8080
         metric_name_cache:
           memcached:
             addresses: dnssrvnoa+graphite-enabled-values-mimir-gr-metricname-cache.citestns.svc:11211
             timeout: 1s
+        proxy_bad_requests: false
         remote_read:
           query_address: http://graphite-enabled-values-mimir-query-frontend.citestns.svc:8080/prometheus
         schemas:
@@ -164,7 +164,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m

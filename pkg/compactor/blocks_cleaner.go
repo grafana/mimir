@@ -37,11 +37,12 @@ const (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay           time.Duration
-	CleanupInterval         time.Duration
-	CleanupConcurrency      int
-	TenantCleanupDelay      time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency int
+	DeletionDelay              time.Duration
+	CleanupInterval            time.Duration
+	CleanupConcurrency         int
+	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency    int
+	NoBlocksFileCleanupEnabled bool
 }
 
 type BlocksCleaner struct {
@@ -165,7 +166,10 @@ func (c *BlocksCleaner) ticker(ctx context.Context) error {
 func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
 	// at least differentiate the logs in this function for each run.
-	logger := log.With(c.logger, "run_id", strconv.FormatInt(time.Now().Unix(), 10))
+	logger := log.With(c.logger,
+		"run_id", strconv.FormatInt(time.Now().Unix(), 10),
+		"task", "clean_up_users",
+	)
 
 	c.instrumentStartedCleanupRun(logger)
 
@@ -176,7 +180,7 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 
 	doCleanup := func() {
-		err := c.cleanUsers(ctx, allUsers, isDeleted)
+		err := c.cleanUsers(ctx, allUsers, isDeleted, logger)
 		c.instrumentFinishedCleanupRun(err, logger)
 	}
 
@@ -234,7 +238,7 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 }
 
 // cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.
-func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool) error {
+func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool, logger log.Logger) error {
 	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
 		own, err := c.ownUser(userID)
 		if err != nil || !own {
@@ -242,16 +246,42 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDel
 			return errors.Wrap(err, "check own user")
 		}
 
+		userLogger := util_log.WithUserID(userID, logger)
 		if isDeleted[userID] {
-			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID), "failed to delete user marked for deletion: %s", userID)
+			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID, userLogger), "failed to delete user marked for deletion: %s", userID)
 		}
-		return errors.Wrapf(c.cleanUser(ctx, userID), "failed to delete blocks for user: %s", userID)
+		return errors.Wrapf(c.cleanUser(ctx, userID, userLogger), "failed to delete blocks for user: %s", userID)
 	})
 }
 
+// deleteRemainingData removes any additional files that may remain when a user has no blocks. Should only
+// be called when there no more blocks remaining.
+func (c *BlocksCleaner) deleteRemainingData(ctx context.Context, userBucket objstore.Bucket, userID string, userLogger log.Logger) error {
+	// Delete bucket index
+	if err := bucketindex.DeleteIndex(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
+		return errors.Wrap(err, "failed to delete bucket index file")
+	}
+	level.Info(userLogger).Log("msg", "deleted bucket index for tenant with no blocks remaining")
+
+	// Delete markers folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.MarkersPathname, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete marker files")
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted marker files for tenant with no blocks remaining", "count", deleted)
+	}
+
+	// Delete debug folder
+	if deleted, err := bucket.DeletePrefix(ctx, userBucket, block.DebugMetas, userLogger); err != nil {
+		return errors.Wrap(err, "failed to delete "+block.DebugMetas)
+	} else if deleted > 0 {
+		level.Info(userLogger).Log("msg", "deleted files under "+block.DebugMetas+" for tenant with no blocks remaining", "count", deleted)
+	}
+
+	return nil
+}
+
 // deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
-func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string) error {
-	userLogger := util_log.WithUserID(userID, c.logger)
+func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string, userLogger log.Logger) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 
 	level.Info(userLogger).Log("msg", "deleting blocks for tenant marked for deletion")
@@ -352,27 +382,28 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
-func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr error) {
-	userLogger := util_log.WithUserID(userID, c.logger)
+func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger log.Logger) (returnErr error) {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
 
 	level.Info(userLogger).Log("msg", "started blocks cleanup and maintenance")
 	defer func() {
 		if returnErr != nil {
-			level.Warn(userLogger).Log("msg", "failed blocks cleanup and maintenance", "err", returnErr)
+			level.Warn(userLogger).Log("msg", "failed blocks cleanup and maintenance", "err", returnErr, "duration", time.Since(startTime))
 		} else {
 			level.Info(userLogger).Log("msg", "completed blocks cleanup and maintenance", "duration", time.Since(startTime))
 		}
 	}()
 
 	// Read the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
 		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
 	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
 		return err
 	}
+
+	level.Info(userLogger).Log("msg", "fetched existing bucket index")
 
 	// Mark blocks for future deletion based on the retention period for the user.
 	// Note doing this before UpdateIndex, so it reads in the deletion marks.
@@ -386,7 +417,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.logger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
@@ -406,11 +437,19 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 		}
 
 		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
+		level.Info(userLogger).Log("msg", "cleaned up partial blocks", "partials", len(partials))
 	}
 
-	// Upload the updated index to the storage.
-	if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
-		return err
+	// If there are no more blocks, clean up any remaining files
+	// Otherwise upload the updated index to the storage.
+	if c.cfg.NoBlocksFileCleanupEnabled && len(idx.Blocks) == 0 {
+		if err := c.deleteRemainingData(ctx, userBucket, userID, userLogger); err != nil {
+			return err
+		}
+	} else {
+		if err := bucketindex.WriteIndex(ctx, c.bucketClient, userID, c.cfgProvider, idx); err != nil {
+			return err
+		}
 	}
 
 	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
@@ -534,7 +573,6 @@ func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucke
 		return
 	}
 
-	level.Debug(userLogger).Log("msg", "applying retention", "retention", retention.String())
 	blocks := listBlocksOutsideRetentionPeriod(idx, time.Now().Add(-retention))
 
 	// Attempt to mark all blocks. It is not critical if a marking fails, as
@@ -545,6 +583,7 @@ func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucke
 			level.Warn(userLogger).Log("msg", "failed to mark block for deletion", "block", b.ID, "err", err)
 		}
 	}
+	level.Info(userLogger).Log("msg", "marked blocks for deletion", "num_blocks", len(blocks), "retention", retention.String())
 }
 
 // listBlocksOutsideRetentionPeriod determines the blocks which have aged past

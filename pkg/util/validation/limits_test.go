@@ -266,6 +266,34 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestMinDurationPerTenant(t *testing.T) {
+	defaults := Limits{ResultsCacheTTLForCardinalityQuery: 0}
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {ResultsCacheTTLForCardinalityQuery: 0},
+		"tenant-b": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Minute)},
+		"tenant-c": {ResultsCacheTTLForCardinalityQuery: model.Duration(time.Hour)},
+	}
+
+	ov, err := NewOverrides(defaults, NewMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-b"}, expLimit: time.Minute},
+		{tenantIDs: []string{"tenant-c"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-a", "tenant-b"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-c", "tenant-b"}, expLimit: time.Minute},
+		{tenantIDs: []string{"tenant-c", "tenant-d", "tenant-e"}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-c", "tenant-b", "tenant-a"}, expLimit: time.Duration(0)},
+	} {
+		assert.Equal(t, tc.expLimit, MinDurationPerTenant(tc.tenantIDs, ov.ResultsCacheTTLForCardinalityQuery))
+	}
+}
+
 func TestLargestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	tenantLimits := map[string]*Limits{
 		"tenant-a": {
@@ -622,6 +650,31 @@ metric_relabel_configs:
 	})
 }
 
+func TestUnmarshalMaxEstimatedChunksPerQuery(t *testing.T) {
+	testCases := map[string]bool{
+		"-0.1": false,
+		"0":    true,
+		"0.1":  false,
+		"0.9":  false,
+		"1":    true,
+		"1.1":  true,
+	}
+
+	for value, shouldBeValid := range testCases {
+		t.Run(value, func(t *testing.T) {
+			limits := Limits{}
+			cfg := "max_estimated_fetched_chunks_per_query_multiplier: " + value
+			err := yaml.Unmarshal([]byte(cfg), &limits)
+
+			if shouldBeValid {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "invalid value for -querier.max-estimated-fetched-chunks-per-query-multiplier: must be 0 or greater than or equal to 1")
+			}
+		})
+	}
+}
+
 type structExtension struct {
 	Foo int `yaml:"foo" json:"foo"`
 }
@@ -691,6 +744,34 @@ func TestExtensions(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(`{}`), &limits), "parsing overrides")
 		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
 		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("default value after registering extension defaults", func(t *testing.T) {
+		var limits Limits
+
+		limits.RegisterExtensionsDefaults()
+
+		require.Equal(t, structExtension{Foo: 42}, getExtensionStruct(&limits))
+		require.Equal(t, stringExtension("default string extension value"), getExtensionString(&limits))
+	})
+
+	t.Run("empty value from empty yaml", func(t *testing.T) {
+		t.Cleanup(func() {
+			defaultLimits = nil
+		})
+		SetDefaultLimitsForYAMLUnmarshalling(Limits{
+			RequestRate: 100,
+		})
+		var limits map[string]Limits
+
+		require.NoError(t, yaml.Unmarshal([]byte(`foo:`), &limits), "parsing overrides")
+
+		fooLimits, ok := limits["foo"]
+		require.True(t, ok, "foo limits should be present")
+		require.Equal(t, float64(0), fooLimits.RequestRate)
+
+		require.Equal(t, structExtension{}, getExtensionStruct(&fooLimits))
+		require.Equal(t, stringExtension(""), getExtensionString(&fooLimits))
 	})
 
 	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {

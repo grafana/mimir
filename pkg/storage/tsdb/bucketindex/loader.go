@@ -23,12 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const (
-	// readIndexTimeout is the maximum allowed time when reading a single bucket index
-	// from the storage. It's hard-coded to a reasonably high value.
-	readIndexTimeout = 15 * time.Second
-)
-
 type LoaderConfig struct {
 	CheckInterval         time.Duration
 	UpdateOnStaleInterval time.Duration
@@ -195,12 +189,9 @@ func (l *Loader) checkCachedIndexesToUpdateAndDelete() (toUpdate, toDelete []str
 }
 
 func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
-	readCtx, cancel := context.WithTimeout(ctx, readIndexTimeout)
-	defer cancel()
-
 	l.loadAttempts.Inc()
 	startTime := time.Now()
-	idx, err := ReadIndex(readCtx, l.bkt, userID, l.cfgProvider, l.logger)
+	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil && !errors.Is(err, ErrIndexNotFound) {
 		l.loadFailures.Inc()
 		level.Warn(l.logger).Log("msg", "unable to update bucket index", "user", userID, "err", err)

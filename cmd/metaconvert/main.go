@@ -18,9 +18,10 @@ import (
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
+	dslog "github.com/grafana/dskit/log"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/logging"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -30,8 +31,8 @@ import (
 )
 
 type config struct {
-	LogLevel     logging.Level
-	LogFormat    logging.Format
+	LogLevel     dslog.Level
+	LogFormat    string
 	BucketConfig bucket.Config
 	DryRun       bool
 	Tenant       string
@@ -41,9 +42,9 @@ func main() {
 	cfg := config{}
 
 	cfg.LogLevel.RegisterFlags(flag.CommandLine)
-	cfg.LogFormat.RegisterFlags(flag.CommandLine)
 	cfg.BucketConfig.RegisterFlags(flag.CommandLine)
 
+	flag.StringVar(&cfg.LogFormat, "log.format", dslog.LogfmtFormat, "Output log messages in the given format. Valid formats: [logfmt, json]")
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Don't make changes; only report what needs to be done")
 	flag.StringVar(&cfg.Tenant, "tenant", "", "Tenant to process")
 	flag.Usage = func() {
@@ -51,9 +52,13 @@ func main() {
 		fmt.Fprintln(flag.CommandLine.Output(), "Flags:")
 		flag.PrintDefaults()
 	}
-	flag.Parse()
 
-	logger := log.NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		exitWithMessage(err.Error())
+	}
+
+	logger := log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, log.RateLimitedLoggerCfg{})
 
 	if cfg.Tenant == "" {
 		exitWithMessage("Use -tenant parameter to specify tenant, or -h to get list of available options.")

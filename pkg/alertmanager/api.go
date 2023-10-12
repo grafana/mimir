@@ -17,13 +17,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
@@ -50,7 +49,7 @@ var (
 	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
 	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
 	errProxyFromEnvironmentURLNotAllowed = errors.New("setting proxy_from_environment is not allowed")
-	errTLSFileNotAllowed                 = errors.New("setting TLS ca_file, cert_file or key_file is not allowed")
+	errTLSConfigNotAllowed               = errors.New("setting TLS ca_file, cert_file, key_file, ca, cert or key is not allowed")
 	errSlackAPIURLFileNotAllowed         = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
 	errVictorOpsAPIKeyFileNotAllowed     = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
 	errOpsGenieAPIKeyFileFileNotAllowed  = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
@@ -470,8 +469,8 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 // validateReceiverTLSConfig validates the TLS config and returns an error if it contains
 // settings not allowed by Mimir.
 func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
-	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" {
-		return errTLSFileNotAllowed
+	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" || cfg.CA != "" || cfg.Cert != "" || cfg.Key != "" {
+		return errTLSConfigNotAllowed
 	}
 	return nil
 }

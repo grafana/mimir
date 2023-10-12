@@ -9,10 +9,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // StreamingSeries represents a single series used in evaluation of a query where the chunks for the series
@@ -35,18 +37,21 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
+	cleanup             func()
 	log                 log.Logger
 
 	seriesBatchChan chan []QueryStreamSeriesChunks
 	errorChan       chan error
+	err             error
 	seriesBatch     []QueryStreamSeriesChunks
 }
 
-func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
+		cleanup:             cleanup,
 		log:                 log,
 	}
 }
@@ -57,6 +62,8 @@ func (s *SeriesChunksStreamReader) Close() {
 	if err := s.client.CloseSend(); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
 	}
+
+	s.cleanup()
 }
 
 // StartBuffering begins streaming series' chunks from the ingester associated with
@@ -72,26 +79,36 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 	ctxDone := s.client.Context().Done()
 
 	go func() {
+		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "SeriesChunksStreamReader.StartBuffering")
+
 		defer func() {
-			if err := s.client.CloseSend(); err != nil {
-				level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
-			}
+			s.Close()
 
 			close(s.seriesBatchChan)
 			close(s.errorChan)
+			log.Span.Finish()
 		}()
 
+		onError := func(err error) {
+			s.errorChan <- err
+			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
+			ext.Error.Set(log.Span, true)
+		}
+
 		totalSeries := 0
+		totalChunks := 0
 
 		for {
 			msg, err := s.client.Recv()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
 					if totalSeries < s.expectedSeriesCount {
-						s.errorChan <- fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
+						onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
+					} else {
+						level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 					}
 				} else {
-					s.errorChan <- err
+					onError(err)
 				}
 
 				return
@@ -103,28 +120,23 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 			totalSeries += len(msg.StreamingSeriesChunks)
 			if totalSeries > s.expectedSeriesCount {
-				s.errorChan <- fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
+				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
 				return
 			}
 
-			chunkCount := 0
 			chunkBytes := 0
 
 			for _, s := range msg.StreamingSeriesChunks {
-				chunkCount += len(s.Chunks)
+				totalChunks += len(s.Chunks)
 
 				for _, c := range s.Chunks {
 					chunkBytes += c.Size()
 				}
 			}
 
-			if err := s.queryLimiter.AddChunks(chunkCount); err != nil {
-				s.errorChan <- err
-				return
-			}
-
+			// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-				s.errorChan <- err
+				onError(err)
 				return
 			}
 
@@ -137,7 +149,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 				// which is true at the time of writing.
-				s.errorChan <- s.client.Context().Err()
+				onError(s.client.Context().Err())
 				return
 			case s.seriesBatchChan <- msg.StreamingSeriesChunks:
 				// Batch enqueued successfully, nothing else to do for this batch.
@@ -149,20 +161,32 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error) {
-	if len(s.seriesBatch) == 0 {
-		batch, haveBatch := <-s.seriesBatchChan
+	if s.err != nil {
+		// Why not just return s.err?
+		// GetChunks should not be called once it has previously returned an error.
+		// However, if this does not hold true, this may indicate a bug somewhere else (see https://github.com/grafana/mimir-prometheus/pull/540 for an example).
+		// So it's valuable to return a slightly different error to indicate that something's not quite right if GetChunks is called after it's previously returned an error.
+		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream previously failed and returned an error: %w", seriesIndex, s.err)
+	}
 
-		if !haveBatch {
+	if len(s.seriesBatch) == 0 {
+		batch, channelOpen := <-s.seriesBatchChan
+
+		if !channelOpen {
 			// If there's an error, report it.
 			select {
 			case err, haveError := <-s.errorChan:
 				if haveError {
-					return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
+					s.err = err
+					if _, ok := err.(validation.LimitError); ok {
+						return nil, err
+					}
+					return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
 				}
 			default:
 			}
 
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 		}
 
 		s.seriesBatch = batch
@@ -178,7 +202,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 	}
 
 	if series.SeriesIndex != seriesIndex {
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
+		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
 	return series.Chunks, nil

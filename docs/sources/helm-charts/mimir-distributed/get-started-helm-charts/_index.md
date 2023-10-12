@@ -26,7 +26,7 @@ Experience with the following is recommended, but not essential:
 - Understanding of what the `kubectl` command does.
 - Understanding of what the `helm` command does.
 
-> **Caution:** This procedure is primarily aimed at local or development setups. To set up in a production environment, see [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm/" >}}).
+> **Caution:** This procedure is primarily aimed at local or development setups. To set up in a production environment, see [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm" >}}).
 
 ### Hardware requirements
 
@@ -68,7 +68,7 @@ The reason is that the installation includes a deployment of MinIO. The [minio/m
 is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
 
 If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with MinIO.
-Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm/" >}}) for instructions on
+Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../run-production-environment-with-helm" >}}) for instructions on
 setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
 
 If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
@@ -138,12 +138,25 @@ Using a custom namespace solves problems later on because you do not have to ove
 
 ## Generate some metrics for testing
 
-The Grafana Mimir Helm chart can collect metrics or logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
+The Grafana Mimir Helm chart can collect metrics, logs, or both, about Grafana Mimir itself. This is called _metamonitoring_.
 In the example that follows, metamonitoring scrapes metrics about Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir instance.
 
-1. Create a YAML file called `custom.yaml` for your Helm values.
+1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
+   https://github.com/grafana/agent/tree/main/production/operator/crds.
 
-1. To enable metamonitoring in Grafana Mimir, add the following YAML snippet to your Grafana Mimir `custom.yaml` file:
+   Helm only installs Custom Resource Definitions on an initial chart installation, and not on a chart upgrade.
+   For details, see [Some caveats and explanations](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/#some-caveats-and-explanations).
+
+   If you did not enable metamonitoring when the chart was first installed, you must manually install the CRDs before performing a Helm upgrade to enable metamonitoring.
+
+2. Install the CRDs on your cluster:
+
+   ```bash
+   kubectl create -f production/operator/crds/
+   ```
+
+3. Create a YAML file called `custom.yaml` for your Helm values overrides.
+   Add the following YAML snippet to `custom.yaml` to enable metamonitoring in Mimir:
 
    ```yaml
    metaMonitoring:
@@ -159,7 +172,7 @@ In the example that follows, metamonitoring scrapes metrics about Grafana Mimir 
 
    > **Note:** In a production environment the `url` above would point to an external system, independent of your Grafana Mimir instance, such as an instance of Grafana Cloud Metrics.
 
-1. Upgrade Grafana Mimir by using the `helm` command:
+4. Upgrade Grafana Mimir by using the `helm` command:
 
    ```bash
    helm -n mimir-test upgrade mimir grafana/mimir-distributed -f custom.yaml

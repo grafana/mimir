@@ -2,7 +2,7 @@ version: '3.4'
 services:
 
   consul:
-    image: consul
+    image: consul:1.15  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
       - 8500:8500
@@ -20,7 +20,9 @@ services:
       - .data-minio:/data:delegated
 
   prometheus:
-    image: prom/prometheus:v2.40.6
+    profiles:
+      - prometheus
+    image: prom/prometheus:v2.47.1
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -31,7 +33,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:9.4.3
+    image: grafana/grafana:10.1.4
     ports:
       - 3000:3000
     volumes:
@@ -40,12 +42,26 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
   grafana-agent:
-    image: grafana/agent:v0.2.0
+    profiles:
+      - grafana-agent-static
+    image: grafana/agent:v0.37.1
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
       - ./config:/etc/agent-config
     ports:
       - 9091:9091
+
+  grafana-agent-flow:
+    profiles:
+      - grafana-agent-flow
+    image: grafana/agent:v0.37.1
+    environment:
+      - AGENT_MODE=flow
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
+    volumes:
+      - ./config/grafana-agent.river:/etc/agent/config.river
+    ports:
+      - 9092:9092
 
   jaeger:
     image: jaegertracing/all-in-one
@@ -94,3 +110,33 @@ services:
     volumes:
       - ./config:/mimir/config
       - .data-mimir-2:/data:delegated
+
+  otel-remote-write:
+    image: otel/opentelemetry-collector-contrib:0.87.0
+    profiles:
+      - otel-collector-remote-write
+    volumes:
+      - ./config/otel-collector-remote-write-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports: # From https://opentelemetry.io/docs/collector/getting-started/
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the collector
+      - 8889:8889 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension
+
+  otel-otlp:
+    image: otel/opentelemetry-collector-contrib:0.87.0
+    profiles:
+      - otel-collector-otlp-push
+    volumes:
+      - ./config/otel-collector-otlp-push-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports: # From https://opentelemetry.io/docs/collector/getting-started/
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the collector
+      - 8889:8889 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension

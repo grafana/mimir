@@ -8,6 +8,7 @@ package mimirpb
 import (
 	stdlibjson "encoding/json"
 	"math"
+	"reflect"
 	"strconv"
 	"testing"
 	"unsafe"
@@ -186,10 +187,6 @@ func TestFromLabelAdaptersToLabels(t *testing.T) {
 	actual := FromLabelAdaptersToLabels(input)
 
 	assert.Equal(t, expected, actual)
-
-	// All strings must NOT be copied.
-	assert.Equal(t, uintptr(unsafe.Pointer(&input[0].Name)), uintptr(unsafe.Pointer(&actual[0].Name)))
-	assert.Equal(t, uintptr(unsafe.Pointer(&input[0].Value)), uintptr(unsafe.Pointer(&actual[0].Value)))
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
@@ -200,8 +197,10 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 	assert.Equal(t, expected, actual)
 
 	// All strings must be copied.
-	assert.NotEqual(t, uintptr(unsafe.Pointer(&input[0].Name)), uintptr(unsafe.Pointer(&actual[0].Name)))
-	assert.NotEqual(t, uintptr(unsafe.Pointer(&input[0].Value)), uintptr(unsafe.Pointer(&actual[0].Value)))
+	actualValue := actual.Get("hello")
+	hInputValue := (*reflect.StringHeader)(unsafe.Pointer(&input[0].Value))
+	hActualValue := (*reflect.StringHeader)(unsafe.Pointer(&actualValue))
+	assert.NotEqual(t, hInputValue.Data, hActualValue.Data)
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
@@ -464,7 +463,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	p := FromHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountInt{18},
+		Count:          &Histogram_CountInt{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
@@ -512,7 +511,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	p := FromFloatHistogramToHistogramProto(ts, h)
 
 	expected := Histogram{
-		Count:          &Histogram_CountFloat{18},
+		Count:          &Histogram_CountFloat{21},
 		Sum:            36.8,
 		Schema:         1,
 		ZeroThreshold:  0.001,
@@ -645,4 +644,102 @@ func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(_ *testing.T) {
 // are compatible, same as above.
 func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(_ *testing.T) {
 	_ = histogram.Span(BucketSpan{})
+}
+
+func TestCompareLabelAdapters(t *testing.T) {
+	labels := []LabelAdapter{
+		{Name: "aaa", Value: "111"},
+		{Name: "bbb", Value: "222"},
+	}
+
+	tests := []struct {
+		compared []LabelAdapter
+		expected int
+	}{
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "110"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "233"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bar", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbc", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bb", Value: "222"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbbb", Value: "222"},
+			},
+			expected: -1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+			},
+			expected: 1,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+				{Name: "ccc", Value: "333"},
+				{Name: "ddd", Value: "444"},
+			},
+			expected: -2,
+		},
+		{
+			compared: []LabelAdapter{
+				{Name: "aaa", Value: "111"},
+				{Name: "bbb", Value: "222"},
+			},
+			expected: 0,
+		},
+		{
+			compared: []LabelAdapter{},
+			expected: 1,
+		},
+	}
+
+	sign := func(a int) int {
+		switch {
+		case a < 0:
+			return -1
+		case a > 0:
+			return 1
+		}
+		return 0
+	}
+
+	for i, test := range tests {
+		got := CompareLabelAdapters(labels, test.compared)
+		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
+		got = CompareLabelAdapters(test.compared, labels)
+		require.Equal(t, -sign(test.expected), sign(got), "unexpected comparison result for reverse test case %d", i)
+	}
 }

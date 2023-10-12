@@ -131,6 +131,11 @@ func (b *globalMarkersBucket) IsObjNotFoundErr(err error) bool {
 	return b.parent.IsObjNotFoundErr(err)
 }
 
+// IsAccessDeniedErr implements objstore.Bucket.
+func (b *globalMarkersBucket) IsAccessDeniedErr(err error) bool {
+	return b.parent.IsAccessDeniedErr(err)
+}
+
 // Attributes implements objstore.Bucket.
 func (b *globalMarkersBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.parent.Attributes(ctx, name)

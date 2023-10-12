@@ -13,17 +13,20 @@ import (
 	"sync"
 
 	"github.com/go-kit/log/level"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/tenant"
 
+	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
-type Func func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error)
+type Func func(ctx context.Context, req *Request) error
 
 // parserFunc defines how to read the body the request from an HTTP request
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
@@ -37,17 +40,20 @@ var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }
 
-const SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
-const statusClientClosedRequest = 499
+const (
+	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
+	statusClientClosedRequest     = 499
+)
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	limits *validation.Overrides,
 	push Func,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -68,9 +74,11 @@ func (e distributorMaxWriteMessageSizeErr) Error() string {
 	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
-func handler(maxRecvMsgSize int,
+func handler(
+	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	limits *validation.Overrides,
 	push Func,
 	parser parserFunc,
 ) http.Handler {
@@ -115,21 +123,37 @@ func handler(maxRecvMsgSize int,
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
-		if _, err := push(ctx, req); err != nil {
+		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
 				return
 			}
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+			var (
+				code int
+				msg  string
+			)
+			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+				code, msg = int(resp.Code), string(resp.Body)
+			} else {
+				code, msg = distributorPushErrorHTTPStatus(ctx, err, limits), err.Error()
 			}
-			if resp.GetCode() != 202 {
+			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
-			http.Error(w, string(resp.Body), int(resp.Code))
+			http.Error(w, msg, code)
 		}
 	})
+}
+
+func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
+	serviceOverloadErrorEnabled := false
+	userID, err := tenant.TenantID(ctx)
+	if err == nil {
+		serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+	}
+	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+		return httpStatus
+	}
+	return http.StatusInternalServerError
 }

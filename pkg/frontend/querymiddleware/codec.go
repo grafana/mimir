@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -271,12 +271,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 }
 
 func decodeOptions(r *http.Request, opts *Options) {
-	for _, value := range r.Header.Values(cacheControlHeader) {
-		if strings.Contains(value, noStoreValue) {
-			opts.CacheDisabled = true
-			continue
-		}
-	}
+	opts.CacheDisabled = decodeCacheDisabledOption(r)
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {
 		shards, err := strconv.ParseInt(value, 10, 32)
@@ -300,6 +295,16 @@ func decodeOptions(r *http.Request, opts *Options) {
 			opts.InstantSplitDisabled = true
 		}
 	}
+}
+
+func decodeCacheDisabledOption(r *http.Request) bool {
+	for _, value := range r.Header.Values(cacheControlHeader) {
+		if strings.Contains(value, noStoreValue) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
@@ -348,20 +353,25 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	if r.StatusCode/100 == 5 {
-		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
-			Code: int32(r.StatusCode),
-			Body: mustReadAllBody(r),
-		})
-	} else if r.StatusCode == http.StatusTooManyRequests {
-		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadAllBody(r)))
-	} else if r.StatusCode == http.StatusRequestEntityTooLarge {
-		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadAllBody(r)))
+	switch r.StatusCode {
+	case http.StatusServiceUnavailable:
+		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))
+	case http.StatusTooManyRequests:
+		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadResponseBody(r)))
+	case http.StatusRequestEntityTooLarge:
+		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
+	default:
+		if r.StatusCode/100 == 5 {
+			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+				Code: int32(r.StatusCode),
+				Body: mustReadResponseBody(r),
+			})
+		}
 	}
 
 	log := spanlogger.FromContext(ctx, logger)
 
-	buf, err := bodyBuffer(r)
+	buf, err := readResponseBody(r)
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -559,7 +569,11 @@ func sliceHistogramSamples(samples []mimirpb.FloatHistogramPair, minTs int64) []
 	return samples[searchResult:]
 }
 
-func bodyBuffer(res *http.Response) ([]byte, error) {
+func readResponseBody(res *http.Response) ([]byte, error) {
+	// Ensure we close the response Body once we've consumed it, as required by http.Response
+	// specifications.
+	defer res.Body.Close() // nolint:errcheck
+
 	// Attempt to cast the response body to a Buffer and use it if possible.
 	// This is because the frontend may have already read the body and buffered it.
 	if buffer, ok := res.Body.(interface{ Bytes() []byte }); ok {
@@ -574,6 +588,11 @@ func bodyBuffer(res *http.Response) ([]byte, error) {
 		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response with status %d: %v", res.StatusCode, err)
 	}
 	return buf.Bytes(), nil
+}
+
+func mustReadResponseBody(r *http.Response) []byte {
+	body, _ := readResponseBody(r)
+	return body
 }
 
 func parseDurationMs(s string) (int64, error) {
@@ -605,9 +624,4 @@ func decorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
-}
-
-func mustReadAllBody(r *http.Response) []byte {
-	body, _ := bodyBuffer(r)
-	return body
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -24,13 +25,16 @@ type userMetricsMetadata struct {
 
 	mtx              sync.RWMutex
 	metricToMetadata map[string]metricMetadataSet
+
+	errorSamplers ingesterErrSamplers
 }
 
-func newMetadataMap(l *Limiter, m *ingesterMetrics, userID string) *userMetricsMetadata {
+func newMetadataMap(l *Limiter, m *ingesterMetrics, errorSamplers ingesterErrSamplers, userID string) *userMetricsMetadata {
 	return &userMetricsMetadata{
 		metricToMetadata: map[string]metricMetadataSet{},
 		limiter:          l,
 		metrics:          m,
+		errorSamplers:    errorSamplers,
 		userID:           userID,
 	}
 }
@@ -45,17 +49,17 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 	set, ok := mm.metricToMetadata[metric]
 	if !ok {
 		// Verify that the user can create more metric metadata given we don't have a set for that metric name.
-		if err := mm.limiter.AssertMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)); err != nil {
+		if !mm.limiter.IsWithinMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
 			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValues(mm.userID).Inc()
-			return makeLimitError(mm.limiter.FormatError(mm.userID, err))
+			return mm.errorSamplers.maxMetadataPerUserLimitExceeded.WrapError(formatMaxMetadataPerUserError(mm.limiter.limits, mm.userID))
 		}
 		set = metricMetadataSet{}
 		mm.metricToMetadata[metric] = set
 	}
 
-	if err := mm.limiter.AssertMaxMetadataPerMetric(mm.userID, len(set)); err != nil {
+	if !mm.limiter.IsWithinMaxMetadataPerMetric(mm.userID, len(set)) {
 		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValues(mm.userID).Inc()
-		return makeMetricLimitError(labels.FromStrings(labels.MetricName, metric), mm.limiter.FormatError(mm.userID, err))
+		return mm.errorSamplers.maxMetadataPerMetricLimitExceeded.WrapError(formatMaxMetadataPerMetricError(mm.limiter.limits, labels.FromStrings(labels.MetricName, metric), mm.userID))
 	}
 
 	// if we have seen this metadata before, it is a no-op and we don't need to change our metrics.
@@ -86,15 +90,40 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 	mm.metrics.memMetadataRemovedTotal.WithLabelValues(mm.userID).Add(float64(deleted))
 }
 
-func (mm *userMetricsMetadata) toClientMetadata() []*mimirpb.MetricMetadata {
+func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataRequest) []*mimirpb.MetricMetadata {
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
-	r := make([]*mimirpb.MetricMetadata, 0, len(mm.metricToMetadata))
-	for _, set := range mm.metricToMetadata {
+	rCap := int32(len(mm.metricToMetadata))
+	if req.Limit >= 0 && req.Limit < rCap {
+		rCap = req.Limit
+	}
+	r := make([]*mimirpb.MetricMetadata, 0, rCap)
+	addMetricMetadataSet := func(set metricMetadataSet) {
+		var lengthPerMetric int32
 		for m := range set {
+			if req.LimitPerMetric > 0 && lengthPerMetric >= req.LimitPerMetric {
+				break
+			}
 			m := m
 			r = append(r, &m)
+			lengthPerMetric++
 		}
+	}
+	if req.Limit == 0 {
+		return r
+	}
+	if req.Metric != "" {
+		set := mm.metricToMetadata[req.Metric]
+		addMetricMetadataSet(set)
+		return r
+	}
+	var numMetrics int32
+	for _, set := range mm.metricToMetadata {
+		if req.Limit > 0 && numMetrics >= req.Limit {
+			break
+		}
+		addMetricMetadataSet(set)
+		numMetrics++
 	}
 	return r
 }

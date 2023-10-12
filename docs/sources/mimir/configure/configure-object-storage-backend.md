@@ -1,9 +1,11 @@
 ---
 aliases:
   - ../operators-guide/configure/configure-object-storage-backend/
-title: "Configure Grafana Mimir object storage backend"
-menuTitle: "Object storage"
-description: "Learn how to configure Grafana Mimir to use different object storage backend implementations."
+description:
+  Learn how to configure Grafana Mimir to use different object storage
+  backend implementations.
+menuTitle: Object storage
+title: Configure Grafana Mimir object storage backend
 weight: 65
 ---
 
@@ -17,17 +19,24 @@ The supported backends are:
 - [Azure Blob Storage](https://azure.microsoft.com/es-es/services/storage/blobs/)
 - [Swift (OpenStack Object Storage)](https://wiki.openstack.org/wiki/Swift)
 
-Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../references/configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation.
+{{% admonition type="note" %}}
+Like Amazon S3, the chosen object storage implementation must not create directories.
+Grafana Mimir doesn't have any notion of object storage directories, and so will leave
+empty directories behind when removing blocks. For example, if you use Azure Blob Storage, you must disable
+[hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace).
+{{% /admonition %}}
 
-[Ruler and alertmanager support a `local` implementation]({{< relref "../references/architecture/components/ruler/index.md#local-storage" >}}),
+Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../references/configuration-parameters#filesystem_storage_backend" >}}) object storage implementation.
+
+[Ruler and alertmanager support a `local` implementation]({{< relref "../references/architecture/components/ruler#local-storage" >}}),
 which is similar to `filesystem` in the way that it uses the local file system,
 but it is a read-only data source and can be used to provision state into those components.
 
 ## Common configuration
 
-To avoid repetition, you can use the [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) and fill the [`common`]({{< relref "../references/configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
+To avoid repetition, you can use the [common configuration]({{< relref "./about-configurations#common-configurations" >}}) and fill the [`common`]({{< relref "../references/configuration-parameters#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../references/configuration-parameters/index.md#blocks_storage" >}}) use either a:
+> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../references/configuration-parameters#blocks_storage" >}}) use either a:
 
 - different bucket, overriding the common bucket name
 - storage prefix
@@ -36,7 +45,7 @@ Grafana Mimir will fail to start if you configure blocks storage to use the same
 
 Find examples of setting up the different object stores below:
 
-> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}).
+> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "./about-configurations#common-configurations" >}}).
 
 ### S3
 
@@ -101,12 +110,14 @@ ruler_storage:
 
 ### Azure Blob Storage
 
+You must disable [hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace), otherwise Grafana Mimir will leave empty directories behind when deleting blocks.
+
 ```yaml
 common:
   storage:
     backend: azure
     azure:
-      account_key: "${SWIFT_ACCOUNT_KEY}" # This is a secret injected via an environment variable
+      account_key: "${AZURE_ACCOUNT_KEY}" # This is a secret injected via an environment variable
       account_name: mimir-prod
       endpoint_suffix: "blob.core.windows.net"
 

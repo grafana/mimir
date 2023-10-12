@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package indexheaderpb;
+
+option go_package = "indexheaderpb";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+message Sparse {
+	Symbols symbols = 1;
+	PostingOffsetTable postingsOffsetTable = 2;
+}
+
+message Symbols {
+	repeated int64 offsets = 1 [packed=true];
+	int64 symbolsCount = 2;
+}
+
+message PostingOffsetTable {
+	// Postings is a map of label names -> PostingValueOffsets
+	map<string, PostingValueOffsets> postings = 1;
+}
+
+// PostingValueOffsets stores a list of the first, last, and every 32nd (config default) PostingOffset for this label name.
+message PostingValueOffsets {
+	repeated PostingOffset offsets = 1;   
+	// LastValOffset is the offset of the last value for this label name relative to the start of the postings offset table.
+	int64 lastValOffset = 2;
+}
+
+// PostingOffset stores the label value and its offset in the postings offset table relative to the start of the table.
+message PostingOffset {
+	string value = 1;
+	int64 tableOff = 2;
+}

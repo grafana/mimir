@@ -11,7 +11,7 @@ remove a deprecated item from the third major release after it has been deprecat
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
 * NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
   `nginx` section is deprecated in `4.0.0` and will be removed in `7.0.0`.
-  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
+  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
 
 ## Format of changelog
 
@@ -28,13 +28,47 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500 for ingester and to 100 for all components. #5666
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.1`. #6022 #6110
+* [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
+
+## 5.1.0
+
+* [ENHANCEMENT] Update Mimir image to 2.10.0 and GEM image to v2.10.1. #6077
+* [ENHANCEMENT] Make compactor podManagementPolicy configurable. #5902
+* [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
+* [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646
+* [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` service template. This allows memberlist to work with istio protocol selection. #5673
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.8.0`. #5718
+* [ENHANCEMENT] Make store_gateway podManagementPolicy configurable. #5757
+* [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler`, `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler`, `nginx`, `gateway`, `admin-api`, `graphite-querier` and `graphite-write-proxy` deployments, to ensure they don't become completely unavailable during a rollout. #5924
+* [ENHANCEMENT] Nginx: listen on IPv6 addresses. #5948
+* [BUGFIX] Fix `global.podLabels` causing invalid indentation. #5625
+
+## 5.0.0
+
+* [CHANGE] Changed max unavailable ingesters and store-gateways in a zone to 50. #5327
+* [CHANGE] Don't render PodSecurityPolicy on Kubernetes >=1.24. (was >= 1.25). This helps with upgrades between 1.24 and 1.25. To use a PSP in 1.24, toggle `rbac.forcePSPOnKubernetes124: true`. #5357
+* [ENHANCEMENT] Ruler: configure the ruler storage cache when the metadata cache is enabled. #5326 #5334
+* [ENHANCEMENT] Helm: support metricRelabelings in the monitoring serviceMonitor resources via `metaMonitoring.serviceMonitor.metricRelabelings`. #5340
+* [ENHANCEMENT] Service Account: allow adding labels to the service account. #5355
+* [ENHANCEMENT] Memcached: enable providing additional extended options (`-o/--extended`) via `<cache-section>.extraExtendedOptions`. #5353
+* [ENHANCEMENT] Memcached exporter: enable adding additional CLI arguments via `memcachedExporter.extraArgs`. #5353
+* [ENHANCEMENT] Memcached: allow mounting additional volumes to the memcached and exporter containers via `<cache-section>.extraVolumes` and `<cache-section>.extraVolumeMounts`. #5353
+
+## 4.5.0
+
 * [CHANGE] Query-frontend: enable cardinality estimation via `frontend.query_sharding_target_series_per_shard` in the Mimir configuration for query sharding by default if `results-cache.enabled` is true. #5128
+* [CHANGE] Remove `graphite-web` component from the graphite proxy. The `graphite-web` component had several configuration issues which meant it was failing to process requests. #5133
 * [ENHANCEMENT] Set `nginx` and `gateway` Nginx read timeout (`proxy_read_timeout`) to 300 seconds (increase from default 60 seconds), so that it doesn't interfere with the querier's default 120 seconds timeout (`mimir.structuredConfig.querier.timeout`). #4924
 * [ENHANCEMENT] Update nginx image to `nginxinc/nginx-unprivileged:1.24-alpine`. #5066
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.5.0`. #4930
 * [ENHANCEMENT] Store-gateway: set `GOMEMLIMIT` to the memory request value. This should reduce the likelihood the store-gateway may go out of memory, at the cost of an higher CPU utilization due to more frequent garbage collections when the memory utilization gets closer or above the configured requested memory. #4971
 * [ENHANCEMENT] Store-gateway: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce the likelihood a high load on the store-gateway will slow down the entire Kubernetes node. #5104
+* [ENHANCEMENT] Add global.podLabels which can add POD labels to PODs directly controlled by this chart (mimir services, nginx). #5055
+* [ENHANCEMENT] Enable the `track_sizes` feature for Memcached pods to help determine cache efficiency. #5209
 * [BUGFIX] Fix Pod Anti-Affinity rule to allow ingesters of from the same zone to run on same node, by using `zone` label since the old `app.kubernetes.io/component` did not allow for this. #5031
+* [ENHANCEMENT] Enable `PodDisruptionBudget`s by default for admin API, alertmanager, compactor, distributor, gateway, overrides-exporter, ruler, querier, query-frontend, query-scheduler, nginx, Graphite components, chunks cache, index cache, metadata cache and results cache.
 
 ## 4.4.1
 
@@ -114,7 +148,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## 4.0.0
 
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
-  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
+  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/helm-charts/mimir-distributed/latest/migration-guides/migrate-to-unified-proxy-deployment/)
 * [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
   - If you are **upgrading** an existing installation:
     - Turn off zone-aware replication, by setting the following values:

@@ -4,7 +4,8 @@ This document describes the Mimir release process as well as release shepherd re
 
 ## Release schedule
 
-A new Grafana Mimir release is cut approximately every 6 weeks. The following table contains past releases and tentative dates for upcoming releases:
+A new Grafana Mimir release is cut approximately once every quarter, at the beginning of March, June, September and December.
+The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd   |
 | ------- | ---------- | ------------------ |
@@ -18,7 +19,8 @@ A new Grafana Mimir release is cut approximately every 6 weeks. The following ta
 | 2.7.0   | 2023-03-06 | Vernon Miller      |
 | 2.8.0   | 2023-04-17 | Jon Kartago Lamida |
 | 2.9.0   | 2023-05-29 | Felix Beuke        |
-| 2.10.0  | 2023-07-10 | _To be announced_  |
+| 2.10.0  | 2023-09-06 | Oleg Zaytsev       |
+| 2.11.0  | 2023-12-06 | _To be announced_  |
 
 ## Release shepherd responsibilities
 
@@ -77,6 +79,7 @@ If something is not clear, you can get back to this document to learn more about
     git push -u origin release-<version>
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
+  - [ ] Adjust the settings in the `renovate.json` configuration on the main branch to ensure that dependency updates maintain the latest two minor versions. For instance, if the current release version is 3.0, this means keeping versions 3.0 and the latest minor version from major version 2, such as 2.10.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.

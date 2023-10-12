@@ -25,7 +25,6 @@ var allMetricsInRuleTest = []string{
 	"apiserver_request_duration_seconds_bucket",
 	"apiserver_request_duration_seconds_count",
 	"apiserver_request_total",
-	"container_cpu_usage_seconds_total",
 	"container_memory_cache",
 	"container_memory_rss",
 	"container_memory_swap",

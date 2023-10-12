@@ -12,13 +12,14 @@ import (
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	prometheustranslator "github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
@@ -27,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -42,12 +44,14 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	enableOtelMetadataStorage bool,
+	limits *validation.Overrides,
 	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
 		logger := log.WithContext(ctx, log.Logger)
@@ -76,7 +80,8 @@ func OTLPHandler(
 
 		reader := r.Body
 		// Handle compression.
-		switch r.Header.Get("Content-Encoding") {
+		contentEncoding := r.Header.Get("Content-Encoding")
+		switch contentEncoding {
 		case "gzip":
 			gr, err := gzip.NewReader(reader)
 			if err != nil {
@@ -88,7 +93,7 @@ func OTLPHandler(
 			// No compression.
 
 		default:
-			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
 		}
 
 		// Protect against a large input.
@@ -109,19 +114,106 @@ func OTLPHandler(
 			return body, err
 		}
 
+		log, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
+		defer log.Span.Finish()
+
+		log.SetTag("content_type", contentType)
+		log.SetTag("content_encoding", contentEncoding)
+		log.SetTag("content_length", r.ContentLength)
+
 		otlpReq, err := decoderFunc(body)
 		if err != nil {
 			return body, err
 		}
+
+		level.Debug(log).Log("msg", "decoding complete, starting conversion")
 
 		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
 
+		metricCount := len(metrics)
+		sampleCount := 0
+		histogramCount := 0
+		exemplarCount := 0
+
+		for _, m := range metrics {
+			sampleCount += len(m.Samples)
+			histogramCount += len(m.Histograms)
+			exemplarCount += len(m.Exemplars)
+		}
+
+		level.Debug(log).Log(
+			"msg", "OTLP to Prometheus conversion complete",
+			"metric_count", metricCount,
+			"sample_count", sampleCount,
+			"histogram_count", histogramCount,
+			"exemplar_count", exemplarCount,
+		)
+
 		req.Timeseries = metrics
+
+		if enableOtelMetadataStorage {
+			metadata := otelMetricsToMetadata(otlpReq.Metrics())
+			req.Metadata = metadata
+		}
+
 		return body, nil
 	})
+}
+
+func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMetadata_MetricType {
+	switch otelMetric.Type() {
+	case pmetric.MetricTypeGauge:
+		return mimirpb.GAUGE
+	case pmetric.MetricTypeSum:
+		metricType := mimirpb.GAUGE
+		if otelMetric.Sum().IsMonotonic() {
+			metricType = mimirpb.COUNTER
+		}
+		return metricType
+	case pmetric.MetricTypeHistogram:
+		return mimirpb.HISTOGRAM
+	case pmetric.MetricTypeSummary:
+		return mimirpb.SUMMARY
+	case pmetric.MetricTypeExponentialHistogram:
+		return mimirpb.HISTOGRAM
+	}
+	return mimirpb.UNKNOWN
+}
+
+func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
+	resourceMetricsSlice := md.ResourceMetrics()
+
+	metadataLength := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+
+	var metadata = make([]*mimirpb.MetricMetadata, 0, metadataLength)
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
+				metric := scopeMetrics.Metrics().At(k)
+				entry := mimirpb.MetricMetadata{
+					Type:             otelMetricTypeToMimirMetricType(metric),
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration (https://github.com/grafana/mimir/issues/5967)
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				}
+				metadata = append(metadata, &entry)
+			}
+		}
+	}
+
+	return metadata
+
 }
 
 func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
@@ -242,10 +334,10 @@ func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 }
 
 // TimeseriesToOTLPRequest is used in tests.
-func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportRequest {
+func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for _, ts := range timeseries {
+	for i, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -265,6 +357,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			for _, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
 				datapoint.SetTimestamp(pcommon.Timestamp(sample.Timestamp * time.Millisecond.Nanoseconds()))
@@ -277,6 +373,10 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.ExportR
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
+			if metadata != nil {
+				metric.SetDescription(metadata[i].GetHelp())
+				metric.SetUnit(metadata[i].GetUnit())
+			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for _, histogram := range ts.Histograms {
 				datapoint := metric.ExponentialHistogram().DataPoints().AppendEmpty()

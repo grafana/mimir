@@ -14,11 +14,13 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -28,6 +30,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type blockBaseQuerier struct {
@@ -71,13 +74,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name, matchers...)
+func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames(matchers...)
+func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	res, err := q.index.LabelNames(ctx, matchers...)
 	return res, nil, err
 }
 
@@ -108,12 +111,12 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 	return &blockQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
-	p, err := q.index.PostingsForMatchers(sharded, ms...)
+	p, err := q.index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -151,7 +154,7 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 	return &blockChunkQuerier{blockBaseQuerier: q}, nil
 }
 
-func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
+func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
@@ -161,7 +164,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 		disableTrimming = hints.DisableTrimming
 	}
 	sharded := hints != nil && hints.ShardCount > 0
-	p, err := q.index.PostingsForMatchers(sharded, ms...)
+	p, err := q.index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -176,7 +179,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -186,12 +189,54 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 			labelMustBeSet[m.Name] = true
 		}
 	}
+	isSubtractingMatcher := func(m *labels.Matcher) bool {
+		if !labelMustBeSet[m.Name] {
+			return true
+		}
+		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
+	}
+	hasSubtractingMatchers, hasIntersectingMatchers := false, false
+	for _, m := range ms {
+		if isSubtractingMatcher(m) {
+			hasSubtractingMatchers = true
+		} else {
+			hasIntersectingMatchers = true
+		}
+	}
+
+	if hasSubtractingMatchers && !hasIntersectingMatchers {
+		// If there's nothing to subtract from, add in everything and remove the notIts later.
+		// We prefer to get AllPostings so that the base of subtraction (i.e. allPostings)
+		// doesn't include series that may be added to the index reader during this function call.
+		k, v := index.AllPostingsKey()
+		allPostings, err := ix.Postings(ctx, k, v)
+		if err != nil {
+			return nil, err
+		}
+		its = append(its, allPostings)
+	}
+
+	// Sort matchers to have the intersecting matchers first.
+	// This way the base for subtraction is smaller and
+	// there is no chance that the set we subtract from
+	// contains postings of series that didn't exist when
+	// we constructed the set we subtract by.
+	slices.SortStableFunc(ms, func(i, j *labels.Matcher) int {
+		if !isSubtractingMatcher(i) && isSubtractingMatcher(j) {
+			return -1
+		}
+
+		return +1
+	})
 
 	for _, m := range ms {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		switch {
 		case m.Name == "" && m.Value == "": // Special-case for AllPostings, used in tests at least.
 			k, v := index.AllPostingsKey()
-			allPostings, err := ix.Postings(k, v)
+			allPostings, err := ix.Postings(ctx, k, v)
 			if err != nil {
 				return nil, err
 			}
@@ -209,7 +254,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ix, inverse)
+				it, err := postingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -222,7 +267,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 					return nil, err
 				}
 
-				it, err := inversePostingsForMatcher(ix, inverse)
+				it, err := inversePostingsForMatcher(ctx, ix, inverse)
 				if err != nil {
 					return nil, err
 				}
@@ -232,7 +277,7 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 				its = append(its, it)
 			default: // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ix, m)
+				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
 					return nil, err
 				}
@@ -246,22 +291,12 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 			// the series which don't have the label name set too. See:
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
-			it, err := inversePostingsForMatcher(ix, m)
+			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
 				return nil, err
 			}
 			notIts = append(notIts, it)
 		}
-	}
-
-	// If there's nothing to subtract from, add in everything and remove the notIts later.
-	if len(its) == 0 && len(notIts) != 0 {
-		k, v := index.AllPostingsKey()
-		allPostings, err := ix.Postings(k, v)
-		if err != nil {
-			return nil, err
-		}
-		its = append(its, allPostings)
 	}
 
 	it := index.Intersect(its...)
@@ -273,23 +308,23 @@ func PostingsForMatchers(ix IndexPostingsReader, ms ...*labels.Matcher) (index.P
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
 	if m.Type == labels.MatchEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -305,28 +340,28 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 		return index.EmptyPostings(), nil
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
+func inversePostingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
 	// Fast-path for MatchNotRegexp matching.
 	// Inverse of a MatchNotRegexp is MatchRegexp (double negation).
 	// Fast-path for set matching.
 	if m.Type == labels.MatchNotRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			return ix.Postings(m.Name, setMatches...)
+			return ix.Postings(ctx, m.Name, setMatches...)
 		}
 	}
 
 	// Fast-path for MatchNotEqual matching.
 	// Inverse of a MatchNotEqual is MatchEqual (double negation).
 	if m.Type == labels.MatchNotEqual {
-		return ix.Postings(m.Name, m.Value)
+		return ix.Postings(ctx, m.Name, m.Value)
 	}
 
-	vals, err := ix.LabelValues(m.Name)
+	vals, err := ix.LabelValues(ctx, m.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -343,16 +378,18 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 		}
 	}
 
-	return ix.Postings(m.Name, res...)
+	return ix.Postings(ctx, m.Name, res...)
 }
 
-func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+const maxExpandedPostingsFactor = 100 // Division factor for maximum number of matched series.
+
+func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	allValues, err := r.LabelValues(name)
+	allValues, err := r.LabelValues(ctx, name)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
@@ -376,9 +413,37 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 		allValues = filteredValues
 	}
 
+	// Let's see if expanded postings for matchers have smaller cardinality than label values.
+	// Since computing label values from series is expensive, we apply a limit on number of expanded
+	// postings (and series).
+	maxExpandedPostings := len(allValues) / maxExpandedPostingsFactor
+	if maxExpandedPostings > 0 {
+		// Add space for one extra posting when checking if we expanded all postings.
+		expanded := make([]storage.SeriesRef, 0, maxExpandedPostings+1)
+
+		// Call p.Next() even if len(expanded) == maxExpandedPostings. This tells us if there are more postings or not.
+		for len(expanded) <= maxExpandedPostings && p.Next() {
+			expanded = append(expanded, p.At())
+		}
+
+		if len(expanded) <= maxExpandedPostings {
+			// When we're here, p.Next() must have returned false, so we need to check for errors.
+			if err := p.Err(); err != nil {
+				return nil, errors.Wrap(err, "expanding postings for matchers")
+			}
+
+			// We have expanded all the postings -- all returned label values will be from these series only.
+			// (We supply allValues as a buffer for storing results. It should be big enough already, since it holds all possible label values.)
+			return labelValuesFromSeries(r, name, expanded, allValues)
+		}
+
+		// If we haven't reached end of postings, we prepend our expanded postings to "p", and continue.
+		p = newPrependPostings(expanded, p)
+	}
+
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
-		valuesPostings[i], err = r.Postings(name, value)
+		valuesPostings[i], err = r.Postings(ctx, name, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}
@@ -396,8 +461,89 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
-func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := r.PostingsForMatchers(false, matchers...)
+// labelValuesFromSeries returns all unique label values from for given label name from supplied series. Values are not sorted.
+// buf is space for holding result (if it isn't big enough, it will be ignored), may be nil.
+func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
+	values := map[string]struct{}{}
+
+	var builder labels.ScratchBuilder
+	for _, ref := range refs {
+		err := r.Series(ref, &builder, nil)
+		// Postings may be stale. Skip if no underlying series exists.
+		if errors.Cause(err) == storage.ErrNotFound {
+			continue
+		}
+		if err != nil {
+			return nil, errors.Wrapf(err, "label values for label %s", labelName)
+		}
+
+		v := builder.Labels().Get(labelName)
+		if v != "" {
+			values[v] = struct{}{}
+		}
+	}
+
+	if cap(buf) >= len(values) {
+		buf = buf[:0]
+	} else {
+		buf = make([]string, 0, len(values))
+	}
+	for v := range values {
+		buf = append(buf, v)
+	}
+	return buf, nil
+}
+
+func newPrependPostings(a []storage.SeriesRef, b index.Postings) index.Postings {
+	return &prependPostings{
+		ix:     -1,
+		prefix: a,
+		rest:   b,
+	}
+}
+
+// prependPostings returns series references from "prefix" before using "rest" postings.
+type prependPostings struct {
+	ix     int
+	prefix []storage.SeriesRef
+	rest   index.Postings
+}
+
+func (p *prependPostings) Next() bool {
+	p.ix++
+	if p.ix < len(p.prefix) {
+		return true
+	}
+	return p.rest.Next()
+}
+
+func (p *prependPostings) Seek(v storage.SeriesRef) bool {
+	for p.ix < len(p.prefix) {
+		if p.ix >= 0 && p.prefix[p.ix] >= v {
+			return true
+		}
+		p.ix++
+	}
+
+	return p.rest.Seek(v)
+}
+
+func (p *prependPostings) At() storage.SeriesRef {
+	if p.ix >= 0 && p.ix < len(p.prefix) {
+		return p.prefix[p.ix]
+	}
+	return p.rest.At()
+}
+
+func (p *prependPostings) Err() error {
+	if p.ix >= 0 && p.ix < len(p.prefix) {
+		return nil
+	}
+	return p.rest.Err()
+}
+
+func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +556,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
 	}
 
-	return r.LabelNamesFor(postings...)
+	return r.LabelNamesFor(ctx, postings...)
 }
 
 // seriesData, used inside other iterators, are updated when we move from one series to another.
@@ -530,7 +676,7 @@ func (b *blockBaseSeriesSet) Err() error {
 	return b.p.Err()
 }
 
-func (b *blockBaseSeriesSet) Warnings() storage.Warnings { return nil }
+func (b *blockBaseSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // populateWithDelGenericSeriesIterator allows to iterate over given chunk
 // metas. In each iteration it ensures that chunks are trimmed based on given
@@ -564,7 +710,7 @@ func (p *populateWithDelGenericSeriesIterator) reset(blockID ulid.ULID, cr Chunk
 	p.chks = chks
 	p.i = -1
 	p.err = nil
-	p.bufIter.Iter = nil
+	// Note we don't touch p.bufIter.Iter; it is holding on to an iterator we might reuse in next().
 	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	p.intervals = intervals
 	p.currDelIter = nil
@@ -647,6 +793,10 @@ func (s *chunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator {
 	}
 	pi.reset(s.blockID, s.chunks, s.chks, s.intervals)
 	return pi
+}
+
+func (s *chunkSeriesEntry) ChunkCount() (int, error) {
+	return len(s.chks), nil
 }
 
 // populateWithDelSeriesIterator allows to iterate over samples for the single series.
@@ -763,74 +913,17 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			break
 		}
 
-		switch hc := p.currChkMeta.Chunk.(type) {
-		case *chunkenc.HistogramChunk:
-			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
-		case *safeHeadChunk:
-			if unwrapped, ok := hc.Chunk.(*chunkenc.HistogramChunk); ok {
-				newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
-			} else {
-				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to histogram chunk: %T", hc.Chunk)
-			}
-		default:
-			err = fmt.Errorf("internal error, unknown chunk type %T when expecting histogram", p.currChkMeta.Chunk)
-		}
-		if err != nil {
-			break
-		}
-
-		var h *histogram.Histogram
-		t, h = p.currDelIter.AtHistogram()
-		p.curr.MinTime = t
-
-		// Detect missing gauge reset hint.
-		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.HistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
-			err = fmt.Errorf("found gauge histogram in non gauge chunk")
-			break
-		}
-
-		app.AppendHistogram(t, h)
-
-		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
 				break
 			}
+			var h *histogram.Histogram
 			t, h = p.currDelIter.AtHistogram()
-
-			// Defend against corrupted chunks.
-			if h.CounterResetHint == histogram.GaugeType {
-				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.HistogramAppender).AppendableGauge(h)
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
-					break
-				}
-				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
-					err = fmt.Errorf(
-						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
-						len(pI), len(nI), len(bpI), len(bnI),
-					)
-					break
-				}
-			} else {
-				pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
-				if len(pI)+len(nI) > 0 {
-					err = fmt.Errorf(
-						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
-						len(pI), len(nI),
-					)
-					break
-				}
-				if counterReset {
-					err = errors.New("detected unexpected counter reset in histogram")
-					break
-				}
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
-					break
-				}
+			_, _, app, err = app.AppendHistogram(nil, t, h, true)
+			if err != nil {
+				break
 			}
-			app.AppendHistogram(t, h)
 		}
 	case chunkenc.ValFloat:
 		newChunk = chunkenc.NewXORChunk()
@@ -855,75 +948,17 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			break
 		}
 
-		switch hc := p.currChkMeta.Chunk.(type) {
-		case *chunkenc.FloatHistogramChunk:
-			newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
-		case *safeHeadChunk:
-			if unwrapped, ok := hc.Chunk.(*chunkenc.FloatHistogramChunk); ok {
-				newChunk.(*chunkenc.FloatHistogramChunk).SetCounterResetHeader(unwrapped.GetCounterResetHeader())
-			} else {
-				err = fmt.Errorf("internal error, could not unwrap safeHeadChunk to float histogram chunk: %T", hc.Chunk)
-			}
-		default:
-			err = fmt.Errorf("internal error, unknown chunk type %T when expecting float histogram", p.currChkMeta.Chunk)
-		}
-		if err != nil {
-			break
-		}
-
-		var h *histogram.FloatHistogram
-		t, h = p.currDelIter.AtFloatHistogram()
-		p.curr.MinTime = t
-
-		// Detect missing gauge reset hint.
-		if h.CounterResetHint == histogram.GaugeType && newChunk.(*chunkenc.FloatHistogramChunk).GetCounterResetHeader() != chunkenc.GaugeType {
-			err = fmt.Errorf("found float gauge histogram in non gauge chunk")
-			break
-		}
-
-		app.AppendFloatHistogram(t, h)
-
-		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+		for vt := valueType; vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloatHistogram {
 				err = fmt.Errorf("found value type %v in histogram chunk", vt)
 				break
 			}
+			var h *histogram.FloatHistogram
 			t, h = p.currDelIter.AtFloatHistogram()
-
-			// Defend against corrupted chunks.
-			if h.CounterResetHint == histogram.GaugeType {
-				pI, nI, bpI, bnI, _, _, okToAppend := app.(*chunkenc.FloatHistogramAppender).AppendableGauge(h)
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
-					break
-				}
-				if len(pI)+len(nI)+len(bpI)+len(bnI) > 0 {
-					err = fmt.Errorf(
-						"bucket layout has changed unexpectedly: forward %d positive, %d negative, backward %d positive %d negative bucket interjections required",
-						len(pI), len(nI), len(bpI), len(bnI),
-					)
-					break
-				}
-			} else {
-				pI, nI, okToAppend, counterReset := app.(*chunkenc.FloatHistogramAppender).Appendable(h)
-				if len(pI)+len(nI) > 0 {
-					err = fmt.Errorf(
-						"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
-						len(pI), len(nI),
-					)
-					break
-				}
-				if counterReset {
-					err = errors.New("detected unexpected counter reset in histogram")
-					break
-				}
-				if !okToAppend {
-					err = errors.New("unable to append histogram due to unexpected schema change")
-					break
-				}
+			_, _, app, err = app.AppendFloatHistogram(nil, t, h, true)
+			if err != nil {
+				break
 			}
-
-			app.AppendFloatHistogram(t, h)
 		}
 	default:
 		err = fmt.Errorf("populateWithDelChunkSeriesIterator: value type %v unsupported", valueType)

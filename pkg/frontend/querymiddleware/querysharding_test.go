@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,18 +32,16 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
-	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -94,18 +94,18 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		for j := 0; j < len(a.Samples); j++ {
 			expected := a.Samples[j]
 			actual := b.Samples[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Value, actual.Value, j, a.Labels, "sample", 1e-12)
 		}
 
 		for j := 0; j < len(a.Histograms); j++ {
 			expected := a.Histograms[j]
 			actual := b.Histograms[j]
-			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram")
+			compareExpectedAndActual(t, expected.TimestampMs, actual.TimestampMs, expected.Histogram.Sum, actual.Histogram.Sum, j, a.Labels, "histogram", 1e-12)
 		}
 	}
 }
 
-func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string) {
+func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
 	require.Equalf(t, expectedTs, actualTs, "%s timestamp at position %d for series %s", sampleType, j, labels)
 
 	if value.IsStaleNaN(expectedVal) {
@@ -119,7 +119,7 @@ func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expected
 		}
 		// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
 		// The relative error is calculated using: abs(actual-expected) / abs(expected)
-		require.InEpsilonf(t, expectedVal, actualVal, 1e-12, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+		require.InEpsilonf(t, expectedVal, actualVal, tolerance, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
 	}
 }
 
@@ -181,6 +181,18 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"sum(rate()) with no effective grouping because all groups have 1 series": {
 			query:                  `sum by(unique) (rate(metric_counter{group_1="0"}[1m]))`,
+			expectedShardedQueries: 1,
+		},
+		`group by (group_1) (metric_counter)`: {
+			query:                  `group by (group_1) (metric_counter)`,
+			expectedShardedQueries: 1,
+		},
+		`group by (group_1) (group by (group_1, group_2) (metric_counter))`: {
+			query:                  `group by (group_1) (group by (group_1, group_2) (metric_counter))`,
+			expectedShardedQueries: 1,
+		},
+		`count by (group_1) (group by (group_1, group_2) (metric_counter))`: {
+			query:                  `count by (group_1) (group by (group_1, group_2) (metric_counter))`,
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping only 'by' le": {
@@ -456,7 +468,7 @@ func TestQuerySharding_Correctness(t *testing.T) {
 			query:                  `scalar(metric_counter{unique="1"})`, // Select a single metric.
 			expectedShardedQueries: 0,
 		},
-		"histogram_quantile() no grouping": {
+		"histogram_quantile no grouping": {
 			query:                  fmt.Sprintf(`histogram_quantile(0.99, metric_histogram_bucket{unique="%d"})`, numSeries+10), // Select a single histogram metric.
 			expectedShardedQueries: 0,
 		},
@@ -580,6 +592,22 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		`histogram_fraction(0, 0.5, sum(metric_native_histogram))`: {
 			query:                  `histogram_fraction(0, 0.5, sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_stdvar`: {
+			query:                  `histogram_stdvar(metric_native_histogram)`,
+			expectedShardedQueries: 0,
+		},
+		`histogram_stdvar on sum of metrics`: {
+			query:                  `histogram_stdvar(sum(metric_native_histogram))`,
+			expectedShardedQueries: 1,
+		},
+		`histogram_stddev`: {
+			query:                  `histogram_stddev(metric_native_histogram)`,
+			expectedShardedQueries: 0,
+		},
+		`histogram_stddev on sum of metrics`: {
+			query:                  `histogram_stddev(sum(metric_native_histogram))`,
 			expectedShardedQueries: 1,
 		},
 	}
@@ -933,6 +961,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "histogram_sum"},
 		{fn: "histogram_fraction", tpl: `(<fn>(0,0.5,bar1{}))`},
 		{fn: "histogram_quantile", tpl: `(<fn>(0.5,bar1{}))`},
+		{fn: "histogram_stdvar"},
+		{fn: "histogram_stddev"},
 	}
 	queryableFloats := storageSeriesQueryable([]*promql.StorageSeries{
 		newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
@@ -1405,10 +1435,10 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
-		queryableInternalErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		queryableInternalErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError, Body: []byte("fatal queryable error")})
 		})
-		queryablePrometheusExecErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		queryablePrometheusExecErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
@@ -1522,7 +1552,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
 	}
 
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 
@@ -1960,7 +1990,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 }
 
 func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	return storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return &querierMock{series: series}, nil
 	})
 }
@@ -1969,7 +1999,7 @@ type querierMock struct {
 	series []*promql.StorageSeries
 }
 
-func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m *querierMock) Select(_ context.Context, sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -1997,11 +2027,11 @@ func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*l
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *querierMock) LabelValues(_ string, _ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(_ ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
@@ -2081,7 +2111,24 @@ func newSeriesInner(metric labels.Labels, from, to time.Time, step time.Duration
 }
 
 func generateTestHistogram(v float64) *histogram.FloatHistogram {
-	h := util_test.GenerateTestFloatHistogram(int(v))
+	//based on util_test.GenerateTestFloatHistogram(int(v)) but without converting to int
+	h := &histogram.FloatHistogram{
+		Count:         10 + (v * 8),
+		ZeroCount:     2 + v,
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * (v + 1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []float64{v + 1, v + 2, v + 1, v + 1},
+	}
 	if value.IsStaleNaN(v) {
 		h.Sum = v
 	}
@@ -2194,7 +2241,7 @@ func (i *seriesIteratorMock) Err() error {
 	return nil
 }
 
-func (i *seriesIteratorMock) Warnings() storage.Warnings {
+func (i *seriesIteratorMock) Warnings() annotations.Annotations {
 	return nil
 }
 

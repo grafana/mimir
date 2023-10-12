@@ -42,7 +42,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}{
 		"empty series": {
 			series:         &storepb.Series{},
-			expectedMetric: labels.Labels(nil),
+			expectedMetric: labels.EmptyLabels(),
 			expectedErr:    "no chunks",
 		},
 		"should return float series on success": {
@@ -120,7 +120,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
-			assert.Equal(t, testData.expectedMetric, series.Labels())
+			assert.True(t, labels.Equal(testData.expectedMetric, series.Labels()))
 
 			sampleIx := int64(0)
 
@@ -158,8 +158,10 @@ func mockTSDBHistogramChunkData(t *testing.T) []byte {
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
 
-	appender.AppendHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1))
-	appender.AppendHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2))
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestHistogram(2), true)
+	require.NoError(t, err)
 
 	return chunk.Bytes()
 }
@@ -169,8 +171,10 @@ func mockTSDBFloatHistogramChunkData(t *testing.T) []byte {
 	appender, err := chunk.Appender()
 	require.NoError(t, err)
 
-	appender.AppendFloatHistogram(time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1))
-	appender.AppendFloatHistogram(time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2))
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(1, 0).Unix()*1000, test.GenerateTestFloatHistogram(1), true)
+	require.NoError(t, err)
+	_, _, _, err = appender.AppendFloatHistogram(nil, time.Unix(2, 0).Unix()*1000, test.GenerateTestFloatHistogram(2), true)
+	require.NoError(t, err)
 
 	return chunk.Bytes()
 }

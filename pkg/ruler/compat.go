@@ -13,6 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -23,8 +25,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
@@ -43,15 +43,15 @@ type PusherAppender struct {
 
 	ctx             context.Context
 	pusher          Pusher
-	labels          []labels.Labels
+	labels          [][]mimirpb.LabelAdapter
 	samples         []mimirpb.Sample
-	histogramLabels []labels.Labels
+	histogramLabels [][]mimirpb.LabelAdapter
 	histograms      []mimirpb.Histogram
 	userID          string
 }
 
 func (a *PusherAppender) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	a.labels = append(a.labels, l)
+	a.labels = append(a.labels, mimirpb.FromLabelsToLabelAdapters(l))
 	a.samples = append(a.samples, mimirpb.Sample{
 		TimestampMs: t,
 		Value:       v,
@@ -68,7 +68,7 @@ func (a *PusherAppender) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ 
 }
 
 func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	a.histogramLabels = append(a.histogramLabels, l)
+	a.histogramLabels = append(a.histogramLabels, mimirpb.FromLabelsToLabelAdapters(l))
 	var hp mimirpb.Histogram
 	if h != nil {
 		hp = mimirpb.FromHistogramToHistogramProto(t, h)
@@ -184,8 +184,8 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 	}
 }
 
-func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Counter, logger log.Logger) rules.QueryFunc {
-	if queryTime == nil {
+func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, logger log.Logger) rules.QueryFunc {
+	if queryTime == nil || zeroFetchedSeriesCount == nil {
 		return qf
 	}
 
@@ -196,6 +196,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 		stats, ctx := querier_stats.ContextWithEmptyStats(ctx)
 		// If we've been passed a counter we want to record the wall time spent executing this request.
 		timer := prometheus.NewTimer(nil)
+		var err error
 		defer func() {
 			// Update stats wall time based on the timer created above.
 			stats.AddWallTime(timer.ObserveDuration())
@@ -207,6 +208,9 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 			shardedQueries := stats.LoadShardedQueries()
 
 			queryTime.Add(wallTime.Seconds())
+			if err == nil && numSeries == 0 { // Do not count queries with errors for zero fetched series.
+				zeroFetchedSeriesCount.Add(1)
+			}
 
 			// Log ruler query stats.
 			logMessage := []interface{}{
@@ -271,21 +275,28 @@ func DefaultTenantManagerFactory(
 		Help: "Number of failed queries by ruler.",
 	})
 	var rulerQuerySeconds *prometheus.CounterVec
+	var zeroFetchedSeriesQueries *prometheus.CounterVec
 	if cfg.EnableQueryStats {
 		rulerQuerySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_query_seconds_total",
 			Help: "Total amount of wall clock time spent processing queries by the ruler.",
 		}, []string{"user"})
+		zeroFetchedSeriesQueries = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_queries_zero_fetched_series_total",
+			Help: "Number of queries that did not fetch any series by ruler.",
+		}, []string{"user"})
 	}
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter
+		var zeroFetchedSeriesCount prometheus.Counter
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
+			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
 		var wrappedQueryFunc rules.QueryFunc
 
 		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
-		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
+		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
@@ -295,7 +306,7 @@ func DefaultTenantManagerFactory(
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 rules.SendAlerts(notifier, cfg.ExternalURL.String()),
-			Logger:                     log.With(logger, "user", userID),
+			Logger:                     log.With(logger, "component", "ruler", "insight", true, "user", userID),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,

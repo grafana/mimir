@@ -53,6 +53,7 @@ var overrides = map[string]Category{
 	"server.grpc.keepalive.ping-without-stream-allowed": Advanced,
 	"server.grpc.keepalive.time":                        Advanced,
 	"server.grpc.keepalive.timeout":                     Advanced,
+	"server.grpc.num-workers":                           Experimental,
 	"server.http-conn-limit":                            Advanced,
 	"server.http-idle-timeout":                          Advanced,
 	"server.http-listen-network":                        Advanced,
@@ -68,6 +69,10 @@ var overrides = map[string]Category{
 	"server.path-prefix":                                Advanced,
 	"server.register-instrumentation":                   Advanced,
 	"server.log-request-at-info-level-enabled":          Advanced,
+
+	// main.go global flags
+	"config.file":       Basic,
+	"config.expand-env": Basic,
 }
 
 func AddOverrides(o map[string]Category) {

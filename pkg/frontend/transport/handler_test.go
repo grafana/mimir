@@ -21,14 +21,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -155,7 +155,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			_, _ = io.ReadAll(resp.Body)
+			responseData, _ := io.ReadAll(resp.Body)
 			require.Equal(t, resp.Code, http.StatusOK)
 
 			count, err := promtest.GatherAndCount(
@@ -178,7 +178,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 17+len(tt.expectedParams))
+				require.Len(t, msg, 18+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -188,6 +188,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, req.URL.Path, msg["path"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
+				require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
 				require.EqualValues(t, 0, msg["fetched_chunk_bytes"])

@@ -146,6 +146,17 @@ func (m Meta) Write(w io.Writer) error {
 	return enc.Encode(&m)
 }
 
+// BlockBytes calculates the size of all files in the block.
+func (m Meta) BlockBytes() int64 {
+	var b int64
+	for _, f := range m.Thanos.Files {
+		if f.SizeBytes > 0 {
+			b += f.SizeBytes
+		}
+	}
+	return b
+}
+
 func renameFile(logger log.Logger, from, to string) error {
 	if err := os.RemoveAll(to); err != nil {
 		return err

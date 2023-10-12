@@ -23,7 +23,6 @@ import (
 	"math"
 	"net/http"
 	"reflect"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -35,6 +34,7 @@ import (
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -242,8 +242,9 @@ type scrapePool struct {
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
-	activeTargets  map[uint64]*Target
-	droppedTargets []*Target
+	activeTargets       map[uint64]*Target
+	droppedTargets      []*Target // Subject to KeepDroppedTargets limit.
+	droppedTargetsCount int       // Count of all dropped targets.
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -279,7 +280,7 @@ const maxAheadTime = 10 * time.Minute
 // returning an empty label set is interpreted as "drop"
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed uint64, logger log.Logger, options *Options) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -325,7 +326,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
-			jitterSeed,
+			offsetSeed,
 			opts.honorTimestamps,
 			opts.sampleLimit,
 			opts.bucketLimit,
@@ -354,10 +355,17 @@ func (sp *scrapePool) ActiveTargets() []*Target {
 	return tActive
 }
 
+// Return dropped targets, subject to KeepDroppedTargets limit.
 func (sp *scrapePool) DroppedTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
 	return sp.droppedTargets
+}
+
+func (sp *scrapePool) DroppedTargetsCount() int {
+	sp.targetMtx.Lock()
+	defer sp.targetMtx.Unlock()
+	return sp.droppedTargetsCount
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -506,6 +514,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	var targets []*Target
 	lb := labels.NewBuilder(labels.EmptyLabels())
 	sp.droppedTargets = []*Target{}
+	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
 		targets, failures := TargetsFromGroup(tg, sp.config, sp.noDefaultPort, targets, lb)
 		for _, err := range failures {
@@ -520,7 +529,10 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 			case nonEmpty:
 				all = append(all, t)
 			case !t.discoveredLabels.IsEmpty():
-				sp.droppedTargets = append(sp.droppedTargets, t)
+				if sp.config.KeepDroppedTargets == 0 || uint(len(sp.droppedTargets)) < sp.config.KeepDroppedTargets {
+					sp.droppedTargets = append(sp.droppedTargets, t)
+				}
+				sp.droppedTargetsCount++
 			}
 		}
 	}
@@ -720,8 +732,8 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 }
 
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
-	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
-		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) int {
+		return len(a.Name) - len(b.Name)
 	})
 
 	for _, l := range conflictingExposedLabels {
@@ -773,9 +785,10 @@ func appender(app storage.Appender, sampleLimit, bucketLimit int) storage.Append
 
 // A scraper retrieves samples and accepts a status report at the end.
 type scraper interface {
-	scrape(ctx context.Context, w io.Writer) (string, error)
+	scrape(ctx context.Context) (*http.Response, error)
+	readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error)
 	Report(start time.Time, dur time.Duration, err error)
-	offset(interval time.Duration, jitterSeed uint64) time.Duration
+	offset(interval time.Duration, offsetSeed uint64) time.Duration
 }
 
 // targetScraper implements the scraper interface for a target.
@@ -802,11 +815,11 @@ const (
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
+func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	if s.req == nil {
 		req, err := http.NewRequest("GET", s.URL().String(), nil)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		req.Header.Add("Accept", s.acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
@@ -816,10 +829,10 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		s.req = req
 	}
 
-	resp, err := s.client.Do(s.req.WithContext(ctx))
-	if err != nil {
-		return "", err
-	}
+	return s.client.Do(s.req.WithContext(ctx))
+}
+
+func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
@@ -846,13 +859,14 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 	if s.gzipr == nil {
 		s.buf = bufio.NewReader(resp.Body)
+		var err error
 		s.gzipr, err = gzip.NewReader(s.buf)
 		if err != nil {
 			return "", err
 		}
 	} else {
 		s.buf.Reset(resp.Body)
-		if err = s.gzipr.Reset(s.buf); err != nil {
+		if err := s.gzipr.Reset(s.buf); err != nil {
 			return "", err
 		}
 	}
@@ -891,7 +905,7 @@ type scrapeLoop struct {
 	cache                   *scrapeCache
 	lastScrapeSize          int
 	buffers                 *pool.Pool
-	jitterSeed              uint64
+	offsetSeed              uint64
 	honorTimestamps         bool
 	forcedErr               error
 	forcedErrMtx            sync.Mutex
@@ -1175,7 +1189,7 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
-	jitterSeed uint64,
+	offsetSeed uint64,
 	honorTimestamps bool,
 	sampleLimit int,
 	bucketLimit int,
@@ -1217,7 +1231,7 @@ func newScrapeLoop(ctx context.Context,
 		sampleMutator:           sampleMutator,
 		reportSampleMutator:     reportSampleMutator,
 		stopped:                 make(chan struct{}),
-		jitterSeed:              jitterSeed,
+		offsetSeed:              offsetSeed,
 		l:                       l,
 		parentCtx:               ctx,
 		appenderCtx:             appenderCtx,
@@ -1238,7 +1252,7 @@ func newScrapeLoop(ctx context.Context,
 
 func (sl *scrapeLoop) run(errc chan<- error) {
 	select {
-	case <-time.After(sl.scraper.offset(sl.interval, sl.jitterSeed)):
+	case <-time.After(sl.scraper.offset(sl.interval, sl.offsetSeed)):
 		// Continue after a scraping offset.
 	case <-sl.ctx.Done():
 		close(sl.stopped)
@@ -1314,11 +1328,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		)
 	}
 
-	b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
-	defer sl.buffers.Put(b)
-	buf := bytes.NewBuffer(b)
-
-	var total, added, seriesAdded, bytes int
+	var total, added, seriesAdded, bytesRead int
 	var err, appErr, scrapeErr error
 
 	app := sl.appender(sl.appenderCtx)
@@ -1334,7 +1344,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytes, scrapeErr); err != nil {
+		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, bytesRead, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1355,8 +1365,17 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}
 
 	var contentType string
+	var resp *http.Response
+	var b []byte
+	var buf *bytes.Buffer
 	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
-	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
+	resp, scrapeErr = sl.scraper.scrape(scrapeCtx)
+	if scrapeErr == nil {
+		b = sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		defer sl.buffers.Put(b)
+		buf = bytes.NewBuffer(b)
+		contentType, scrapeErr = sl.scraper.readResponse(scrapeCtx, resp, buf)
+	}
 	cancel()
 
 	if scrapeErr == nil {
@@ -1367,14 +1386,14 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		if len(b) > 0 {
 			sl.lastScrapeSize = len(b)
 		}
-		bytes = len(b)
+		bytesRead = len(b)
 	} else {
 		level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr)
 		if errc != nil {
 			errc <- scrapeErr
 		}
 		if errors.Is(scrapeErr, errBodySizeLimit) {
-			bytes = -1
+			bytesRead = -1
 		}
 	}
 
@@ -1513,6 +1532,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs         = appendErrors{}
 		sampleLimitErr  error
 		bucketLimitErr  error
+		lset            labels.Labels     // escapes to heap so hoisted out of loop
 		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
 		meta            metadata.Metadata
 		metadataChanged bool
@@ -1610,7 +1630,6 @@ loop:
 		ce, ok := sl.cache.get(met)
 		var (
 			ref  storage.SeriesRef
-			lset labels.Labels
 			hash uint64
 		)
 
@@ -1685,7 +1704,7 @@ loop:
 		// number of samples remaining after relabeling.
 		added++
 
-		if hasExemplar := p.Exemplar(&e); hasExemplar {
+		for hasExemplar := p.Exemplar(&e); hasExemplar; hasExemplar = p.Exemplar(&e) {
 			if !e.HasTs {
 				e.Ts = t
 			}

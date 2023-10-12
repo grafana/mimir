@@ -99,10 +99,15 @@ data:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.small-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
       rule_path: /data
+    ruler_storage:
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dns+small-values-mimir-metadata-cache.citestns.svc:11211
+          max_item_size: 1048576
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m

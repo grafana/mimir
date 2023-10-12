@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -29,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -120,8 +117,8 @@ func (b symbolizedSeriesChunkRefsSet) release() {
 }
 
 type symbolizedSeriesChunkRefs struct {
-	lset         []symbolizedLabel
-	chunksRanges []seriesChunkRefsRange
+	lset []symbolizedLabel
+	refs []seriesChunkRef
 }
 
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
@@ -166,76 +163,44 @@ func (b seriesChunkRefsSet) release() {
 
 // seriesChunkRefs holds a series with a list of chunk references.
 type seriesChunkRefs struct {
-	lset         labels.Labels
-	chunksRanges []seriesChunkRefsRange
-}
-
-func (s seriesChunkRefs) numChunks() (n int) {
-	for _, r := range s.chunksRanges {
-		n += len(r.refs)
-	}
-	return
-}
-
-// seriesChunkRefsRange contains chunks from the same block and the same segment file. They are ordered by their minTime
-type seriesChunkRefsRange struct {
-	blockID     ulid.ULID
-	segmentFile uint32
-	refs        []seriesChunkRef
-}
-
-func (g seriesChunkRefsRange) firstRef() chunks.ChunkRef {
-	if len(g.refs) == 0 {
-		return 0
-	}
-	return chunkRef(g.segmentFile, g.refs[0].segFileOffset)
-}
-
-func (g seriesChunkRefsRange) minTime() int64 {
-	if len(g.refs) == 0 {
-		return 0
-	}
-	// Since chunks in the groups are ordered by minTime, then we can just take the minTime of the first one.
-	return g.refs[0].minTime
-}
-
-func (g seriesChunkRefsRange) maxTime() int64 {
-	// Since chunks are only ordered by minTime, we have no guarantee for their maxTime, so we need to iterate all.
-	maxT := int64(math.MinInt64)
-	for _, c := range g.refs {
-		if c.maxTime > maxT {
-			maxT = c.maxTime
-		}
-	}
-	return maxT
-}
-
-func (g seriesChunkRefsRange) Compare(other seriesChunkRefsRange) int {
-	if g.minTime() < other.minTime() {
-		return -1
-	}
-	if g.minTime() > other.minTime() {
-		return 1
-	}
-	// Same min time.
-
-	if g.maxTime() < other.maxTime() {
-		return -1
-	}
-	if g.maxTime() > other.maxTime() {
-		return 1
-	}
-	return 0
+	lset labels.Labels
+	refs []seriesChunkRef
 }
 
 // seriesChunkRef holds the reference to a chunk in a given block.
 type seriesChunkRef struct {
-	// The order of these fields matters; having the uint32 on top makes the whole struct 24 bytes; in a different order the struct is 32B
+	blockID     ulid.ULID
+	segmentFile uint32
+	// The order of these fields matters; having the uint32 on top allows to pack together the two uint32 fields
 	segFileOffset uint32
 	// length will be 0 when the length of the chunk isn't known
 	length uint32
 	// minTime and maxTime are inclusive
 	minTime, maxTime int64
+}
+
+// Compare returns > 0 if r should be before other when sorting seriesChunkRef,
+// 0 if they're equal or < 0 if r should be after other.
+func (r seriesChunkRef) Compare(other seriesChunkRef) int {
+	if r.minTime < other.minTime {
+		return 1
+	}
+	if r.minTime > other.minTime {
+		return -1
+	}
+
+	// Same min time.
+	if r.maxTime < other.maxTime {
+		return 1
+	}
+	if r.maxTime > other.maxTime {
+		return -1
+	}
+	return 0
+}
+
+func (r seriesChunkRef) ref() chunks.ChunkRef {
+	return chunkRef(r.segmentFile, r.segFileOffset)
 }
 
 // seriesChunkRefsIteratorImpl implements an iterator returning a sequence of seriesChunkRefs.
@@ -469,7 +434,7 @@ func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRe
 }
 
 // nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
-// label set, nextUniqueEntry merges their chunks ranges. The merged ranges are sorted by their MinTime and then by MaxTime.
+// label set, nextUniqueEntry merges their chunks refs. The merged refs are sorted by their MinTime and then by MaxTime.
 func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIteratorImpl) (toReturn seriesChunkRefs, _ bool) {
 	if a.Done() && b.Done() {
 		return toReturn, false
@@ -484,9 +449,9 @@ func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator
 	}
 
 	aAt := a.At()
-	lsetA, chksA := aAt.lset, aAt.chunksRanges
+	lsetA, chksA := aAt.lset, aAt.refs
 	bAt := b.At()
-	lsetB, chksB := bAt.lset, bAt.chunksRanges
+	lsetB, chksB := bAt.lset, bAt.refs
 
 	if d := labels.Compare(lsetA, lsetB); d > 0 {
 		toReturn = b.At()
@@ -498,15 +463,15 @@ func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator
 		return toReturn, true
 	}
 
-	// Both a and b contains the same series. Go through all chunk ranges and concatenate them from both
-	// series sets. We best effortly assume chunk ranges are sorted by min time. This means that
-	// if the ranges overlap, then the resulting chunks will not be in min time order.
+	// Both a and b contains the same series. Go through all chunk refs and concatenate them from both
+	// series sets. We best effortly assume chunk refs are sorted by min time. This means that
+	// if the chunks overlap, then the resulting chunks will not be in min time order.
 	// This is ok since the series API doesn't require us to return sorted chunks.
 	toReturn.lset = lsetA
 
 	// Slice reuse is not generally safe with nested merge iterators.
 	// We err on the safe side and create a new slice.
-	toReturn.chunksRanges = make([]seriesChunkRefsRange, 0, len(chksA)+len(chksB))
+	toReturn.refs = make([]seriesChunkRef, 0, len(chksA)+len(chksB))
 
 	bChunksOffset := 0
 Outer:
@@ -514,22 +479,22 @@ Outer:
 		for {
 			if bChunksOffset >= len(chksB) {
 				// No more b chunks.
-				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset:]...)
+				toReturn.refs = append(toReturn.refs, chksA[aChunksOffset:]...)
 				break Outer
 			}
 
-			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) < 0 {
-				toReturn.chunksRanges = append(toReturn.chunksRanges, chksA[aChunksOffset])
+			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
+				toReturn.refs = append(toReturn.refs, chksA[aChunksOffset])
 				break
 			}
 
-			toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset])
+			toReturn.refs = append(toReturn.refs, chksB[bChunksOffset])
 			bChunksOffset++
 		}
 	}
 
 	if bChunksOffset < len(chksB) {
-		toReturn.chunksRanges = append(toReturn.chunksRanges, chksB[bChunksOffset:]...)
+		toReturn.refs = append(toReturn.refs, chksB[bChunksOffset:]...)
 	}
 
 	a.Next()
@@ -640,7 +605,7 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 
 		if labels.Equal(nextSet.series[i].lset, nextSeries.lset) {
 			// We don't need to ensure that chunks are in any particular order. The querier will sort the chunks for a single series.
-			nextSet.series[i].chunksRanges = append(nextSet.series[i].chunksRanges, nextSeries.chunksRanges...)
+			nextSet.series[i].refs = append(nextSet.series[i].refs, nextSeries.refs...)
 		} else {
 			i++
 			if i >= s.batchSize {
@@ -690,9 +655,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 
 	var totalChunks int
 	for _, s := range l.currentBatch.series {
-		for _, r := range s.chunksRanges {
-			totalChunks += len(r.refs)
-		}
+		totalChunks += len(s.refs)
 	}
 
 	err = l.chunksLimiter.Reserve(uint64(totalChunks))
@@ -712,19 +675,18 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 }
 
 type loadingSeriesChunkRefsSetIterator struct {
-	ctx                  context.Context
-	postingsSetIterator  *postingsSetsIterator
-	indexr               *bucketIndexReader
-	indexCache           indexcache.IndexCache
-	stats                *safeQueryStats
-	blockID              ulid.ULID
-	shard                *sharding.ShardSelector
-	seriesHasher         seriesHasher
-	skipChunks           bool
-	minTime, maxTime     int64
-	tenantID             string
-	chunkRangesPerSeries int
-	logger               log.Logger
+	ctx                 context.Context
+	postingsSetIterator *postingsSetsIterator
+	indexr              *bucketIndexReader
+	indexCache          indexcache.IndexCache
+	stats               *safeQueryStats
+	blockID             ulid.ULID
+	shard               *sharding.ShardSelector
+	seriesHasher        seriesHasher
+	strategy            seriesIteratorStrategy
+	minTime, maxTime    int64
+	tenantID            string
+	logger              log.Logger
 
 	chunkMetasBuffer []chunks.Meta
 
@@ -742,19 +704,35 @@ func openBlockSeriesChunkRefsSetsIterator(
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher,
-	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	strategy seriesIteratorStrategy,
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	chunkRangesPerSeries int,
 	stats *safeQueryStats,
+	reuse *reusedPostingsAndMatchers, // If this is not nil, these posting and matchers are used as it is without fetching new ones.
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
 
-	ps, pendingMatchers, err := indexr.ExpandedPostings(ctx, matchers, stats)
-	if err != nil {
-		return nil, errors.Wrap(err, "expanded matching postings")
+	var (
+		ps              []storage.SeriesRef
+		pendingMatchers []*labels.Matcher
+		fetchPostings   = true
+	)
+	if reuse != nil {
+		fetchPostings = !reuse.isSet()
+		ps = reuse.ps
+		pendingMatchers = reuse.matchers
+	}
+	if fetchPostings {
+		var err error
+		ps, pendingMatchers, err = indexr.ExpandedPostings(ctx, matchers, stats)
+		if err != nil {
+			return nil, errors.Wrap(err, "expanded matching postings")
+		}
+		if reuse != nil {
+			reuse.set(ps, pendingMatchers)
+		}
 	}
 
 	var iterator seriesChunkRefsSetIterator
@@ -767,11 +745,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 		blockMeta,
 		shard,
 		seriesHasher,
-		skipChunks,
+		strategy,
 		minTime,
 		maxTime,
 		tenantID,
-		chunkRangesPerSeries,
 		logger,
 	)
 	if len(pendingMatchers) > 0 {
@@ -779,6 +756,31 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+}
+
+// reusedPostings is used to share the postings and matches across function calls for re-use
+// in case of streaming series. We have it as a separate struct so that we can give a safe way
+// to use it by making a copy where required. You can use it to put items only once.
+type reusedPostingsAndMatchers struct {
+	ps       []storage.SeriesRef
+	matchers []*labels.Matcher
+	filled   bool
+}
+
+func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labels.Matcher) {
+	if p.filled {
+		// We already have something here.
+		return
+	}
+	// Postings list can be modified later, so we make a copy here.
+	p.ps = make([]storage.SeriesRef, len(ps))
+	copy(p.ps, ps)
+	p.matchers = matchers
+	p.filled = true
+}
+
+func (p *reusedPostingsAndMatchers) isSet() bool {
+	return p.filled
 }
 
 // seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
@@ -790,6 +792,43 @@ func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterato
 	})
 }
 
+// seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.
+// See below for available options.
+type seriesIteratorStrategy byte
+
+const (
+	// By default, the strategy is to fetch series labels AND chunk refs
+	// for time ranges overlapping mint and maxt provided.
+	// To change the default behavior, use the flags below this.
+	defaultStrategy = overlapMintMaxt
+
+	// noChunkRefs flag when used by itself fetches only series labels for series in the entire block.
+	noChunkRefs seriesIteratorStrategy = 0b00000001
+	// overlapMintMaxt flag is used together with noChunkRefs. With this, only the series whose
+	// chunks overlap with [mint, maxt] are selected.
+	overlapMintMaxt seriesIteratorStrategy = 0b00000010
+)
+
+func (s seriesIteratorStrategy) isNoChunkRefs() bool {
+	return s&noChunkRefs != 0
+}
+
+func (s seriesIteratorStrategy) isOverlapMintMaxt() bool {
+	return s&overlapMintMaxt != 0
+}
+
+func (s seriesIteratorStrategy) isOnEntireBlock() bool {
+	return !s.isOverlapMintMaxt()
+}
+
+func (s seriesIteratorStrategy) isNoChunkRefsOnEntireBlock() bool {
+	return s.isNoChunkRefs() && s.isOnEntireBlock()
+}
+
+func (s seriesIteratorStrategy) isNoChunkRefsAndOverlapMintMaxt() bool {
+	return s.isNoChunkRefs() && s.isOverlapMintMaxt()
+}
+
 func newLoadingSeriesChunkRefsSetIterator(
 	ctx context.Context,
 	postingsSetIterator *postingsSetsIterator,
@@ -799,49 +838,55 @@ func newLoadingSeriesChunkRefsSetIterator(
 	blockMeta *block.Meta,
 	shard *sharding.ShardSelector,
 	seriesHasher seriesHasher,
-	skipChunks bool,
+	strategy seriesIteratorStrategy,
 	minTime int64,
 	maxTime int64,
 	tenantID string,
-	chunkRangesPerSeries int,
 	logger log.Logger,
 ) *loadingSeriesChunkRefsSetIterator {
-	if skipChunks {
+	if strategy.isOnEntireBlock() {
 		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
 	}
-
 	return &loadingSeriesChunkRefsSetIterator{
-		ctx:                  ctx,
-		postingsSetIterator:  postingsSetIterator,
-		indexr:               indexr,
-		indexCache:           indexCache,
-		stats:                stats,
-		blockID:              blockMeta.ULID,
-		shard:                shard,
-		seriesHasher:         seriesHasher,
-		skipChunks:           skipChunks,
-		minTime:              minTime,
-		maxTime:              maxTime,
-		tenantID:             tenantID,
-		logger:               logger,
-		chunkRangesPerSeries: chunkRangesPerSeries,
+		ctx:                 ctx,
+		postingsSetIterator: postingsSetIterator,
+		indexr:              indexr,
+		indexCache:          indexCache,
+		stats:               stats,
+		blockID:             blockMeta.ULID,
+		shard:               shard,
+		seriesHasher:        seriesHasher,
+		strategy:            strategy,
+		minTime:             minTime,
+		maxTime:             maxTime,
+		tenantID:            tenantID,
+		logger:              logger,
 	}
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
-	sp, ctx := tracing.StartSpan(s.ctx, "loadingSeriesChunkRefsSetIterator.Next")
-	defer sp.Finish()
-
 	if s.err != nil {
 		return false
 	}
 	if !s.postingsSetIterator.Next() {
 		return false
 	}
+
+	defer func(startTime time.Time) {
+		spanLog := spanlogger.FromContext(s.ctx, s.logger)
+		level.Debug(spanLog).Log(
+			"msg", "loaded series and chunk refs",
+			"block_id", s.blockID.String(),
+			"series_count", s.At().len(),
+			"err", s.Err(),
+			"duration", time.Since(startTime),
+		)
+	}(time.Now())
+
 	nextPostings := s.postingsSetIterator.At()
 
 	var cachedSeriesID cachedSeriesForPostingsID
-	if s.skipChunks {
+	if s.strategy.isNoChunkRefsOnEntireBlock() {
 		var err error
 		// Calculate the cache ID before we filter out anything from the postings,
 		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
@@ -851,7 +896,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "could not encode postings for series cache key", "err", err)
 		} else {
-			if cachedSet, isCached := fetchCachedSeriesForPostings(ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
+			if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.shard, cachedSeriesID, s.logger); isCached {
 				s.currentSet = cachedSet
 				return true
 			}
@@ -870,12 +915,12 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, loadStats)
 	}
 
-	symbolizedSet, err := s.symbolizedSet(ctx, nextPostings, loadStats)
+	symbolizedSet, err := s.symbolizedSet(s.ctx, nextPostings, loadStats)
 	if err != nil {
 		s.err = err
 		return false
 	}
-	defer symbolizedSet.release() // We only retain the slices of chunk ranges from this set. These are still not pooled, and it's ok to retain them.
+	defer symbolizedSet.release() // We only retain the slices of chunk refs from this set. These are still not pooled, and it's ok to retain them.
 
 	nextSet, err := s.stringifiedSet(symbolizedSet)
 	if err != nil {
@@ -891,8 +936,8 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	s.currentSet = nextSet
-	if s.skipChunks && cachedSeriesID.isSet() {
-		storeCachedSeriesForPostings(ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
+	if cachedSeriesID.isSet() {
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.shard, cachedSeriesID, nextSet, s.logger)
 	}
 	return true
 }
@@ -919,9 +964,27 @@ func (s *loadingSeriesChunkRefsSetIterator) symbolizedSet(ctx context.Context, p
 		if err != nil {
 			return symbolizedSeriesChunkRefsSet{}, errors.Wrap(err, "read series")
 		}
-		if !s.skipChunks {
+
+		switch {
+		case s.strategy.isNoChunkRefsAndOverlapMintMaxt():
+			overlaps := false
+			for _, m := range metas {
+				if m.MaxTime >= s.minTime && m.MinTime <= s.maxTime {
+					overlaps = true
+					break
+				}
+			}
+			if !overlaps {
+				series.lset = nil // setting the labels to nil ends up skipping the series
+			}
+		case !s.strategy.isNoChunkRefs():
 			clampLastChunkLength(symbolizedSet.series, metas)
-			series.chunksRanges = metasToRanges(partitionChunks(metas, s.chunkRangesPerSeries, minChunksPerRange), s.blockID, s.minTime, s.maxTime)
+			series.refs = metasToChunkRefs(metas, s.blockID, s.minTime, s.maxTime)
+		default:
+			// What's left is "no chunk refs on entire block."
+			// In this case we don't have to do anything with the chunk metas because we know they all
+			// qualify and that we don't have to parse and return them.
+			// The case of no chunks at all for this series is already covered by loadSeries and series.lset will be empty.
 		}
 		symbolizedSet.series = append(symbolizedSet.series, series)
 	}
@@ -938,7 +1001,7 @@ func (s *loadingSeriesChunkRefsSetIterator) stringifiedSet(symbolizedSet symboli
 	return s.multiLookupStringify(symbolizedSet)
 }
 
-// clampLastChunkLength checks the length of the last chunk in the last range of the last series.
+// clampLastChunkLength checks the length of the last chunk in the last series.
 // If the length of that chunk is larger than the difference with the first chunk ref in metas
 // then the length is clamped at that difference.
 // clampLastChunkLength assumes that the chunks are sorted by their refs
@@ -948,38 +1011,44 @@ func clampLastChunkLength(series []symbolizedSeriesChunkRefs, nextSeriesChunkMet
 	if len(series) == 0 || len(nextSeriesChunkMetas) == 0 {
 		return
 	}
-	var lastSeriesRanges = series[len(series)-1].chunksRanges
-	if len(lastSeriesRanges) == 0 {
+	var lastSeriesRefs = series[len(series)-1].refs
+	if len(lastSeriesRefs) == 0 {
 		return
 	}
 	var (
-		lastRange       = lastSeriesRanges[len(lastSeriesRanges)-1]
-		lastSeriesChunk = lastRange.refs[len(lastRange.refs)-1]
+		lastSeriesChunk = lastSeriesRefs[len(lastSeriesRefs)-1]
 		firstRef        = nextSeriesChunkMetas[0].Ref
 	)
 
 	// We only compare the segment file of the series because they all come from the same block.
-	if lastRange.segmentFile != uint32(chunkSegmentFile(firstRef)) {
+	if lastSeriesChunk.segmentFile != uint32(chunkSegmentFile(firstRef)) {
 		return
 	}
 	diffWithNextChunk := chunkOffset(firstRef) - lastSeriesChunk.segFileOffset
 	// The diff should always be positive, but if for some reason it isn't (a bug?), we don't want to set length to a negative value.
 	if diffWithNextChunk > 0 && lastSeriesChunk.length > diffWithNextChunk {
-		lastRange.refs[len(lastRange.refs)-1].length = diffWithNextChunk
+		lastSeriesRefs[len(lastSeriesRefs)-1].length = diffWithNextChunk
 	}
 }
 
 // filterSeries filters out series that don't belong to this shard (if sharding is configured) or that don't have any
-// chunk ranges and skipChunks=false. Empty chunks ranges indicates that the series doesn't have any chunk ranges in the
-// requested time range.
+// chunk refs. Empty chunks ranges indicates that the series doesn't have any chunk ranges in the
+// requested time range. filterSeries expects that the number of series matches the number of postings.
 func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet, postings []storage.SeriesRef, stats *queryStats) seriesChunkRefsSet {
 	writeIdx := 0
 	for sIdx, series := range set.series {
-		// An empty label set means the series had no chunks in this block, so we skip it.
-		// No chunk ranges means the series doesn't have a single chunk range in the requested range.
-		if len(series.lset) == 0 || (!s.skipChunks && len(series.chunksRanges) == 0) {
+
+		// We skip this series under three conditions:
+		// 1. The series doesn't have any chunks in this block OR the series didn't have any chunks in the requested time range,
+		// 	  but also the request didn't require the chunks (i.e. s.strategy.isNoChunkRefs()). This is signified by an empty label set.
+		if series.lset.IsEmpty() {
 			continue
 		}
+		// 2. The series doesn't have any chunks in the requested time range but the request required the chunks (i.e. !s.strategy.isNoChunkRefs()).
+		if !s.strategy.isNoChunkRefs() && len(series.refs) == 0 {
+			continue
+		}
+		// 3. The series doesn't belong to this shard.
 		if !shardOwned(s.shard, s.seriesHasher, postings[sIdx], series.lset, stats) {
 			continue
 		}
@@ -990,116 +1059,57 @@ func (s *loadingSeriesChunkRefsSetIterator) filterSeries(set seriesChunkRefsSet,
 	return set
 }
 
-const (
-	minChunksPerRange = 10
-)
-
-// partitionChunks creates a slice of []chunks.Meta for each range of chunks within the same segment file.
-// The partitioning here should be fairly static and not depend on the actual Series() request because
-// the resulting ranges may be used for caching, and we want our cache entries to be reusable between requests.
-// partitionChunks tries to partition the metas into targetNumRanges ranges. If any of those ranges will have
-// less than minChunksPerRange metas, then partitionChunks will return less ranges than targetNumRanges.
-// Regardless of targetNumRanges and minChunksPerRange, partitionChunks will keep chunks from separate segment files
-// in separate partitions.
-func partitionChunks(chks []chunks.Meta, targetNumRanges, minChunksPerRange int) [][]chunks.Meta {
-	if len(chks) == 0 {
+// metasToChunkRefs converts metas to chunk refs. It excludes any chunks that do not overlap with minT and maxT.
+func metasToChunkRefs(metas []chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRef {
+	numChunksOverlapping := 0
+	for _, m := range metas {
+		if m.OverlapsClosedInterval(minT, maxT) {
+			numChunksOverlapping++
+		}
+	}
+	if numChunksOverlapping == 0 {
 		return nil
 	}
-	chunksPerRange := util_math.Max(minChunksPerRange, len(chks)/targetNumRanges)
+	refs := make([]seriesChunkRef, 0, numChunksOverlapping)
 
-	ranges := make([][]chunks.Meta, 0, util_math.Min(targetNumRanges, len(chks)/chunksPerRange))
-
-	currentRangeFirstChunkIdx := 0
-	for i := range chks {
-		isDifferentSegmentFile := chunkSegmentFile(chks[currentRangeFirstChunkIdx].Ref) != chunkSegmentFile(chks[i].Ref)
-		currentRangeIsFull := i-currentRangeFirstChunkIdx >= chunksPerRange
-		atLastRange := len(ranges) == targetNumRanges-1
-
-		if isDifferentSegmentFile || (currentRangeIsFull && !atLastRange) {
-			ranges = append(ranges, chks[currentRangeFirstChunkIdx:i])
-			currentRangeFirstChunkIdx = i
-		}
-	}
-
-	ranges = append(ranges, chks[currentRangeFirstChunkIdx:])
-
-	return ranges
-}
-
-// metasToRanges converts partitioned metas to ranges of chunk refs. It excludes any ranges that do not have
-// at least one chunk which overlaps with minT and maxT
-func metasToRanges(partitions [][]chunks.Meta, blockID ulid.ULID, minT, maxT int64) []seriesChunkRefsRange {
-	someMetaOverlapsWithMinTMaxT := func(gr []chunks.Meta) bool {
-		for _, m := range gr {
-			if m.MinTime <= maxT && m.MaxTime >= minT {
-				return true
-			}
-		}
-		return false
-	}
-
-	rangesWithinTime := 0
-	for _, gr := range partitions {
-		if someMetaOverlapsWithMinTMaxT(gr) {
-			rangesWithinTime++
-		}
-	}
-	if rangesWithinTime == 0 {
-		return nil
-	}
-	ranges := make([]seriesChunkRefsRange, 0, rangesWithinTime)
-
-	for pIdx, partition := range partitions {
-		if !someMetaOverlapsWithMinTMaxT(partition) {
+	for mIdx, m := range metas {
+		if !m.OverlapsClosedInterval(minT, maxT) {
 			continue
 		}
-
-		chunkRefs := make([]seriesChunkRef, 0, len(partition))
-		for cIdx, c := range partition {
-			var chunkLen uint32
-			// We can only calculate the length of this chunk, if we know the ref of the next chunk
-			// and the two chunks are in the same segment file.
-			// We do that by taking the difference between the chunk references. This works since the chunk references are offsets in a file.
-			// If the chunks are in different segment files (unlikely, but possible),
-			// then this chunk ends at the end of the segment file, and we don't know how big the segment file is.
-			if nextRef, ok := nextChunkRef(partitions, pIdx, cIdx); ok && chunkSegmentFile(nextRef) == chunkSegmentFile(c.Ref) {
-				chunkLen = chunkOffset(nextRef) - chunkOffset(c.Ref)
-				if chunkLen > tsdb.EstimatedMaxChunkSize {
-					// Clamp the length in case chunks are scattered across a segment file. This should never happen,
-					// but if it does, we don't want to have an erroneously large length.
-					chunkLen = tsdb.EstimatedMaxChunkSize
-				}
-			} else {
+		var chunkLen uint32
+		// We can only calculate the length of this chunk, if we know the ref of the next chunk
+		// and the two chunks are in the same segment file.
+		// We do that by taking the difference between the chunk references. This works since the chunk references are offsets in a file.
+		// If the chunks are in different segment files (unlikely, but possible),
+		// then this chunk ends at the end of the segment file, and we don't know how big the segment file is.
+		if nextRef, ok := nextChunkRef(metas, mIdx); ok && chunkSegmentFile(nextRef) == chunkSegmentFile(m.Ref) {
+			chunkLen = chunkOffset(nextRef) - chunkOffset(m.Ref)
+			if chunkLen > tsdb.EstimatedMaxChunkSize {
+				// Clamp the length in case chunks are scattered across a segment file. This should never happen,
+				// but if it does, we don't want to have an erroneously large length.
 				chunkLen = tsdb.EstimatedMaxChunkSize
 			}
-			chunkRefs = append(chunkRefs, seriesChunkRef{
-				segFileOffset: chunkOffset(c.Ref),
-				minTime:       c.MinTime,
-				maxTime:       c.MaxTime,
-				length:        chunkLen,
-			})
+		} else {
+			chunkLen = tsdb.EstimatedMaxChunkSize
 		}
-
-		ranges = append(ranges, seriesChunkRefsRange{
-			blockID: blockID,
-			// We have a guarantee that each meta in a partition will be from the same segment file; we can just take the segment file of the first chunk.
+		refs = append(refs, seriesChunkRef{
+			segFileOffset: chunkOffset(m.Ref),
+			minTime:       m.MinTime,
+			maxTime:       m.MaxTime,
+			length:        chunkLen,
+			blockID:       blockID,
 			// The cast to uint32 is safe because the segment file seq must fit in the first 32 bytes of the chunk ref
-			segmentFile: uint32(chunkSegmentFile(partition[0].Ref)),
-			refs:        chunkRefs,
+			segmentFile: uint32(chunkSegmentFile(m.Ref)),
 		})
 	}
-	return ranges
+	return refs
 }
 
-func nextChunkRef(metas [][]chunks.Meta, gIdx int, cIdx int) (chunks.ChunkRef, bool) {
-	if cIdx+1 >= len(metas[gIdx]) && gIdx+1 >= len(metas) {
+func nextChunkRef(metas []chunks.Meta, cIdx int) (chunks.ChunkRef, bool) {
+	if cIdx+1 >= len(metas) {
 		return 0, false
 	}
-
-	if cIdx+1 < len(metas[gIdx]) {
-		return metas[gIdx][cIdx+1].Ref, true
-	}
-	return metas[gIdx+1][0].Ref, true
+	return metas[cIdx+1].Ref, true
 }
 
 func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
@@ -1112,7 +1122,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
 func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, lsetPool *pool.SlabPool[symbolizedLabel]) ([]symbolizedLabel, []chunks.Meta, error) {
-	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.skipChunks, stats, lsetPool)
+	ok, lbls, err := loadedSeries.unsafeLoadSeries(ref, &s.chunkMetasBuffer, s.strategy.isNoChunkRefsOnEntireBlock(), stats, lsetPool)
 	if !ok || err != nil {
 		return nil, nil, errors.Wrap(err, "loadSeries")
 	}
@@ -1164,8 +1174,8 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
-			lset:         labelsBuilder.Labels(),
-			chunksRanges: series.chunksRanges,
+			lset: labelsBuilder.Labels(),
+			refs: series.refs,
 		})
 	}
 
@@ -1178,14 +1188,14 @@ func (s *loadingSeriesChunkRefsSetIterator) multiLookupStringify(symbolizedSet s
 
 	labelsBuilder := labels.NewScratchBuilder(16)
 	for _, series := range symbolizedSet.series {
-		lset, err := s.indexr.LookupLabelsSymbols(series.lset, &labelsBuilder)
+		lset, err := s.indexr.LookupLabelsSymbols(s.ctx, series.lset, &labelsBuilder)
 		if err != nil {
 			return seriesChunkRefsSet{}, err
 		}
 
 		set.series = append(set.series, seriesChunkRefs{
-			lset:         lset,
-			chunksRanges: series.chunksRanges,
+			lset: lset,
+			refs: series.refs,
 		})
 	}
 	return set, nil

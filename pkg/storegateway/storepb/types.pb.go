@@ -76,7 +76,7 @@ var LabelMatcher_Type_value = map[string]int32{
 }
 
 func (LabelMatcher_Type) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{3, 0}
+	return fileDescriptor_d938547f84707355, []int{8, 0}
 }
 
 type Chunk struct {
@@ -153,6 +153,188 @@ func (m *Series) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_Series proto.InternalMessageInfo
 
+type StreamingSeries struct {
+	Labels []github_com_grafana_mimir_pkg_mimirpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.LabelAdapter" json:"labels"`
+}
+
+func (m *StreamingSeries) Reset()      { *m = StreamingSeries{} }
+func (*StreamingSeries) ProtoMessage() {}
+func (*StreamingSeries) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{2}
+}
+func (m *StreamingSeries) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StreamingSeries) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StreamingSeries.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StreamingSeries) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingSeries.Merge(m, src)
+}
+func (m *StreamingSeries) XXX_Size() int {
+	return m.Size()
+}
+func (m *StreamingSeries) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingSeries.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StreamingSeries proto.InternalMessageInfo
+
+type StreamingSeriesBatch struct {
+	Series              []*StreamingSeries `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
+	IsEndOfSeriesStream bool               `protobuf:"varint,2,opt,name=is_end_of_series_stream,json=isEndOfSeriesStream,proto3" json:"is_end_of_series_stream,omitempty"`
+}
+
+func (m *StreamingSeriesBatch) Reset()      { *m = StreamingSeriesBatch{} }
+func (*StreamingSeriesBatch) ProtoMessage() {}
+func (*StreamingSeriesBatch) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{3}
+}
+func (m *StreamingSeriesBatch) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StreamingSeriesBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StreamingSeriesBatch.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StreamingSeriesBatch) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingSeriesBatch.Merge(m, src)
+}
+func (m *StreamingSeriesBatch) XXX_Size() int {
+	return m.Size()
+}
+func (m *StreamingSeriesBatch) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingSeriesBatch.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StreamingSeriesBatch proto.InternalMessageInfo
+
+type StreamingChunks struct {
+	SeriesIndex uint64      `protobuf:"varint,1,opt,name=series_index,json=seriesIndex,proto3" json:"series_index,omitempty"`
+	Chunks      []AggrChunk `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
+}
+
+func (m *StreamingChunks) Reset()      { *m = StreamingChunks{} }
+func (*StreamingChunks) ProtoMessage() {}
+func (*StreamingChunks) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{4}
+}
+func (m *StreamingChunks) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StreamingChunks) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StreamingChunks.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StreamingChunks) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingChunks.Merge(m, src)
+}
+func (m *StreamingChunks) XXX_Size() int {
+	return m.Size()
+}
+func (m *StreamingChunks) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingChunks.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StreamingChunks proto.InternalMessageInfo
+
+type StreamingChunksBatch struct {
+	Series []*StreamingChunks `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
+}
+
+func (m *StreamingChunksBatch) Reset()      { *m = StreamingChunksBatch{} }
+func (*StreamingChunksBatch) ProtoMessage() {}
+func (*StreamingChunksBatch) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{5}
+}
+func (m *StreamingChunksBatch) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StreamingChunksBatch) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StreamingChunksBatch.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StreamingChunksBatch) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingChunksBatch.Merge(m, src)
+}
+func (m *StreamingChunksBatch) XXX_Size() int {
+	return m.Size()
+}
+func (m *StreamingChunksBatch) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingChunksBatch.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StreamingChunksBatch proto.InternalMessageInfo
+
+type StreamingChunksEstimate struct {
+	EstimatedChunkCount uint64 `protobuf:"varint,1,opt,name=estimated_chunk_count,json=estimatedChunkCount,proto3" json:"estimated_chunk_count,omitempty"`
+}
+
+func (m *StreamingChunksEstimate) Reset()      { *m = StreamingChunksEstimate{} }
+func (*StreamingChunksEstimate) ProtoMessage() {}
+func (*StreamingChunksEstimate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d938547f84707355, []int{6}
+}
+func (m *StreamingChunksEstimate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *StreamingChunksEstimate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_StreamingChunksEstimate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *StreamingChunksEstimate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StreamingChunksEstimate.Merge(m, src)
+}
+func (m *StreamingChunksEstimate) XXX_Size() int {
+	return m.Size()
+}
+func (m *StreamingChunksEstimate) XXX_DiscardUnknown() {
+	xxx_messageInfo_StreamingChunksEstimate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_StreamingChunksEstimate proto.InternalMessageInfo
+
 type AggrChunk struct {
 	MinTime int64  `protobuf:"varint,1,opt,name=min_time,json=minTime,proto3" json:"min_time,omitempty"`
 	MaxTime int64  `protobuf:"varint,2,opt,name=max_time,json=maxTime,proto3" json:"max_time,omitempty"`
@@ -162,7 +344,7 @@ type AggrChunk struct {
 func (m *AggrChunk) Reset()      { *m = AggrChunk{} }
 func (*AggrChunk) ProtoMessage() {}
 func (*AggrChunk) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{2}
+	return fileDescriptor_d938547f84707355, []int{7}
 }
 func (m *AggrChunk) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -201,7 +383,7 @@ type LabelMatcher struct {
 func (m *LabelMatcher) Reset()      { *m = LabelMatcher{} }
 func (*LabelMatcher) ProtoMessage() {}
 func (*LabelMatcher) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d938547f84707355, []int{3}
+	return fileDescriptor_d938547f84707355, []int{8}
 }
 func (m *LabelMatcher) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -235,6 +417,11 @@ func init() {
 	proto.RegisterEnum("thanos.LabelMatcher_Type", LabelMatcher_Type_name, LabelMatcher_Type_value)
 	proto.RegisterType((*Chunk)(nil), "thanos.Chunk")
 	proto.RegisterType((*Series)(nil), "thanos.Series")
+	proto.RegisterType((*StreamingSeries)(nil), "thanos.StreamingSeries")
+	proto.RegisterType((*StreamingSeriesBatch)(nil), "thanos.StreamingSeriesBatch")
+	proto.RegisterType((*StreamingChunks)(nil), "thanos.StreamingChunks")
+	proto.RegisterType((*StreamingChunksBatch)(nil), "thanos.StreamingChunksBatch")
+	proto.RegisterType((*StreamingChunksEstimate)(nil), "thanos.StreamingChunksEstimate")
 	proto.RegisterType((*AggrChunk)(nil), "thanos.AggrChunk")
 	proto.RegisterType((*LabelMatcher)(nil), "thanos.LabelMatcher")
 }
@@ -242,43 +429,52 @@ func init() {
 func init() { proto.RegisterFile("types.proto", fileDescriptor_d938547f84707355) }
 
 var fileDescriptor_d938547f84707355 = []byte{
-	// 567 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0xcd, 0x6e, 0xd3, 0x40,
-	0x10, 0xf6, 0x26, 0x8e, 0xe3, 0x6c, 0x5b, 0x58, 0xb6, 0x15, 0x72, 0x7b, 0xd8, 0x46, 0x3e, 0x45,
-	0x48, 0x75, 0xa0, 0x70, 0x41, 0xe2, 0xd2, 0xa0, 0xa0, 0x2a, 0xe2, 0xa7, 0x75, 0x8b, 0x84, 0x10,
-	0x52, 0xb5, 0x76, 0x37, 0xce, 0xaa, 0xf1, 0x8f, 0xd6, 0x1b, 0x68, 0x6f, 0x7d, 0x04, 0x5e, 0x81,
-	0x1b, 0x2f, 0x82, 0x94, 0x1b, 0x39, 0x56, 0x1c, 0x2a, 0xe2, 0x5c, 0x38, 0xf6, 0x11, 0x90, 0xd7,
-	0x0e, 0x24, 0xea, 0xa5, 0x27, 0xcf, 0xcc, 0xf7, 0xcd, 0x7c, 0x9f, 0x67, 0x6c, 0xb8, 0x22, 0x2f,
-	0x12, 0x96, 0x3a, 0x89, 0x88, 0x65, 0x8c, 0x0d, 0x39, 0xa0, 0x51, 0x9c, 0x6e, 0xed, 0x04, 0x5c,
-	0x0e, 0x46, 0x9e, 0xe3, 0xc7, 0x61, 0x3b, 0x88, 0x83, 0xb8, 0xad, 0x60, 0x6f, 0xd4, 0x57, 0x99,
-	0x4a, 0x54, 0x54, 0xb4, 0x6d, 0x3d, 0x5e, 0xa4, 0x0b, 0xda, 0xa7, 0x11, 0x6d, 0x87, 0x3c, 0xe4,
-	0xa2, 0x9d, 0x9c, 0x05, 0x45, 0x94, 0x78, 0xc5, 0xb3, 0xe8, 0xb0, 0x7f, 0x02, 0x58, 0x7b, 0x39,
-	0x18, 0x45, 0x67, 0xf8, 0x11, 0xd4, 0x73, 0x07, 0x16, 0x68, 0x82, 0xd6, 0xbd, 0xdd, 0x87, 0x4e,
-	0xe1, 0xc0, 0x51, 0xa0, 0xd3, 0x8d, 0xfc, 0xf8, 0x94, 0x47, 0x81, 0xab, 0x38, 0xf8, 0x00, 0xea,
-	0xa7, 0x54, 0x52, 0xab, 0xd2, 0x04, 0xad, 0xd5, 0xce, 0x8b, 0xf1, 0xf5, 0xb6, 0xf6, 0xeb, 0x7a,
-	0xfb, 0xd9, 0x5d, 0xd4, 0x9d, 0xf7, 0x51, 0x4a, 0xfb, 0xac, 0x73, 0x21, 0xd9, 0xd1, 0x90, 0xfb,
-	0xcc, 0x55, 0x93, 0xec, 0x7d, 0x68, 0xce, 0x35, 0xf0, 0x1a, 0x6c, 0x28, 0xd5, 0x93, 0x0f, 0xef,
-	0x5c, 0xa4, 0xe1, 0x75, 0x78, 0xbf, 0x48, 0xf7, 0x79, 0x2a, 0xe3, 0x40, 0xd0, 0x10, 0x01, 0x6c,
-	0xc1, 0x8d, 0xa2, 0xf8, 0x6a, 0x18, 0x53, 0xf9, 0x1f, 0xa9, 0xd8, 0xdf, 0x00, 0x34, 0x8e, 0x98,
-	0xe0, 0x2c, 0xc5, 0x7d, 0x68, 0x0c, 0xa9, 0xc7, 0x86, 0xa9, 0x05, 0x9a, 0xd5, 0xd6, 0xca, 0xee,
-	0xba, 0xe3, 0xc7, 0x42, 0xb2, 0xf3, 0xc4, 0x73, 0x5e, 0xe7, 0xf5, 0x03, 0xca, 0x45, 0xe7, 0x79,
-	0xe9, 0xfe, 0xc9, 0x9d, 0xdc, 0xab, 0xbe, 0xbd, 0x53, 0x9a, 0x48, 0x26, 0xdc, 0x72, 0x3a, 0x6e,
-	0x43, 0xc3, 0xcf, 0xcd, 0xa4, 0x56, 0x45, 0xe9, 0x3c, 0x98, 0x2f, 0x6f, 0x2f, 0x08, 0x84, 0xb2,
-	0xd9, 0xd1, 0x73, 0x15, 0xb7, 0xa4, 0xd9, 0x97, 0x00, 0x36, 0xfe, 0x61, 0x78, 0x13, 0x9a, 0x21,
-	0x8f, 0x4e, 0x24, 0x0f, 0x8b, 0xed, 0x57, 0xdd, 0x7a, 0xc8, 0xa3, 0x63, 0x1e, 0x32, 0x05, 0xd1,
-	0xf3, 0x02, 0xaa, 0x94, 0x10, 0x3d, 0x57, 0xd0, 0x36, 0xac, 0x0a, 0xfa, 0xc5, 0xaa, 0x36, 0x41,
-	0x6b, 0x65, 0x77, 0x6d, 0xe9, 0x5c, 0x6e, 0x8e, 0xf4, 0x74, 0x53, 0x47, 0xb5, 0x9e, 0x6e, 0xd6,
-	0x90, 0xd1, 0xd3, 0x4d, 0x03, 0xd5, 0x7b, 0xba, 0x59, 0x47, 0x66, 0x4f, 0x37, 0x4d, 0xd4, 0xb0,
-	0x7f, 0x00, 0xb8, 0xaa, 0x5e, 0xe6, 0x0d, 0x95, 0xfe, 0x80, 0x09, 0xbc, 0xb3, 0x74, 0xff, 0xcd,
-	0xf9, 0xc0, 0x45, 0x8e, 0x73, 0x7c, 0x91, 0xb0, 0xf2, 0x13, 0xc0, 0x50, 0x8f, 0x68, 0xe9, 0xaa,
-	0xe1, 0xaa, 0x18, 0x6f, 0xc0, 0xda, 0x67, 0x3a, 0x1c, 0x31, 0x65, 0xaa, 0xe1, 0x16, 0x89, 0xfd,
-	0x09, 0xea, 0x79, 0x5f, 0x7e, 0xc7, 0xc5, 0x61, 0x27, 0xdd, 0x43, 0xa4, 0xe1, 0x0d, 0x88, 0x96,
-	0x8a, 0x6f, 0xbb, 0x87, 0x08, 0xdc, 0xa2, 0xba, 0x5d, 0x54, 0xb9, 0x4d, 0x75, 0xbb, 0xa8, 0xda,
-	0xd9, 0x1b, 0x4f, 0x89, 0x36, 0x99, 0x12, 0xed, 0x6a, 0x4a, 0xb4, 0x9b, 0x29, 0x01, 0x97, 0x19,
-	0x01, 0xdf, 0x33, 0x02, 0xc6, 0x19, 0x01, 0x93, 0x8c, 0x80, 0xdf, 0x19, 0x01, 0x7f, 0x32, 0xa2,
-	0xdd, 0x64, 0x04, 0x7c, 0x9d, 0x11, 0x6d, 0x32, 0x23, 0xda, 0xd5, 0x8c, 0x68, 0x1f, 0xeb, 0xa9,
-	0x8c, 0x05, 0x4b, 0x3c, 0xcf, 0x50, 0xbf, 0xc2, 0xd3, 0xbf, 0x01, 0x00, 0x00, 0xff, 0xff, 0x08,
-	0x77, 0xfb, 0x5f, 0x82, 0x03, 0x00, 0x00,
+	// 711 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x54, 0xcd, 0x6e, 0xd3, 0x4c,
+	0x14, 0xf5, 0x24, 0x4e, 0xe2, 0x4c, 0xda, 0xaf, 0xfe, 0x26, 0x81, 0xa6, 0x5d, 0xb8, 0xc1, 0xab,
+	0x08, 0xa9, 0x0e, 0x84, 0x6e, 0x90, 0xd8, 0x34, 0x55, 0xa0, 0x44, 0x94, 0xb6, 0x6e, 0x91, 0x10,
+	0x42, 0xb2, 0x26, 0xc9, 0xc4, 0x19, 0x35, 0xfe, 0x91, 0x67, 0x02, 0xc9, 0x02, 0xa9, 0x8f, 0xc0,
+	0x2b, 0xb0, 0xe3, 0x45, 0x90, 0xba, 0xa3, 0xcb, 0x8a, 0x45, 0x45, 0xd2, 0x0d, 0xcb, 0x3e, 0x02,
+	0xf2, 0x8c, 0x53, 0xd2, 0x76, 0x53, 0x36, 0xac, 0x3c, 0xf7, 0x9e, 0x73, 0xef, 0x39, 0x77, 0x34,
+	0xd7, 0xb0, 0xc0, 0xc7, 0x21, 0x61, 0x56, 0x18, 0x05, 0x3c, 0x40, 0x59, 0xde, 0xc7, 0x7e, 0xc0,
+	0x56, 0xd7, 0x5d, 0xca, 0xfb, 0xc3, 0xb6, 0xd5, 0x09, 0xbc, 0x9a, 0x1b, 0xb8, 0x41, 0x4d, 0xc0,
+	0xed, 0x61, 0x4f, 0x44, 0x22, 0x10, 0x27, 0x59, 0xb6, 0xfa, 0x68, 0x9e, 0x1e, 0xe1, 0x1e, 0xf6,
+	0x71, 0xcd, 0xa3, 0x1e, 0x8d, 0x6a, 0xe1, 0x91, 0x2b, 0x4f, 0x61, 0x5b, 0x7e, 0x65, 0x85, 0xf9,
+	0x1d, 0xc0, 0xcc, 0x56, 0x7f, 0xe8, 0x1f, 0xa1, 0x87, 0x50, 0x8d, 0x1d, 0x94, 0x41, 0x05, 0x54,
+	0xff, 0xab, 0xdf, 0xb7, 0xa4, 0x03, 0x4b, 0x80, 0x56, 0xd3, 0xef, 0x04, 0x5d, 0xea, 0xbb, 0xb6,
+	0xe0, 0xa0, 0x3d, 0xa8, 0x76, 0x31, 0xc7, 0xe5, 0x54, 0x05, 0x54, 0x17, 0x1a, 0xcf, 0x4e, 0xce,
+	0xd7, 0x94, 0x1f, 0xe7, 0x6b, 0x1b, 0x77, 0x51, 0xb7, 0xde, 0xf8, 0x0c, 0xf7, 0x48, 0x63, 0xcc,
+	0xc9, 0xc1, 0x80, 0x76, 0x88, 0x2d, 0x3a, 0x99, 0xdb, 0x50, 0x9b, 0x69, 0xa0, 0x45, 0x98, 0x17,
+	0xaa, 0xce, 0xdb, 0x5d, 0x5b, 0x57, 0x50, 0x11, 0x2e, 0xc9, 0x70, 0x9b, 0x32, 0x1e, 0xb8, 0x11,
+	0xf6, 0x74, 0x80, 0xca, 0xb0, 0x24, 0x93, 0xcf, 0x07, 0x01, 0xe6, 0x7f, 0x90, 0x94, 0xf9, 0x05,
+	0xc0, 0xec, 0x01, 0x89, 0x28, 0x61, 0xa8, 0x07, 0xb3, 0x03, 0xdc, 0x26, 0x03, 0x56, 0x06, 0x95,
+	0x74, 0xb5, 0x50, 0x2f, 0x5a, 0x9d, 0x20, 0xe2, 0x64, 0x14, 0xb6, 0xad, 0x57, 0x71, 0x7e, 0x0f,
+	0xd3, 0xa8, 0xf1, 0x34, 0x71, 0xff, 0xf8, 0x4e, 0xee, 0x45, 0xdd, 0x66, 0x17, 0x87, 0x9c, 0x44,
+	0x76, 0xd2, 0x1d, 0xd5, 0x60, 0xb6, 0x13, 0x9b, 0x61, 0xe5, 0x94, 0xd0, 0xf9, 0x7f, 0x76, 0x79,
+	0x9b, 0xae, 0x1b, 0x09, 0x9b, 0x0d, 0x35, 0x56, 0xb1, 0x13, 0x9a, 0x39, 0x86, 0x4b, 0x07, 0x3c,
+	0x22, 0xd8, 0xa3, 0xbe, 0xfb, 0x6f, 0xbd, 0x9a, 0x9f, 0x60, 0xe9, 0x86, 0x74, 0x03, 0xf3, 0x4e,
+	0x3f, 0x9e, 0x81, 0x89, 0x30, 0xd1, 0x5f, 0x9e, 0xcd, 0x70, 0x83, 0x6d, 0x27, 0x34, 0xb4, 0x01,
+	0x97, 0x29, 0x73, 0x88, 0xdf, 0x75, 0x82, 0x9e, 0x23, 0x73, 0x0e, 0x13, 0x5c, 0xf1, 0x2c, 0x34,
+	0xbb, 0x48, 0x59, 0xd3, 0xef, 0xee, 0xf6, 0x64, 0x9d, 0x6c, 0x63, 0x92, 0xb9, 0xc9, 0xc5, 0xcd,
+	0x30, 0xf4, 0x00, 0x2e, 0x24, 0xe5, 0xd4, 0xef, 0x92, 0x91, 0x78, 0x80, 0xaa, 0x5d, 0x90, 0xb9,
+	0x97, 0x71, 0xea, 0xef, 0x2f, 0xf8, 0xc5, 0xdc, 0x94, 0x52, 0xe6, 0xae, 0x53, 0x4a, 0xf6, 0x6c,
+	0x4a, 0x73, 0x07, 0x2e, 0xdf, 0x80, 0x9a, 0x8c, 0x53, 0x0f, 0x73, 0x82, 0xea, 0xf0, 0x1e, 0x49,
+	0xce, 0x5d, 0x47, 0xe8, 0x3a, 0x9d, 0x60, 0xe8, 0xf3, 0x64, 0x80, 0xe2, 0x15, 0x28, 0xea, 0xb6,
+	0x62, 0xc8, 0x3c, 0x06, 0x30, 0x7f, 0xe5, 0x19, 0xad, 0x40, 0xcd, 0xa3, 0xbe, 0xc3, 0xa9, 0x27,
+	0xd7, 0x2e, 0x6d, 0xe7, 0x3c, 0xea, 0x1f, 0x52, 0x8f, 0x08, 0x08, 0x8f, 0x24, 0x94, 0x4a, 0x20,
+	0x3c, 0x12, 0xd0, 0x1a, 0x4c, 0x47, 0xf8, 0x63, 0x39, 0x5d, 0x01, 0xd5, 0x42, 0x7d, 0xf1, 0xda,
+	0x9e, 0xda, 0x31, 0xd2, 0x52, 0x35, 0x55, 0xcf, 0xb4, 0x54, 0x2d, 0xa3, 0x67, 0x5b, 0xaa, 0x96,
+	0xd5, 0x73, 0x2d, 0x55, 0xcb, 0xe9, 0x5a, 0x4b, 0xd5, 0x34, 0x3d, 0x6f, 0x7e, 0x03, 0x70, 0x41,
+	0xbc, 0x8c, 0x9d, 0xf8, 0x46, 0x48, 0x84, 0xd6, 0xaf, 0x2d, 0xfe, 0xca, 0xac, 0xe1, 0x3c, 0xc7,
+	0x3a, 0x1c, 0x87, 0x24, 0xd9, 0x7d, 0x04, 0x55, 0x1f, 0x27, 0xae, 0xf2, 0xb6, 0x38, 0xa3, 0x12,
+	0xcc, 0x7c, 0xc0, 0x83, 0x21, 0x11, 0xa6, 0xf2, 0xb6, 0x0c, 0xcc, 0xf7, 0x50, 0x8d, 0xeb, 0xe2,
+	0x05, 0x9e, 0x6f, 0xe6, 0x34, 0xf7, 0x75, 0x05, 0x95, 0xa0, 0x7e, 0x2d, 0xf9, 0xba, 0xb9, 0xaf,
+	0x83, 0x5b, 0x54, 0xbb, 0xa9, 0xa7, 0x6e, 0x53, 0xed, 0xa6, 0x9e, 0x6e, 0x6c, 0x9e, 0x4c, 0x0c,
+	0xe5, 0x74, 0x62, 0x28, 0x67, 0x13, 0x43, 0xb9, 0x9c, 0x18, 0xe0, 0x78, 0x6a, 0x80, 0xaf, 0x53,
+	0x03, 0x9c, 0x4c, 0x0d, 0x70, 0x3a, 0x35, 0xc0, 0xcf, 0xa9, 0x01, 0x7e, 0x4d, 0x0d, 0xe5, 0x72,
+	0x6a, 0x80, 0xcf, 0x17, 0x86, 0x72, 0x7a, 0x61, 0x28, 0x67, 0x17, 0x86, 0xf2, 0x2e, 0xc7, 0x78,
+	0x10, 0x91, 0xb0, 0xdd, 0xce, 0x8a, 0x7f, 0xe0, 0x93, 0xdf, 0x01, 0x00, 0x00, 0xff, 0xff, 0xb0,
+	0x89, 0xf9, 0xfc, 0x7b, 0x05, 0x00, 0x00,
 }
 
 func (x Chunk_Encoding) String() string {
@@ -356,6 +552,152 @@ func (this *Series) Equal(that interface{}) bool {
 		if !this.Chunks[i].Equal(&that1.Chunks[i]) {
 			return false
 		}
+	}
+	return true
+}
+func (this *StreamingSeries) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StreamingSeries)
+	if !ok {
+		that2, ok := that.(StreamingSeries)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Labels) != len(that1.Labels) {
+		return false
+	}
+	for i := range this.Labels {
+		if !this.Labels[i].Equal(that1.Labels[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *StreamingSeriesBatch) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StreamingSeriesBatch)
+	if !ok {
+		that2, ok := that.(StreamingSeriesBatch)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Series) != len(that1.Series) {
+		return false
+	}
+	for i := range this.Series {
+		if !this.Series[i].Equal(that1.Series[i]) {
+			return false
+		}
+	}
+	if this.IsEndOfSeriesStream != that1.IsEndOfSeriesStream {
+		return false
+	}
+	return true
+}
+func (this *StreamingChunks) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StreamingChunks)
+	if !ok {
+		that2, ok := that.(StreamingChunks)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SeriesIndex != that1.SeriesIndex {
+		return false
+	}
+	if len(this.Chunks) != len(that1.Chunks) {
+		return false
+	}
+	for i := range this.Chunks {
+		if !this.Chunks[i].Equal(&that1.Chunks[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *StreamingChunksBatch) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StreamingChunksBatch)
+	if !ok {
+		that2, ok := that.(StreamingChunksBatch)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Series) != len(that1.Series) {
+		return false
+	}
+	for i := range this.Series {
+		if !this.Series[i].Equal(that1.Series[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *StreamingChunksEstimate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*StreamingChunksEstimate)
+	if !ok {
+		that2, ok := that.(StreamingChunksEstimate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.EstimatedChunkCount != that1.EstimatedChunkCount {
+		return false
 	}
 	return true
 }
@@ -444,6 +786,68 @@ func (this *Series) GoString() string {
 		}
 		s = append(s, "Chunks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StreamingSeries) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingSeries{")
+	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StreamingSeriesBatch) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.StreamingSeriesBatch{")
+	if this.Series != nil {
+		s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
+	}
+	s = append(s, "IsEndOfSeriesStream: "+fmt.Sprintf("%#v", this.IsEndOfSeriesStream)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StreamingChunks) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&storepb.StreamingChunks{")
+	s = append(s, "SeriesIndex: "+fmt.Sprintf("%#v", this.SeriesIndex)+",\n")
+	if this.Chunks != nil {
+		vs := make([]*AggrChunk, len(this.Chunks))
+		for i := range vs {
+			vs[i] = &this.Chunks[i]
+		}
+		s = append(s, "Chunks: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StreamingChunksBatch) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingChunksBatch{")
+	if this.Series != nil {
+		s = append(s, "Series: "+fmt.Sprintf("%#v", this.Series)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *StreamingChunksEstimate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.StreamingChunksEstimate{")
+	s = append(s, "EstimatedChunkCount: "+fmt.Sprintf("%#v", this.EstimatedChunkCount)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -566,6 +970,197 @@ func (m *Series) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			dAtA[i] = 0xa
 		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StreamingSeries) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StreamingSeries) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Labels) > 0 {
+		for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size := m.Labels[iNdEx].Size()
+				i -= size
+				if _, err := m.Labels[iNdEx].MarshalTo(dAtA[i:]); err != nil {
+					return 0, err
+				}
+				i = encodeVarintTypes(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StreamingSeriesBatch) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StreamingSeriesBatch) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StreamingSeriesBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.IsEndOfSeriesStream {
+		i--
+		if m.IsEndOfSeriesStream {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Series) > 0 {
+		for iNdEx := len(m.Series) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Series[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTypes(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StreamingChunks) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StreamingChunks) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Chunks) > 0 {
+		for iNdEx := len(m.Chunks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Chunks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTypes(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.SeriesIndex != 0 {
+		i = encodeVarintTypes(dAtA, i, uint64(m.SeriesIndex))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StreamingChunksBatch) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StreamingChunksBatch) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StreamingChunksBatch) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Series) > 0 {
+		for iNdEx := len(m.Series) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Series[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTypes(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *StreamingChunksEstimate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *StreamingChunksEstimate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *StreamingChunksEstimate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.EstimatedChunkCount != 0 {
+		i = encodeVarintTypes(dAtA, i, uint64(m.EstimatedChunkCount))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -703,6 +1298,84 @@ func (m *Series) Size() (n int) {
 	return n
 }
 
+func (m *StreamingSeries) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Labels) > 0 {
+		for _, e := range m.Labels {
+			l = e.Size()
+			n += 1 + l + sovTypes(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *StreamingSeriesBatch) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Series) > 0 {
+		for _, e := range m.Series {
+			l = e.Size()
+			n += 1 + l + sovTypes(uint64(l))
+		}
+	}
+	if m.IsEndOfSeriesStream {
+		n += 2
+	}
+	return n
+}
+
+func (m *StreamingChunks) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SeriesIndex != 0 {
+		n += 1 + sovTypes(uint64(m.SeriesIndex))
+	}
+	if len(m.Chunks) > 0 {
+		for _, e := range m.Chunks {
+			l = e.Size()
+			n += 1 + l + sovTypes(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *StreamingChunksBatch) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Series) > 0 {
+		for _, e := range m.Series {
+			l = e.Size()
+			n += 1 + l + sovTypes(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *StreamingChunksEstimate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EstimatedChunkCount != 0 {
+		n += 1 + sovTypes(uint64(m.EstimatedChunkCount))
+	}
+	return n
+}
+
 func (m *AggrChunk) Size() (n int) {
 	if m == nil {
 		return 0
@@ -771,6 +1444,73 @@ func (this *Series) String() string {
 	s := strings.Join([]string{`&Series{`,
 		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
 		`Chunks:` + repeatedStringForChunks + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StreamingSeries) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&StreamingSeries{`,
+		`Labels:` + fmt.Sprintf("%v", this.Labels) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StreamingSeriesBatch) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForSeries := "[]*StreamingSeries{"
+	for _, f := range this.Series {
+		repeatedStringForSeries += strings.Replace(f.String(), "StreamingSeries", "StreamingSeries", 1) + ","
+	}
+	repeatedStringForSeries += "}"
+	s := strings.Join([]string{`&StreamingSeriesBatch{`,
+		`Series:` + repeatedStringForSeries + `,`,
+		`IsEndOfSeriesStream:` + fmt.Sprintf("%v", this.IsEndOfSeriesStream) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StreamingChunks) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForChunks := "[]AggrChunk{"
+	for _, f := range this.Chunks {
+		repeatedStringForChunks += strings.Replace(strings.Replace(f.String(), "AggrChunk", "AggrChunk", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForChunks += "}"
+	s := strings.Join([]string{`&StreamingChunks{`,
+		`SeriesIndex:` + fmt.Sprintf("%v", this.SeriesIndex) + `,`,
+		`Chunks:` + repeatedStringForChunks + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StreamingChunksBatch) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForSeries := "[]*StreamingChunks{"
+	for _, f := range this.Series {
+		repeatedStringForSeries += strings.Replace(f.String(), "StreamingChunks", "StreamingChunks", 1) + ","
+	}
+	repeatedStringForSeries += "}"
+	s := strings.Join([]string{`&StreamingChunksBatch{`,
+		`Series:` + repeatedStringForSeries + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *StreamingChunksEstimate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&StreamingChunksEstimate{`,
+		`EstimatedChunkCount:` + fmt.Sprintf("%v", this.EstimatedChunkCount) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1009,6 +1749,465 @@ func (m *Series) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StreamingSeries) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StreamingSeries: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StreamingSeries: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Labels = append(m.Labels, github_com_grafana_mimir_pkg_mimirpb.LabelAdapter{})
+			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StreamingSeriesBatch) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StreamingSeriesBatch: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StreamingSeriesBatch: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Series = append(m.Series, &StreamingSeries{})
+			if err := m.Series[len(m.Series)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IsEndOfSeriesStream", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.IsEndOfSeriesStream = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StreamingChunks) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StreamingChunks: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StreamingChunks: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeriesIndex", wireType)
+			}
+			m.SeriesIndex = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SeriesIndex |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Chunks", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Chunks = append(m.Chunks, AggrChunk{})
+			if err := m.Chunks[len(m.Chunks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StreamingChunksBatch) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StreamingChunksBatch: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StreamingChunksBatch: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Series", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypes
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Series = append(m.Series, &StreamingChunks{})
+			if err := m.Series[len(m.Series)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypes(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthTypes
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *StreamingChunksEstimate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypes
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: StreamingChunksEstimate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: StreamingChunksEstimate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EstimatedChunkCount", wireType)
+			}
+			m.EstimatedChunkCount = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypes
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EstimatedChunkCount |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipTypes(dAtA[iNdEx:])

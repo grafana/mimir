@@ -5,6 +5,7 @@
   local statefulSet = $.apps.v1.statefulSet,
 
   compactor_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -36,7 +37,7 @@
 
       // Configure sharding.
       'compactor.ring.store': 'consul',
-      'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'compactor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
@@ -81,11 +82,14 @@
 
   compactor_ports:: $.util.defaultPorts,
 
+  compactor_env_map:: {},
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
+    (if std.length($.compactor_env_map) > 0 then container.withEnvMap(std.prune($.compactor_env_map)) else {}) +
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
     $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +
@@ -105,4 +109,7 @@
 
     $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
+
+  compactor_pdb: if !$._config.is_microservices_deployment_mode then null else
+    $.newMimirPdb('compactor'),
 }

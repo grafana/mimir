@@ -1,9 +1,9 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/querier/
-title: "Grafana Mimir querier"
-menuTitle: "Querier"
-description: "The querier evaluates PromQL expressions."
+description: The querier evaluates PromQL expressions.
+menuTitle: Querier
+title: Grafana Mimir querier
 weight: 50
 ---
 
@@ -12,13 +12,13 @@ weight: 50
 The querier is a stateless component that evaluates [PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/)
 expressions by fetching time series and labels on the read path.
 
-The querier uses the [store-gateway]({{< relref "store-gateway.md" >}}) component to query the [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture/index.md#long-term-storage" >}}) and the [ingester]({{< relref "ingester.md" >}}) component to query recently written data.
+The querier uses the [store-gateway]({{< relref "./store-gateway" >}}) component to query the [long-term storage]({{< relref "../../../get-started/about-grafana-mimir-architecture#long-term-storage" >}}) and the [ingester]({{< relref "./ingester" >}}) component to query recently written data.
 
 ## How it works
 
 To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs one of the following actions to ensure that the bucket view is updated:
 
-1. Periodically download the [bucket index]({{< relref "../bucket-index/index.md" >}}) (default)
+1. Periodically download the [bucket index]({{< relref "../bucket-index" >}}) (default)
 2. Periodically scan the bucket
 
 Queriers do not need any content from blocks except their metadata, which includes the minimum and maximum timestamp of samples within the block.
@@ -34,7 +34,7 @@ We recommend that you keep the bucket index enabled.
 
 ### Bucket index disabled
 
-When [bucket index]({{< relref "../bucket-index/index.md" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
+When [bucket index]({{< relref "../bucket-index" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
 
 When running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
@@ -88,7 +88,7 @@ Caching is optional, but highly recommended in a production environment.
 
 ### Metadata cache
 
-[Store-gateways]({{< relref "store-gateway.md" >}}) and queriers can use Memcached to cache the following bucket metadata:
+[Store-gateways]({{< relref "./store-gateway" >}}) and queriers can use Memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -108,4 +108,4 @@ Additional flags for configuring the metadata cache begin with the prefix `-bloc
 
 ## Querier configuration
 
-For details about querier configuration, refer to [querier]({{< relref "../../../references/configuration-parameters/index.md#querier" >}}).
+For details about querier configuration, refer to [querier]({{< relref "../../configuration-parameters#querier" >}}).

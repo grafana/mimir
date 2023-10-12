@@ -81,19 +81,20 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	DataDir               string                  `yaml:"data_dir"`
-	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod  time.Duration           `yaml:"first_level_compaction_wait_period"`
-	CleanupInterval       time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency    int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay         time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges                mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency       int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency        int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	DataDir                    string                  `yaml:"data_dir"`
+	CompactionInterval         time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries          int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency      int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CompactionWaitPeriod       time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CleanupInterval            time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency         int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay              time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay         time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime          time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	NoBlocksFileCleanupEnabled bool                    `yaml:"no_blocks_file_cleanup_enabled" category:"experimental"`
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency         int `yaml:"max_opening_blocks_concurrency" category:"advanced"`          // Number of goroutines opening blocks before compaction.
@@ -144,6 +145,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant.")
+	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.")
@@ -271,6 +273,10 @@ type MultitenantCompactor struct {
 	// TSDB syncer metrics
 	syncerMetrics *aggregatedSyncerMetrics
 
+	// Block upload metrics
+	blockUploadBlocks      *prometheus.GaugeVec
+	blockUploadBytes       *prometheus.GaugeVec
+	blockUploadFiles       *prometheus.GaugeVec
 	blockUploadValidations atomic.Int64
 }
 
@@ -365,6 +371,18 @@ func newMultitenantCompactor(
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
+		blockUploadBlocks: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_block_upload_api_blocks_total",
+			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
+		}, []string{"user"}),
+		blockUploadBytes: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_block_upload_api_bytes_total",
+			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
+		}, []string{"user"}),
+		blockUploadFiles: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_block_upload_api_files_total",
+			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
+		}, []string{"user"}),
 	}
 
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -469,11 +487,12 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:           c.compactorCfg.DeletionDelay,
-		CleanupInterval:         util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency:      c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay:      c.compactorCfg.TenantCleanupDelay,
-		DeleteBlocksConcurrency: defaultDeleteBlocksConcurrency,
+		DeletionDelay:              c.compactorCfg.DeletionDelay,
+		CleanupInterval:            util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency:         c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay:         c.compactorCfg.TenantCleanupDelay,
+		DeleteBlocksConcurrency:    defaultDeleteBlocksConcurrency,
+		NoBlocksFileCleanupEnabled: c.compactorCfg.NoBlocksFileCleanupEnabled,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -749,7 +768,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
-		true, // Skip blocks without of order chunks, and mark them for no-compaction.
+		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,

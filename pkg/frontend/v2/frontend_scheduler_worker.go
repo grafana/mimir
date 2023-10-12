@@ -14,17 +14,18 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/servicediscovery"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 const (
@@ -51,7 +52,7 @@ type frontendSchedulerWorkers struct {
 	// Set to nil when stop is called... no more workers are created afterwards.
 	workers map[string]*frontendSchedulerWorker
 
-	enqueuedRequests *prometheus.CounterVec
+	enqueueDuration *prometheus.HistogramVec
 }
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
@@ -62,9 +63,12 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		requestsCh:                requestsCh,
 		workers:                   map[string]*frontendSchedulerWorker{},
 		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
-		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_frontend_workers_enqueued_requests_total",
-			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
+		enqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name: "cortex_query_frontend_enqueue_duration_seconds",
+			Help: "Time spent by requests waiting to join the queue or be rejected.",
+			// We expect the enqueue operation to be very fast, so we're using custom buckets to
+			// track 1ms latency too and removing any bucket bigger than 1s.
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
 	}
 
@@ -134,7 +138,7 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	}
 
 	// No worker for this address yet, start a new one.
-	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.log)
+	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueueDuration.WithLabelValues(address), f.log)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -168,7 +172,7 @@ func (f *frontendSchedulerWorkers) removeScheduler(address string) {
 		level.Info(f.log).Log("msg", "removing connection to query-scheduler", "addr", address)
 		w.stop()
 	}
-	f.enqueuedRequests.Delete(prometheus.Labels{schedulerAddressLabel: address})
+	f.enqueueDuration.Delete(prometheus.Labels{schedulerAddressLabel: address})
 }
 
 func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Instance) {
@@ -220,26 +224,26 @@ type frontendSchedulerWorker struct {
 	wg     sync.WaitGroup
 
 	// Shared between all frontend workers.
-	requestCh <-chan *frontendRequest
+	requestsCh <-chan *frontendRequest
 
 	// Cancellation requests for this scheduler are received via this channel. It is passed to frontend after
 	// query has been enqueued to scheduler.
 	cancelCh chan uint64
 
-	// Number of queries sent to this scheduler.
-	enqueuedRequests prometheus.Counter
+	// How long it takes to enqueue a query.
+	enqueueDuration prometheus.Observer
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueueDuration prometheus.Observer, log log.Logger) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
-		log:              log,
-		conn:             conn,
-		concurrency:      concurrency,
-		schedulerAddr:    schedulerAddr,
-		frontendAddr:     frontendAddr,
-		requestCh:        requestCh,
-		cancelCh:         make(chan uint64, schedulerWorkerCancelChanCapacity),
-		enqueuedRequests: enqueuedRequests,
+		log:             log,
+		conn:            conn,
+		concurrency:     concurrency,
+		schedulerAddr:   schedulerAddr,
+		frontendAddr:    frontendAddr,
+		requestsCh:      requestsCh,
+		cancelCh:        make(chan uint64, schedulerWorkerCancelChanCapacity),
+		enqueueDuration: enqueueDuration,
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -331,59 +335,9 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			level.Debug(w.log).Log("msg", "stream context finished", "err", ctx.Err())
 			return nil
 
-		case req := <-w.requestCh:
-			err := loop.Send(&schedulerpb.FrontendToScheduler{
-				Type:            schedulerpb.ENQUEUE,
-				QueryID:         req.queryID,
-				UserID:          req.userID,
-				HttpRequest:     req.request,
-				FrontendAddress: w.frontendAddr,
-				StatsEnabled:    req.statsEnabled,
-			})
-			w.enqueuedRequests.Inc()
-
-			if err != nil {
-				req.enqueue <- enqueueResult{status: failed}
+		case req := <-w.requestsCh:
+			if err := w.enqueueRequest(loop, req); err != nil {
 				return err
-			}
-
-			resp, err := loop.Recv()
-			if err != nil {
-				req.enqueue <- enqueueResult{status: failed}
-				return err
-			}
-
-			switch resp.Status {
-			case schedulerpb.OK:
-				req.enqueue <- enqueueResult{status: waitForResponse, cancelCh: w.cancelCh}
-				// Response will come from querier.
-
-			case schedulerpb.SHUTTING_DOWN:
-				// Scheduler is shutting down, report failure to enqueue and stop this loop.
-				req.enqueue <- enqueueResult{status: failed}
-				return errors.New("scheduler is shutting down")
-
-			case schedulerpb.ERROR:
-				req.enqueue <- enqueueResult{status: waitForResponse}
-				req.response <- &frontendv2pb.QueryResultRequest{
-					HttpResponse: &httpgrpc.HTTPResponse{
-						Code: http.StatusInternalServerError,
-						Body: []byte(err.Error()),
-					},
-				}
-
-			case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
-				req.enqueue <- enqueueResult{status: waitForResponse}
-				req.response <- &frontendv2pb.QueryResultRequest{
-					HttpResponse: &httpgrpc.HTTPResponse{
-						Code: http.StatusTooManyRequests,
-						Body: []byte("too many outstanding requests"),
-					},
-				}
-
-			default:
-				level.Error(w.log).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)
-				req.enqueue <- enqueueResult{status: failed}
 			}
 
 		case reqID := <-w.cancelCh:
@@ -407,4 +361,74 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			}
 		}
 	}
+}
+
+// enqueueRequest sends a request to this worker's scheduler, and returns an error if no further requests should be sent to the scheduler.
+func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, req *frontendRequest) error {
+	spanLogger, _ := spanlogger.NewWithLogger(req.ctx, w.log, "frontendSchedulerWorker.enqueueRequest")
+	spanLogger.Span.SetTag("scheduler_address", w.conn.Target())
+	defer spanLogger.Span.Finish()
+
+	// Keep track of how long it takes to enqueue a request end-to-end.
+	durationTimer := prometheus.NewTimer(w.enqueueDuration)
+	defer durationTimer.ObserveDuration()
+
+	err := loop.Send(&schedulerpb.FrontendToScheduler{
+		Type:            schedulerpb.ENQUEUE,
+		QueryID:         req.queryID,
+		UserID:          req.userID,
+		HttpRequest:     req.request,
+		FrontendAddress: w.frontendAddr,
+		StatsEnabled:    req.statsEnabled,
+	})
+	if err != nil {
+		level.Warn(spanLogger).Log("msg", "received error while sending request to scheduler", "err", err)
+		req.enqueue <- enqueueResult{status: failed}
+		return err
+	}
+
+	resp, err := loop.Recv()
+	if err != nil {
+		level.Warn(spanLogger).Log("msg", "received error while receiving response", "err", err)
+		req.enqueue <- enqueueResult{status: failed}
+		return err
+	}
+
+	switch resp.Status {
+	case schedulerpb.OK:
+		req.enqueue <- enqueueResult{status: waitForResponse, cancelCh: w.cancelCh}
+		// Response will come from querier.
+
+	case schedulerpb.SHUTTING_DOWN:
+		// Scheduler is shutting down, report failure to enqueue and stop this loop.
+		level.Warn(spanLogger).Log("msg", "scheduler reported that it is shutting down")
+		req.enqueue <- enqueueResult{status: failed}
+		return errors.New("scheduler is shutting down")
+
+	case schedulerpb.ERROR:
+		level.Warn(spanLogger).Log("msg", "scheduler returned error", "err", resp.Error)
+		req.enqueue <- enqueueResult{status: waitForResponse}
+		req.response <- &frontendv2pb.QueryResultRequest{
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code: http.StatusInternalServerError,
+				Body: []byte(resp.Error),
+			},
+		}
+
+	case schedulerpb.TOO_MANY_REQUESTS_PER_TENANT:
+		level.Warn(spanLogger).Log("msg", "scheduler reported it has too many outstanding requests")
+		req.enqueue <- enqueueResult{status: waitForResponse}
+		req.response <- &frontendv2pb.QueryResultRequest{
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code: http.StatusTooManyRequests,
+				Body: []byte("too many outstanding requests"),
+			},
+		}
+
+	default:
+		level.Error(spanLogger).Log("msg", "unknown response status from the scheduler", "resp", resp, "queryID", req.queryID)
+		req.enqueue <- enqueueResult{status: failed}
+	}
+
+	return nil
 }

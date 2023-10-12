@@ -2,11 +2,20 @@
 
 The release processes that follow apply to the Grafana Mimir Helm chart.
 
+## Schedule
+
+The release schedule follows the Grafana Mimir and Grafana Enterprise Metrics (GEM) releases so that a new Helm chart release will include both. This usually happens within 2 weeks of the Mimir release. For the Mimir release schedule consult the Mimir [RELEASE.md](../../../../RELEASE.md).
+
+Security updates of Mimir or GEM will also trigger a Helm chart release. The Helm chart can be released independently of Mimir and GEM, but this is only done if
+there's some urgent update needed.
+
+There are weekly releases with the latest Mimir and GEM build, but they are intended for testing purposes only, not production. Weekly releases are marked with a development version and helm will ignore them unless the `--devel` flag is used on the command line.
+
 ## Before you begin
 
 One of the following scenarios must apply:
 
-- Both Grafana Mimir and Grafana Enterprise Metrics (GEM) have container images, whose image versions match. The image versions have the same weekly, RC, and final versions. These versions are released to Docker Hub.
+- Both Mimir and GEM have container images, whose image versions match. The image versions have the same weekly, RC, and final versions. These versions are released to Docker Hub.
 - The Mimir and GEM image versions do not match, but there are no breaking changes between them because all of the shared configuration parameters behave the same way. For example, because GEM contains a bugfix, the version of GEM is `2.5.1` and the version of Mimir is `2.5.0`.
 
 ## Release process for a weekly release
@@ -83,11 +92,11 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
-     The two parameters are `mimir_docs_version` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
-
-   - Update the [Mimir Helm Chart Readme template](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md.gotmpl). Update the line that link to Mimir release note to the latest Mimir version. Example: `See the [Grafana Mimir version 2.6 release notes](https://grafana.com/docs/mimir/v2.6.x/release-notes/v2.6/)`.
+     The two parameters are `MIMIR_DOCS_VERSION` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
+
+   - Verify that the links on the [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) are correct.
 
 1. Open PR to release branch
 

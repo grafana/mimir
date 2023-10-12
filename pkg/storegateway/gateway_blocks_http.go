@@ -101,7 +101,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		var sources []string
 		for _, pb := range m.Compaction.Sources {
-			sources = append(parents, pb.String())
+			sources = append(sources, pb.String())
 		}
 		var blockSplitID *uint32
 		if splitCount > 0 {

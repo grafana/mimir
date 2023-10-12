@@ -8,18 +8,22 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -71,6 +75,13 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 	return r == tsdbIdle || r == tsdbTenantMarkedForDeletion
 }
 
+var (
+	errTSDBForcedCompaction = errors.New("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = errors.New("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
+	errTSDBClosing          = errors.New("TSDB is closing")
+	errTSDBNotActive        = errors.New("TSDB is not active")
+)
+
 type userTSDB struct {
 	db             *tsdb.DB
 	userID         string
@@ -80,10 +91,13 @@ type userTSDB struct {
 
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
+	instanceErrors      *prometheus.CounterVec
 
-	stateMtx       sync.RWMutex
-	state          tsdbState
-	pushesInFlight sync.WaitGroup // Increased with stateMtx read lock held, only if state == active or activeShipping.
+	stateMtx                                     sync.RWMutex
+	state                                        tsdbState
+	inFlightAppends                              sync.WaitGroup // Increased with stateMtx read lock held.
+	inFlightAppendsStartedBeforeForcedCompaction sync.WaitGroup // Increased with stateMtx read lock held.
+	forcedCompactionMaxTime                      int64          // Max timestamp of samples that will be compacted from the TSDB head during a forced o early compaction.
 
 	// Used to detect idle TSDBs.
 	lastUpdate atomic.Int64
@@ -110,19 +124,17 @@ type userTSDB struct {
 	shippedBlocks    map[ulid.ULID]time.Time
 }
 
-// Explicitly wrapping the tsdb.DB functions that we use.
-
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return u.db.Querier(ctx, mint, maxt)
+func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
+	return u.db.Querier(mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.ChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.ChunkQuerier(mint, maxt)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
@@ -146,15 +158,15 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.db.Compact()
+	return u.db.Compact(context.Background())
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
 	return u.db.StartTime()
 }
 
-// Atomically compare-and-set state, and return state after the operation.
-func (u *userTSDB) casState(from, to tsdbState) (bool, tsdbState) {
+// changeState atomically compare-and-swap the current state, and returns state after the operation.
+func (u *userTSDB) changeState(from, to tsdbState, updates ...func()) (bool, tsdbState) {
 	u.stateMtx.Lock()
 	defer u.stateMtx.Unlock()
 
@@ -162,43 +174,89 @@ func (u *userTSDB) casState(from, to tsdbState) (bool, tsdbState) {
 		return false, u.state
 	}
 	u.state = to
+
+	// Run any custom update while the lock is held.
+	for _, update := range updates {
+		update()
+	}
+
 	return true, u.state
 }
 
-// compactHead compacts the in-order Head block with the specified block duration and the OOO Head block
-// at the chunk range duration, to avoid having huge blocks.
-func (u *userTSDB) compactHead(blockDuration int64) error {
-	if ok, s := u.casState(active, forceCompacting); !ok {
+// changeStateToForcedCompaction atomically compare-and-swap the current state to forceCompacting,
+// setting the forcedCompactionMaxTime too.
+func (u *userTSDB) changeStateToForcedCompaction(from tsdbState, forcedCompactionMaxTime int64) (bool, tsdbState) {
+	return u.changeState(from, forceCompacting, func() {
+		u.forcedCompactionMaxTime = forcedCompactionMaxTime
+	})
+}
+
+// compactHead triggers a forced compaction of the TSDB Head. This function compacts the in-order Head
+// block with the specified block duration and the OOO Head block at the chunk range duration, to avoid
+// having huge blocks.
+//
+// The input forcedMaxTime allows to specify the maximum timestamp of samples compacted from the
+// in-order Head. You can pass math.MaxInt64 to compact the entire in-order Head.
+func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) error {
+	if ok, s := u.changeStateToForcedCompaction(active, forcedCompactionMaxTime); !ok {
 		return fmt.Errorf("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress): %s", s.String())
 	}
 
-	defer u.casState(forceCompacting, active)
+	defer u.changeState(forceCompacting, active)
 
-	// Ingestion of samples in parallel with forced compaction can lead to overlapping blocks,
-	// and possible invalidation of the references returned from Appender.GetRef().
-	// So we wait for existing in-flight requests to finish. Future push requests would fail until compaction is over.
-	u.pushesInFlight.Wait()
+	// Ingestion of samples with a time range overlapping with forced compaction can lead to overlapping blocks.
+	// For this reason, we wait for existing in-flight requests to finish, except the ones that have been intentionally
+	// allowed while forced compaction was in progress because they append samples newer than forcedMaxTime
+	// (requests appending samples older than forcedMaxTime will fail until forced compaction is completed).
+	u.inFlightAppendsStartedBeforeForcedCompaction.Wait()
 
+	// Compact the TSDB head.
 	h := u.Head()
+	for {
+		blockMinTime, blockMaxTime, isValid, isLast := nextForcedHeadCompactionRange(blockDuration, h.MinTime(), h.MaxTime(), forcedCompactionMaxTime)
+		if !isValid {
+			break
+		}
 
-	minTime, maxTime := h.MinTime(), h.MaxTime()
-
-	for (minTime/blockDuration)*blockDuration != (maxTime/blockDuration)*blockDuration {
-		// Data in Head spans across multiple block ranges, so we break it into blocks here.
-		// Block max time is exclusive, so we do a -1 here.
-		blockMaxTime := ((minTime/blockDuration)+1)*blockDuration - 1
-		if err := u.db.CompactHead(tsdb.NewRangeHead(h, minTime, blockMaxTime)); err != nil {
+		if err := u.db.CompactHead(tsdb.NewRangeHead(h, blockMinTime, blockMaxTime)); err != nil {
 			return err
 		}
 
-		// Get current min/max times after compaction.
-		minTime, maxTime = h.MinTime(), h.MaxTime()
+		// Do not check again if it was the last range.
+		if isLast {
+			break
+		}
 	}
-	err := u.db.CompactHead(tsdb.NewRangeHead(h, minTime, maxTime))
-	if err != nil {
-		return err
+
+	return u.db.CompactOOOHead(context.Background())
+}
+
+// nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
+// is triggered. If the returned isValid is false, then the returned range should not be compacted.
+func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forcedMaxTime int64) (minTime, maxTime int64, isValid, isLast bool) {
+	// Nothing to compact if the head is empty.
+	if headMinTime == math.MaxInt64 || headMaxTime == math.MinInt64 {
+		return 0, 0, false, true
 	}
-	return u.db.CompactOOOHead()
+
+	// By default we try to compact the whole head, honoring the forcedMaxTime.
+	minTime = headMinTime
+	maxTime = util_math.Min(headMaxTime, forcedMaxTime)
+
+	// Due to the forcedMaxTime, the range may be empty. In that case we just skip it.
+	if maxTime < minTime {
+		return 0, 0, false, true
+	}
+
+	// Check whether the head compaction range would span across multiple block ranges.
+	// If so, we break it to honor the block range period.
+	if (minTime/blockDuration)*blockDuration != (maxTime/blockDuration)*blockDuration {
+		// Block max time is exclusive, so we do a -1 here.
+		maxTime = ((minTime/blockDuration)+1)*blockDuration - 1
+		return minTime, maxTime, true, false
+	}
+
+	return minTime, maxTime, true, true
 }
 
 func (u *userTSDB) PreCreation(metric labels.Labels) error {
@@ -210,13 +268,14 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
+			u.instanceErrors.WithLabelValues(reasonIngesterMaxInMemorySeries).Inc()
 			return errMaxInMemorySeriesReached
 		}
 	}
 
 	// Total series limit.
-	if err := u.limiter.AssertMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())); err != nil {
-		return err
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
+		return globalerror.MaxSeriesPerUser
 	}
 
 	// Series per metric name limit.
@@ -224,8 +283,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	if err != nil {
 		return err
 	}
-	if err := u.seriesInMetric.canAddSeriesFor(u.userID, metricName); err != nil {
-		return err
+	if !u.seriesInMetric.canAddSeriesFor(u.userID, metricName) {
+		return globalerror.MaxSeriesPerMetric
 	}
 
 	return nil
@@ -242,17 +301,19 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
-	for _, metric := range metrics {
-		metricName, err := extract.MetricNameFromLabels(metric)
+	for _, lbls := range metrics {
+		metricName, err := extract.MetricNameFromLabels(lbls)
 		if err != nil {
 			// This should never happen because it has already been checked in PreCreation().
 			continue
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
+
+	u.activeSeries.PostDeletion(metrics)
 }
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
@@ -332,13 +393,15 @@ func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
 }
 
 func (u *userTSDB) isIdle(now time.Time, idle time.Duration) bool {
-	lu := u.lastUpdate.Load()
-
-	return time.Unix(lu, 0).Add(idle).Before(now)
+	return u.getLastUpdate().Add(idle).Before(now)
 }
 
 func (u *userTSDB) setLastUpdate(t time.Time) {
-	u.lastUpdate.Store(t.Unix())
+	u.lastUpdate.Store(t.UnixMilli())
+}
+
+func (u *userTSDB) getLastUpdate() time.Time {
+	return time.UnixMilli(u.lastUpdate.Load())
 }
 
 // Checks if TSDB can be closed.
@@ -364,7 +427,10 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 	return tsdbIdle
 }
 
-func (u *userTSDB) acquireAppendLock() error {
+// acquireAppendLock acquires a lock to append to the per-tenant TSDB. The minTimestamp
+// parameter must specify the lowest timestamp value that is going to be appended to
+// TSDB while the lock is held.
+func (u *userTSDB) acquireAppendLock(minTimestamp int64) (tsdbState, error) {
 	u.stateMtx.RLock()
 	defer u.stateMtx.RUnlock()
 
@@ -373,17 +439,31 @@ func (u *userTSDB) acquireAppendLock() error {
 	case activeShipping:
 		// Pushes are allowed.
 	case forceCompacting:
-		return errors.New("forced compaction in progress")
+		if u.forcedCompactionMaxTime == math.MaxInt64 {
+			return u.state, errTSDBForcedCompaction
+		}
+		if minTimestamp <= u.forcedCompactionMaxTime {
+			return u.state, errors.Wrapf(errTSDBEarlyCompaction, "request_min_timestamp: %s allowed_min_timestamp: %s", time.UnixMilli(minTimestamp).String(), time.UnixMilli(u.forcedCompactionMaxTime+1).String())
+		}
 	case closing:
-		return errors.New("TSDB is closing")
+		return u.state, errTSDBClosing
 	default:
-		return errors.New("TSDB is not active")
+		return u.state, errTSDBNotActive
 	}
 
-	u.pushesInFlight.Add(1)
-	return nil
+	u.inFlightAppends.Add(1)
+	if u.state != forceCompacting {
+		u.inFlightAppendsStartedBeforeForcedCompaction.Add(1)
+	}
+
+	return u.state, nil
 }
 
-func (u *userTSDB) releaseAppendLock() {
-	u.pushesInFlight.Done()
+// releaseAppendLock releases the lock acquired calling acquireAppendLock().
+// The input acquireState MUST be the state returned by acquireAppendLock().
+func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
+	u.inFlightAppends.Done()
+	if acquireState != forceCompacting {
+		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
+	}
 }

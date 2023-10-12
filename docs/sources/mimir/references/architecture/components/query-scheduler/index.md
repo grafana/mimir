@@ -1,15 +1,15 @@
 ---
 aliases:
   - ../../../operators-guide/architecture/components/query-scheduler/
-title: "(Optional) Grafana Mimir query-scheduler"
-menuTitle: "(Optional) Query-scheduler"
-description: "The query-scheduler distributes work to queriers."
+description: The query-scheduler distributes work to queriers.
+menuTitle: (Optional) Query-scheduler
+title: (Optional) Grafana Mimir query-scheduler
 weight: 120
 ---
 
 # (Optional) Grafana Mimir query-scheduler
 
-The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers]({{< relref "../querier.md" >}}).
+The query-scheduler is an optional, stateless component that retains a queue of queries to execute, and distributes the workload to available [queriers]({{< relref "../querier" >}}).
 
 ![Query-scheduler architecture](query-scheduler-architecture.png)
 
@@ -17,7 +17,7 @@ The query-scheduler is an optional, stateless component that retains a queue of 
 
 The following flow describes how a query moves through a Grafana Mimir cluster:
 
-1. The [query-frontend]({{< relref "../query-frontend/index.md" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
+1. The [query-frontend]({{< relref "../query-frontend" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
 1. The query-frontend enqueues the queries into a query-scheduler.
 1. The query-scheduler stores the queries in an in-memory queue where they wait for a querier to pick them up.
 1. Queriers pick up the queries, and executes them.
@@ -25,7 +25,7 @@ The following flow describes how a query moves through a Grafana Mimir cluster:
 
 ## Benefits of using the query-scheduler
 
-Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{< relref "../query-frontend/index.md#why-query-frontend-scalability-is-limited" >}}).
+Query-scheduler enables the scaling of query-frontends. You might experience challenges when you scale query-frontend. To learn more about query-frontend scalability limits, refer to [Why query-frontend scalability is limited]({{< relref "../query-frontend#why-query-frontend-scalability-is-limited" >}}).
 
 ### How query-scheduler solves query-frontend scalability limits
 
@@ -56,7 +56,7 @@ To use the query-scheduler with DNS-based service discovery, configure the query
 
 To use the query-scheduler with ring-based service discovery, configure the query-schedulers to join their hash ring, and the query-frontends and queriers to discover query-scheduler instances via the ring:
 
-1. [Configure the hash ring]({{< relref "../../../../configure/configure-hash-rings.md" >}}) for the query-scheduler.
+1. [Configure the hash ring]({{< relref "../../../../configure/configure-hash-rings" >}}) for the query-scheduler.
 1. Set `-query-scheduler.service-discovery-mode=ring` (or its respective YAML configuration parameter) to query-scheduler, query-frontend and querier.
 1. Set the `-query-scheduler.ring.*` flags (or their respective YAML configuration parameters) to query-scheduler, query-frontend and querier.
 
@@ -82,7 +82,7 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    ```
 
 1. Wait until the query-scheduler instances have completed rolling out.
-1. Ensure the changes have been successfully applied; open the [query-scheduler ring status]({{< relref "../../../../references/http-api/index.md#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
+1. Ensure the changes have been successfully applied; open the [query-scheduler ring status]({{< relref "../../../http-api#query-scheduler-ring-status" >}}) page and ensure all query-scheduler instances are registered to the ring.
    At this point, queriers and query-frontend are still discovering query-schedulers via DNS.
 1. Configure **query-frontend** and **querier** instances to discover query-schedulers via the ring:
 
@@ -104,7 +104,7 @@ To migrate the query-scheduler from [DNS-based service discovery](#dns-based-ser
    # - Ecd:    -query-scheduler.ring.etcd.*
    ```
 
-> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../../operators-guide/deploy-grafana-mimir/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery.md" >}}).
+> **Note:** If your Mimir cluster is deployed using Jsonnet, see [Migrate query-scheduler from DNS-based to ring-based service discovery]({{< relref "../../../../set-up/jsonnet/migrate-query-scheduler-from-dns-to-ring-based-service-discovery" >}}).
 
 ## Operational considerations
 

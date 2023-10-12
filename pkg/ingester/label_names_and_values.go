@@ -30,11 +30,11 @@ func labelNamesAndValues(
 	index tsdb.IndexReader,
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
-	server client.Ingester_LabelNamesAndValuesServer,
+	stream client.Ingester_LabelNamesAndValuesServer,
 ) error {
-	ctx := server.Context()
+	ctx := stream.Context()
 
-	labelNames, err := index.LabelNames(matchers...)
+	labelNames, err := index.LabelNames(ctx, matchers...)
 	if err != nil {
 		return err
 	}
@@ -49,14 +49,14 @@ func labelNamesAndValues(
 		responseSizeBytes += len(labelName)
 		// send message if (response size + size of label name of current label) is greater or equals to threshold
 		if responseSizeBytes >= messageSizeThreshold {
-			err = client.SendLabelNamesAndValuesResponse(server, &response)
+			err = client.SendLabelNamesAndValuesResponse(stream, &response)
 			if err != nil {
 				return err
 			}
 			response.Items = response.Items[:0]
 			responseSizeBytes = len(labelName)
 		}
-		values, err := index.LabelValues(labelName, matchers...)
+		values, err := index.LabelValues(ctx, labelName, matchers...)
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ func labelNamesAndValues(
 				labelItem.Values = values[lastAddedValueIndex+1 : i+1]
 				lastAddedValueIndex = i
 				response.Items = append(response.Items, labelItem)
-				err = client.SendLabelNamesAndValuesResponse(server, &response)
+				err = client.SendLabelNamesAndValuesResponse(stream, &response)
 				if err != nil {
 					return err
 				}
@@ -94,7 +94,7 @@ func labelNamesAndValues(
 	}
 	// send the last message if there is some data that was not sent.
 	if response.Size() > 0 {
-		return client.SendLabelNamesAndValuesResponse(server, &response)
+		return client.SendLabelNamesAndValuesResponse(stream, &response)
 	}
 	return nil
 }
@@ -105,7 +105,7 @@ func labelValuesCardinality(
 	lbNames []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
@@ -118,8 +118,9 @@ func labelValuesCardinality(
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+
 		// Obtain all values for current label name.
-		lblValues, err := idxReader.LabelValues(lblName, matchers...)
+		lblValues, err := idxReader.LabelValues(ctx, lblName, matchers...)
 		if err != nil {
 			return err
 		}
@@ -171,7 +172,7 @@ func computeLabelValuesSeriesCount(
 	lblValues []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) <-chan labelValueCountResult {
 	maxConcurrency := 16
 	if len(lblValues) < maxConcurrency {
@@ -215,7 +216,7 @@ func countLabelValueSeries(
 	lblValue string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) (uint64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -228,7 +229,7 @@ func countLabelValueSeries(
 
 	lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lblName, lblValue)
 
-	p, err := postingsForMatchersFn(idxReader, lblValMatchers...)
+	p, err := postingsForMatchersFn(ctx, idxReader, lblValMatchers...)
 	if err != nil {
 		return 0, err
 	}

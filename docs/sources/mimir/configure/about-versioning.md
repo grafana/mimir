@@ -46,17 +46,22 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Compactor
+  - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
+    - `-compactor.no-blocks-file-cleanup-enabled`
 - Ruler
   - Tenant federation
   - Disable alerting and recording rules evaluation on a per-tenant basis
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
-  - Ruler storage cache
-    - `-ruler-storage.cache.*`
 - Distributor
   - Metrics relabeling
   - OTLP ingestion path
+  - OTLP metadata storage
+    - `-distributor.enable-otlp-metadata-storage`
+  - Using status code 529 instead of 429 upon rate limit exhaustion.
+    - `distributor.service-overload-status-code-on-rate-limit-enabled`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -74,7 +79,6 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
-  - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -82,26 +86,46 @@ The following features are currently experimental:
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
+    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
     - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
+  - CPU/memory utilization based read request limiting:
+    - `-ingester.read-path-cpu-utilization-limit`
+    - `-ingester.read-path-memory-utilization-limit"`
+  - Early TSDB Head compaction to reduce in-memory series:
+    - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
+    - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Spread minimizing token generation strategy:
+    - `ingester.ring.token-generation-strategy`
+    - `ingester.ring.spread-minimizing-zones`
+    - `ingester.ring.spread-minimizing-join-ring-in-order`
+- Ingester client
+  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
+    - `-ingester.client.circuit-breaker.enabled`
+    - `-ingester.client.circuit-breaker.failure-threshold`
+    - `-ingester.client.circuit-breaker.failure-execution-threshold`
+    - `-ingester.client.circuit-breaker.period`
+    - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`, `-querier.minimize-ingester-requests-hedging-delay`)
+  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
+  - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
-  - Cardinality-based query sharding (`-query-frontend.query-sharding-target-series-per-shard`)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
-  - Query expression size limit (`-query-frontend.max-query-expression-size-bytes`)
+  - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
-  - `-blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled`
-  - `-blocks-storage.bucket-store.fine-grained-chunks-caching-ranges-per-series`
   - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - `-blocks-storage.bucket-store.series-selection-strategy`
 - Read-write deployment mode
@@ -109,20 +133,20 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
-- Overrides-exporter
-  - Peer discovery / tenant sharding for overrides exporters (`-overrides-exporter.ring.enabled`)
-- Per-tenant Results cache TTL (`-query-frontend.results-cache-ttl`, `-query-frontend.results-cache-ttl-for-out-of-order-time-window`)
 - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Logger
+  - Rate limited logger support
+    - `log.rate-limit-enabled`
+    - `log.rate-limit-logs-per-second`
+    - `log.rate-limit-logs-burst-size`
+- Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
+- Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
+- Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)
 
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters/index.md#parameter-lifecycle" >}}).
-
-The following features are currently deprecated and will be **removed in Mimir 2.10**:
-
-- Ingester
-  - `-blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup`
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters#parameter-lifecycle" >}}).
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
 
@@ -134,3 +158,8 @@ The following features or configuration parameters are currently deprecated and 
   - `-blocks-storage.bucket-store.bucket-index.enabled`
 - Querier
   - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)
+
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
+
+- Logging
+  - `-log.buffered`

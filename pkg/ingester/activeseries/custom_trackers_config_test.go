@@ -14,7 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func mustNewCustomTrackersConfigFromMap(t *testing.T, source map[string]string) CustomTrackersConfig {
+func mustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]string) CustomTrackersConfig {
 	m, err := NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m

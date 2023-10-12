@@ -6,10 +6,15 @@
 package ingester
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/grafana/dskit/middleware"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,4 +38,31 @@ max_tenants: 50000
 	require.Equal(t, int64(50000), l.MaxInMemoryTenants)
 	require.Equal(t, int64(30), l.MaxInMemorySeries)       // default value
 	require.Equal(t, int64(40), l.MaxInflightPushRequests) // default value
+}
+
+func TestInstanceLimitErr(t *testing.T) {
+	userID := "1"
+	limitErrors := []error{
+		errMaxIngestionRateReached,
+		wrapOrAnnotateWithUser(errMaxIngestionRateReached, userID),
+		errMaxTenantsReached,
+		wrapOrAnnotateWithUser(errMaxTenantsReached, userID),
+		errMaxInMemorySeriesReached,
+		wrapOrAnnotateWithUser(errMaxInMemorySeriesReached, userID),
+		errMaxInflightRequestsReached,
+		wrapOrAnnotateWithUser(errMaxInflightRequestsReached, userID),
+	}
+	for _, limitError := range limitErrors {
+		var safe safeToWrap
+		require.ErrorAs(t, limitError, &safe)
+
+		var optional middleware.OptionalLogging
+		require.ErrorAs(t, limitError, &optional)
+		require.False(t, optional.ShouldLog(context.Background(), time.Duration(0)))
+
+		stat, ok := status.FromError(limitError)
+		require.True(t, ok, "expected to be able to convert to gRPC status")
+		require.Equal(t, codes.Unavailable, stat.Code())
+		require.ErrorContains(t, stat.Err(), limitError.Error())
+	}
 }

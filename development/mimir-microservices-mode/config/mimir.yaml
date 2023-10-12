@@ -25,7 +25,6 @@ ingester:
       store: consul
       consul:
         host: consul:8500
-    replication_factor: 1
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
@@ -41,6 +40,11 @@ blocks_storage:
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
+
+    # Always use the PostingsForMatchers() cache in order to exercise it.
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_ttl: 1m
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier

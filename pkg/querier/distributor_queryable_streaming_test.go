@@ -23,15 +23,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestStreamingChunkSeries_HappyPath(t *testing.T) {
-	chunkIteratorFunc := func(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
-		return streamingChunkSeriesTestIterator{
-			chunks:  chunks,
-			from:    from,
-			through: through,
-		}
+func streamingChunkSeriesTestIteratorFunc(_ chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {
+	return streamingChunkSeriesTestIterator{
+		chunks:  chunks,
+		from:    from,
+		through: through,
 	}
+}
 
+func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	chunkUniqueToFirstSource := createTestChunk(t, 1500, 1.23)
 	chunkUniqueToSecondSource := createTestChunk(t, 2000, 4.56)
 	chunkPresentInBothSources := createTestChunk(t, 2500, 7.89)
@@ -45,10 +45,10 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
 		},
 		context: &streamingChunkSeriesContext{
-			chunkIteratorFunc: chunkIteratorFunc,
+			chunkIteratorFunc: streamingChunkSeriesTestIteratorFunc,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}
@@ -86,14 +86,38 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 			chunkIteratorFunc: nil,
 			mint:              1000,
 			maxt:              6000,
-			queryChunkMetrics: stats.NewQueryChunkMetrics(reg),
+			queryMetrics:      stats.NewQueryMetrics(reg),
 			queryStats:        queryStats,
 		},
 	}
 
 	iterator := series.Iterator(nil)
 	require.NotNil(t, iterator)
-	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from stream, but the stream has already been exhausted")
+	require.EqualError(t, iterator.Err(), "attempted to read series at index 0 from ingester chunks stream, but the stream has already been exhausted (was expecting 0 series)")
+}
+
+func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
+	series := streamingChunkSeries{
+		labels: labels.FromStrings("the-name", "the-value"),
+		sources: []client.StreamingSeriesSource{
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1500, 1.23)}}})},
+		},
+		context: &streamingChunkSeriesContext{
+			chunkIteratorFunc: streamingChunkSeriesTestIteratorFunc,
+			mint:              1000,
+			maxt:              6000,
+			queryMetrics:      stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
+			queryStats:        &stats.Stats{},
+		},
+	}
+
+	iterator := series.Iterator(nil)
+	require.NotNil(t, iterator)
+	require.NoError(t, iterator.Err())
+
+	iterator = series.Iterator(iterator)
+	require.NotNil(t, iterator)
+	require.EqualError(t, iterator.Err(), `can't create iterator multiple times for the one streaming series ({the-name="the-value"})`)
 }
 
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {
@@ -121,7 +145,9 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 		batches: batches,
 	}
 
-	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0), log.NewNopLogger())
+	cleanup := func() {}
+
+	reader := client.NewSeriesChunksStreamReader(mockClient, seriesCount, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	return reader
@@ -158,7 +184,7 @@ func (s streamingChunkSeriesTestIterator) AtT() int64 {
 }
 
 func (s streamingChunkSeriesTestIterator) Err() error {
-	panic("not implemented")
+	return nil
 }
 
 type mockQueryStreamClient struct {

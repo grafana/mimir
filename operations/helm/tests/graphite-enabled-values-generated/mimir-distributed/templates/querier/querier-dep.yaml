@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: graphite-enabled-values
       app.kubernetes.io/component: querier
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -89,6 +92,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
           envFrom:
       nodeSelector:
         {}

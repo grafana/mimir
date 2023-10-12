@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: gateway-nginx-values
       app.kubernetes.io/component: distributor
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -88,6 +91,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "8"
           envFrom:
       nodeSelector:
         {}

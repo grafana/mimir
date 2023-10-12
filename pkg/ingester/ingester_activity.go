@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/grafana/dskit/tenant"
-	"github.com/weaveworks/common/tracing"
+	"github.com/grafana/dskit/tracing"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -36,7 +36,7 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 	return i.ing.Push(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, r *push.Request) (*mimirpb.WriteResponse, error) {
+func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, r *push.Request) error {
 	// No tracking in PushWithCleanup
 	return i.ing.PushWithCleanup(ctx, r)
 }
@@ -165,6 +165,24 @@ func (i *ActivityTrackerWrapper) UserRegistryHandler(writer http.ResponseWriter,
 	defer i.tracker.Delete(ix)
 
 	i.ing.UserRegistryHandler(writer, request)
+}
+
+func (i *ActivityTrackerWrapper) TenantsHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/TenantsHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.TenantsHandler(w, r)
+}
+
+func (i *ActivityTrackerWrapper) TenantTSDBHandler(w http.ResponseWriter, r *http.Request) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(r.Context(), "Ingester/TenantTSDBHandler", nil)
+	})
+	defer i.tracker.Delete(ix)
+
+	i.ing.TenantTSDBHandler(w, r)
 }
 
 func requestActivity(ctx context.Context, name string, req interface{}) string {

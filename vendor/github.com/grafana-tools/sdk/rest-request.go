@@ -69,7 +69,7 @@ func NewClient(apiURL, apiKeyOrBasicAuth string, client *http.Client) (*Client, 
 		if !basicAuth {
 			key = fmt.Sprintf("Bearer %s", apiKeyOrBasicAuth)
 		} else {
-			parts := strings.Split(apiKeyOrBasicAuth, ":")
+			parts := strings.SplitN(apiKeyOrBasicAuth, ":", 2)
 			baseURL.User = url.UserPassword(parts[0], parts[1])
 		}
 	}

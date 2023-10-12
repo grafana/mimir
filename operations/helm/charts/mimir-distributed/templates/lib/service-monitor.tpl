@@ -57,6 +57,10 @@ spec:
         {{- with .relabelings }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .scheme }}
       scheme: {{ . }}
       {{- end }}

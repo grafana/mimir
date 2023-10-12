@@ -1,0 +1,115 @@
+name: Build and Push mimir-build-image
+
+# configure trigger by pull request
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - mimir-build-image/Dockerfile  
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs: 
+  build_and_push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Allow PR modification for collaborators, forks should remain read-only
+      pull-requests: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Checkout Pull Request Branch
+        run: gh pr checkout ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Prepare Variables
+        id: prepare
+        run: |
+          echo "path=mimir-build-image/Dockerfile" >> $GITHUB_OUTPUT
+          main_build_image=$(make print-build-image)
+          main_image_tag=$(echo $main_build_image | cut -d ':' -f 2)
+          image_name=$(echo $main_build_image | cut -d ':' -f 1)
+          echo "image=$image_name" >> $GITHUB_OUTPUT
+          echo "main_image_tag=$main_image_tag" >> $GITHUB_OUTPUT
+
+      - name: Compute Image Tag
+        id: compute_hash
+        run: |
+          current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print substr($1, 0, 10)}')
+          echo "the file path is ${{ steps.prepare.outputs.path }}"
+          echo "build tag is $current_hash"
+          tag="pr${{ github.event.pull_request.number }}-$current_hash"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+
+      - name: Check Should Build Image
+        id: check_build
+        run: |
+          echo "Checking if image should be built"
+          if skopeo inspect --raw "docker://${{ steps.prepare.outputs.image }}:${{ steps.compute_hash.outputs.tag }}" >/dev/null 2>&1; then
+            echo "build=false" >> $GITHUB_OUTPUT
+            echo "Tag ${{ steps.compute_hash.outputs.tag }} exists"
+          else
+            echo "Tag ${{ steps.compute_hash.outputs.tag }} does not exist"
+            echo "build=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Add Comment to the PR
+        id: notification
+        run: | 
+          if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
+           gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
+           a new commit will automatically be added to this PR with new image version \\\`$IMAGE:$TAG\\\`. This can take up to 1 hour."
+          else
+            echo "This PR will not trigger a build of mimir-build-image"
+            gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \\\`mimir-build-image/Dockerfile\\\`, but the image \\\`$IMAGE:$TAG\\\` already exists."
+          fi
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          TAG: ${{ steps.compute_hash.outputs.tag }}
+          IMAGE: ${{ steps.prepare.outputs.image }}
+
+      - name: Build and Push Docker Image
+        if: steps.check_build.outputs.build == 'true'
+        run: |
+          echo "Building and Pushing Docker Image"
+          make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
+      
+      - name: Add commit to PR in order to update Build Image version
+        if: steps.check_build.outputs.build == 'true'
+        run: |
+          echo "Get current Build Image Version"
+          echo "Current Build Image Version is $MAIN_TAG"
+          echo "Built Image Version is $TAG"
+          if [ "$MAIN_TAG" = "$TAG" ]; then
+            echo "Build Image Version is already up to date"
+          else
+            echo "Build Image Version is not up to date"
+            sed -i "s/$MAIN_TAG/${{ steps.compute_hash.outputs.tag }}/g" Makefile
+            git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
+            git config --global user.name "${{ github.event.pull_request.user.login }}"
+            git add Makefile
+            git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
+            git push
+          fi 
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          TAG: ${{ steps.compute_hash.outputs.tag }}
+          MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}

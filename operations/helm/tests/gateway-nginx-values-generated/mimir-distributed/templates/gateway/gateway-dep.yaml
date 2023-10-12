@@ -19,6 +19,9 @@ spec:
       app.kubernetes.io/instance: gateway-nginx-values
       app.kubernetes.io/component: gateway
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -42,7 +45,7 @@ spec:
         []
       containers:
         - name: nginx
-          image: docker.io/nginxinc/nginx-unprivileged:1.24-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
           imagePullPolicy: IfNotPresent
           args:
           volumeMounts:

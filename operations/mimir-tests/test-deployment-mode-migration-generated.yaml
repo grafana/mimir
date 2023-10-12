@@ -20,6 +20,32 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: compactor
+  name: compactor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: compactor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: distributor
+  name: distributor
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: distributor
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: ingester-rollout
   name: ingester-rollout
   namespace: default
@@ -33,8 +59,60 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-backend-rollout-pdb
-  name: mimir-backend-rollout-pdb
+    name: memcached
+  name: memcached
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-frontend
+  name: memcached-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-index-queries
+  name: memcached-index-queries
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-index-queries
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: memcached-metadata
+  name: memcached-metadata
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: memcached-metadata
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: mimir-backend-rollout
+  name: mimir-backend-rollout
   namespace: default
 spec:
   maxUnavailable: 1
@@ -46,14 +124,92 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: mimir-write-rollout-pdb
-  name: mimir-write-rollout-pdb
+    name: mimir-read
+  name: mimir-read
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: mimir-read
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: mimir-write-rollout
+  name: mimir-write-rollout
   namespace: default
 spec:
   maxUnavailable: 1
   selector:
     matchLabels:
       rollout-group: mimir-write
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: querier
+  name: querier
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: querier
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-frontend
+  name: query-frontend
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: query-scheduler
+  name: query-scheduler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: query-scheduler
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: rollout-operator
+  name: rollout-operator
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: rollout-operator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    name: ruler
+  name: ruler
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: ruler
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -202,7 +358,8 @@ metadata:
 spec:
   clusterIP: None
   ports:
-  - name: gossip-ring
+  - appProtocol: tcp
+    name: gossip-ring
     port: 7946
     protocol: TCP
     targetPort: 7946
@@ -781,8 +938,8 @@ spec:
       name: distributor
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -793,7 +950,7 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -818,7 +975,10 @@ spec:
         - -server.http-listen-port=8080
         - -target=distributor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        env:
+        - name: GOMAXPROCS
+          value: "8"
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -869,8 +1029,8 @@ spec:
       name: mimir-read
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -928,7 +1088,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -979,8 +1139,8 @@ spec:
       name: querier
   strategy:
     rollingUpdate:
-      maxSurge: 5
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1023,9 +1183,11 @@ spec:
         - -target=querier
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -1076,8 +1238,8 @@ spec:
       name: query-frontend
   strategy:
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 1
+      maxSurge: 15%
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1106,7 +1268,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -1157,8 +1319,8 @@ spec:
       name: query-scheduler
   strategy:
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -1185,7 +1347,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1239,7 +1401,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.6.0
+        image: grafana/rollout-operator:v0.8.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1301,9 +1463,13 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.max-partial-query-length=768h
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.store=memberlist
         - -ruler.rule-path=/rules
@@ -1317,7 +1483,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1394,7 +1560,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1491,7 +1657,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1544,7 +1710,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-a
@@ -1603,13 +1769,13 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1662,7 +1828,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-b
@@ -1721,13 +1887,13 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1780,7 +1946,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: ingester
   name: ingester-zone-c
@@ -1839,13 +2005,13 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1923,6 +2089,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1938,7 +2105,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.11.2
+        image: prom/memcached-exporter:v0.13.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1976,6 +2143,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -1987,11 +2155,11 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.11.2
+        image: prom/memcached-exporter:v0.13.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2029,6 +2197,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -2040,11 +2209,11 @@ spec:
             memory: 1536Mi
           requests:
             cpu: 500m
-            memory: 1329Mi
+            memory: 1176Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.11.2
+        image: prom/memcached-exporter:v0.13.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2082,6 +2251,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
+        - --extended=track_sizes
         image: memcached:1.6.19-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
@@ -2093,11 +2263,11 @@ spec:
             memory: 768Mi
           requests:
             cpu: 500m
-            memory: 715Mi
+            memory: 638Mi
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.11.2
+        image: prom/memcached-exporter:v0.13.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -2164,8 +2334,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -2216,9 +2386,13 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
@@ -2237,7 +2411,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2344,8 +2518,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -2396,9 +2570,13 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
@@ -2417,7 +2595,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2524,8 +2702,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -2576,9 +2754,13 @@ spec:
         - -query-scheduler.ring.prefix=
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
+        - -ruler-storage.cache.backend=memcached
+        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
+        - -ruler-storage.cache.memcached.max-async-concurrency=50
+        - -ruler-storage.cache.memcached.max-item-size=1048576
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://mimir-backend.default.svc.cluster.local:8080/alertmanager
-        - -ruler.max-rule-groups-per-tenant=35
+        - -ruler.max-rule-groups-per-tenant=70
         - -ruler.max-rules-per-rule-group=20
         - -ruler.query-frontend.address=dns:///mimir-read-headless.default.svc.cluster.local:9095
         - -ruler.ring.store=memberlist
@@ -2597,7 +2779,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -2695,7 +2877,7 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -2718,7 +2900,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -2727,7 +2909,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -2825,7 +3007,7 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -2848,7 +3030,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -2857,7 +3039,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -2955,7 +3137,7 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
-        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local:2379
         - -distributor.ha-tracker.prefix=prom_ha/
         - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
@@ -2978,7 +3160,7 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=10000
+        - -server.grpc-max-concurrent-streams=500
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -2987,7 +3169,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -3040,7 +3222,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-a
@@ -3089,8 +3271,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -3122,7 +3304,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3175,7 +3357,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-b
@@ -3224,8 +3406,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -3257,7 +3439,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -3310,7 +3492,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   labels:
     rollout-group: store-gateway
   name: store-gateway-zone-c
@@ -3359,8 +3541,8 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-header-lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
+        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -3392,7 +3574,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.9.1
+        image: grafana/mimir:2.10.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

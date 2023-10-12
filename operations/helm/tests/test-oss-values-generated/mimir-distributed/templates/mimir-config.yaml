@@ -114,6 +114,11 @@ data:
       rule_path: /data
     ruler_storage:
       backend: s3
+      cache:
+        backend: memcached
+        memcached:
+          addresses: dns+test-oss-values-mimir-metadata-cache.citestns.svc:11211
+          max_item_size: 1048576
       s3:
         access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
@@ -123,7 +128,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m

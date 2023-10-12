@@ -21,22 +21,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
 
+  goversion:
+    runs-on: ubuntu-latest
+    needs: prepare
+    container: 
+      image: ${{ needs.prepare.outputs.build_image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Git Config
+        run: git config --global --add safe.directory '*'
+      - name: Get Go Version
+        id: go-version
+        run: |
+          echo "version=$(make BUILD_IN_CONTAINER=false print-go-version)" >> "$GITHUB_OUTPUT"
+    outputs:
+      version: ${{ steps.go-version.outputs.version }}
+
   lint:
     runs-on: ubuntu-latest
-    needs:
-      - prepare
+    needs: prepare
     container:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -45,6 +60,32 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get golangci-lint cache path
+        id: golangcilintcache
+        run: |
+          echo "path=$(golangci-lint cache status | grep 'Dir: ' | cut -d ' ' -f2)" >> "$GITHUB_OUTPUT"
+      - name: Cache golangci-lint cache
+        uses: actions/cache@v3
+        with:
+          key: lint-golangci-lint-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', '.golangci.yml', 'Makefile') }}
+          path: ${{ steps.golangcilintcache.outputs.path }}
+      - name: Get Go cache paths
+        id: goenv
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: lint-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.goenv.outputs.gocache }}
+      # Although we use vendoring, this linting job downloads all modules to verify that what is vendored is correct,
+      # so it'll use GOMODCACHE. Other jobs don't need this.
+      - name: Cache Go module cache
+        uses: actions/cache@v3
+        with:
+          key: lint-go-mod-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.goenv.outputs.gomodcache }}
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -53,7 +94,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check White Noise.
+      - name: Check White Noise
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
@@ -63,16 +104,39 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v1.9.0
+      image: grafana/doc-validator:v4.0.0
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Run doc-validator tool (mimir)
-        run: doc-validator ./docs/sources/mimir /docs/mimir/latest
+        run: >
+          doc-validator
+          '--skip-checks=^canonical-does-not-match-pretty-URL$'
+          docs/sources/mimir
+          /docs/mimir/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
       - name: Run doc-validator tool (helm-charts)
-        run: doc-validator ./docs/sources/helm-charts /docs/mimir/latest
+        run: >
+          doc-validator
+          docs/sources/helm-charts
+          /docs/helm-charts/mimir-distributed/latest
+          | reviewdog
+          -f=rdjsonl
+          --fail-on-error
+          --filter-mode=nofilter
+          --name=doc-validator
+          --reporter=github-pr-review
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
   lint-jsonnet:
     runs-on: ubuntu-latest
@@ -82,7 +146,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -112,7 +176,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
@@ -143,34 +207,29 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get Go build cache path
+        id: gocache
+        run: |
+          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: test-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.gocache.outputs.path }}
       - name: Run Tests
         run: |
           echo "Running unit tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-unit-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   test-docs:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Run Git Config
-        run: git config --global --add safe.directory '*'
-      - name: "Build website"
-        run: |
-          docker run \
-            -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-            -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
-            -e HUGO_REFLINKSERRORLEVEL=ERROR \
-            --rm \
-            grafana/docs-base:latest \
-              /bin/bash -c 'make hugo'
+    uses: ./.github/workflows/test-docs.yml
 
   build:
     runs-on: ubuntu-latest
@@ -180,20 +239,29 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get Go build cache path
+        id: gocache
+        run: |
+          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: build-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.gocache.outputs.path }}
       - name: Build Multiarch Docker Images Locally
         # Ignore mimir-build-image and mimir-rules-action.
         run: |
@@ -206,9 +274,20 @@ jobs:
         with:
           name: Docker Images
           path: ./images.tar
+      - name: Build Mimir with race-detector
+        run: |
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
+          make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
+          docker save $MIMIR_IMAGE -o ./mimir_race_image
+      - name: Upload archive with race-enabled Mimir
+        uses: actions/upload-artifact@v3
+        with:
+          name: Race-enabled Mimir
+          path: ./mimir_race_image
 
   integration:
-    needs: build
+    needs: [goversion, build]
     runs-on: ubuntu-latest
     strategy:
       # Do not abort other groups when one fails.
@@ -221,9 +300,10 @@ jobs:
       - name: Upgrade golang
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.5
+          go-version: ${{ needs.goversion.outputs.version }}
+          cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client
@@ -232,20 +312,35 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Get Go build cache path
+        id: gocache
+        run: |
+          echo "path=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go build cache
+        uses: actions/cache@v3
+        with:
+          key: integration-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v3
         with:
           name: Docker Images
       - name: Extract Docker Images from Archive
         run: tar xvf images.tar -C /
-      - name: Load Mimir Image into Docker
+      - name: Load Mimirtool Image into Docker
         run: |
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
-          skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
           skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
-          # Print Mimir version and architecture loaded to Docker.
-          docker run "grafana/mimir:$IMAGE_TAG" --version
+      - name: Download Archive with Docker Images
+        uses: actions/download-artifact@v3
+        with:
+          name: Race-enabled Mimir
+      - name: Load race-enabled mimir into Docker
+        run: |
+          docker load -i ./mimir_race_image
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          docker run "grafana/mimir:$IMAGE_TAG_RACE" --version
       - name: Preload Images
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
@@ -253,8 +348,9 @@ jobs:
         run: go run ./tools/pre-pull-images | xargs -n1 -P4 docker pull
       - name: Integration Tests
         run: |
+          export IMAGE_TAG_RACE=$(make image-tag-race)
+          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG_RACE"
           export IMAGE_TAG=$(make image-tag)
-          export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG"
           export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
           echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
@@ -270,7 +366,7 @@ jobs:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
       - name: Install Docker Client

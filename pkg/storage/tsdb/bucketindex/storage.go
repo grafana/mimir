@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
@@ -25,7 +26,12 @@ var (
 )
 
 // ReadIndex reads, parses and returns a bucket index from the bucket.
+// ReadIndex has a one-minute timeout for completing the read against the bucket.
+// One minute is hard-coded to a reasonably high value to protect against operations that can take unbounded time.
 func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.

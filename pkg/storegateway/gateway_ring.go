@@ -8,7 +8,9 @@ package storegateway
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,13 +34,17 @@ const (
 	// a different name to avoid clashing Prometheus metrics when running in single-binary).
 	RingNameForClient = "store-gateway-client"
 
-	// We use a safe default instead of exposing to config option to the user
+	// RingNumTokens is the number of tokens registered in the ring by each store-gateway
+	// instance. We use a safe default instead of exposing to config option to the user
 	// in order to simplify the config.
 	RingNumTokens = 512
 
 	// sharedOptionWithRingClient is a message appended to all config options that should be also
 	// set on the components running the store-gateway ring client.
 	sharedOptionWithRingClient = " This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."
+
+	ringFlagsPrefix          = "store-gateway.sharding-ring."
+	ringHeartbeatTimeoutFlag = ringFlagsPrefix + "heartbeat-timeout"
 )
 
 var (
@@ -72,6 +78,7 @@ type RingConfig struct {
 	ReplicationFactor    int           `yaml:"replication_factor" category:"advanced"`
 	TokensFilePath       string        `yaml:"tokens_file_path"`
 	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
+	AutoForgetEnabled    bool          `yaml:"auto_forget_enabled"`
 
 	// Wait ring stability.
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -100,16 +107,15 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		os.Exit(1)
 	}
 
-	ringFlagsPrefix := "store-gateway.sharding-ring."
-
 	// Ring flags
 	cfg.KVStore.Store = "memberlist"
 	cfg.KVStore.RegisterFlagsWithPrefix(ringFlagsPrefix, "collectors/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, ringFlagsPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
-	f.DurationVar(&cfg.HeartbeatTimeout, ringFlagsPrefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
+	f.DurationVar(&cfg.HeartbeatTimeout, ringHeartbeatTimeoutFlag, time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
 	f.IntVar(&cfg.ReplicationFactor, ringFlagsPrefix+"replication-factor", 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
 	f.StringVar(&cfg.TokensFilePath, ringFlagsPrefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, ringFlagsPrefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate blocks across different availability zones."+sharedOptionWithRingClient)
+	f.BoolVar(&cfg.AutoForgetEnabled, ringFlagsPrefix+"auto-forget-enabled", true, fmt.Sprintf("When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than %d times the configured -%s.", ringAutoForgetUnhealthyPeriods, ringHeartbeatTimeoutFlag))
 
 	// Wait stability flags.
 	f.DurationVar(&cfg.WaitStabilityMinDuration, ringFlagsPrefix+"wait-stability-min-duration", 0, "Minimum time to wait for ring stability at startup, if set to positive value.")
@@ -153,7 +159,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		Zone:                            cfg.InstanceZone,
 		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.HeartbeatTimeout,

@@ -1,8 +1,5 @@
 ---
-title: "Grafana Mimir documentation"
-description: "Technical documentation for Grafana Mimir"
-menuTitle: "Grafana Mimir"
-weight: 1
+description: Technical documentation for Grafana Mimir
 keywords:
   - Grafana Mimir
   - Grafana metrics
@@ -13,6 +10,9 @@ keywords:
   - metrics storage
   - metrics datastore
   - observability
+menuTitle: Grafana Mimir
+title: Grafana Mimir documentation
+weight: 1
 ---
 
 # Grafana Mimir documentation

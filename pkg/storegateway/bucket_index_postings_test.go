@@ -112,6 +112,24 @@ func TestWorstCaseFetchedDataStrategy(t *testing.T) {
 				{totalSize: 4 * 1024},
 			},
 		},
+		"two small, one large list, one with __name__": {
+			input: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: labels.MetricName, Value: "foo"}}},
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+			expectedSelected: []postingGroup{
+				// Even though the __name__ group is too large it is still selected
+				// in order to minimize the sparseness of the selected series.
+				{totalSize: 64 * 1024 * 1024, keys: []labels.Label{{Name: labels.MetricName, Value: "foo"}}},
+				{totalSize: 256},
+				{totalSize: 128},
+			},
+			expectedOmitted: []postingGroup{
+				{totalSize: 64 * 1024 * 1024},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
