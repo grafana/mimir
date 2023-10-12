@@ -1418,7 +1418,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch series")
 	}
-	seriesSetsIterator = newLimitingSeriesChunkRefsSetIterator(seriesSetsIterator, NewLimiter(0, nil), seriesLimiter)
+	seriesSetsIterator = newLimitingSeriesChunkRefsSetIterator(seriesSetsIterator, NewLimiter(0, nil, ""), seriesLimiter)
 	seriesSet := newSeriesChunkRefsSeriesSet(seriesSetsIterator)
 	// Extract label names from all series. Many label names will be the same, so we need to deduplicate them.
 	labelNames := map[string]struct{}{}

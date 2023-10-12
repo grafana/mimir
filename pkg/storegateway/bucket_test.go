@@ -268,7 +268,7 @@ func TestBlockLabelNames(t *testing.T) {
 	slices.Sort(jFooLabelNames)
 	slices.Sort(jNotFooLabelNames)
 
-	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
+	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}), "exceeded unlimited limit of %v")
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
@@ -2322,7 +2322,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		"should fail if the number of unique series queried is greater than the configured series limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			seriesLimit: 1,
-			expectedErr: ErrSeriesLimitMessage,
+			expectedErr: "the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query)",
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
@@ -2332,7 +2332,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
 			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
 			chunksLimit: 3,
-			expectedErr: ErrChunksLimitMessage,
+			expectedErr: "the query exceeded the maximum number of chunks (limit: 3 chunks) (err-mimir-max-chunks-per-query)",
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
 			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},

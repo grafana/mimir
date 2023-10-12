@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
@@ -83,17 +82,17 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 		additionalQuerierFlags      map[string]string
 		expectedErrorKey            string
 	}{
-		"when store-gateway hits max_fetched_series_per_query, 'exceeded series limit' is returned": {
+		"when store-gateway hits max_fetched_series_per_query, 'err-mimir-max-series-per-query' is returned": {
 			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-series-per-query": "1"},
-			expectedErrorKey:            storegateway.ErrSeriesLimitMessage,
+			expectedErrorKey:            string(globalerror.MaxSeriesPerQuery),
 		},
 		"when querier hits max_fetched_series_per_query, 'err-mimir-max-series-per-query' is returned": {
 			additionalQuerierFlags: map[string]string{"-querier.max-fetched-series-per-query": "1"},
 			expectedErrorKey:       string(globalerror.MaxSeriesPerQuery),
 		},
-		"when store-gateway hits max_fetched_chunks_per_query, 'exceeded chunks limit' is returned": {
+		"when store-gateway hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
 			additionalStoreGatewayFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "1"},
-			expectedErrorKey:            storegateway.ErrChunksLimitMessage,
+			expectedErrorKey:            string(globalerror.MaxChunksPerQuery),
 		},
 		"when querier hits max_fetched_chunks_per_query, 'err-mimir-max-chunks-per-query' is returned": {
 			additionalQuerierFlags: map[string]string{"-querier.max-fetched-chunks-per-query": "1"},

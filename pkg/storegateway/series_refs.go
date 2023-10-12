@@ -51,11 +51,6 @@ var (
 	})
 )
 
-const (
-	ErrSeriesLimitMessage = "exceeded series limit"
-	ErrChunksLimitMessage = "exceeded chunks limit"
-)
-
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
 type seriesChunkRefsSetIterator interface {
 	Next() bool
@@ -649,7 +644,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	l.currentBatch = l.from.At()
 	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
 	if err != nil {
-		l.err = errors.Wrap(err, ErrSeriesLimitMessage)
+		l.err = err
 		return false
 	}
 
@@ -660,7 +655,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 
 	err = l.chunksLimiter.Reserve(uint64(totalChunks))
 	if err != nil {
-		l.err = errors.Wrap(err, ErrChunksLimitMessage)
+		l.err = err
 		return false
 	}
 	return true

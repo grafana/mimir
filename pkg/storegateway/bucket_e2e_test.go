@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -623,12 +622,12 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 		},
 		"should fail if the max chunks limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks - 1,
-			expectedErr:    "exceeded chunks limit",
+			expectedErr:    "the query exceeded the maximum number of chunks (limit: 11 chunks) (err-mimir-max-chunks-per-query)",
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
 		"should fail if the max series limit is exceeded - 422": {
 			maxChunksLimit: expectedChunks,
-			expectedErr:    "exceeded series limit",
+			expectedErr:    "the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query)",
 			maxSeriesLimit: 1,
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
@@ -665,7 +664,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 						assert.NoError(t, err)
 					} else {
 						assert.Error(t, err)
-						assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
+						assert.Contains(t, err.Error(), testData.expectedErr)
 						status, ok := status.FromError(err)
 						assert.Equal(t, true, ok)
 						assert.Equal(t, testData.expectedCode, status.Code())
