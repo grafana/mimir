@@ -33,6 +33,6 @@ func goLeakOptions() []goleak.Option {
 		// so we ignore its gouroutines and then ones from glog which is a ristretto dependency.
 		goleak.IgnoreTopFunction("github.com/dgraph-io/ristretto.(*defaultPolicy).processItems"),
 		goleak.IgnoreTopFunction("github.com/dgraph-io/ristretto.(*Cache).processItems"),
-		goleak.IgnoreTopFunction("github.com/golang/glog.(*loggingT).flushDaemon"),
+		goleak.IgnoreTopFunction("github.com/golang/glog.(*fileSink).flushDaemon"),
 	}
 }
