@@ -3,9 +3,9 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
-FROM alpine/helm:3.11.1 as helm
-FROM golang:1.20.5-bullseye
+FROM registry.k8s.io/kustomize/kustomize:v5.1.1 as kustomize
+FROM alpine/helm:3.13.0 as helm
+FROM golang:1.20.10-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -35,7 +35,7 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.52.2
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.54.1
 
 ENV SKOPEO_VERSION=v1.10.0
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \
