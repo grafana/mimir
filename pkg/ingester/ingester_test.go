@@ -8996,9 +8996,10 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 func TestIngester_HandlePushError(t *testing.T) {
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	labels := mimirpb.FromLabelAdaptersToLabels(
-		[]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}},
-	)
+	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
+
+	timestamp := model.Time(1)
 	testCases := []struct {
 		name                string
 		err                 error
@@ -9017,18 +9018,15 @@ func TestIngester_HandlePushError(t *testing.T) {
 			doNotLogExpected:    true,
 		},
 		{
-			name: "an unavailableError gets translated into an errorWithStatus Unavailable error",
-			err:  newUnavailableError("stopping"),
-			expectedTranslation: newErrorWithStatus(
-				newUnavailableError("stopping"),
-				codes.Unavailable,
-			),
+			name:                "an unavailableError gets translated into an errorWithStatus Unavailable error",
+			err:                 newUnavailableError(services.Stopping),
+			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
 		},
 		{
 			name: "a wrapped unavailableError gets translated into a non-loggable errorWithStatus Unavailable error",
-			err:  fmt.Errorf("wrapped: %w", newUnavailableError("stopping")),
+			err:  fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
 			expectedTranslation: newErrorWithStatus(
-				fmt.Errorf("wrapped: %w", newUnavailableError("stopping")),
+				fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
 				codes.Unavailable,
 			),
 		},
@@ -9067,18 +9065,34 @@ func TestIngester_HandlePushError(t *testing.T) {
 			),
 		},
 		{
-			name: "a validationError gets translated into an errorWithHTTPStatus 400 error",
-			err:  validationError{message: "validation error"},
+			name: "a sampleError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newSampleError("exemplar error", timestamp, labelAdapters),
 			expectedTranslation: newErrorWithHTTPStatus(
-				validationError{message: "validation error"},
+				newSampleError("exemplar error", timestamp, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		{
-			name: "a wrapped validationError gets translated into an errorWithHTTPStatus 400 error",
-			err:  fmt.Errorf("wrapped: %w", validationError{message: "validation error"}),
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newSampleError("exemplar error", timestamp, labelAdapters)),
 			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", validationError{message: "validation error"}),
+				fmt.Errorf("wrapped: %w", newSampleError("exemplar error", timestamp, labelAdapters)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},

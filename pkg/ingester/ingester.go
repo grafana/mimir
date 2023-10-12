@@ -3117,13 +3117,10 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 // TSDB after the ingester has closed them.
 func (i *Ingester) checkAvailable() error {
 	s := i.State()
-	i.lifecycler.State()
 	if s == services.Running {
 		return nil
 	}
-	return newUnavailableError(
-		s.String(),
-	)
+	return newUnavailableError(s)
 }
 
 // TODO checkRunning should be removed once the error handling improvement is completed.
@@ -3149,34 +3146,20 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func handlePushError(err error) error {
-	var (
-		badDataErr badDataError
-	)
-	switch {
-	case errors.As(err, &badDataErr):
-		return newErrorWithHTTPStatus(
-			err,
-			http.StatusBadRequest,
-		)
-	case errors.As(err, &unavailableError{}):
-		return newErrorWithStatus(
-			err,
-			codes.Unavailable,
-		)
-	case errors.As(err, &instanceLimitReachedError{}):
-		return newErrorWithStatus(
-			util_log.DoNotLogError{Err: err},
-			codes.Unavailable,
-		)
-	case errors.As(err, &tsdbUnavailableError{}):
-		return newErrorWithHTTPStatus(
-			err,
-			http.StatusServiceUnavailable,
-		)
-
-	default:
-		return err
+	var ingesterErr ingesterError
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorType() {
+		case badData:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case unavailable:
+			return newErrorWithStatus(err, codes.Unavailable)
+		case instanceLimitReached:
+			return newErrorWithStatus(util_log.DoNotLogError{Err: err}, codes.Unavailable)
+		case tsdbUnavailable:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
 	}
+	return err
 }
 
 // pushMetadata returns number of ingested metadata.

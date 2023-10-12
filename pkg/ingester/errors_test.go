@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -26,17 +27,17 @@ const (
 )
 
 func TestUnavailableError(t *testing.T) {
-	state := "stopping"
+	state := services.Starting
 	err := newUnavailableError(state)
 	require.Error(t, err)
 	expectedMsg := fmt.Sprintf(integerUnavailableMsgFormat, state)
 	require.EqualError(t, err, expectedMsg)
-	checkSafeToWrap(t, err)
+	checkIngesterError(t, err, unavailable)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &unavailableError{})
-	checkSafeToWrap(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, unavailable)
 }
 
 func TestInstanceLimitReachedError(t *testing.T) {
@@ -44,12 +45,12 @@ func TestInstanceLimitReachedError(t *testing.T) {
 	err := newInstanceLimitReachedError(limitErrorMessage)
 	require.Error(t, err)
 	require.EqualError(t, err, limitErrorMessage)
-	checkSafeToWrap(t, err)
+	checkIngesterError(t, err, instanceLimitReached)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &instanceLimitReachedError{})
-	checkSafeToWrap(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, instanceLimitReached)
 }
 
 func TestNewTSDBUnavailableError(t *testing.T) {
@@ -57,7 +58,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	err := newTSDBUnavailableError(tsdbErrMsg)
 	require.Error(t, err)
 	require.EqualError(t, err, tsdbErrMsg)
-	checkSafeToWrap(t, err)
+	checkIngesterError(t, err, tsdbUnavailable)
 
 	wrappedErr := fmt.Errorf("wrapped: %w", err)
 	require.ErrorIs(t, wrappedErr, err)
@@ -66,7 +67,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
 	require.ErrorAs(t, wrappedWithUserErr, &tsdbUnavailableError{})
-	checkSafeToWrap(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, tsdbUnavailable)
 }
 
 func TestNewPerUserSeriesLimitError(t *testing.T) {
@@ -77,14 +78,12 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 		validation.MaxSeriesPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkSafeToWrap(t, err)
-	checkBadData(t, err)
+	checkIngesterError(t, err, badData)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserSeriesLimitReachedError{})
-	checkSafeToWrap(t, wrappedErr)
-	checkBadData(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, badData)
 }
 
 func TestNewPerUserMetadataLimitError(t *testing.T) {
@@ -95,14 +94,12 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 		validation.MaxMetadataPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkSafeToWrap(t, err)
-	checkBadData(t, err)
+	checkIngesterError(t, err, badData)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserMetadataLimitReachedError{})
-	checkSafeToWrap(t, wrappedErr)
-	checkBadData(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, badData)
 }
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
@@ -119,14 +116,12 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkSafeToWrap(t, err)
-	checkBadData(t, err)
+	checkIngesterError(t, err, badData)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricSeriesLimitReachedError{})
-	checkSafeToWrap(t, wrappedErr)
-	checkBadData(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, badData)
 }
 
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
@@ -143,20 +138,16 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkSafeToWrap(t, err)
-	checkBadData(t, err)
+	checkIngesterError(t, err, badData)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricMetadataLimitReachedError{})
-	checkSafeToWrap(t, wrappedErr)
-	checkBadData(t, wrappedErr)
+	checkIngesterError(t, wrappedErr, badData)
 }
 
-func TestNewValidationError(t *testing.T) {
+func TestNewSampleError(t *testing.T) {
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
-	anotherErr := errors.New("another error")
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -181,6 +172,30 @@ func TestNewValidationError(t *testing.T) {
 			err:         newSampleDuplicateTimestampError(timestamp, seriesLabels),
 			expectedMsg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
 		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, tc.expectedMsg, tc.err.Error())
+			checkIngesterError(t, tc.err, badData)
+
+			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
+			require.ErrorIs(t, wrappedErr, tc.err)
+			var sampleErr sampleError
+			require.ErrorAs(t, wrappedErr, &sampleErr)
+			checkIngesterError(t, wrappedErr, badData)
+		})
+	}
+}
+
+func TestNewValidationError(t *testing.T) {
+	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	anotherErr := errors.New("another error")
+	tests := map[string]struct {
+		err         error
+		expectedMsg string
+	}{
 		"newExemplarMissingSeriesError": {
 			err:         newExemplarMissingSeriesError(timestamp, seriesLabels, exemplarsLabels),
 			expectedMsg: `the exemplar has been rejected because the related series has not been ingested yet (err-mimir-exemplar-series-missing). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series {__name__="test"}`,
@@ -198,15 +213,13 @@ func TestNewValidationError(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, tc.expectedMsg, tc.err.Error())
-			checkSafeToWrap(t, tc.err)
-			checkBadData(t, tc.err)
+			checkIngesterError(t, tc.err, badData)
 
 			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
-			var validationErr validationError
-			require.ErrorAs(t, wrappedErr, &validationErr)
-			checkSafeToWrap(t, wrappedErr)
-			checkBadData(t, wrappedErr)
+			var exemplarErr exemplarError
+			require.ErrorAs(t, wrappedErr, &exemplarErr)
+			checkIngesterError(t, wrappedErr, badData)
 		})
 	}
 }
@@ -259,12 +272,8 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.Equal(t, wrappingErr, errors.Unwrap(wrappedSafeErr))
 }
 
-func checkSafeToWrap(t *testing.T, err error) {
-	var safe safeToWrapError
-	require.ErrorAs(t, err, &safe)
-}
-
-func checkBadData(t *testing.T, err error) {
-	var badDataErr badDataError
-	require.ErrorAs(t, err, &badDataErr)
+func checkIngesterError(t *testing.T, err error, expectedType ingesterErrorType) {
+	var ingesterErr ingesterError
+	require.ErrorAs(t, err, &ingesterErr)
+	require.Equal(t, expectedType, ingesterErr.errorType())
 }
