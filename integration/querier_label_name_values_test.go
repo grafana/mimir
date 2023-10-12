@@ -334,7 +334,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-querier.cardinality-analysis-enabled": "true",
 				"-ingester.ring.replication-factor":     "3",
-				"-distributor.remote-timeout":           "4s",
+				"-distributor.remote-timeout":           "9s", // one less than client's timeout below.
 			})
 
 			// Start dependencies.
@@ -373,6 +373,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 
 			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
+			client.SetTimeout(10 * time.Second)
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
@@ -389,7 +390,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
 			// the final ingester may not have received series yet.
 			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-			test.Poll(t, 3*time.Second, numSeriesToPush*3, func() interface{} {
+			test.Poll(t, 10*time.Second, numSeriesToPush*3, func() interface{} {
 				var totalIngestedSeries int
 				for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
 					values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})

@@ -47,7 +47,7 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 		"-ingester.ring.heartbeat-period":          "1s",
 		"-ingester.out-of-order-time-window":       "0",
 		"-blocks-storage.tsdb.block-ranges-period": "2h", // This is changed by BlocksStorageFlags to 1m, but we don't want to run any compaction in our test.
-		"-distributor.remote-timeout":              "9s",
+		"-distributor.remote-timeout":              "9s", // One less than client's timeout below.
 
 		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
 		"-distributor.write-requests-buffer-pooling-enabled": strconv.FormatBool(poolWriteRequestBuffer),
