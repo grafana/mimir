@@ -191,7 +191,6 @@ func TestNewSampleError(t *testing.T) {
 func TestNewExemplarError(t *testing.T) {
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
-	anotherErr := errors.New("another error")
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -203,10 +202,6 @@ func TestNewExemplarError(t *testing.T) {
 		"newExemplarTimestampTooFarInFutureError": {
 			err:         newExemplarTimestampTooFarInFutureError(timestamp, seriesLabels, exemplarsLabels),
 			expectedMsg: `received an exemplar whose timestamp is too far in the future (err-mimir-exemplar-too-far-in-future). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series {__name__="test"}`,
-		},
-		"newTSDBExemplarOtherErr": {
-			err:         newTSDBExemplarOtherErr(anotherErr, timestamp, seriesLabels, exemplarsLabels),
-			expectedMsg: fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series={__name__=\"test\"}, exemplar={traceID=\"123\"}", anotherErr),
 		},
 	}
 
@@ -222,6 +217,21 @@ func TestNewExemplarError(t *testing.T) {
 			checkIngesterError(t, wrappedErr, badData)
 		})
 	}
+}
+
+func TestNewTSDBIngestExemplarErr(t *testing.T) {
+	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	anotherErr := errors.New("another error")
+	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
+	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series={__name__=\"test\"}, exemplar={traceID=\"123\"}", anotherErr)
+	require.Equal(t, expectedErrMsg, err.Error())
+	checkIngesterError(t, err, badData)
+
+	wrappedErr := wrapOrAnnotateWithUser(err, userID)
+	require.ErrorIs(t, wrappedErr, err)
+	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
+	checkIngesterError(t, wrappedErr, badData)
 }
 
 func TestErrorWithStatus(t *testing.T) {

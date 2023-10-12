@@ -145,7 +145,6 @@ func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.Lab
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.
 type exemplarError struct {
-	originalErr    error
 	errID          globalerror.ID
 	errMsg         string
 	timestamp      model.Time
@@ -154,20 +153,12 @@ type exemplarError struct {
 }
 
 func (e exemplarError) Error() string {
-	if e.originalErr == nil {
-		return fmt.Sprintf(
-			"%s. The affected exemplar is %s with timestamp %s for series %s",
-			e.errID.Message(e.errMsg),
-			e.exemplarLabels,
-			e.timestamp.Time().UTC().Format(time.RFC3339Nano),
-			e.seriesLabels,
-		)
-	}
-	return fmt.Sprintf("err: %v. timestamp=%s, series=%s, exemplar=%s",
-		e.originalErr,
+	return fmt.Sprintf(
+		"%s. The affected exemplar is %s with timestamp %s for series %s",
+		e.errID.Message(e.errMsg),
+		e.exemplarLabels,
 		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
 		e.seriesLabels,
-		e.exemplarLabels,
 	)
 }
 
@@ -194,8 +185,30 @@ func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels,
 	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
 
-func newTSDBExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	return exemplarError{
+// tsdbIngestExemplarErr is an ingesterError indicating a problem with an exemplar.
+type tsdbIngestExemplarErr struct {
+	originalErr    error
+	timestamp      model.Time
+	seriesLabels   string
+	exemplarLabels string
+}
+
+func (e tsdbIngestExemplarErr) Error() string {
+	return fmt.Sprintf("err: %v. timestamp=%s, series=%s, exemplar=%s",
+		e.originalErr,
+		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
+		e.seriesLabels,
+		e.exemplarLabels,
+	)
+}
+
+// exemplarError implements the ingesterError interface.
+func (e tsdbIngestExemplarErr) errorType() ingesterErrorType {
+	return badData
+}
+
+func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+	return tsdbIngestExemplarErr{
 		originalErr:    ingestErr,
 		timestamp:      timestamp,
 		seriesLabels:   mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),

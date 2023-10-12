@@ -1229,7 +1229,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 						if err == nil {
 							return nil
 						}
-						return newTSDBExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
 					stats.failedExemplarsCount++
 				}
