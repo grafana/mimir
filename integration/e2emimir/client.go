@@ -100,6 +100,10 @@ func NewClient(
 	return c, nil
 }
 
+func (c *Client) SetTimeout(t time.Duration) {
+	c.timeout = t
+}
+
 // Push the input timeseries to the remote endpoint
 func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	// Create write request
