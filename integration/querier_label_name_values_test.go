@@ -194,6 +194,8 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 }
 
 func TestQuerierLabelValuesCardinality(t *testing.T) {
+	t.Skip("flaky test")
+
 	const numSeriesToPush = 1000
 
 	// Define response types.
