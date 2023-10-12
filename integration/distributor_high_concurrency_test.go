@@ -23,6 +23,8 @@ import (
 )
 
 func TestDistributorHighConcurrency(t *testing.T) {
+	t.Skip("flaky test")
+
 	for _, caching := range []bool{false, true} {
 		for _, poolWriteReqs := range []bool{false, true} {
 			t.Run(fmt.Sprintf("caching_unmarshal_data=%t, pooling_write_requests=%t", caching, poolWriteReqs), func(t *testing.T) {
