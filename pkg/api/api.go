@@ -252,7 +252,7 @@ type Ingester interface {
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
 	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
-	PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) error
+	PushWithCleanup(context.Context, *mimirpb.WriteRequest, func()) error
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
