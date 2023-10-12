@@ -2,7 +2,7 @@
 
 ## 2.9.2
 
-* [BUGFIX] grpc-go: Update grpc-go library to 1.56.3, which includes fix for CVE-2023-44487. #6350
+* [BUGFIX] grpc-go: Update grpc-go library to 1.56.3, which includes fix for CVE-2023-44487. #6353
 
 ## 2.9.1
 
