@@ -6,11 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -94,8 +97,9 @@ func (m *mockExemplarQuerier) matches(res exemplar.QueryResult, matchers []*labe
 
 func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	t.Run("error getting tenant IDs", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
 		upstream := &mockExemplarQueryable{}
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(context.Background())
 		assert.ErrorIs(t, err, user.ErrNoOrgID)
@@ -103,9 +107,10 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	})
 
 	t.Run("error getting upstream querier", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
 		ctx := user.InjectOrgID(context.Background(), "123")
 		upstream := &mockExemplarQueryable{err: errors.New("unable to get querier")}
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		assert.Error(t, err)
@@ -113,10 +118,11 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	})
 
 	t.Run("single tenant bypass single querier happy path", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
 		ctx := user.InjectOrgID(context.Background(), "123")
 		querier := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
-		federated := NewExemplarQueryable(upstream, true, defaultConcurrency, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, true, defaultConcurrency, reg, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		assert.NoError(t, err)
@@ -124,10 +130,11 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	})
 
 	t.Run("single tenant federated happy path", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
 		ctx := user.InjectOrgID(context.Background(), "123")
 		querier := &mockExemplarQuerier{}
 		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{"123": querier}}
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		require.NoError(t, err)
@@ -139,6 +146,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 	})
 
 	t.Run("multi tenant federated happy path", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
 		ctx := user.InjectOrgID(context.Background(), "123|456")
 		querier1 := &mockExemplarQuerier{}
 		querier2 := &mockExemplarQuerier{}
@@ -146,7 +154,7 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 			"123": querier1,
 			"456": querier2,
 		}}
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 
 		q, err := federated.ExemplarQuerier(ctx)
 		require.NoError(t, err)
@@ -208,7 +216,8 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
@@ -218,6 +227,20 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 		assert.Equal(t, exemplars[0].SeriesLabels.Get("__tenant_id__"), "123")
 		assert.Equal(t, exemplars[0].Exemplars[0].Value, 123.4)
 		assert.Equal(t, exemplars[0].Exemplars[0].Labels.Get("traceID"), "abc123")
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_federation_exemplar_tenants_queried Number of tenants queried for a single exemplar query.
+			# TYPE cortex_querier_federation_exemplar_tenants_queried histogram
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="1.0"} 0
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="2.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="4.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="8.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="16.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="32.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="+Inf"} 1
+			cortex_querier_federation_exemplar_tenants_queried_sum 2
+			cortex_querier_federation_exemplar_tenants_queried_count 1
+`), "cortex_querier_federation_exemplar_tenants_queried"),
+		)
 	})
 
 	// There are no matchers that reference __tenant_id__, make sure we get the expected
@@ -233,13 +256,28 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
 		exemplars, err := q.Select(0, now.UnixMilli(), matchers...)
 		assert.NoError(t, err)
 		assert.Len(t, exemplars, 2)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_federation_exemplar_tenants_queried Number of tenants queried for a single exemplar query.
+			# TYPE cortex_querier_federation_exemplar_tenants_queried histogram
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="1.0"} 0
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="2.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="4.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="8.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="16.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="32.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="+Inf"} 1
+			cortex_querier_federation_exemplar_tenants_queried_sum 2
+			cortex_querier_federation_exemplar_tenants_queried_count 1
+`), "cortex_querier_federation_exemplar_tenants_queried"),
+		)
 	})
 
 	// Each of the groups of matchers require a specific __tenant_id__ BUT, since they
@@ -263,13 +301,28 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
 		exemplars, err := q.Select(0, now.UnixMilli(), matchers...)
 		assert.NoError(t, err)
 		assert.Len(t, exemplars, 2)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_federation_exemplar_tenants_queried Number of tenants queried for a single exemplar query.
+			# TYPE cortex_querier_federation_exemplar_tenants_queried histogram
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="1.0"} 0
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="2.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="4.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="8.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="16.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="32.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="+Inf"} 1
+			cortex_querier_federation_exemplar_tenants_queried_sum 2
+			cortex_querier_federation_exemplar_tenants_queried_count 1
+`), "cortex_querier_federation_exemplar_tenants_queried"),
+		)
 	})
 
 	// With no matchers, none of the results returned from each of the upstream queriers
@@ -284,13 +337,64 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{res: res2},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 
 		exemplars, err := q.Select(0, now.UnixMilli(), matchers...)
 		assert.NoError(t, err)
 		assert.Empty(t, exemplars)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_federation_exemplar_tenants_queried Number of tenants queried for a single exemplar query.
+			# TYPE cortex_querier_federation_exemplar_tenants_queried histogram
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="1.0"} 0
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="2.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="4.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="8.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="16.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="32.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="+Inf"} 1
+			cortex_querier_federation_exemplar_tenants_queried_sum 2
+			cortex_querier_federation_exemplar_tenants_queried_count 1
+`), "cortex_querier_federation_exemplar_tenants_queried"),
+		)
+	})
+
+	// Ensure that our federate exemplar queryable / querier works even when only performing
+	// queries for a single tenant at a time.
+	t.Run("single tenant no filtering", func(t *testing.T) {
+		matchers := [][]*labels.Matcher{{
+			labels.MustNewMatcher(labels.MatchEqual, "__name__", "request_duration_seconds"),
+		}}
+
+		res1, _ := fixtureResults()
+		upstream := &mockExemplarQueryable{queriers: map[string]storage.ExemplarQuerier{
+			"123": &mockExemplarQuerier{res: res1},
+		}}
+
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
+		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123"))
+		require.NoError(t, err)
+
+		exemplars, err := q.Select(0, now.UnixMilli(), matchers...)
+		assert.NoError(t, err)
+		assert.Len(t, exemplars, 1)
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_querier_federation_exemplar_tenants_queried Number of tenants queried for a single exemplar query.
+			# TYPE cortex_querier_federation_exemplar_tenants_queried histogram
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="1.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="2.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="4.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="8.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="16.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="32.0"} 1
+			cortex_querier_federation_exemplar_tenants_queried_bucket{le="+Inf"} 1
+			cortex_querier_federation_exemplar_tenants_queried_sum 1
+			cortex_querier_federation_exemplar_tenants_queried_count 1
+`), "cortex_querier_federation_exemplar_tenants_queried"),
+		)
 	})
 
 	// Ensure that an error from an upstream querier means we get an error response from the
@@ -306,7 +410,8 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 			"456": &mockExemplarQuerier{err: errors.New("timeout running exemplar query")},
 		}}
 
-		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, test.NewTestingLogger(t))
+		reg := prometheus.NewPedanticRegistry()
+		federated := NewExemplarQueryable(upstream, false, defaultConcurrency, reg, test.NewTestingLogger(t))
 		q, err := federated.ExemplarQuerier(user.InjectOrgID(context.Background(), "123|456"))
 		require.NoError(t, err)
 

@@ -33,6 +33,7 @@
 * [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168 #6250
 * [ENHANCEMENT] Distributor: Include ingester IDs in circuit breaker related metrics and logs. #6206
 * [ENHANCEMENT] Querier: improve errors and logging when streaming chunks from ingesters and store-gateways. #6194 #6309
+* [ENHANCEMENT] Querier: Add `cortex_querier_federation_exemplar_tenants_queried` and `cortex_querier_federation_sample_tenants_queried` metrics to track the number of tenants queried by multi-tenant queries. #6374
 * [ENHANCEMENT] All: added an experimental `-server.grpc.num-workers` flag that configures the number of long-living workers used to process gRPC requests. This could decrease the CPU usage by reducing the number of stack allocations. #6311
 * [ENHANCEMENT] All: improved IPv6 support by using the proper host:port formatting. #6311
 * [ENHANCEMENT] Querier: always return error encountered during chunks streaming, rather than `the stream has already been exhausted`. #6345

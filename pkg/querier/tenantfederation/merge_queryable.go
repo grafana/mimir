@@ -15,6 +15,8 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -35,7 +37,7 @@ import (
 // If the label "__tenant_id__" already exists, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
+func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
 	callbacks := MergeQueryableCallbacks{
 		Querier: func(mint, maxt int64) (MergeQuerierUpstream, error) {
 			q, err := upstream.Querier(mint, maxt)
@@ -47,20 +49,14 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 				upstream: q,
 			}, nil
 		},
-		IDs: func(ctx context.Context) ([]string, error) {
-			tenantIDs, err := tenant.TenantIDs(ctx)
-			return tenantIDs, err
-		},
 	}
-	return NewMergeQueryable(defaultTenantLabel, callbacks, bypassWithSingleID, maxConcurrency, logger)
+	return NewMergeQueryable(defaultTenantLabel, callbacks, bypassWithSingleID, maxConcurrency, reg, logger)
 }
 
 // MergeQueryableCallbacks contains callbacks to NewMergeQueryable, for customizing its behaviour.
 type MergeQueryableCallbacks struct {
 	// Querier returns a MergeQuerierUpstream implementation for mint and maxt.
 	Querier func(mint, maxt int64) (MergeQuerierUpstream, error)
-	// IDs returns federation IDs for ctx.
-	IDs func(ctx context.Context) (ids []string, err error)
 }
 
 // MergeQuerierUpstream mirrors storage.Querier, except every query method also takes a federation ID.
@@ -103,13 +99,18 @@ func (q *tenantQuerier) Close() error {
 // If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, bypassWithSingleID bool, maxConcurrency int, logger log.Logger) storage.Queryable {
+func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
 		logger:             logger,
 		idLabelName:        idLabelName,
 		callbacks:          callbacks,
 		bypassWithSingleID: bypassWithSingleID,
 		maxConcurrency:     maxConcurrency,
+		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_querier_federation_sample_tenants_queried",
+			Help:    "Number of tenants queried for a single standard query.",
+			Buckets: []float64{1, 2, 4, 8, 16, 32},
+		}),
 	}
 }
 
@@ -119,6 +120,7 @@ type mergeQueryable struct {
 	bypassWithSingleID bool
 	callbacks          MergeQueryableCallbacks
 	maxConcurrency     int
+	tenantsQueried     prometheus.Histogram
 }
 
 // Querier returns a new mergeQuerier, which aggregates results for multiple federation IDs
@@ -133,8 +135,10 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 		idLabelName:        m.idLabelName,
 		callbacks:          m.callbacks,
 		upstream:           upstream,
+		resolver:           tenant.NewMultiResolver(),
 		maxConcurrency:     m.maxConcurrency,
 		bypassWithSingleID: m.bypassWithSingleID,
+		tenantsQueried:     m.tenantsQueried,
 	}, nil
 }
 
@@ -147,9 +151,11 @@ type mergeQuerier struct {
 	logger             log.Logger
 	callbacks          MergeQueryableCallbacks
 	upstream           MergeQuerierUpstream
+	resolver           tenant.Resolver
 	idLabelName        string
 	maxConcurrency     int
 	bypassWithSingleID bool
+	tenantsQueried     prometheus.Histogram
 }
 
 // LabelValues returns all potential values for a label name given involved federation IDs.
@@ -158,11 +164,12 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all values
 // for the original `idLabelName` label.
 func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ids, err := m.callbacks.IDs(ctx)
+	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
 		return m.upstream.LabelValues(ctx, ids[0], name, matchers...)
 	}
@@ -196,11 +203,12 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 // LabelNames returns all the unique label names present for involved federation IDs.
 // It also adds the `idLabelName` and if present in the original results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ids, err := m.callbacks.IDs(ctx)
+	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
 		return m.upstream.LabelNames(ctx, ids[0], matchers...)
 	}
@@ -306,11 +314,12 @@ func (m *mergeQuerier) Close() error {
 // If the `idLabelName` is matched on, it only considers matching IDs.
 // The forwarded labelSelector does not contain those that operate on `idLabelName`.
 func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	ids, err := m.callbacks.IDs(ctx)
+	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
+	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
 		return m.upstream.Select(ctx, ids[0], sortSeries, hints, matchers...)
 	}
@@ -372,13 +381,13 @@ func (m *addLabelsSeriesSet) At() storage.Series {
 	return m.currSeries
 }
 
-// The error that iteration as failed with.
+// Err returns the error that iteration has failed with.
 // When an error occurs, set cannot continue to iterate.
 func (m *addLabelsSeriesSet) Err() error {
 	return errors.Wrapf(m.upstream.Err(), "error querying %s", labelsToString(m.labels))
 }
 
-// A collection of warnings for the whole set.
+// Warnings returns a collection of warnings for the whole set.
 // Warnings could be returned even if iteration has not failed with an error.
 func (m *addLabelsSeriesSet) Warnings() annotations.Annotations {
 	upstream := m.upstream.Warnings()

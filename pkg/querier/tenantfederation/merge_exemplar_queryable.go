@@ -10,6 +10,8 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -27,8 +29,8 @@ import (
 // By setting bypassWithSingleQuerier to true, tenant federation logic gets
 // bypassed if the request is only for a single tenant. The requests will also
 // not contain the pseudo series label __tenant_id__ in this case.
-func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.ExemplarQueryable {
-	return NewMergeExemplarQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, maxConcurrency, logger)
+func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.ExemplarQueryable {
+	return NewMergeExemplarQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, maxConcurrency, reg, logger)
 }
 
 // NewMergeExemplarQueryable returns an exemplar queryable that makes requests for
@@ -41,7 +43,7 @@ func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQu
 // By setting bypassWithSingleQuerier to true, tenant federation logic gets
 // bypassed if the request is only for a single tenant. The requests will also
 // not contain the pseudo series label `idLabelName` in this case.
-func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.ExemplarQueryable {
+func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.ExemplarQueryable {
 	return &mergeExemplarQueryable{
 		logger:                  logger,
 		idLabelName:             idLabelName,
@@ -49,6 +51,11 @@ func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQuer
 		upstream:                upstream,
 		resolver:                tenant.NewMultiResolver(),
 		maxConcurrency:          maxConcurrency,
+		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_querier_federation_exemplar_tenants_queried",
+			Help:    "Number of tenants queried for a single exemplar query.",
+			Buckets: []float64{1, 2, 4, 8, 16, 32},
+		}),
 	}
 }
 
@@ -59,6 +66,7 @@ type mergeExemplarQueryable struct {
 	upstream                storage.ExemplarQueryable
 	resolver                tenant.Resolver
 	maxConcurrency          int
+	tenantsQueried          prometheus.Histogram
 }
 
 // tenantsAndQueriers returns a list of tenant IDs and corresponding queriers based on the context
@@ -89,6 +97,7 @@ func (m *mergeExemplarQueryable) ExemplarQuerier(ctx context.Context) (storage.E
 		return nil, err
 	}
 
+	m.tenantsQueried.Observe(float64(len(ids)))
 	// If desired and there is only a single querier, just return it directly instead
 	// of going through the federation querier. bypassWithSingleQuerier=true allows a
 	// bit less overhead when it's not needed while bypassWithSingleQuerier=false will
