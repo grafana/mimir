@@ -33,81 +33,81 @@ var (
 	)
 )
 
-// ReplicasDidNotMatch is an error stating that replicas do not match.
-type ReplicasDidNotMatch struct {
+// replicasDidNotMatchError is an error stating that replicas do not match.
+type replicasDidNotMatchError struct {
 	replica, elected string
 }
 
-// NewReplicasDidNotMatch creates a ReplicasDidNotMatch error with the given parameters.
-func NewReplicasDidNotMatch(replica, elected string) ReplicasDidNotMatch {
-	return ReplicasDidNotMatch{
+// newReplicasDidNotMatchError creates a replicasDidNotMatchError error with the given parameters.
+func newReplicasDidNotMatchError(replica, elected string) replicasDidNotMatchError {
+	return replicasDidNotMatchError{
 		replica: replica,
 		elected: elected,
 	}
 }
 
-func (e ReplicasDidNotMatch) Error() string {
+func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// TooManyClusters is an error stating that there are too many HA clusters.
-type TooManyClusters struct {
+// tooManyClustersError is an error stating that there are too many HA clusters.
+type tooManyClustersError struct {
 	limit int
 }
 
-// NewTooManyClusters creates a TooManyClusters error containing the given error message.
-func NewTooManyClusters(limit int) TooManyClusters {
-	return TooManyClusters{
+// newTooManyClustersError creates a tooManyClustersError error containing the given error message.
+func newTooManyClustersError(limit int) tooManyClustersError {
+	return tooManyClustersError{
 		limit: limit,
 	}
 }
 
-func (e TooManyClusters) Error() string {
+func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
-// Validation is an error, used to represent all validation errors from the validation package.
-type Validation struct {
+// validationError is an error, used to represent all validation errors from the validation package.
+type validationError struct {
 	error
 }
 
-// NewValidation wraps the given error into a Validation error.
-func NewValidation(err error) Validation {
-	return Validation{error: err}
+// newValidationError wraps the given error into a validationError error.
+func newValidationError(err error) validationError {
+	return validationError{error: err}
 }
 
-// IngestionRateLimited is an error used to represent the ingestion rate limited error.
-type IngestionRateLimited struct {
+// ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
+type ingestionRateLimitedError struct {
 	limit float64
 	burst int
 }
 
-// NewIngestionRateLimited creates a IngestionRateLimited error containing the given error message.
-func NewIngestionRateLimited(limit float64, burst int) IngestionRateLimited {
-	return IngestionRateLimited{
+// newIngestionRateLimitedError creates a ingestionRateLimitedError error containing the given error message.
+func newIngestionRateLimitedError(limit float64, burst int) ingestionRateLimitedError {
+	return ingestionRateLimitedError{
 		limit: limit,
 		burst: burst,
 	}
 }
 
-func (e IngestionRateLimited) Error() string {
+func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-// RequestRateLimited is an error used to represent the request rate limited error.
-type RequestRateLimited struct {
+// requestRateLimitedError is an error used to represent the request rate limited error.
+type requestRateLimitedError struct {
 	limit float64
 	burst int
 }
 
-// NewRequestRateLimited creates a RequestRateLimited error containing the given error message.
-func NewRequestRateLimited(limit float64, burst int) RequestRateLimited {
-	return RequestRateLimited{
+// newRequestRateLimitedError creates a requestRateLimitedError error containing the given error message.
+func newRequestRateLimitedError(limit float64, burst int) requestRateLimitedError {
+	return requestRateLimitedError{
 		limit: limit,
 		burst: burst,
 	}
 }
 
-func (e RequestRateLimited) Error() string {
+func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
 }

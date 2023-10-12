@@ -601,7 +601,7 @@ func TestHAClustersLimit(t *testing.T) {
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b1", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
-	expectedErr := NewTooManyClusters(2)
+	expectedErr := newTooManyClustersError(2)
 	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "c", "c1", now), expectedErr.Error())
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
@@ -627,7 +627,7 @@ func TestHAClustersLimit(t *testing.T) {
 	waitForClustersUpdate(t, 2, t1, userID)
 
 	// But yet another cluster doesn't.
-	expectedErr = NewTooManyClusters(2)
+	expectedErr = newTooManyClustersError(2)
 	assert.EqualError(t, t1.checkReplica(context.Background(), userID, "a", "a2", now), expectedErr.Error())
 
 	now = now.Add(5 * time.Second)

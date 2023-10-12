@@ -163,18 +163,18 @@ func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *
 // false are returned.
 func toHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
 	switch {
-	case errors.As(pushErr, &ReplicasDidNotMatch{}):
+	case errors.As(pushErr, &replicasDidNotMatchError{}):
 		return http.StatusAccepted, true
-	case errors.As(pushErr, &TooManyClusters{}):
+	case errors.As(pushErr, &tooManyClustersError{}):
 		return http.StatusBadRequest, true
-	case errors.As(pushErr, &Validation{}):
+	case errors.As(pushErr, &validationError{}):
 		return http.StatusBadRequest, true
-	case errors.As(pushErr, &IngestionRateLimited{}):
+	case errors.As(pushErr, &ingestionRateLimitedError{}):
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		return http.StatusTooManyRequests, true
-	case errors.As(pushErr, &RequestRateLimited{}):
+	case errors.As(pushErr, &requestRateLimitedError{}):
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.

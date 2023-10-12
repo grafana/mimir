@@ -423,7 +423,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
-			err = NewReplicasDidNotMatch(replica, entry.elected.Replica)
+			err = newReplicasDidNotMatchError(replica, entry.elected.Replica)
 		}
 		h.electedLock.Unlock()
 		return err
@@ -434,7 +434,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	h.electedLock.Unlock()
 	// If we have reached the limit for number of clusters, error out now.
 	if limit := h.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
-		return NewTooManyClusters(limit)
+		return newTooManyClustersError(limit)
 	}
 
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)

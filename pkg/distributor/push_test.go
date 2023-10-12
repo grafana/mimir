@@ -802,10 +802,10 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	replicasNotMatchErr := NewReplicasDidNotMatch("a", "b")
-	tooManyClustersErr := NewTooManyClusters(10)
-	ingestionRateLimitedErr := NewIngestionRateLimited(10, 10)
-	requestRateLimitedErr := NewRequestRateLimited(10, 10)
+	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
+	tooManyClustersErr := newTooManyClustersError(10)
+	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
+	requestRateLimitedErr := newRequestRateLimitedError(10, 10)
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -824,37 +824,37 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
-			name:               "a ReplicasDidNotMatch gets translated into an HTTP 202",
+			name:               "a replicasDidNotMatchError gets translated into an HTTP 202",
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		{
-			name:               "a TooManyClusters gets translated into an HTTP 400",
+			name:               "a tooManyClustersError gets translated into an HTTP 400",
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		{
-			name:               "a Validation gets translated into an HTTP 400",
-			err:                NewValidation(originalErr),
+			name:               "a validationError gets translated into an HTTP 400",
+			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "an IngestionRateLimited gets translated into an HTTP 429",
+			name:               "an ingestionRateLimitedError gets translated into an HTTP 429",
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		{
-			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			name:                        "a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529",
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		{
-			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			name:                        "a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
