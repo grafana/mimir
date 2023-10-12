@@ -94,7 +94,8 @@ func wrapOrAnnotateWithUser(err error, userID string) error {
 
 // sampleError is an ingesterError indicating a problem with a sample.
 type sampleError struct {
-	prefixMsg string
+	errID     globalerror.ID
+	errMsg    string
 	timestamp model.Time
 	series    string
 }
@@ -102,7 +103,7 @@ type sampleError struct {
 func (e sampleError) Error() string {
 	return fmt.Sprintf(
 		"%s. The affected sample has timestamp %s and is from series %s",
-		e.prefixMsg,
+		e.errID.Message(e.errMsg),
 		e.timestamp.Time().UTC().Format(time.RFC3339Nano),
 		e.series,
 	)
@@ -113,38 +114,40 @@ func (e sampleError) errorType() ingesterErrorType {
 	return badData
 }
 
-func newSampleError(prefixMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
 	return sampleError{
-		prefixMsg: prefixMsg,
+		errID:     errID,
+		errMsg:    errMsg,
 		timestamp: timestamp,
 		series:    mimirpb.FromLabelAdaptersToLabels(labels).String(),
 	}
 }
 
 func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld.Message("the sample has been rejected because its timestamp is too old"), timestamp, labels)
+	return newSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
 func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) sampleError {
-	return newSampleError(globalerror.SampleTimestampTooOld.Message(fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String())), timestamp, labels)
+	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
 func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleTooFarInFuture.Message("received a sample whose timestamp is too far in the future"), timestamp, labels)
+	return newSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
 }
 
 func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleOutOfOrder.Message("the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed"), timestamp, labels)
+	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
 func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
-	return newSampleError(globalerror.SampleDuplicateTimestamp.Message("the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested"), timestamp, labels)
+	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
 // exemplarError is an ingesterError indicating a problem with an exemplar.
 type exemplarError struct {
 	originalErr    error
-	prefixMsg      string
+	errID          globalerror.ID
+	errMsg         string
 	timestamp      model.Time
 	seriesLabels   string
 	exemplarLabels string
@@ -154,7 +157,7 @@ func (e exemplarError) Error() string {
 	if e.originalErr == nil {
 		return fmt.Sprintf(
 			"%s. The affected exemplar is %s with timestamp %s for series %s",
-			e.prefixMsg,
+			e.errID.Message(e.errMsg),
 			e.exemplarLabels,
 			e.timestamp.Time().UTC().Format(time.RFC3339Nano),
 			e.seriesLabels,
@@ -173,9 +176,10 @@ func (e exemplarError) errorType() ingesterErrorType {
 	return badData
 }
 
-func newExemplarError(prefixMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return exemplarError{
-		prefixMsg:      prefixMsg,
+		errID:          errID,
+		errMsg:         errMsg,
 		timestamp:      timestamp,
 		seriesLabels:   mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
 		exemplarLabels: mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
@@ -183,11 +187,11 @@ func newExemplarError(prefixMsg string, timestamp model.Time, seriesLabels, exem
 }
 
 func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
-	return newExemplarError(globalerror.ExemplarSeriesMissing.Message("the exemplar has been rejected because the related series has not been ingested yet"), timestamp, seriesLabels, exemplarLabels)
+	return newExemplarError(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
 }
 
 func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
-	return newExemplarError(globalerror.ExemplarTooFarInFuture.Message("received an exemplar whose timestamp is too far in the future"), timestamp, seriesLabels, exemplarLabels)
+	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
 
 func newTSDBExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {

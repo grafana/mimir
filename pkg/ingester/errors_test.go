@@ -188,7 +188,7 @@ func TestNewSampleError(t *testing.T) {
 	}
 }
 
-func TestNewValidationError(t *testing.T) {
+func TestNewExemplarError(t *testing.T) {
 	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")

@@ -9066,33 +9066,33 @@ func TestIngester_HandlePushError(t *testing.T) {
 		},
 		{
 			name: "a sampleError gets translated into an errorWithHTTPStatus 400 error",
-			err:  newSampleError("exemplar error", timestamp, labelAdapters),
+			err:  newSampleError("id", "sample error", timestamp, labelAdapters),
 			expectedTranslation: newErrorWithHTTPStatus(
-				newSampleError("exemplar error", timestamp, labelAdapters),
+				newSampleError("id", "sample error", timestamp, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		{
 			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
-			err:  fmt.Errorf("wrapped: %w", newSampleError("exemplar error", timestamp, labelAdapters)),
+			err:  fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
 			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newSampleError("exemplar error", timestamp, labelAdapters)),
+				fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},
 		{
 			name: "a exemplarError gets translated into an errorWithHTTPStatus 400 error",
-			err:  newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters),
+			err:  newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 			expectedTranslation: newErrorWithHTTPStatus(
-				newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters),
+				newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		{
 			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
-			err:  fmt.Errorf("wrapped: %w", newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters)),
+			err:  fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newExemplarError("exemplar error", timestamp, labelAdapters, labelAdapters)),
+				fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},

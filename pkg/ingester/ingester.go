@@ -853,9 +853,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		stats pushStats
 
 		firstPartialErr    error
-		updateFirstPartial = func(errFn func() error) {
+		updateFirstPartial = func(sampler *util_log.Sampler, errFn func() error) {
 			if firstPartialErr == nil {
 				firstPartialErr = errFn()
+				if sampler != nil {
+					firstPartialErr = sampler.WrapError(firstPartialErr)
+				}
 			}
 		}
 	)
@@ -962,7 +965,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
+	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
@@ -977,50 +980,50 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		switch cause := errors.Cause(err); cause {
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOld.WrapError(newSampleTimestampTooOldError(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleOutOfOrder.WrapError(newSampleOutOfOrderError(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() error {
+				return newSampleOutOfOrderError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOldOOOEnabled.WrapError(newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() error {
+				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
 			})
 			return true
 
 		case globalerror.SampleTooFarInFuture:
 			stats.sampleTooFarInFutureCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooFarInFuture.WrapError(newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() error {
+				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleDuplicateTimestamp.WrapError(newSampleDuplicateTimestampError(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() error {
+				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case globalerror.MaxSeriesPerUser:
 			stats.perUserSeriesLimitCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID)))
+			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() error {
+				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
 			})
 			return true
 
 		case globalerror.MaxSeriesPerMetric:
 			stats.perMetricSeriesLimitCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabelsWithCopy(labels)))
+			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() error {
+				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabelsWithCopy(labels))
 			})
 			return true
 		}
@@ -1060,8 +1063,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					firstTimestamp = ts.Histograms[0].Timestamp
 				}
 
-				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels))
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+					return newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels)
 				})
 				continue
 			}
@@ -1075,8 +1078,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				firstTimestamp := ts.Samples[0].TimestampMs
 
-				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels))
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+					return newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels)
 				})
 				continue
 			}
@@ -1194,7 +1197,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
-				updateFirstPartial(func() error {
+				updateFirstPartial(nil, func() error {
 					return newExemplarMissingSeriesError(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
@@ -1202,7 +1205,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
 						stats.failedExemplarsCount++
-						updateFirstPartial(func() error {
+						updateFirstPartial(nil, func() error {
 							return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 						})
 						continue
@@ -1222,7 +1225,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 
 					// Error adding exemplar
-					updateFirstPartial(func() error {
+					updateFirstPartial(nil, func() error {
 						if err == nil {
 							return nil
 						}
