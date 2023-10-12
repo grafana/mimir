@@ -35,6 +35,7 @@
 * [ENHANCEMENT] Querier: improve errors and logging when streaming chunks from ingesters and store-gateways. #6194 #6309
 * [ENHANCEMENT] All: added an experimental `-server.grpc.num-workers` flag that configures the number of long-living workers used to process gRPC requests. This could decrease the CPU usage by reducing the number of stack allocations. #6311
 * [ENHANCEMENT] All: improved IPv6 support by using the proper host:port formatting. #6311
+* [ENHANCEMENT] Querier: always return error encountered during chunks streaming, rather than `the stream has already been exhausted`. #6345
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
