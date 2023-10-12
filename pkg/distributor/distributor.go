@@ -143,7 +143,7 @@ type Distributor struct {
 	exemplarValidationMetrics *exemplarValidationMetrics
 	metadataValidationMetrics *metadataValidationMetrics
 
-	PushWithMiddlewares pushFunc
+	PushWithMiddlewares PushFunc
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
@@ -189,7 +189,7 @@ type Config struct {
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
-type PushWrapper func(next pushFunc) pushFunc
+type PushWrapper func(next PushFunc) PushFunc
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -661,7 +661,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
 // push wrappers will be applied to incoming requests in the order in which they are in the slice in the config struct.
-func (d *Distributor) wrapPushWithMiddlewares(next pushFunc) pushFunc {
+func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	var middlewares []PushWrapper
 
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
@@ -681,7 +681,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next pushFunc) pushFunc {
 	return next
 }
 
-func (d *Distributor) prePushHaDedupeMiddleware(next pushFunc) pushFunc {
+func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		cleanupInDefer := true
 		defer func() {
@@ -753,7 +753,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next pushFunc) pushFunc {
 	}
 }
 
-func (d *Distributor) prePushRelabelMiddleware(next pushFunc) pushFunc {
+func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		cleanupInDefer := true
 		defer func() {
@@ -822,7 +822,7 @@ func (d *Distributor) prePushRelabelMiddleware(next pushFunc) pushFunc {
 	}
 }
 
-func (d *Distributor) prePushValidationMiddleware(next pushFunc) pushFunc {
+func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		cleanupInDefer := true
 		defer func() {
@@ -961,7 +961,7 @@ func (d *Distributor) prePushValidationMiddleware(next pushFunc) pushFunc {
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
-func (d *Distributor) metricsMiddleware(next pushFunc) pushFunc {
+func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		cleanupInDefer := true
 		defer func() {
@@ -1005,7 +1005,7 @@ func (d *Distributor) metricsMiddleware(next pushFunc) pushFunc {
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
-func (d *Distributor) limitsMiddleware(next pushFunc) pushFunc {
+func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 		inflight := d.inflightPushRequests.Inc()

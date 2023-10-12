@@ -47,7 +47,7 @@ func OTLPHandler(
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
 	reg prometheus.Registerer,
-	push pushFunc,
+	push PushFunc,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
