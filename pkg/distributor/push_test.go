@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package push
+package distributor
 
 import (
 	"bytes"
@@ -31,7 +31,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -155,7 +154,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		encoding    string
 		maxMsgSize  int
 
-		verifyFunc                Func
+		verifyFunc                pushFunc
 		responseCode              int
 		errMessage                string
 		enableOtelMetadataStorage bool
@@ -450,7 +449,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 		allowSkipLabelNameValidation              bool
 		req                                       *http.Request
 		includeAllowSkiplabelNameValidationHeader bool
-		verifyReqHandler                          Func
+		verifyReqHandler                          pushFunc
 		expectedStatusCode                        int
 	}{
 		{
@@ -555,7 +554,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	}
 }
 
-func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) Func {
+func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) pushFunc {
 	t.Helper()
 	return func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
@@ -570,7 +569,7 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 	}
 }
 
-func readBodyPushFunc(t *testing.T) Func {
+func readBodyPushFunc(t *testing.T) pushFunc {
 	t.Helper()
 	return func(ctx context.Context, req *Request) error {
 		_, err := req.WriteRequest()
@@ -803,10 +802,10 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
-	replicasNotMatchErr := distributorerror.NewReplicasDidNotMatch("a", "b")
-	tooManyClustersErr := distributorerror.NewTooManyClusters(10)
-	ingestionRateLimitedErr := distributorerror.NewIngestionRateLimited(10, 10)
-	requestRateLimitedErr := distributorerror.NewRequestRateLimited(10, 10)
+	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
+	tooManyClustersErr := newTooManyClustersError(10)
+	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
+	requestRateLimitedErr := newRequestRateLimitedError(10, 10)
 	testCases := []struct {
 		name                        string
 		err                         error
@@ -825,37 +824,37 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
-			name:               "a ReplicasDidNotMatch gets translated into an HTTP 202",
+			name:               "a replicasDidNotMatchError gets translated into an HTTP 202",
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		{
-			name:               "a TooManyClusters gets translated into an HTTP 400",
+			name:               "a tooManyClustersError gets translated into an HTTP 400",
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		{
-			name:               "a Validation gets translated into an HTTP 400",
-			err:                distributorerror.NewValidation(originalErr),
+			name:               "a validationError gets translated into an HTTP 400",
+			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
-			name:               "an IngestionRateLimited gets translated into an HTTP 429",
+			name:               "an ingestionRateLimitedError gets translated into an HTTP 429",
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		{
-			name:                        "a RequestRateLimited with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			name:                        "a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529",
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
-			expectedHTTPStatus:          distributorerror.StatusServiceOverloaded,
+			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		{
-			name:                        "a RequestRateLimited without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			name:                        "a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,

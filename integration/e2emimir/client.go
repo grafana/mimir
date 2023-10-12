@@ -29,8 +29,8 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/push"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -141,7 +141,7 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 // PushOTLP the input timeseries to the remote endpoint in OTLP format
 func (c *Client) PushOTLP(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) (*http.Response, error) {
 	// Create write request
-	otlpRequest := push.TimeseriesToOTLPRequest(timeseries, metadata)
+	otlpRequest := distributor.TimeseriesToOTLPRequest(timeseries, metadata)
 
 	data, err := otlpRequest.MarshalProto()
 	if err != nil {

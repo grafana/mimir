@@ -64,7 +64,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -795,10 +794,10 @@ func (i *Ingester) FinishPushRequest() {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) error {
+func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanUp func()) error {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
-	defer pushReq.CleanUp()
+	defer cleanUp()
 
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
@@ -809,11 +808,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) e
 	}
 
 	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return err
-	}
-
-	req, err := pushReq.WriteRequest()
 	if err != nil {
 		return err
 	}
@@ -3132,11 +3126,7 @@ func (i *Ingester) checkRunning() error {
 
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	pushReq := push.NewParsedRequest(req)
-	pushReq.AddCleanup(func() {
-		mimirpb.ReuseSlice(req.Timeseries)
-	})
-	err := i.PushWithCleanup(ctx, pushReq)
+	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err != nil {
 		return nil, err
 	}
