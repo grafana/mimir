@@ -78,6 +78,14 @@ type ingesterError interface {
 	errorType() ingesterErrorType
 }
 
+// softError is a marker interface for the errors on which ingester.Push should not stop immediately.
+type softError interface {
+	error
+	soft()
+}
+
+type softErrorFunction func() softError
+
 // wrapOrAnnotateWithUser prepends the given userID to the given error.
 // If the given error matches one of the errors from this package, the
 // returned error retains a reference to the former.
@@ -113,6 +121,9 @@ func (e sampleError) Error() string {
 func (e sampleError) errorType() ingesterErrorType {
 	return badData
 }
+
+// sampleError implements the softError interface.
+func (e sampleError) soft() {}
 
 func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
 	return sampleError{
@@ -167,6 +178,9 @@ func (e exemplarError) errorType() ingesterErrorType {
 	return badData
 }
 
+// exemplarError implements the softError interface.
+func (e exemplarError) soft() {}
+
 func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return exemplarError{
 		errID:          errID,
@@ -207,7 +221,10 @@ func (e tsdbIngestExemplarErr) errorType() ingesterErrorType {
 	return badData
 }
 
-func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
+// tsdbIngestExemplarErr implements the softError interface.
+func (e tsdbIngestExemplarErr) soft() {}
+
+func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) tsdbIngestExemplarErr {
 	return tsdbIngestExemplarErr{
 		originalErr:    ingestErr,
 		timestamp:      timestamp,
@@ -240,6 +257,9 @@ func (e perUserSeriesLimitReachedError) errorType() ingesterErrorType {
 	return badData
 }
 
+// perUserSeriesLimitReachedError implements the softError interface.
+func (e perUserSeriesLimitReachedError) soft() {}
+
 // perUserMetadataLimitReachedError is an ingesterError indicating that a per-user metadata limit has been reached.
 type perUserMetadataLimitReachedError struct {
 	limit int
@@ -263,6 +283,9 @@ func (e perUserMetadataLimitReachedError) Error() string {
 func (e perUserMetadataLimitReachedError) errorType() ingesterErrorType {
 	return badData
 }
+
+// perUserMetadataLimitReachedError implements the softError interface.
+func (e perUserMetadataLimitReachedError) soft() {}
 
 // perMetricSeriesLimitReachedError is an ingesterError indicating that a per-metric series limit has been reached.
 type perMetricSeriesLimitReachedError struct {
@@ -293,6 +316,9 @@ func (e perMetricSeriesLimitReachedError) errorType() ingesterErrorType {
 	return badData
 }
 
+// perMetricSeriesLimitReachedError implements the softError interface.
+func (e perMetricSeriesLimitReachedError) soft() {}
+
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
 	limit  int
@@ -321,6 +347,9 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 func (e perMetricMetadataLimitReachedError) errorType() ingesterErrorType {
 	return badData
 }
+
+// perMetricMetadataLimitReachedError implements the softError interface.
+func (e perMetricMetadataLimitReachedError) soft() {}
 
 // unavailableError is an ingesterError indicating that the ingester is unavailable.
 type unavailableError struct {
