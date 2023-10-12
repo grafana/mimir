@@ -4519,6 +4519,17 @@
         },
         {
           "kind": "field",
+          "name": "instance_enable_ipv6",
+          "required": false,
+          "desc": "Enable using a IPv6 instance address (default false).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.instance-enable-ipv6",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "address",
           "required": false,
           "desc": "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).",

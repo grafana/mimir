@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/netutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -18,7 +19,6 @@ import (
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // CombinedFrontendConfig combines several configuration options together to preserve backwards compatibility.
@@ -67,7 +67,7 @@ func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort i
 	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		// Query-scheduler is enabled when its address is configured or ring-based service discovery is configured.
 		if cfg.FrontendV2.Addr == "" {
-			addr, err := util.GetFirstAddressOf(cfg.FrontendV2.InfNames)
+			addr, err := netutil.GetFirstAddressOf(cfg.FrontendV2.InfNames, log, cfg.FrontendV2.EnableIPv6)
 			if err != nil {
 				return nil, nil, nil, errors.Wrap(err, "failed to get frontend address")
 			}
