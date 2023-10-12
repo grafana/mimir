@@ -135,6 +135,7 @@ type storeGatewayStreamReader struct {
 	seriesChunksChan       chan *storepb.StreamingChunksBatch
 	chunksBatch            []*storepb.StreamingChunks
 	errorChan              chan error
+	err                    error
 }
 
 func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
@@ -292,6 +293,14 @@ func (s *storeGatewayStreamReader) sendChunksEstimate(chunksEstimate uint64) err
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, error) {
+	if s.err != nil {
+		// Why not just return s.err?
+		// GetChunks should not be called once it has previously returned an error.
+		// However, if this does not hold true, this may indicate a bug somewhere else (see https://github.com/grafana/mimir-prometheus/pull/540 for an example).
+		// So it's valuable to return a slightly different error to indicate that something's not quite right if GetChunks is called after it's previously returned an error.
+		return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream previously failed and returned an error: %w", seriesIndex, s.err)
+	}
+
 	if len(s.chunksBatch) == 0 {
 		chks, channelOpen := <-s.seriesChunksChan
 
@@ -300,6 +309,7 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) ([]storepb.Aggr
 			select {
 			case err, haveError := <-s.errorChan:
 				if haveError {
+					s.err = err
 					if _, ok := err.(validation.LimitError); ok {
 						return nil, err
 					}

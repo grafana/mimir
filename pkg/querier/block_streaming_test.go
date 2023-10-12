@@ -520,6 +520,14 @@ func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
 			}
 
 			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
+
+			if testCase.expectedError != "" {
+				// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+				_, err := reader.GetChunks(1)
+				require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream previously failed and returned an error: "+testCase.expectedError)
+				_, err = reader.GetChunks(2)
+				require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+testCase.expectedError)
+			}
 		})
 	}
 }
