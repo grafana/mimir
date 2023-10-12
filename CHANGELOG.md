@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.2
+
+### Grafana Mimir
+
+* [BUGFIX] grpc-go: Update grpc-go library to 1.57.1, which includes fix for CVE-2023-44487.
+
 ## 2.10.1
 
 ### Grafana Mimir
