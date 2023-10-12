@@ -51,7 +51,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 		// Verify that the user can create more metric metadata given we don't have a set for that metric name.
 		if !mm.limiter.IsWithinMaxMetricsWithMetadataPerUser(mm.userID, len(mm.metricToMetadata)) {
 			mm.metrics.discardedMetadataPerUserMetadataLimit.WithLabelValues(mm.userID).Inc()
-			return mm.errorSamplers.maxMetadataPerUserLimitExceeded.WrapError(formatMaxMetadataPerUserError(mm.limiter.limits, mm.userID))
+			return mm.errorSamplers.maxMetadataPerUserLimitExceeded.WrapError(newPerUserMetadataLimitReachedError(mm.limiter.limits.MaxGlobalMetricsWithMetadataPerUser(mm.userID)))
 		}
 		set = metricMetadataSet{}
 		mm.metricToMetadata[metric] = set
@@ -59,7 +59,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 
 	if !mm.limiter.IsWithinMaxMetadataPerMetric(mm.userID, len(set)) {
 		mm.metrics.discardedMetadataPerMetricMetadataLimit.WithLabelValues(mm.userID).Inc()
-		return mm.errorSamplers.maxMetadataPerMetricLimitExceeded.WrapError(formatMaxMetadataPerMetricError(mm.limiter.limits, labels.FromStrings(labels.MetricName, metric), mm.userID))
+		return mm.errorSamplers.maxMetadataPerMetricLimitExceeded.WrapError(newPerMetricMetadataLimitReachedError(mm.limiter.limits.MaxGlobalMetadataPerMetric(mm.userID), labels.FromStrings(labels.MetricName, metric)))
 	}
 
 	// if we have seen this metadata before, it is a no-op and we don't need to change our metrics.

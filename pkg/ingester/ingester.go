@@ -115,6 +115,7 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+	tooBusyErrorMsg               = "the ingester is currently too busy to process queries, try again later"
 )
 
 var (
@@ -122,6 +123,11 @@ var (
 	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
 	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
+	tooBusyError = newErrorWithHTTPStatus(
+		errors.New(tooBusyErrorMsg),
+		http.StatusServiceUnavailable,
+	)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -758,7 +764,7 @@ type pushStats struct {
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
 func (i *Ingester) StartPushRequest() error {
-	if err := i.checkRunning(); err != nil {
+	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 
@@ -831,7 +837,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	lockState, err := db.acquireAppendLock(req.MinTimestamp())
 	if err != nil {
-		return newErrorWithHTTPStatus(wrapOrAnnotateWithUser(err, userID), http.StatusServiceUnavailable)
+		return wrapOrAnnotateWithUser(err, userID)
 	}
 	defer db.releaseAppendLock(lockState)
 
@@ -847,9 +853,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		stats pushStats
 
 		firstPartialErr    error
-		updateFirstPartial = func(errFn func() error) {
+		updateFirstPartial = func(sampler *util_log.Sampler, errFn func() error) {
 			if firstPartialErr == nil {
 				firstPartialErr = errFn()
+				if sampler != nil {
+					firstPartialErr = sampler.WrapError(firstPartialErr)
+				}
 			}
 		}
 	)
@@ -914,9 +923,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.updateMetricsFromPushStats(userID, group, &stats, req.Source, db, i.metrics.discarded)
 
 	if firstPartialErr != nil {
-		code := http.StatusBadRequest
-		errWithUser := wrapOrAnnotateWithUser(firstPartialErr, userID)
-		return newErrorWithHTTPStatus(errWithUser, code)
+		return wrapOrAnnotateWithUser(firstPartialErr, userID)
 	}
 
 	return nil
@@ -958,7 +965,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // pushSamplesToAppender appends samples and exemplars to the appender. Most errors are handled via updateFirstPartial function,
 // but in case of unhandled errors, appender is rolled back and such error is returned.
 func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.PreallocTimeseries, app extendedAppender, startAppend time.Time,
-	stats *pushStats, updateFirstPartial func(errFn func() error), activeSeries *activeseries.ActiveSeries,
+	stats *pushStats, updateFirstPartial func(sampler *util_log.Sampler, errFn func() error), activeSeries *activeseries.ActiveSeries,
 	outOfOrderWindow time.Duration, minAppendTimeAvailable bool, minAppendTime int64) error {
 
 	// Return true if handled as soft error, and we can ingest more series.
@@ -973,50 +980,50 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		switch cause := errors.Cause(err); cause {
 		case storage.ErrOutOfBounds:
 			stats.sampleOutOfBoundsCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrOutOfOrderSample:
 			stats.sampleOutOfOrderCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleOutOfOrder.WrapError(newIngestErrSampleOutOfOrder(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() error {
+				return newSampleOutOfOrderError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrTooOldSample:
 			stats.sampleTooOldCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooOldOOOEnabled.WrapError(newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(timestamp), labels, outOfOrderWindow))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() error {
+				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
 			})
 			return true
 
 		case globalerror.SampleTooFarInFuture:
 			stats.sampleTooFarInFutureCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleTimestampTooFarInFuture.WrapError(newIngestErrSampleTimestampTooFarInFuture(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() error {
+				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case storage.ErrDuplicateSampleForTimestamp:
 			stats.newValueForTimestampCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.sampleDuplicateTimestamp.WrapError(newIngestErrSampleDuplicateTimestamp(model.Time(timestamp), labels))
+			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() error {
+				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
 			})
 			return true
 
 		case globalerror.MaxSeriesPerUser:
 			stats.perUserSeriesLimitCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(i.limiter.limits, userID))
+			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() error {
+				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
 			})
 			return true
 
 		case globalerror.MaxSeriesPerMetric:
 			stats.perMetricSeriesLimitCount++
-			updateFirstPartial(func() error {
-				return i.errorSamplers.maxSeriesPerMetricLimitExceeded.WrapError(formatMaxSeriesPerMetricError(i.limiter.limits, mimirpb.FromLabelAdaptersToLabelsWithCopy(labels), userID))
+			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() error {
+				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabelsWithCopy(labels))
 			})
 			return true
 		}
@@ -1056,8 +1063,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					firstTimestamp = ts.Histograms[0].Timestamp
 				}
 
-				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+					return newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels)
 				})
 				continue
 			}
@@ -1071,8 +1078,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 				firstTimestamp := ts.Samples[0].TimestampMs
 
-				updateFirstPartial(func() error {
-					return i.errorSamplers.sampleTimestampTooOld.WrapError(newIngestErrSampleTimestampTooOld(model.Time(firstTimestamp), ts.Labels))
+				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() error {
+					return newSampleTimestampTooOldError(model.Time(firstTimestamp), ts.Labels)
 				})
 				continue
 			}
@@ -1190,16 +1197,16 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
-				updateFirstPartial(func() error {
-					return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
+				updateFirstPartial(nil, func() error {
+					return newExemplarMissingSeriesError(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
 				})
 				stats.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
 				for _, ex := range ts.Exemplars {
 					if ex.TimestampMs > maxTimestampMs {
 						stats.failedExemplarsCount++
-						updateFirstPartial(func() error {
-							return newIngestErrExemplarTimestampTooFarInFuture(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+						updateFirstPartial(nil, func() error {
+							return newExemplarTimestampTooFarInFutureError(model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 						})
 						continue
 					}
@@ -1218,8 +1225,11 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 
 					// Error adding exemplar
-					updateFirstPartial(func() error {
-						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
+					updateFirstPartial(nil, func() error {
+						if err == nil {
+							return nil
+						}
+						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
 					stats.failedExemplarsCount++
 				}
@@ -2991,17 +3001,6 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func wrappedTSDBIngestExemplarOtherErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
-	if ingestErr == nil {
-		return nil
-	}
-
-	return fmt.Errorf("err: %v. timestamp=%s, series=%s, exemplar=%s", ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
-		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
-		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
-	)
-}
-
 func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	// Don't apply any limits while starting. We especially don't want to apply series in memory limit while replaying WAL.
 	if i.State() == services.Starting {
@@ -3114,6 +3113,21 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// checkAvailable checks whether the ingester is available, and if it is not the case
+// returns an unavailableError error.
+// Using block store, the ingester is available only when it is in a Running state.
+// The ingester is not available when stopping to prevent any read or writes to the
+// TSDB after the ingester has closed them.
+func (i *Ingester) checkAvailable() error {
+	s := i.State()
+	if s == services.Running {
+		return nil
+	}
+	return newUnavailableError(s)
+}
+
+// TODO checkRunning should be removed once the error handling improvement is completed.
+// TODO return gRPC errors only at the topmost level.
 // Using block store, the ingester is only available when it is in a Running state. The ingester is not available
 // when stopping to prevent any read or writes to the TSDB after the ingester has closed them.
 func (i *Ingester) checkRunning() error {
@@ -3127,10 +3141,28 @@ func (i *Ingester) checkRunning() error {
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-	if err != nil {
-		return nil, err
+	if err == nil {
+		return &mimirpb.WriteResponse{}, nil
 	}
-	return &mimirpb.WriteResponse{}, nil
+	handledErr := handlePushError(err)
+	return nil, handledErr
+}
+
+func handlePushError(err error) error {
+	var ingesterErr ingesterError
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorType() {
+		case badData:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case unavailable:
+			return newErrorWithStatus(err, codes.Unavailable)
+		case instanceLimitReached:
+			return newErrorWithStatus(util_log.DoNotLogError{Err: err}, codes.Unavailable)
+		case tsdbUnavailable:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
+	}
+	return err
 }
 
 // pushMetadata returns number of ingested metadata.
