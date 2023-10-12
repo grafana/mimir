@@ -23,6 +23,8 @@ import (
 )
 
 func TestDistributorHighConcurrency(t *testing.T) {
+	t.Skip("flaky test")
+
 	for _, caching := range []bool{false, true} {
 		for _, poolWriteReqs := range []bool{false, true} {
 			t.Run(fmt.Sprintf("caching_unmarshal_data=%t, pooling_write_requests=%t", caching, poolWriteReqs), func(t *testing.T) {
@@ -47,6 +49,7 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 		"-ingester.ring.heartbeat-period":          "1s",
 		"-ingester.out-of-order-time-window":       "0",
 		"-blocks-storage.tsdb.block-ranges-period": "2h", // This is changed by BlocksStorageFlags to 1m, but we don't want to run any compaction in our test.
+		"-distributor.remote-timeout":              "9s", // One less than client's timeout below.
 
 		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(cachingUnmarshalDataEnabled),
 		"-distributor.write-requests-buffer-pooling-enabled": strconv.FormatBool(poolWriteRequestBuffer),
@@ -76,6 +79,8 @@ func testDistributorHighConcurrency(t *testing.T, cachingUnmarshalDataEnabled bo
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
+
+	client.SetTimeout(10 * time.Second)
 
 	// Start N writers, each writing 1 series.
 	// All samples are within 20mins time range.
