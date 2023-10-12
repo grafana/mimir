@@ -4,7 +4,9 @@ std.manifestYamlDoc({
     self.write +
     self.read +
     self.backend +
+    self.nginx +
     self.minio +
+    self.grafana +
     self.grafana_agent +
     self.memcached +
     {},
@@ -56,19 +58,53 @@ std.manifestYamlDoc({
     }),
   },
 
+  nginx:: {
+    nginx: {
+      hostname: 'nginx',
+      image: 'nginxinc/nginx-unprivileged:1.22-alpine',
+      environment: [
+        'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
+        'DISTRIBUTOR_HOST=mimir-write-1:8080',
+        'ALERT_MANAGER_HOST=mimir-backend-1:8080',
+        'RULER_HOST=mimir-backend-1:8080',
+        'QUERY_FRONTEND_HOST=mimir-read-1:8080',
+        'COMPACTOR_HOST=mimir-backend-1:8080',
+      ],
+      ports: ['8080:8080'],
+      volumes: ['../common/config:/etc/nginx/templates'],
+    },
+  },
+
   minio:: {
     minio: {
       image: 'minio/minio',
-      command: ['server', '/data'],
+      command: ['server', '--console-address', ':9001', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
-      ports: ['9000:9000'],
+      ports: [
+        '9000:9000',
+        '9001:9001',
+      ],
       volumes: ['.data-minio:/data:delegated'],
     },
   },
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.17-alpine',
+      image: 'memcached:1.6.19-alpine',
+    },
+  },
+
+  grafana:: {
+    grafana: {
+      image: 'grafana/grafana:9.4.3',
+      environment: [
+        'GF_AUTH_ANONYMOUS_ENABLED=true',
+        'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
+      ],
+      volumes: [
+        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+      ],
+      ports: ['3000:3000'],
     },
   },
 

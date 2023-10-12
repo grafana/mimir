@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.continuous_test.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.continuous_test.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.continuous_test.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -94,8 +94,7 @@ spec:
         {{- toYaml .Values.continuous_test.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.continuous_test.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "continuous-test") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "continuous-test") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.continuous_test.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}

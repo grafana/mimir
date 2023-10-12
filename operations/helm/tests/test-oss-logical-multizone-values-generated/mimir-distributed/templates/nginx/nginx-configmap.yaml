@@ -44,8 +44,10 @@ data:
         "" "anonymous";
       }
     
+      proxy_read_timeout 300;
       server {
         listen 8080;
+        listen [::]:8080;
     
         location = / {
           return 200 'OK';

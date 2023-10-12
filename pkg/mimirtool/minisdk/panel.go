@@ -26,6 +26,7 @@ const (
 	BarGaugeType
 	HeatmapType
 	TimeseriesType
+	GaugeType
 )
 
 type (
@@ -46,6 +47,7 @@ type (
 		*BarGaugePanel
 		*HeatmapPanel
 		*TimeseriesPanel
+		*GaugePanel
 		*CustomPanel
 	}
 	panelType   int8
@@ -84,6 +86,9 @@ type (
 	TimeseriesPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
+	GaugePanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 	CustomPanel map[string]interface{}
 )
 
@@ -111,6 +116,8 @@ func (p *Panel) GetTargets() *[]Target {
 		return &p.HeatmapPanel.Targets
 	case TimeseriesType:
 		return &p.TimeseriesPanel.Targets
+	case GaugeType:
+		return &p.GaugePanel.Targets
 	default:
 		return nil
 	}
@@ -188,6 +195,12 @@ func (p *Panel) UnmarshalJSON(b []byte) (err error) {
 		p.OfType = RowType
 		if err = json.Unmarshal(b, &rowpanel); err == nil {
 			p.RowPanel = &rowpanel
+		}
+	case "gauge":
+		var gauge GaugePanel
+		p.OfType = GaugeType
+		if err = json.Unmarshal(b, &gauge); err == nil {
+			p.GaugePanel = &gauge
 		}
 	default:
 		var custom = make(CustomPanel)

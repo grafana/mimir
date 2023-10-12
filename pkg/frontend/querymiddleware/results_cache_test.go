@@ -7,7 +7,6 @@ package querymiddleware
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -15,7 +14,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cache"
-	mimir_tsdb "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,8 +38,9 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "localhost",
+					Memcached: cache.MemcachedClientConfig{
+						Addresses:           []string{"localhost"},
+						MaxAsyncConcurrency: 1,
 					},
 				},
 			},
@@ -50,12 +49,12 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			cfg: ResultsCacheConfig{
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
-					Memcached: mimir_tsdb.MemcachedConfig{
-						Addresses: "",
+					Memcached: cache.MemcachedClientConfig{
+						Addresses: nil,
 					},
 				},
 			},
-			expected: errors.New("query-frontend results cache: no memcached addresses configured"),
+			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"should fail with unsupported backend": {
 			cfg: ResultsCacheConfig{
@@ -63,14 +62,14 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 					Backend: "unsupported",
 				},
 			},
-			expected: errUnsupportedResultsCacheBackend("unsupported"),
+			expected: errUnsupportedBackend,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			if testData.expected != nil {
-				assert.EqualError(t, testData.cfg.Validate(), testData.expected.Error())
+				assert.ErrorIs(t, testData.cfg.Validate(), testData.expected)
 			} else {
 				assert.NoError(t, testData.cfg.Validate())
 			}
@@ -104,19 +103,20 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 }
 
 func mkExtent(start, end int64) Extent {
-	return mkExtentWithStep(start, end, 10)
+	return mkExtentWithStepAndQueryTime(start, end, 10, 0)
 }
 
-func mkExtentWithStep(start, end, step int64) Extent {
+func mkExtentWithStepAndQueryTime(start, end, step, queryTime int64) Extent {
 	res := mkAPIResponse(start, end, step)
-	any, err := types.MarshalAny(res)
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		panic(err)
 	}
 	return Extent{
-		Start:    start,
-		End:      end,
-		Response: any,
+		Start:            start,
+		End:              end,
+		Response:         marshalled,
+		QueryTimestampMs: queryTime,
 	}
 }
 
@@ -516,7 +516,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			prevCachedResponse: []Extent{
 				// 486 is equal to input.Start + N * input.Step (for integer N)
 				// 625 is not equal to input.Start + N * input.Step for any integer N.
-				mkExtentWithStep(486, 625, 33),
+				mkExtentWithStepAndQueryTime(486, 625, 33, time.Now().UnixMilli()),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(486, 625, 33),

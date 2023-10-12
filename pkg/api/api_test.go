@@ -14,27 +14,30 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/server"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
 
 type FakeLogger struct{}
 
-func (fl *FakeLogger) Log(keyvals ...interface{}) error {
+func (fl *FakeLogger) Log(...interface{}) error {
 	return nil
 }
 
 func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
 	serverCfg := server.Config{
-		MetricsNamespace: "without_source_ip_extractor",
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		MetricsNamespace:  "without_source_ip_extractor",
 	}
-	server, err := server.New(serverCfg)
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
+	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, server, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -42,13 +45,16 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
 	serverCfg := server.Config{
-		LogSourceIPs:     true,
-		MetricsNamespace: "with_source_ip_extractor",
+		LogSourceIPs:      true,
+		HTTPListenAddress: "localhost",
+		GRPCListenAddress: "localhost",
+		MetricsNamespace:  "with_source_ip_extractor",
 	}
-	server, err := server.New(serverCfg)
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
+	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
-	api, err := New(cfg, serverCfg, server, &FakeLogger{})
+	api, err := New(cfg, serverCfg, srv, &FakeLogger{})
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }
@@ -187,7 +193,7 @@ func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
@@ -196,6 +202,8 @@ func getServerConfig(t *testing.T) server.Config {
 
 		GPRCServerMaxRecvMsgSize: 1024,
 	}
+	require.NoError(t, cfg.LogLevel.Set("info"))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {

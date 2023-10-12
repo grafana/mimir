@@ -6,8 +6,8 @@
 package commands
 
 import (
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -18,23 +18,11 @@ type RuleFileAnalyzeCommand struct {
 	outputFile    string
 }
 
-func (cmd *RuleFileAnalyzeCommand) run(k *kingpin.ParseContext) error {
+func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 
-	output := &analyze.MetricsInRuler{}
-	output.OverallMetrics = make(map[string]struct{})
-
-	nss, err := rules.ParseFiles(rules.MimirBackend, cmd.RuleFilesList)
+	output, err := AnalyzeRuleFiles(cmd.RuleFilesList)
 	if err != nil {
-		return errors.Wrap(err, "analyze operation unsuccessful, unable to parse rules files")
-	}
-
-	for _, ns := range nss {
-		for _, group := range ns.Groups {
-			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
-			if err != nil {
-				return err
-			}
-		}
+		return err
 	}
 
 	err = writeOutRuleMetrics(output, cmd.outputFile)
@@ -43,4 +31,25 @@ func (cmd *RuleFileAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	return nil
+}
+
+// AnalyzeRuleFiles analyze rules files and return the list metrics used in them.
+func AnalyzeRuleFiles(ruleFiles []string) (*analyze.MetricsInRuler, error) {
+	output := &analyze.MetricsInRuler{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles)
+	if err != nil {
+		return nil, errors.Wrap(err, "analyze operation unsuccessful, unable to parse rules files")
+	}
+
+	for _, ns := range nss {
+		for _, group := range ns.Groups {
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return output, nil
 }

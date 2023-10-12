@@ -4,7 +4,7 @@ Usage of ./cmd/mimir/mimir:
   -activity-tracker.max-entries int
     	Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored. (default 1024)
   -alertmanager-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
   -alertmanager-storage.azure.container-name string
@@ -14,7 +14,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -alertmanager-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
   -alertmanager-storage.filesystem.dir string
@@ -41,12 +41,16 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -alertmanager-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -alertmanager-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -alertmanager-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -alertmanager-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -alertmanager-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
@@ -59,10 +63,12 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
-    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -104,9 +110,15 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.alertmanager-client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -alertmanager.alertmanager-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -alertmanager.alertmanager-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -alertmanager.alertmanager-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -alertmanager.alertmanager-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -alertmanager.alertmanager-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -alertmanager.alertmanager-client.grpc-client-rate-limit-burst int
@@ -117,20 +129,24 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -alertmanager.alertmanager-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.remote-timeout duration
     	Timeout for downstream alertmanagers. (default 2s)
   -alertmanager.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -alertmanager.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -alertmanager.alertmanager-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -alertmanager.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.alertmanager-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.alertmanager-client.tls-server-name string
@@ -141,6 +157,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to poll Alertmanager configs. (default 15s)
   -alertmanager.enable-api
     	Enable the alertmanager config API. (default true)
+  -alertmanager.enable-state-cleanup
+    	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -160,7 +178,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notification-rate-limit float
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
-    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns. (default {})
+    	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams. (default {})
   -alertmanager.peer-timeout duration
     	Time to wait between peers to send notifications. (default 15s)
   -alertmanager.persist-interval duration
@@ -192,9 +210,9 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.password string
     	Etcd password.
   -alertmanager.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -alertmanager.sharding-ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -alertmanager.sharding-ring.etcd.tls-enabled
@@ -202,7 +220,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -alertmanager.sharding-ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.sharding-ring.etcd.tls-server-name string
@@ -217,6 +235,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -alertmanager.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
+  -alertmanager.sharding-ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -alertmanager.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -alertmanager.sharding-ring.instance-interface-names string
@@ -252,7 +272,7 @@ Usage of ./cmd/mimir/mimir:
   -auth.no-auth-tenant string
     	Tenant ID to use when multitenancy is disabled. (default "anonymous")
   -blocks-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
   -blocks-storage.azure.container-name string
@@ -262,15 +282,15 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -blocks-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -blocks-storage.bucket-store.batch-series-size int
-    	[experimental] If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.
+    	This option controls how many series to fetch per batch. The batch size must be greater than 0. (default 5000)
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
-    	If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
+    	[deprecated] If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
@@ -278,21 +298,21 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
   -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes int
-    	Size - in bytes - of the largest chunks pool bucket. (default 50000000)
+    	[deprecated] Size - in bytes - of the largest chunks pool bucket. (default 50000000)
   -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
-    	Size - in bytes - of the smallest chunks pool bucket. (default 16000)
+    	[deprecated] Size - in bytes - of the smallest chunks pool bucket. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
     	TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend. (default 168h0m0s)
   -blocks-storage.bucket-store.chunks-cache.backend string
-    	Backend for chunks cache, if not empty. Supported values: memcached.
-  -blocks-storage.bucket-store.chunks-cache.fine-grained-chunks-caching-enabled
-    	[experimental] Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.
+    	Backend for chunks cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
-  -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -304,23 +324,93 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
+  -blocks-storage.bucket-store.chunks-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.chunks-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.chunks-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.chunks-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.chunks-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.chunks-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.chunks-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.chunks-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.chunks-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.chunks-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.chunks-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.chunks-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.chunks-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.chunks-cache.subrange-ttl duration
     	TTL for caching individual chunks subranges. (default 24h0m0s)
-  -blocks-storage.bucket-store.consistency-delay duration
-    	Minimum age of a block before it's being read. Set it to safe value (e.g 30m) if your object storage is eventually consistent. GCS and S3 are (roughly) strongly consistent.
   -blocks-storage.bucket-store.ignore-blocks-within duration
     	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter. (default 10h0m0s)
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
     	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
   -blocks-storage.bucket-store.index-cache.backend string
-    	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
+    	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
-  -blocks-storage.bucket-store.index-cache.memcached.addresses string
+  -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -332,27 +422,105 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.index-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.index-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.index-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.index-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -blocks-storage.bucket-store.index-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.index-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.index-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
+  -blocks-storage.bucket-store.index-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.index-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.index-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.index-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.index-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.index-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.index-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.index-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.index-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.index-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.index-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.index-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.index-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.index-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.index-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.index-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.index-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.index-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.index-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.index-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.index-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.index-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.index-header-lazy-loading-enabled
-    	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
+    	[deprecated] If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
+    	[deprecated] If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
+  -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
+    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
+  -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
+    	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
+  -blocks-storage.bucket-store.index-header.lazy-loading-enabled
+    	If enabled, store-gateway will lazy load an index-header only once required by a query. (default true)
+  -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
-  -blocks-storage.bucket-store.index-header.map-populate-enabled
-    	[experimental] If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.
-  -blocks-storage.bucket-store.index-header.stream-reader-enabled
-    	[experimental] If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.
-  -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles uint
-    	[experimental] Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled. (default 1)
+  -blocks-storage.bucket-store.index-header.max-idle-file-handles uint
+    	Maximum number of idle file handles the store-gateway keeps open for each index-header file. (default 1)
+  -blocks-storage.bucket-store.index-header.sparse-persistence-enabled
+    	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header. (default true)
+  -blocks-storage.bucket-store.index-header.verify-on-load
+    	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
-    	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
+    	[deprecated] Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
-    	Backend for metadata cache, if not empty. Supported values: memcached.
+    	Backend for metadata cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.metadata-cache.block-index-attributes-ttl duration
     	How long to cache attributes of the block index. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl duration
@@ -361,8 +529,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.chunks-list-ttl duration
     	How long to cache list of chunks for a block. (default 24h0m0s)
-  -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -374,9 +544,27 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
     	How long to cache attributes of the block metafile. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
@@ -387,6 +575,58 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache information that block metafile exists. Also used for tenant deletion mark file. (default 2h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-max-size-bytes int
     	Maximum size of metafile content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend). (default 1048576)
+  -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
+  -blocks-storage.bucket-store.metadata-cache.redis.db int
+    	Database index.
+  -blocks-storage.bucket-store.metadata-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -blocks-storage.bucket-store.metadata-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -blocks-storage.bucket-store.metadata-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -blocks-storage.bucket-store.metadata-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -blocks-storage.bucket-store.metadata-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -blocks-storage.bucket-store.metadata-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -blocks-storage.bucket-store.metadata-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -blocks-storage.bucket-store.metadata-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -blocks-storage.bucket-store.metadata-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -blocks-storage.bucket-store.metadata-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.metadata-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -blocks-storage.bucket-store.metadata-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl duration
     	How long to cache list of blocks for each tenant. (default 5m0s)
   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl duration
@@ -397,28 +637,16 @@ Usage of ./cmd/mimir/mimir:
     	Controls what is the ratio of postings offsets that the store will hold in memory. (default 32)
   -blocks-storage.bucket-store.series-hash-cache-max-size-bytes uint
     	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
+  -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference float
+    	[experimental] This option is only used when blocks-storage.bucket-store.series-selection-strategy=worst-case. Increasing the series preference results in fetching more series than postings. Must be a positive floating point number. (default 0.75)
+  -blocks-storage.bucket-store.series-selection-strategy string
+    	[experimental] This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): speculative, worst-case, worst-case-small-posting-lists, all. (default "worst-case")
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
     	Maximum number of concurrent tenants synching blocks. (default 10)
-  -blocks-storage.ephemeral-tsdb.head-chunks-end-time-variance float
-    	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
-  -blocks-storage.ephemeral-tsdb.head-chunks-write-buffer-size-bytes int
-    	[experimental] The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
-  -blocks-storage.ephemeral-tsdb.head-chunks-write-queue-size int
-    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-size int
-    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0. (default 100)
-  -blocks-storage.ephemeral-tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
-  -blocks-storage.ephemeral-tsdb.retention-period duration
-    	[experimental] Retention of ephemeral series. (default 10m0s)
-  -blocks-storage.ephemeral-tsdb.stripe-size int
-    	[experimental] The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -441,12 +669,16 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -blocks-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -blocks-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -blocks-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -blocks-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -blocks-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
@@ -459,10 +691,12 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
-    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -499,18 +733,28 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift user ID.
   -blocks-storage.swift.username string
     	OpenStack Swift username.
-  -blocks-storage.tsdb.block-ranges-period comma-separated-list-of-durations
-    	[experimental] TSDB blocks range period. (default 2h0m0s)
+  -blocks-storage.tsdb.block-postings-for-matchers-cache-force
+    	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 10485760)
+  -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
+    	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
+  -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
+    	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
+  -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage int
+    	[experimental] When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100). (default 15)
+  -blocks-storage.tsdb.early-head-compaction-min-in-memory-series int
+    	[experimental] When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -ingester.active-series-metrics-idle-timeout time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -ingester.active-series-metrics-idle-timeout time ago (unless out of order ingestion is enabled). The ingester checks every -blocks-storage.tsdb.head-compaction-interval whether an early compaction is required. Use 0 to disable it.
   -blocks-storage.tsdb.flush-blocks-on-shutdown
     	True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.
   -blocks-storage.tsdb.head-chunks-end-time-variance float
     	[experimental] How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
-    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
+    	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. The configured buffer size must be between 65536 and 8388608. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
     	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
@@ -518,23 +762,23 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
-    	How frequently ingesters try to compact TSDB head. Block is only created if data covers smallest block range. Must be greater than 0 and max 5 minutes. (default 1m0s)
+    	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+  -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 10485760)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
-    	[experimental] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when ttl > 0. (default 100)
+    	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
     	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
-  -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup int
-    	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
   -blocks-storage.tsdb.retention-period duration
-    	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
+    	TSDB blocks retention in the ingester before a block is removed. If shipping is enabled, the retention will be relative to the time when the block was uploaded to storage. If shipping is disabled then its relative to the creation time of the block. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 13h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
-    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 1073741824)
+    	Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled. (default 367001600)
   -blocks-storage.tsdb.ship-concurrency int
     	Maximum number of tenants concurrently shipping blocks to the storage. (default 10)
   -blocks-storage.tsdb.ship-interval duration
@@ -543,10 +787,12 @@ Usage of ./cmd/mimir/mimir:
     	The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance. (default 16384)
   -blocks-storage.tsdb.wal-compression-enabled
     	True to enable TSDB WAL compression.
+  -blocks-storage.tsdb.wal-replay-concurrency int
+    	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
   -common.storage.azure.container-name string
@@ -556,7 +802,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -common.storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -common.storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
   -common.storage.filesystem.dir string
@@ -581,12 +827,16 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -common.storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -common.storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -common.storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -common.storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -common.storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
@@ -599,6 +849,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.swift.auth-url string
@@ -643,6 +895,12 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks. (default 8)
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
+  -compactor.block-upload-max-block-size-bytes int
+    	Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.
+  -compactor.block-upload-validation-enabled
+    	Enable block upload validation for the tenant. (default true)
+  -compactor.block-upload-verify-chunks
+    	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.cleanup-concurrency int
@@ -659,8 +917,6 @@ Usage of ./cmd/mimir/mimir:
     	How many times to retry a failed compaction within a single compaction run. (default 3)
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
-  -compactor.consistency-delay duration
-    	Minimum age of fresh (non-compacted) blocks before they are being processed.
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
@@ -669,6 +925,10 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.
+  -compactor.first-level-compaction-wait-period duration
+    	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
+  -compactor.max-block-upload-validation-concurrency int
+    	Max number of uploaded blocks that can be validated concurrently. 0 = no limit. (default 1)
   -compactor.max-closing-blocks-concurrency int
     	Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index. (default 1)
   -compactor.max-compaction-time duration
@@ -677,8 +937,10 @@ Usage of ./cmd/mimir/mimir:
     	Number of goroutines opening blocks before compaction. (default 1)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
+  -compactor.no-blocks-file-cleanup-enabled
+    	[experimental] If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.
   -compactor.partial-block-deletion-delay duration
-    	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.
+    	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable. (default 1d)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration
@@ -702,9 +964,9 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.password string
     	Etcd password.
   -compactor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -compactor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -compactor.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -compactor.ring.etcd.tls-enabled
@@ -712,7 +974,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -compactor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -compactor.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -compactor.ring.etcd.tls-server-name string
@@ -725,6 +987,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -compactor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -compactor.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -compactor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -compactor.ring.instance-interface-names string
@@ -769,52 +1033,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to clean up clients for ingesters that have gone away. (default 15s)
   -distributor.drop-label string
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
-  -distributor.ephemeral-series-enabled
-    	[experimental] Enable marking series as ephemeral based on the given matchers in the runtime config.
-  -distributor.ephemeral-series-matchers value
-    	Lists of series matchers prefixed by the source. The source must be one of any, api, rule. If an incoming sample matches at least one of the matchers with its source it gets marked as ephemeral. The format of the value looks like: api:{namespace="dev"};rule:{host="server1",namespace="prod"}
-  -distributor.forwarding.enabled
-    	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
-  -distributor.forwarding.grpc-client.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -distributor.forwarding.grpc-client.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -distributor.forwarding.grpc-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
-  -distributor.forwarding.grpc-client.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -distributor.forwarding.grpc-client.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -distributor.forwarding.grpc-client.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -distributor.forwarding.grpc-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -distributor.forwarding.grpc-client.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -distributor.forwarding.grpc-client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 104857600)
-  -distributor.forwarding.grpc-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
-  -distributor.forwarding.grpc-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -distributor.forwarding.grpc-client.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -distributor.forwarding.grpc-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -distributor.forwarding.grpc-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -distributor.forwarding.grpc-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
-  -distributor.forwarding.grpc-client.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -distributor.forwarding.grpc-client.tls-server-name string
-    	Override the expected name on the server certificate.
-  -distributor.forwarding.propagate-errors
-    	[experimental] If disabled then forwarding requests are always considered to be successful, errors are ignored. (default true)
-  -distributor.forwarding.request-concurrency int
-    	[experimental] Maximum concurrency at which forwarding requests get performed. (default 10)
-  -distributor.forwarding.request-timeout duration
-    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 2s)
+  -distributor.enable-otlp-metadata-storage
+    	[experimental] If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -844,9 +1064,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.password string
     	Etcd password.
   -distributor.ha-tracker.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ha-tracker.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -distributor.ha-tracker.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -distributor.ha-tracker.etcd.tls-enabled
@@ -854,7 +1074,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ha-tracker.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -distributor.ha-tracker.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ha-tracker.etcd.tls-server-name string
@@ -890,7 +1110,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ingestion-rate-limit float
     	Per-tenant ingestion rate limit in samples per second. (default 10000)
   -distributor.ingestion-tenant-shard-size int
-    	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
+    	The tenant's shard size used by shuffle-sharding. This value is the total size of the shard (ie. it is not the number of ingesters in the shard per zone, but the number of ingesters in the shard across all zones, if zone-awareness is enabled). Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited. (default 2000)
   -distributor.instance-limits.max-inflight-push-requests-bytes int
@@ -902,9 +1122,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
-    	[experimental] Per-tenant allowed request burst size. 0 to disable.
+    	Per-tenant allowed push request burst size. 0 to disable.
   -distributor.request-rate-limit float
-    	[experimental] Per-tenant request rate limit in requests per second. 0 to disable.
+    	Per-tenant push request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -928,9 +1148,9 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.password string
     	Etcd password.
   -distributor.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -distributor.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -distributor.ring.etcd.tls-enabled
@@ -938,7 +1158,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -distributor.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ring.etcd.tls-server-name string
@@ -951,6 +1171,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -distributor.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -distributor.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -distributor.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -distributor.ring.instance-interface-names string
@@ -969,6 +1191,12 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -distributor.service-overload-status-code-on-rate-limit-enabled
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
+  -distributor.write-requests-buffer-pooling-enabled
+    	[experimental] Enable pooling of buffers used for marshaling write requests.
+  -enable-go-runtime-metrics
+    	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
     	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
   -h
@@ -994,9 +1222,25 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ingester.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ingester.client.circuit-breaker.cooldown-period duration
+    	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 1m0s)
+  -ingester.client.circuit-breaker.enabled
+    	[experimental] Enable circuit breaking when making requests to ingesters
+  -ingester.client.circuit-breaker.failure-execution-threshold uint
+    	[experimental] How many requests must have been executed in period for the circuit breaker to be eligible to open for the rate of failures (default 100)
+  -ingester.client.circuit-breaker.failure-threshold uint
+    	[experimental] Max percentage of requests that can fail over period before the circuit breaker opens (default 10)
+  -ingester.client.circuit-breaker.thresholding-period duration
+    	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
+  -ingester.client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ingester.client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ingester.client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ingester.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ingester.client.grpc-client-rate-limit-burst int
@@ -1007,26 +1251,30 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ingester.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ingester.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ingester.client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ingester.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ingester.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ingester.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ingester.client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.error-sample-rate int
+    	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
-  -ingester.instance-limits.max-ephemeral-series int
-    	[experimental] Max ephemeral series that this ingester can hold (across all tenants). Requests to create additional ephemeral series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
   -ingester.instance-limits.max-ingestion-rate float
@@ -1035,8 +1283,10 @@ Usage of ./cmd/mimir/mimir:
     	Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-tenants int
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
-  -ingester.max-ephemeral-series-per-user int
-    	[experimental] The maximum number of in-memory ephemeral series per tenant, across the cluster before replication. 0 to disable ephemeral storage.
+  -ingester.limit-inflight-requests-using-grpc-method-limiter
+    	[experimental] Use experimental method of limiting push requests.
+  -ingester.log-utilization-based-limiter-cpu-samples
+    	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
     	[experimental] The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.
   -ingester.max-global-metadata-per-metric int
@@ -1049,10 +1299,18 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
+  -ingester.native-histograms-ingestion-enabled
+    	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.
+  -ingester.out-of-order-blocks-external-label-enabled
+    	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
-    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.
+    	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.read-path-cpu-utilization-limit float
+    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+  -ingester.read-path-memory-utilization-limit uint
+    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1076,9 +1334,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.password string
     	Etcd password.
   -ingester.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ingester.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ingester.ring.etcd.tls-enabled
@@ -1086,7 +1344,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ingester.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.ring.etcd.tls-server-name string
@@ -1105,6 +1363,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -ingester.ring.instance-availability-zone string
     	The availability zone where this instance is running.
+  -ingester.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -ingester.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ingester.ring.instance-interface-names string
@@ -1127,14 +1387,18 @@ Usage of ./cmd/mimir/mimir:
     	Observe tokens after generating to resolve collisions. Useful when using gossiping ring.
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
-  -ingester.ring.readiness-check-ring-health
-    	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
+  -ingester.ring.spread-minimizing-join-ring-in-order
+    	[experimental] True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
+  -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
+    	[experimental] Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.ring.token-generation-strategy string
+    	[experimental] Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. (default "random")
   -ingester.ring.tokens-file-path string
-    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.
+    	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   -ingester.ring.unregister-on-shutdown
     	Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming. (default true)
   -ingester.ring.zone-awareness-enabled
@@ -1143,10 +1407,18 @@ Usage of ./cmd/mimir/mimir:
     	Stream chunks from ingesters to queriers. (default true)
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
-  -log.format value
-    	Output log messages in the given format. Valid formats: [logfmt, json] (default logfmt)
+  -log.buffered
+    	[deprecated] Use a buffered logger to reduce write contention. (default true)
+  -log.format string
+    	Output log messages in the given format. Valid formats: [logfmt, json] (default "logfmt")
   -log.level value
     	Only log messages with the given severity or above. Valid levels: [debug, info, warn, error] (default info)
+  -log.rate-limit-enabled
+    	[experimental] Use rate limited logger to reduce the number of logged messages per second.
+  -log.rate-limit-logs-burst-size int
+    	[experimental] Burst size, i.e., maximum number of messages that can be logged at once, temporarily exceeding the configured maximum logs per second. (default 1000)
+  -log.rate-limit-logs-per-second float
+    	[experimental] Maximum number of messages per second to be logged. (default 10000)
   -max-separate-metrics-groups-per-user int
     	[experimental] Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated. (default 1000)
   -mem-ballast-size-bytes int
@@ -1206,9 +1478,9 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.stream-timeout duration
     	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
   -memberlist.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -memberlist.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -memberlist.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -memberlist.tls-enabled
@@ -1216,7 +1488,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.tls-insecure-skip-verify
     	Skip validating server certificate.
   -memberlist.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -memberlist.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -memberlist.tls-server-name string
@@ -1225,8 +1497,8 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -modules
     	List available values that can be used as target.
-  -out-of-order-blocks-external-label-enabled
-    	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
+  -overrides-exporter.enabled-metrics comma-separated-list-of-strings
+    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -1242,7 +1514,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.consul.watch-rate-limit float
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
   -overrides-exporter.ring.enabled
-    	[experimental] Enable the ring used by override-exporters to deduplicate exported limit metrics.
+    	Enable the ring used by override-exporters to deduplicate exported limit metrics.
   -overrides-exporter.ring.etcd.dial-timeout duration
     	The dial timeout for the etcd connection. (default 10s)
   -overrides-exporter.ring.etcd.endpoints string
@@ -1252,9 +1524,9 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.password string
     	Etcd password.
   -overrides-exporter.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -overrides-exporter.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -overrides-exporter.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -overrides-exporter.ring.etcd.tls-enabled
@@ -1262,7 +1534,7 @@ Usage of ./cmd/mimir/mimir:
   -overrides-exporter.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -overrides-exporter.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -overrides-exporter.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -overrides-exporter.ring.etcd.tls-server-name string
@@ -1275,6 +1547,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which overrides-exporters are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -overrides-exporter.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -overrides-exporter.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -overrides-exporter.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -overrides-exporter.ring.instance-interface-names string
@@ -1300,7 +1574,7 @@ Usage of ./cmd/mimir/mimir:
   -print.config
     	Print the config and exit.
   -querier.batch-iterators
-    	Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag. (default true)
+    	[deprecated] Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag. (default true)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.default-evaluation-interval duration
@@ -1314,9 +1588,15 @@ Usage of ./cmd/mimir/mimir:
   -querier.frontend-client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -querier.frontend-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -querier.frontend-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -querier.frontend-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -querier.frontend-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -querier.frontend-client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -querier.frontend-client.grpc-client-rate-limit-burst int
@@ -1327,18 +1607,22 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.frontend-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.frontend-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -querier.frontend-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.frontend-client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -querier.frontend-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.frontend-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -querier.frontend-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
@@ -1346,7 +1630,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.iterators
-    	Use iterators to execute query, as opposed to fully materialising the series in memory.
+    	[deprecated] Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -1355,6 +1639,8 @@ Usage of ./cmd/mimir/mimir:
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int
     	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
+  -querier.max-estimated-fetched-chunks-per-query-multiplier float
+    	[experimental] Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -querier.max-fetched-chunks-per-query. This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
@@ -1364,7 +1650,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per frontend; requests beyond this error with HTTP 429. (default 100)
   -querier.max-partial-query-length duration
-    	Limit the time range for partial queries at the querier level. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the time range for partial queries at the querier level.
   -querier.max-query-into-future duration
     	Maximum duration into the future you can query. 0 to disable. (default 10m0s)
   -querier.max-query-lookback duration
@@ -1373,8 +1659,16 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.minimize-ingester-requests
+    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
+  -querier.minimize-ingester-requests-hedging-delay duration
+    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+  -querier.prefer-streaming-chunks-from-ingesters
+    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
+  -querier.prefer-streaming-chunks-from-store-gateways
+    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.query-ingesters-within duration
-    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h0m0s)
+    	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.scheduler-address string
@@ -1382,9 +1676,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
   -querier.store-gateway-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -querier.store-gateway-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -querier.store-gateway-client.tls-enabled
@@ -1392,11 +1686,15 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.store-gateway-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -querier.store-gateway-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.streaming-chunks-per-ingester-buffer-size uint
+    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
+  -querier.streaming-chunks-per-store-gateway-buffer-size uint
+    	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step
@@ -1412,9 +1710,15 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -query-frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-frontend.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -query-frontend.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -query-frontend.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1425,60 +1729,82 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-frontend.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-frontend.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-frontend.instance-addr string
     	IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).
+  -query-frontend.instance-enable-ipv6
+    	Enable using a IPv6 instance address (default false).
   -query-frontend.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
+  -query-frontend.log-query-request-headers comma-separated-list-of-strings
+    	Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.
   -query-frontend.max-body-size int
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
+  -query-frontend.max-query-expression-size-bytes int
+    	Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.
   -query-frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
-    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
+    	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-frontend will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-frontend.query-result-response-format string
-    	[experimental] Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "json")
+    	Format to use when retrieving query results from queriers. Supported values: json, protobuf (default "protobuf")
+  -query-frontend.query-sharding-max-regexp-size-bytes int
+    	Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit. (default 4096)
   -query-frontend.query-sharding-max-sharded-queries int
     	The max number of sharded queries that can be run for a given received query. 0 to disable limit. (default 128)
   -query-frontend.query-sharding-target-series-per-shard uint
-    	[experimental] How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
+    	How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.
   -query-frontend.query-sharding-total-shards int
     	The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard. (default 16)
   -query-frontend.query-stats-enabled
     	False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query. (default true)
+  -query-frontend.results-cache-ttl duration
+    	Time to live duration for cached query results. If query falls into out-of-order time window, -query-frontend.results-cache-ttl-for-out-of-order-time-window is used instead. (default 1w)
+  -query-frontend.results-cache-ttl-for-cardinality-query duration
+    	Time to live duration for cached cardinality query results. The value 0 disables the cache.
+  -query-frontend.results-cache-ttl-for-labels-query duration
+    	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
+  -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
+    	Time to live duration for cached query results if query falls into out-of-order time window. This is lower than -query-frontend.results-cache-ttl so that incoming out-of-order samples are returned in the query results sooner. (default 10m)
   -query-frontend.results-cache.backend string
-    	Backend for query-frontend results cache, if not empty. Supported values: [memcached].
+    	Backend for query-frontend results cache, if not empty. Supported values: memcached, redis.
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
-  -query-frontend.results-cache.memcached.addresses string
+  -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.results-cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -1490,9 +1816,79 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.memcached.max-idle-connections int
     	The maximum number of idle connections that will be maintained per address. (default 100)
   -query-frontend.results-cache.memcached.max-item-size int
-    	The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
+  -query-frontend.results-cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.results-cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.results-cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -query-frontend.results-cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -query-frontend.results-cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-frontend.results-cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.results-cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-frontend.results-cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-frontend.results-cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -query-frontend.results-cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
+  -query-frontend.results-cache.redis.db int
+    	Database index.
+  -query-frontend.results-cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -query-frontend.results-cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -query-frontend.results-cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -query-frontend.results-cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -query-frontend.results-cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -query-frontend.results-cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -query-frontend.results-cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -query-frontend.results-cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -query-frontend.results-cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -query-frontend.results-cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -query-frontend.results-cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -query-frontend.results-cache.redis.password string
+    	Password to use when connecting to Redis.
+  -query-frontend.results-cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -query-frontend.results-cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-frontend.results-cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.results-cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -query-frontend.results-cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -query-frontend.results-cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-frontend.results-cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.results-cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -query-frontend.results-cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-frontend.results-cache.redis.username string
+    	Username to use when connecting to Redis.
+  -query-frontend.results-cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
@@ -1508,9 +1904,15 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -query-scheduler.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -query-scheduler.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -query-scheduler.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1521,18 +1923,22 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -query-scheduler.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -query-scheduler.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -query-scheduler.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -query-scheduler.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-scheduler.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-scheduler.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-scheduler.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-scheduler.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
@@ -1540,7 +1946,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.max-used-instances int
-    	[experimental] The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
+    	The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.ring.consul.acl-token string
@@ -1566,9 +1972,9 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.password string
     	Etcd password.
   -query-scheduler.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -query-scheduler.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -query-scheduler.ring.etcd.tls-enabled
@@ -1576,7 +1982,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -query-scheduler.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.ring.etcd.tls-server-name string
@@ -1589,6 +1995,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. (default 1m0s)
   -query-scheduler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -query-scheduler.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -query-scheduler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -query-scheduler.ring.instance-interface-names string
@@ -1610,7 +2018,7 @@ Usage of ./cmd/mimir/mimir:
   -query-scheduler.service-discovery-mode string
     	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
   -ruler-storage.azure.account-key string
-    	Azure storage account key
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
   -ruler-storage.azure.container-name string
@@ -1620,9 +2028,99 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
   -ruler-storage.azure.user-assigned-id string
-    	User assigned identity. If empty, then System assigned identity is used.
+    	User assigned managed identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem, local. (default "filesystem")
+  -ruler-storage.cache.backend string
+    	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
+  -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.connect-timeout duration
+    	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -ruler-storage.cache.memcached.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -ruler-storage.cache.memcached.max-get-multi-batch-size int
+    	The maximum number of keys a single underlying get operation should run. If more keys are specified, internally keys are split into multiple batches and fetched concurrently, honoring the max concurrency. If set to 0, the max batch size is unlimited. (default 100)
+  -ruler-storage.cache.memcached.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -ruler-storage.cache.memcached.max-idle-connections int
+    	The maximum number of idle connections that will be maintained per address. (default 100)
+  -ruler-storage.cache.memcached.max-item-size int
+    	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
+  -ruler-storage.cache.memcached.min-idle-connections-headroom-percentage float
+    	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -ruler-storage.cache.memcached.timeout duration
+    	The socket read/write timeout. (default 200ms)
+  -ruler-storage.cache.memcached.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.cache.memcached.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.cache.memcached.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler-storage.cache.memcached.tls-enabled
+    	Enable connecting to Memcached with TLS.
+  -ruler-storage.cache.memcached.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler-storage.cache.memcached.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.cache.memcached.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler-storage.cache.memcached.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.cache.redis.connection-pool-size int
+    	Maximum number of connections in the pool. (default 100)
+  -ruler-storage.cache.redis.connection-pool-timeout duration
+    	Maximum duration to wait to get a connection from pool. (default 4s)
+  -ruler-storage.cache.redis.db int
+    	Database index.
+  -ruler-storage.cache.redis.dial-timeout duration
+    	Client dial timeout. (default 5s)
+  -ruler-storage.cache.redis.endpoint comma-separated-list-of-strings
+    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+  -ruler-storage.cache.redis.idle-timeout duration
+    	Amount of time after which client closes idle connections. (default 5m0s)
+  -ruler-storage.cache.redis.master-name string
+    	Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
+  -ruler-storage.cache.redis.max-async-buffer-size int
+    	The maximum number of enqueued asynchronous operations allowed. (default 25000)
+  -ruler-storage.cache.redis.max-async-concurrency int
+    	The maximum number of concurrent asynchronous operations can occur. (default 50)
+  -ruler-storage.cache.redis.max-connection-age duration
+    	Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.
+  -ruler-storage.cache.redis.max-get-multi-batch-size int
+    	The maximum size per batch for mget operations. (default 100)
+  -ruler-storage.cache.redis.max-get-multi-concurrency int
+    	The maximum number of concurrent connections running get operations. If set to 0, concurrency is unlimited. (default 100)
+  -ruler-storage.cache.redis.max-item-size int
+    	The maximum size of an item stored in Redis. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 16777216)
+  -ruler-storage.cache.redis.min-idle-connections int
+    	Minimum number of idle connections. (default 10)
+  -ruler-storage.cache.redis.password string
+    	Password to use when connecting to Redis.
+  -ruler-storage.cache.redis.read-timeout duration
+    	Client read timeout. (default 3s)
+  -ruler-storage.cache.redis.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -ruler-storage.cache.redis.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler-storage.cache.redis.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -ruler-storage.cache.redis.tls-enabled
+    	Enable connecting to Redis with TLS.
+  -ruler-storage.cache.redis.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -ruler-storage.cache.redis.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -ruler-storage.cache.redis.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -ruler-storage.cache.redis.tls-server-name string
+    	Override the expected name on the server certificate.
+  -ruler-storage.cache.redis.username string
+    	Username to use when connecting to Redis.
+  -ruler-storage.cache.redis.write-timeout duration
+    	Client write timeout. (default 3s)
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
@@ -1647,12 +2145,16 @@ Usage of ./cmd/mimir/mimir:
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ruler-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
   -ruler-storage.s3.max-connections-per-host int
     	Maximum number of connections per host. 0 means no limit.
   -ruler-storage.s3.max-idle-connections int
     	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
   -ruler-storage.s3.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -ruler-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
@@ -1665,10 +2167,12 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
-    	[experimental] Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
@@ -1712,9 +2216,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
   -ruler.alertmanager-client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.alertmanager-client.tls-enabled
@@ -1722,7 +2226,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.alertmanager-client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.alertmanager-client.tls-server-name string
@@ -1736,9 +2240,15 @@ Usage of ./cmd/mimir/mimir:
   -ruler.client.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ruler.client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ruler.client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ruler.client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.client.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.client.grpc-client-rate-limit-burst int
@@ -1749,18 +2259,22 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.client.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.client.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.client.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.client.tls-server-name string
@@ -1772,7 +2286,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants whose rules this ruler can evaluate. If specified, only these tenants will be handled by ruler, otherwise this ruler can process rules from all tenants. Subject to sharding.
   -ruler.evaluation-delay-duration duration
-    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.
+    	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed. (default 1m)
   -ruler.evaluation-interval duration
     	How frequently to evaluate rules (default 1m0s)
   -ruler.external.url string
@@ -1790,7 +2304,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.notification-timeout duration
     	HTTP timeout duration when sending notifications to the Alertmanager. (default 10s)
   -ruler.poll-interval duration
-    	How frequently to poll for rule changes (default 1m0s)
+    	How frequently the configured rule groups are re-synced from the object storage. (default 10m0s)
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.query-frontend.grpc-client-config.backoff-max-period duration
@@ -1798,9 +2312,15 @@ Usage of ./cmd/mimir/mimir:
   -ruler.query-frontend.grpc-client-config.backoff-min-period duration
     	Minimum delay when backing off. (default 100ms)
   -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
-    	Enable backoff and retry when we hit ratelimits.
+    	Enable backoff and retry when we hit rate limits.
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -ruler.query-frontend.grpc-client-config.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit float
     	Rate limit for gRPC client; 0 means disabled.
   -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst int
@@ -1811,22 +2331,28 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.query-frontend.grpc-client-config.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ruler.query-frontend.grpc-client-config.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.query-frontend.grpc-client-config.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.query-frontend.grpc-client-config.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.query-frontend.grpc-client-config.tls-enabled
-    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.grpc-client-config.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.query-frontend.grpc-client-config.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.query-result-response-format string
+    	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled
@@ -1856,9 +2382,9 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.password string
     	Etcd password.
   -ruler.ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -ruler.ring.etcd.tls-enabled
@@ -1866,7 +2392,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -ruler.ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.ring.etcd.tls-server-name string
@@ -1879,6 +2405,8 @@ Usage of ./cmd/mimir/mimir:
     	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -ruler.ring.instance-addr string
     	IP address to advertise in the ring. Default is auto-detected.
+  -ruler.ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -ruler.ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -ruler.ring.instance-interface-names string
@@ -1901,8 +2429,10 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
+  -ruler.sync-rules-on-changes-enabled
+    	True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync. (default true)
   -ruler.tenant-federation.enabled
-    	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
+    	Enable rule groups to query against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are federated rule groups that already exist, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
@@ -1920,7 +2450,7 @@ Usage of ./cmd/mimir/mimir:
   -server.grpc-listen-port int
     	gRPC server listen port. (default 9095)
   -server.grpc-max-concurrent-streams uint
-    	Limit on the number of concurrent streams for gRPC calls (0 = unlimited) (default 100)
+    	Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited) (default 100)
   -server.grpc-max-recv-msg-size-bytes int
     	Limit on the size of a gRPC message this server can receive (bytes). (default 104857600)
   -server.grpc-max-send-msg-size-bytes int
@@ -1947,6 +2477,8 @@ Usage of ./cmd/mimir/mimir:
     	Duration after which a keepalive probe is sent in case of no activity over the connection., Default: 2h (default 2h0m0s)
   -server.grpc.keepalive.timeout duration
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
+  -server.grpc.num-workers int
+    	[experimental] If non-zero, configures the amount of GRPC server workers used to serve the requests.
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration
@@ -1970,7 +2502,11 @@ Usage of ./cmd/mimir/mimir:
   -server.http-write-timeout duration
     	Write timeout for HTTP server (default 2m0s)
   -server.log-request-at-info-level-enabled
-    	Optionally log requests at info level instead of debug level.
+    	Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.
+  -server.log-request-headers
+    	Optionally log request headers.
+  -server.log-request-headers-exclude-list string
+    	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
   -server.log-source-ips-enabled
     	Optionally log the source IPs.
   -server.log-source-ips-header string
@@ -1986,7 +2522,9 @@ Usage of ./cmd/mimir/mimir:
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
-    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+    	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+  -store-gateway.sharding-ring.auto-forget-enabled
+    	When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than 10 times the configured -store-gateway.sharding-ring.heartbeat-timeout. (default true)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
@@ -2010,9 +2548,9 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.password string
     	Etcd password.
   -store-gateway.sharding-ring.etcd.tls-ca-path string
-    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -store-gateway.sharding-ring.etcd.tls-cert-path string
-    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
   -store-gateway.sharding-ring.etcd.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
   -store-gateway.sharding-ring.etcd.tls-enabled
@@ -2020,7 +2558,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -store-gateway.sharding-ring.etcd.tls-key-path string
-    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
   -store-gateway.sharding-ring.etcd.tls-min-version string
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -store-gateway.sharding-ring.etcd.tls-server-name string
@@ -2035,6 +2573,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to advertise in the ring. Default is auto-detected.
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
+  -store-gateway.sharding-ring.instance-enable-ipv6
+    	Enable using a IPv6 instance address. (default false)
   -store-gateway.sharding-ring.instance-id string
     	Instance ID to register in the ring. (default "<hostname>")
   -store-gateway.sharding-ring.instance-interface-names string
@@ -2069,18 +2609,20 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
-  -store.max-query-length duration
-    	Deprecated: Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable. This option is deprecated, use -querier.max-partial-query-length or -query-frontend.max-total-query-length instead.
   -target comma-separated-list-of-strings
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
+  -tenant-federation.max-concurrent int
+    	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
+  -timeseries-unmarshal-caching-optimization-enabled
+    	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled
-    	[experimental] Enable anonymous usage reporting. (default true)
+    	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
-    	[experimental] Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+    	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
-    	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
+    	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future). (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
@@ -2091,7 +2633,41 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for label value. This setting also applies to the metric name (default 2048)
   -validation.max-metadata-length int
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
+  -validation.max-native-histogram-buckets int
+    	Maximum number of buckets per native histogram sample. 0 to disable the limit.
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
+  -vault.auth.approle.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.approle.role-id string
+    	[experimental] Role ID of the AppRole
+  -vault.auth.approle.secret-id string
+    	[experimental] Secret ID issued against the AppRole
+  -vault.auth.approle.wrapping-token
+    	[experimental] Response wrapping token if the Secret ID is response wrapped
+  -vault.auth.kubernetes.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.kubernetes.role-name string
+    	[experimental] The Kubernetes named role
+  -vault.auth.kubernetes.service-account-token string
+    	[experimental] The Service Account JWT
+  -vault.auth.kubernetes.service-account-token-path string
+    	[experimental] Path to where the Kubernetes service account token is mounted. By default it lives at /var/run/secrets/kubernetes.io/serviceaccount/token. Field will be used if the service_account_token is not specified.
+  -vault.auth.token string
+    	[experimental] The token used to authenticate against Vault
+  -vault.auth.type string
+    	[experimental] Authentication type to use. Supported types are: approle, kubernetes, userpass, token
+  -vault.auth.userpass.mount-path string
+    	[experimental] Path if the Vault backend was mounted using a non-default path
+  -vault.auth.userpass.password string
+    	[experimental] The userpass auth method password
+  -vault.auth.userpass.username string
+    	[experimental] The userpass auth method username
+  -vault.enabled
+    	[experimental] Enables fetching of keys and certificates from Vault
+  -vault.mount-path string
+    	[experimental] Location of secrets engine within Vault
+  -vault.url string
+    	[experimental] Location of the Vault server
   -version
     	Print application version and exit.

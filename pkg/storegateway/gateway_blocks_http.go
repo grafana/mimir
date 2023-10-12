@@ -15,7 +15,7 @@ import (
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )
@@ -52,7 +52,7 @@ type formattedBlockData struct {
 }
 
 type richMeta struct {
-	*metadata.Meta
+	*block.Meta
 	DeletedTime *int64  `json:"deletedTime,omitempty"`
 	SplitID     *uint32 `json:"splitId,omitempty"`
 }
@@ -101,7 +101,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		}
 		var sources []string
 		for _, pb := range m.Compaction.Sources {
-			sources = append(parents, pb.String())
+			sources = append(sources, pb.String())
 		}
 		var blockSplitID *uint32
 		if splitCount > 0 {

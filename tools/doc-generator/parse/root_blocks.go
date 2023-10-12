@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
 	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -152,8 +152,13 @@ var (
 		},
 		{
 			Name:       "memcached",
-			StructType: reflect.TypeOf(cache.MemcachedConfig{}),
+			StructType: reflect.TypeOf(cache.MemcachedClientConfig{}),
 			Desc:       "The memcached block configures the Memcached-based caching backend.",
+		},
+		{
+			Name:       "redis",
+			StructType: reflect.TypeOf(cache.RedisClientConfig{}),
+			Desc:       "The redis block configures the Redis-based caching backend.",
 		},
 		{
 			Name:       "s3_storage_backend",

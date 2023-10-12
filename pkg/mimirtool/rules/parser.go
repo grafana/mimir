@@ -40,7 +40,7 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 	for _, f := range files {
 		nss, errs := parseFn(f)
 		for _, err := range errs {
-			log.WithError(err).WithField("file", f).Errorln("unable parse rules file")
+			log.WithError(err).WithField("file", f).Errorln("unable to parse rules file")
 			return nil, errFileReadError
 		}
 
@@ -73,7 +73,7 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 func Parse(f string) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
-		log.WithError(err).WithField("file", f).Errorln("unable load rules file")
+		log.WithError(err).WithField("file", f).Errorln("unable to load rules file")
 		return nil, []error{errFileReadError}
 	}
 

@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/nginx/nginx-hpa.yaml
+# Source: mimir-distributed/templates/nginx/nginx-v2-hpa.yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -30,6 +30,9 @@ spec:
         target:
           type: Utilization
           averageUtilization: 60
+<<<<<<<< HEAD:operations/helm/tests/test-oss-k8s-1.25-values-generated/mimir-distributed/templates/nginx/nginx-hpa.yaml
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 180
+========
+>>>>>>>> main:operations/helm/tests/test-oss-k8s-1.25-values-generated/mimir-distributed/templates/nginx/nginx-v2-hpa.yaml

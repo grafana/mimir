@@ -15,12 +15,15 @@ spec:
     - port: http-metrics
       metricRelabelings:
         - action: keep
-          regex: metamonitoring-values-mimir.*
+          regex: "(^|.*;)metamonitoring-values-mimir.*"
           sourceLabels:
             - deployment
             - statefulset
             - pod
-          separator: ''
+          separator: ';'
+      relabelings:
+        - targetLabel: cluster
+          replacement: "metamonitoring-values"
       path: /metrics
       honorLabels: true # retain namespace label from kube-state-metrics
   namespaceSelector:

@@ -1,4 +1,13 @@
 "services":
+  "grafana":
+    "environment":
+      - "GF_AUTH_ANONYMOUS_ENABLED=true"
+      - "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin"
+    "image": "grafana/grafana:9.4.3"
+    "ports":
+      - "3000:3000"
+    "volumes":
+      - "./config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml"
   "grafana-agent":
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
@@ -9,7 +18,7 @@
     "volumes":
       - "./config:/etc/agent-config"
   "memcached":
-    "image": "memcached:1.6.17-alpine"
+    "image": "memcached:1.6.19-alpine"
   "mimir-backend-1":
     "build":
       "context": "."
@@ -149,6 +158,8 @@
   "minio":
     "command":
       - "server"
+      - "--console-address"
+      - ":9001"
       - "/data"
     "environment":
       - "MINIO_ROOT_USER=mimir"
@@ -156,6 +167,21 @@
     "image": "minio/minio"
     "ports":
       - "9000:9000"
+      - "9001:9001"
     "volumes":
       - ".data-minio:/data:delegated"
+  "nginx":
+    "environment":
+      - "NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx"
+      - "DISTRIBUTOR_HOST=mimir-write-1:8080"
+      - "ALERT_MANAGER_HOST=mimir-backend-1:8080"
+      - "RULER_HOST=mimir-backend-1:8080"
+      - "QUERY_FRONTEND_HOST=mimir-read-1:8080"
+      - "COMPACTOR_HOST=mimir-backend-1:8080"
+    "hostname": "nginx"
+    "image": "nginxinc/nginx-unprivileged:1.22-alpine"
+    "ports":
+      - "8080:8080"
+    "volumes":
+      - "../common/config:/etc/nginx/templates"
 "version": "3.4"

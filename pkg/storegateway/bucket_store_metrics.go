@@ -34,10 +34,6 @@ type BucketStoreMetrics struct {
 	queriesDropped        *prometheus.CounterVec
 	seriesRefetches       prometheus.Counter
 
-	// Metrics tracked when streaming store-gateway is disabled.
-	synchronousSeriesGetAllDuration prometheus.Histogram
-	synchronousSeriesMergeDuration  prometheus.Histogram
-
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
 	streamingSeriesBatchPreloadingLoadDuration prometheus.Histogram
@@ -81,35 +77,25 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
-		Help: "How many items of a data type in a block were touched for a single series request.",
+		Help: "How many items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",
 	}, []string{"data_type", "stage"})
 	m.seriesDataFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_fetched",
-		Help: "How many items of a data type in a block were fetched for a single series request. This includes chunks from the cache and the object storage.",
+		Help: "How many items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
 	m.seriesDataSizeTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_touched_bytes",
-		Help: "Size of all items of a data type in a block were touched for a single series request.",
+		Help: "Size of all items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",
 	}, []string{"data_type", "stage"})
 	m.seriesDataSizeFetched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_size_fetched_bytes",
-		Help: "Size of all items of a data type in a block were fetched for a single series request. This includes chunks from the cache and the object storage.",
+		Help: "Size of all items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
 	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
-	})
-	m.synchronousSeriesGetAllDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_series_get_all_duration_seconds",
-		Help:    "Time it takes until all per-block prepares and loads for a query are finished. This metric is tracked only if streaming store-gateway is disabled.",
-		Buckets: durationBuckets,
-	})
-	m.synchronousSeriesMergeDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_series_merge_duration_seconds",
-		Help:    "Time it takes to merge sub-results from all queried blocks into a single result. This metric is tracked only if streaming store-gateway is disabled.",
-		Buckets: durationBuckets,
 	})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
@@ -117,7 +103,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 	m.resultSeriesCount = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_result_series",
-		Help: "Number of series observed in the final result of a query.",
+		Help: "Number of series observed in the final result of a query after merging identical series from different blocks.",
 	})
 	m.queriesDropped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_queries_dropped_total",
@@ -186,22 +172,22 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 
 	m.streamingSeriesRequestDurationByStage = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_request_stage_duration_seconds",
-		Help:    "Time it takes to process a series request split by stages. This metric is tracked only if streaming store-gateway is enabled.",
+		Help:    "Time it takes to process a series request split by stages.",
 		Buckets: durationBuckets,
 	}, []string{"stage"})
 	m.streamingSeriesBatchPreloadingLoadDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_load_duration_seconds",
-		Help:    "Time spent by store-gateway to load batches for a single request. This metric is tracked only if streaming store-gateway is enabled and if the request is split into 2+ batches.",
+		Help:    "Time spent by store-gateway to load batches for a single request. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
 	})
 	m.streamingSeriesBatchPreloadingWaitDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
-		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if streaming store-gateway is enabled and if the request is split into 2+ batches.",
+		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
 		Buckets: durationBuckets,
 	})
 	m.streamingSeriesRefsFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_refs_fetch_duration_seconds",
-		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request. This metric is tracked only if streaming store-gateway is enabled.",
+		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request.",
 		Buckets: durationBuckets,
 	})
 

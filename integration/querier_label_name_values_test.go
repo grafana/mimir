@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -98,16 +99,26 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
+			// Start dependencies.
+			memcached := e2ecache.NewMemcached()
+			consul := e2edb.NewConsul()
+			require.NoError(t, s.StartAndWaitReady(consul, memcached))
+
 			// Set configuration.
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-querier.cardinality-analysis-enabled": "true",
 				"-ingester.ring.replication-factor":     "3",
+
+				// Enable the cardinality results cache with a very short TTL just to exercise its code.
+				"-query-frontend.cache-results":                           "true",
+				"-query-frontend.results-cache.backend":                   "memcached",
+				"-query-frontend.results-cache.memcached.addresses":       "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+				"-query-frontend.results-cache-ttl-for-cardinality-query": "1ms",
 			})
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
+			// Start minio.
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(consul, minio))
+			require.NoError(t, s.StartAndWaitReady(minio))
 
 			// Start the query-frontend.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
@@ -141,7 +152,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				series, _, _ := generateSeries(metricName, now,
+				series, _, _ := generateAlternatingSeries(i)(metricName, now,
 					prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
 					prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
 				)
@@ -364,7 +375,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				series, _, _ := generateSeries(metricName, now,
+				series, _, _ := generateAlternatingSeries(i)(metricName, now,
 					prompb.Label{Name: "env", Value: cardinalityEnvLabelValues[i%len(cardinalityEnvLabelValues)]},
 					prompb.Label{Name: "job", Value: cardinalityJobLabelValues[i%len(cardinalityJobLabelValues)]},
 				)

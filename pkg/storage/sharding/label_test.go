@@ -112,8 +112,15 @@ func TestRemoveShardFromMatchers(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			actualShard, actualMatchers, actualError := RemoveShardFromMatchers(testData.input)
 			assert.Equal(t, testData.expectedShard, actualShard)
-			assert.Equal(t, testData.expectedMatchers, actualMatchers)
 			assert.Equal(t, testData.expectedError, actualError)
+
+			// Assert same matchers. We do some optimizations in mimir-prometheus which make
+			// the label matchers not comparable with reflect.DeepEqual() so we're going to
+			// compare their string representation.
+			require.Len(t, actualMatchers, len(testData.expectedMatchers))
+			for i := 0; i < len(testData.expectedMatchers); i++ {
+				assert.Equal(t, testData.expectedMatchers[i].String(), actualMatchers[i].String())
+			}
 		})
 	}
 }

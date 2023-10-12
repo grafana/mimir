@@ -1,0 +1,13 @@
+---
+# This file should contain Mimir's runtime configuration.
+# A runtime configuration file is a file that contains configuration
+# parameters, which is periodically reloaded while Mimir is running. It allows
+# you to change a subset of Grafana Mimir’s configuration without having to
+# restart the Grafana Mimir component or instance.
+# https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
+
+# overrides:
+#   tenant1:
+#     ingestion_rate: 50000
+#   tenant2:
+#     ingestion_rate: 75000

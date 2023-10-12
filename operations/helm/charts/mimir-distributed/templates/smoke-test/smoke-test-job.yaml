@@ -26,7 +26,7 @@ spec:
       priorityClassName: {{ .Values.smoke_test.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.smoke_test.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "smoke-test") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -56,10 +56,10 @@ spec:
             {{- end }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.smoke_test.env }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

@@ -29,7 +29,7 @@ spec:
       priorityClassName: {{ .Values.distributor.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.distributor.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "distributor") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.distributor.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -99,6 +99,12 @@ spec:
             {{- with .Values.distributor.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
+            {{- if $cpu_request }}
+            {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled 8 | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -113,8 +119,7 @@ spec:
         {{- toYaml .Values.distributor.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.distributor.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "distributor") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "distributor") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.distributor.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.distributor.terminationGracePeriodSeconds }}

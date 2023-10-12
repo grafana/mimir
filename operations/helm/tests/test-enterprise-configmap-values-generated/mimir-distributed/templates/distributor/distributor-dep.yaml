@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: test-enterprise-configmap-values
       app.kubernetes.io/component: distributor
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -91,6 +94,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "8"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
@@ -99,14 +104,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-configmap-values
-              app.kubernetes.io/component: distributor
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-configmap-values
+            app.kubernetes.io/component: distributor
       tolerations:
         []
       terminationGracePeriodSeconds: 60

@@ -3,6 +3,8 @@
 package continuoustest
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,9 +49,16 @@ func TestGetQueryStep(t *testing.T) {
 	}
 }
 
-func TestVerifySineWaveSamplesSum(t *testing.T) {
+func TestVerifySamplesSum(t *testing.T) {
+	testVerifySamplesSumFloats(t, generateSineWaveValue, "generateSineWaveValue")
+	for _, histProfile := range histogramProfiles {
+		testVerifySamplesSumHistograms(t, histProfile.generateValue, histProfile.generateSampleHistogram, fmt.Sprintf("generateHistogramValue for %s", histProfile.typeLabel))
+	}
+}
+
+func testVerifySamplesSumFloats(t *testing.T, generateValue generateValueFunc, testLabel string) {
 	// Round to millis since that's the precision of Prometheus timestamps.
-	now := time.UnixMilli(time.Now().UnixMilli()).UTC()
+	now := time.Now().Round(time.Millisecond).UTC()
 
 	tests := map[string]struct {
 		samples                 []model.SamplePair
@@ -60,9 +69,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 	}{
 		"should return no error if all samples value and timestamp match the expected one (1 series)": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          1,
 			expectedStep:            10 * time.Second,
@@ -71,9 +80,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return no error if all samples value and timestamp match the expected one (multiple series)": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 5*generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 5*generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -82,9 +91,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if there's a missing series": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 4*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(20*time.Second), 4*generateSineWaveValue(now.Add(20*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 4*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 4*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(20*time.Second), 4*generateValue(now.Add(20*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 4*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -93,8 +102,8 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if there's a missing sample": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -103,9 +112,9 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 		},
 		"should return error if the 2nd last sample has an unexpected timestamp": {
 			samples: []model.SamplePair{
-				newSamplePair(now.Add(10*time.Second), 5*generateSineWaveValue(now.Add(10*time.Second))),
-				newSamplePair(now.Add(21*time.Second), 5*generateSineWaveValue(now.Add(21*time.Second))),
-				newSamplePair(now.Add(30*time.Second), 5*generateSineWaveValue(now.Add(30*time.Second))),
+				newSamplePair(now.Add(10*time.Second), 5*generateValue(now.Add(10*time.Second))),
+				newSamplePair(now.Add(21*time.Second), 5*generateValue(now.Add(21*time.Second))),
+				newSamplePair(now.Add(30*time.Second), 5*generateValue(now.Add(30*time.Second))),
 			},
 			expectedSeries:          5,
 			expectedStep:            10 * time.Second,
@@ -115,9 +124,98 @@ func TestVerifySineWaveSamplesSum(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
 			matrix := model.Matrix{{Values: testData.samples}}
-			actualLastMatchingIdx, actualErr := verifySineWaveSamplesSum(matrix, testData.expectedSeries, testData.expectedStep)
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, nil)
+			if testData.expectedErr == "" {
+				assert.NoError(t, actualErr)
+			} else {
+				assert.Error(t, actualErr)
+				assert.Regexp(t, testData.expectedErr, actualErr.Error())
+			}
+			assert.Equal(t, testData.expectedLastMatchingIdx, actualLastMatchingIdx)
+		})
+	}
+}
+
+func testVerifySamplesSumHistograms(t *testing.T, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, testLabel string) {
+	// Round to millis since that's the precision of Prometheus timestamps.
+	now := time.Now().Round(time.Millisecond).UTC()
+
+	if strings.HasSuffix(testLabel, "histogram_int_gauge") {
+		// If you don't do this, should_return_error_if_there's_a_missing_series will sometimes fail when the last histogram has an expected value of 0, making the number of series irrelevant to the expected sum which will be 0. This causes the error to happen on the second iteration with lastMatchingIndex as 2 instead of the usual first iteration with lastMatchingIndex as -1. So while it still fails with the expected error, the test fails as the lastMatchingIndex is unexpected. To fix this, we make sure the timestamp for the last histogram does not result in an expected value of 0.
+		for generateHistogramIntValue(now.Add(30*time.Second), true) == 0 {
+			now = now.Add(1 * time.Second)
+		}
+	}
+
+	tests := map[string]struct {
+		histograms              []model.SampleHistogramPair
+		expectedSeries          int
+		expectedStep            time.Duration
+		expectedLastMatchingIdx int
+		expectedErr             string
+	}{
+		"should return no error if all histograms value and timestamp match the expected one (1 series)": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 1)),
+				newSampleHistogramPair(now.Add(20*time.Second), generateSampleHistogram(now.Add(20*time.Second), 1)),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second), 1)),
+			},
+			expectedSeries:          1,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 0,
+			expectedErr:             "",
+		},
+		"should return no error if all histograms value and timestamp match the expected one (multiple series)": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 5)),
+				newSampleHistogramPair(now.Add(20*time.Second), generateSampleHistogram(now.Add(20*time.Second), 5)),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second), 5)),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 0,
+			expectedErr:             "",
+		},
+		"should return error if there's a missing series": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 4)),
+				newSampleHistogramPair(now.Add(20*time.Second), generateSampleHistogram(now.Add(20*time.Second), 4)),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second), 4)),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: -1,
+			expectedErr:             "histogram at timestamp .* has sum .* while was expecting .*",
+		},
+		"should return error if there's a missing histogram": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 5)),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second), 5)),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 1,
+			expectedErr:             "histogram at timestamp .* was expected to have timestamp .*",
+		},
+		"should return error if the 2nd last histogram has an unexpected timestamp": {
+			histograms: []model.SampleHistogramPair{
+				newSampleHistogramPair(now.Add(10*time.Second), generateSampleHistogram(now.Add(10*time.Second), 5)),
+				newSampleHistogramPair(now.Add(21*time.Second), generateSampleHistogram(now.Add(21*time.Second), 5)),
+				newSampleHistogramPair(now.Add(30*time.Second), generateSampleHistogram(now.Add(30*time.Second), 5)),
+			},
+			expectedSeries:          5,
+			expectedStep:            10 * time.Second,
+			expectedLastMatchingIdx: 2,
+			expectedErr:             "histogram at timestamp .* was expected to have timestamp .*",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(fmt.Sprintf("%s:%s", testLabel, testName), func(t *testing.T) {
+			matrix := model.Matrix{{Histograms: testData.histograms}}
+			actualLastMatchingIdx, actualErr := verifySamplesSum(matrix, testData.expectedSeries, testData.expectedStep, generateValue, generateSampleHistogram)
 			if testData.expectedErr == "" {
 				assert.NoError(t, actualErr)
 			} else {
@@ -156,6 +254,35 @@ func TestRandTime(t *testing.T) {
 	}
 }
 
+func TestCompareSampleValues(t *testing.T) {
+	tests := map[string]struct {
+		actual    float64
+		expected  float64
+		tolerance float64
+		result    bool
+	}{
+		"histogram_float_counter shouldn't work with float tolerance": {
+			actual:    336157191.999972,
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaFloat,
+			result:    false,
+		},
+		"histogram_float_counter should work with histogram tolerance": {
+			actual:    336157191.999972,
+			expected:  336157192.000000,
+			tolerance: maxComparisonDeltaHistogram,
+			result:    true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			res := compareFloatValues(testData.actual, testData.expected, testData.tolerance)
+			assert.Equal(t, testData.result, res)
+		})
+	}
+}
+
 func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	return model.SamplePair{
 		Timestamp: model.Time(ts.UnixMilli()),
@@ -163,13 +290,32 @@ func newSamplePair(ts time.Time, value float64) model.SamplePair {
 	}
 }
 
-// generateSineWaveSamplesSum generates a list of samples whose timestamps range between from and to (both included),
-// where each sample value is numSeries multiplied by the expected sine wave value at the sample's timestamp.
-func generateSineWaveSamplesSum(from, to time.Time, numSeries int, step time.Duration) []model.SamplePair {
+func newSampleHistogramPair(ts time.Time, hist *model.SampleHistogram) model.SampleHistogramPair {
+	return model.SampleHistogramPair{
+		Timestamp: model.Time(ts.UnixMilli()),
+		Histogram: hist,
+	}
+}
+
+// generateFloatSamplesSum generates a list of float samples whose timestamps range between from and to
+// (both inclusive), where each sample value is numSeries multiplied by the expected value at the sample's timestamp.
+func generateFloatSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateValue generateValueFunc) []model.SamplePair {
 	var samples []model.SamplePair
 
 	for ts := from; !ts.After(to); ts = ts.Add(step) {
-		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateSineWaveValue(ts)))
+		samples = append(samples, newSamplePair(ts, float64(numSeries)*generateValue(ts)))
+	}
+
+	return samples
+}
+
+// generateHistogramSamplesSum generates a list of histogram samples whose timestamps range between from and to
+// (both inclusive), where each histogram is the sum of numSeries instances of the expected histogram for its timestamp.
+func generateHistogramSamplesSum(from, to time.Time, numSeries int, step time.Duration, generateSampleHistogram generateSampleHistogramFunc) []model.SampleHistogramPair {
+	var samples []model.SampleHistogramPair
+
+	for ts := from; !ts.After(to); ts = ts.Add(step) {
+		samples = append(samples, newSampleHistogramPair(ts, generateSampleHistogram(ts, numSeries)))
 	}
 
 	return samples

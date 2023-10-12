@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.querier.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.querier.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "querier") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.querier.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -101,6 +101,13 @@ spec:
             {{- with .Values.querier.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -115,8 +122,7 @@ spec:
         {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.querier.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.querier.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}

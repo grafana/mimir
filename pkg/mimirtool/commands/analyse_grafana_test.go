@@ -30,6 +30,10 @@ var dashboardMetrics = []string{
 	"workqueue_queue_duration_seconds_bucket",
 }
 
+var expectedParseErrors = []string{
+	"unsupported panel type: \"text\"",
+}
+
 func TestParseMetricsInBoard(t *testing.T) {
 	var board minisdk.Board
 	output := &analyze.MetricsInGrafana{}
@@ -43,6 +47,29 @@ func TestParseMetricsInBoard(t *testing.T) {
 
 	analyze.ParseMetricsInBoard(output, board)
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
+	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
+}
+
+func BenchmarkParseMetricsInBoard(b *testing.B) {
+	var board minisdk.Board
+	output := &analyze.MetricsInGrafana{}
+	output.OverallMetrics = make(map[string]struct{})
+
+	buf, err := loadFile("testdata/apiserver.json")
+	if err != nil {
+		b.FailNow()
+	}
+
+	err = json.Unmarshal(buf, &board)
+	if err != nil {
+		b.FailNow()
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		analyze.ParseMetricsInBoard(output, board)
+	}
 }
 
 func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {

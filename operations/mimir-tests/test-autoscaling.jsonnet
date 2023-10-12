@@ -15,6 +15,10 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
+    autoscaling_alertmanager_enabled: true,
+    autoscaling_alertmanager_min_replicas: 3,
+    autoscaling_alertmanager_max_replicas: 30,
+
     autoscaling_querier_enabled: true,
     autoscaling_querier_min_replicas: 3,
     autoscaling_querier_max_replicas: 30,
@@ -26,6 +30,18 @@ mimir {
     autoscaling_distributor_enabled: true,
     autoscaling_distributor_min_replicas: 3,
     autoscaling_distributor_max_replicas: 30,
+
+    autoscaling_query_frontend_enabled: true,
+    autoscaling_query_frontend_min_replicas: 3,
+    autoscaling_query_frontend_max_replicas: 30,
+
+    autoscaling_ruler_query_frontend_enabled: true,
+    autoscaling_ruler_query_frontend_min_replicas: 3,
+    autoscaling_ruler_query_frontend_max_replicas: 30,
+
+    autoscaling_ruler_enabled: true,
+    autoscaling_ruler_min_replicas: 2,
+    autoscaling_ruler_max_replicas: 10,
   },
 
   local k = import 'ksonnet-util/kausal.libsonnet',
@@ -39,4 +55,19 @@ mimir {
     // the KEDA threshold
     // Also specify CPU request as a string to make sure it works
     k.util.resourcesRequests('0.2', '1Gi'),
+
+  // Test ScaledObject with metric_type.
+  test_scaled_object: $.newScaledObject('test', $._config.namespace, {
+    min_replica_count: 20,
+    max_replica_count: 30,
+
+    triggers: [
+      {
+        metric_name: 'cortex_test_hpa_%s' % $._config.namespace,
+        metric_type: 'Value',  // This is what we're testing.
+        query: 'some_query_goes_here',
+        threshold: '123',
+      },
+    ],
+  }),
 }

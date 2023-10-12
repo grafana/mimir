@@ -8,6 +8,7 @@ package chunk
 import (
 	"fmt"
 	"io"
+	"unsafe"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -75,8 +76,12 @@ func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 	return nil, nil
 }
 
-func (p *prometheusXorChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
+func (p *prometheusXorChunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add histogram to sample chunk")
+}
+
+func (p *prometheusXorChunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to sample chunk")
 }
 
 func (p *prometheusXorChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -94,7 +99,6 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 }
 
 // Wrapper around a Prometheus histogram chunk.
-// TODO add unit tests as in chunk_test.go https://github.com/grafana/mimir/issues/3767
 type prometheusHistogramChunk struct {
 	prometheusChunk
 }
@@ -103,13 +107,17 @@ func newPrometheusHistogramChunk() *prometheusHistogramChunk {
 	return &prometheusHistogramChunk{}
 }
 
-func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
+func (p *prometheusHistogramChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
 	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
 }
 
-// AddHistogram adds another histogram to the chunk. While Add works, it is only implemented
-// to make tests work, and should not be used in production. In particular, it appends
-// all histograms to single chunk, and uses new Appender for each Add.
+func (p *prometheusHistogramChunk) AddFloatHistogram(_ int64, _ *histogram.FloatHistogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float histogram to histogram chunk")
+}
+
+// AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
+// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
+// Appender for each invocation.
 func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
 	if p.chunk == nil {
 		p.chunk = chunkenc.NewHistogramChunk()
@@ -120,8 +128,8 @@ func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Hi
 		return nil, err
 	}
 
-	app.AppendHistogram(timestamp, h)
-	return nil, nil
+	_, _, _, err = app.AppendHistogram(nil, timestamp, h, true)
+	return nil, err
 }
 
 func (p *prometheusHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -136,6 +144,54 @@ func (p *prometheusHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
 
 func (p *prometheusHistogramChunk) Encoding() Encoding {
 	return PrometheusHistogramChunk
+}
+
+// Wrapper around a Prometheus histogram chunk.
+type prometheusFloatHistogramChunk struct {
+	prometheusChunk
+}
+
+func newPrometheusFloatHistogramChunk() *prometheusFloatHistogramChunk {
+	return &prometheusFloatHistogramChunk{}
+}
+
+func (p *prometheusFloatHistogramChunk) Add(_ model.SamplePair) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
+}
+
+func (p *prometheusFloatHistogramChunk) AddHistogram(_ int64, _ *histogram.Histogram) (EncodedChunk, error) {
+	return nil, fmt.Errorf("cannot add histogram sample to float histogram chunk")
+}
+
+// AddFloatHistogram adds another float histogram to the chunk. While AddFloatHistogram works, it is only implemented to make tests
+// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
+// Appender for each invocation.
+func (p *prometheusFloatHistogramChunk) AddFloatHistogram(timestamp int64, h *histogram.FloatHistogram) (EncodedChunk, error) {
+	if p.chunk == nil {
+		p.chunk = chunkenc.NewFloatHistogramChunk()
+	}
+
+	app, err := p.chunk.Appender()
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, _, err = app.AppendFloatHistogram(nil, timestamp, h, true)
+	return nil, err
+}
+
+func (p *prometheusFloatHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
+	c, err := chunkenc.FromData(chunkenc.EncFloatHistogram, bytes)
+	if err != nil {
+		return errors.Wrap(err, "failed to create Prometheus chunk from bytes")
+	}
+
+	p.chunk = c
+	return nil
+}
+
+func (p *prometheusFloatHistogramChunk) Encoding() Encoding {
+	return PrometheusFloatHistogramChunk
 }
 
 type prometheusChunkIterator struct {
@@ -162,23 +218,59 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-// TODO native histograms support, assumes it's used on float chunk and only keeps floats
-// The Batch function takes a valueType since the first sample we process is already acquired
-// by a Next/Seek/etc and we cannot get its type otherwise.
+func (p *prometheusChunkIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return p.it.AtHistogram()
+}
+
+func (p *prometheusChunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return p.it.AtFloatHistogram()
+}
+
+func (p *prometheusChunkIterator) Timestamp() int64 {
+	return p.it.AtT()
+}
+
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
 	var batch Batch
-	j := 0
-	for j < size {
-		if valueType == chunkenc.ValFloat {
+	batch.ValueType = valueType
+	var populate func(j int)
+	switch valueType {
+	case chunkenc.ValNone:
+		// Here in case we will introduce a linter that checks that all possible types are covered
+		return batch
+	case chunkenc.ValFloat:
+		populate = func(j int) {
 			t, v := p.it.At()
 			batch.Timestamps[j] = t
 			batch.Values[j] = v
-			j++
 		}
+	case chunkenc.ValHistogram:
+		populate = func(j int) {
+			t, h := p.it.AtHistogram()
+			batch.Timestamps[j] = t
+			batch.PointerValues[j] = unsafe.Pointer(h)
+		}
+	case chunkenc.ValFloatHistogram:
+		populate = func(j int) {
+			t, fh := p.it.AtFloatHistogram()
+			batch.Timestamps[j] = t
+			batch.PointerValues[j] = unsafe.Pointer(fh)
+		}
+	default:
+		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))
+	}
+
+	j := 0
+	for j < size {
+		populate(j)
+		j++
 		if j < size {
-			valueType = p.it.Next()
-			if valueType == chunkenc.ValNone {
+			vt := p.it.Next()
+			if vt == chunkenc.ValNone {
 				break
+			}
+			if vt != valueType {
+				panic(fmt.Sprintf("chunk encoding expected to be consistent in chunk start %v now %v", valueType, vt))
 			}
 		}
 	}
@@ -193,8 +285,13 @@ func (p *prometheusChunkIterator) Err() error {
 
 type errorIterator string
 
-func (e errorIterator) Scan() chunkenc.ValueType                           { return chunkenc.ValNone }
-func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType   { return chunkenc.ValNone }
-func (e errorIterator) Value() model.SamplePair                            { panic("no values") }
-func (e errorIterator) Batch(size int, valueType chunkenc.ValueType) Batch { panic("no values") }
-func (e errorIterator) Err() error                                         { return errors.New(string(e)) }
+func (e errorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
+func (e errorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e errorIterator) Value() model.SamplePair                       { panic("no values") }
+func (e errorIterator) AtHistogram() (int64, *histogram.Histogram)    { panic("no integer histograms") }
+func (e errorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic("no float histograms")
+}
+func (e errorIterator) Timestamp() int64                        { panic("no samples") }
+func (e errorIterator) Batch(_ int, _ chunkenc.ValueType) Batch { panic("no values") }
+func (e errorIterator) Err() error                              { return errors.New(string(e)) }

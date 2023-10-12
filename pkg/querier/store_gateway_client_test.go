@@ -12,11 +12,12 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -47,7 +48,8 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	factory := newStoreGatewayClientFactory(cfg, reg)
 
 	for i := 0; i < 2; i++ {
-		client, err := factory(listener.Addr().String())
+		inst := ring.InstanceDesc{Addr: listener.Addr().String()}
+		client, err := factory.FromInstance(inst)
 		require.NoError(t, err)
 		defer client.Close() //nolint:errcheck
 
@@ -55,7 +57,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
-		// Read the entire response from the stream.
+		// nolint:revive // Read the entire response from the stream.
 		for _, err = stream.Recv(); err == nil; {
 		}
 	}
@@ -74,7 +76,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, _ storegatewaypb.StoreGateway_SeriesServer) error {
 	return nil
 }
 

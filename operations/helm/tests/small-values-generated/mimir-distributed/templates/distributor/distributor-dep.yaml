@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: small-values
       app.kubernetes.io/component: distributor
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -90,20 +93,22 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "8"
           envFrom:
       nodeSelector:
         {}
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: small-values
-              app.kubernetes.io/component: distributor
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: small-values
+            app.kubernetes.io/component: distributor
       tolerations:
         []
       terminationGracePeriodSeconds: 60

@@ -1,0 +1,3 @@
+{{- if and .Values.enterprise.enabled (index .Values "admin-cache" "enabled") -}}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "admin-cache") }}
+{{- end -}}

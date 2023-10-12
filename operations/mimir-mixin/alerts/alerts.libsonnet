@@ -158,11 +158,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
         {
-          alert: $.alertName('MemcachedRequestErrors'),
+          alert: $.alertName('CacheRequestErrors'),
           expr: |||
             (
-              sum by(%s, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
-              sum by(%s, name, operation) (rate(thanos_memcached_operations_total[1m]))
+              sum by(%s, name, operation) (
+                rate(thanos_memcached_operation_failures_total[1m])
+                or
+                rate(thanos_cache_operation_failures_total[1m])
+              )
+              /
+              sum by(%s, name, operation) (
+                rate(thanos_memcached_operations_total[1m])
+                or
+                rate(thanos_cache_operations_total[1m])
+              )
             ) * 100 > 5
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -171,15 +180,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Memcached {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
+              The cache {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('IngesterRestarts'),
           expr: |||
-            changes(process_start_time_seconds{%s}[30m]) >= 2
-          ||| % $.jobMatcher($._config.job_names.ingester),
+            (
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                increase(kube_pod_container_status_restarts_total{container=~"(%(ingester)s|%(mimir_write)s)"}[30m])
+              )
+              >= 2
+            )
+            and
+            (
+              count by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_build_info) > 0
+            )
+          ||| % $._config {
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+          },
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
@@ -187,7 +208,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
+            message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
         {
@@ -215,33 +236,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
             process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
-          ||| % { job_regex: $.jobMatcher('(%s|%s)' % [$._config.job_names.ingester, $._config.job_names.store_gateway]) },
+          ||| % { job_regex: $.jobMatcher($._config.job_names.ingester + $._config.job_names.store_gateway) },
           'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
-          },
-        },
-        {
-          alert: $.alertName('DistributorForwardingErrorRate'),
-          expr: |||
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_errors_total{}[1m]))
-            /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_requests_total{}[1m]))
-            > 0.01
-          ||| % {
-            alert_aggregation_labels: $._config.alert_aggregation_labels,
-          },
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              %(product)s in %(alert_aggregation_variables)s has a high failure rate when forwarding samples.
-            ||| % $._config,
           },
         },
         {
@@ -290,13 +291,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
           },
         },
+        {
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          alert: $.alertName('IngestedDataTooFarInTheFuture'),
+          'for': '5m',
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                cortex_ingester_tsdb_head_max_timestamp_seconds - time()
+                and
+                cortex_ingester_tsdb_head_max_timestamp_seconds > 0
+            ) > 60*60
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",job=~"(.*/)?%(job)s"}))
-              != sum by(%(alert_aggregation_labels)s) (up{job=~"(.*/)?%(job)s"})
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",%(job_regex)s}))
+              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s})
             )
             and
             (
@@ -306,7 +328,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
             component: component_job[0],
-            job: component_job[1],
+            job_regex: $.jobMatcher(component_job[1]),
           },
           'for': '15m',
           labels: {
@@ -480,6 +502,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '30m',
           labels: {
             severity: 'warning',
+            workload_type: 'statefulset',
           },
           annotations: {
             message: |||
@@ -508,6 +531,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'for': '30m',
           labels: {
             severity: 'warning',
+            workload_type: 'deployment',
           },
           annotations: {
             message: |||
@@ -536,44 +560,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       name: 'mimir-provisioning',
       rules: [
         {
-          alert: $.alertName('ProvisioningTooManyActiveSeries'),
-          // We target each ingester to 1.5M in-memory series. This alert fires if the average
-          // number of series / ingester in a Mimir cluster is > 1.6M for 2h (we compact
-          // the TSDB head every 2h).
-          expr: |||
-            avg by (%s) (cortex_ingester_memory_series) > 1.6e6
-          ||| % [$._config.alert_aggregation_labels],
-          'for': '2h',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              The number of in-memory series per ingester in %(alert_aggregation_variables)s is too high.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('ProvisioningTooManyWrites'),
-          // 80k writes / s per ingester max.
-          expr: |||
-            avg by (%(alert_aggregation_labels)s) (%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m) > 80e3
-          ||| % $._config,
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Ingesters in %(alert_aggregation_variables)s ingest too many samples per second.
-            ||| % $._config,
-          },
-        },
-        {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
-            allocationpercent: '0.65',
-            instanceLabel: $._config.per_instance_label,
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
+            threshold: '0.65',
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,
@@ -590,9 +579,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('AllocatingTooMuchMemory'),
-          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % {
-            allocationpercent: '0.8',
-            instanceLabel: $._config.per_instance_label,
+          expr: $._config.ingester_alerts[$._config.deployment_type].memory_allocation % $._config {
+            threshold: '0.8',
             ingester: $._config.container_names.ingester,
             mimir_write: $._config.container_names.mimir_write,
             mimir_backend: $._config.container_names.mimir_backend,
@@ -720,7 +708,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s instance %(alert_instance_variable)s in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
+            message: 'One or more %(product)s instances in %(alert_aggregation_variables)s see incorrect number of gossip members.' % $._config,
           },
         },
       ],

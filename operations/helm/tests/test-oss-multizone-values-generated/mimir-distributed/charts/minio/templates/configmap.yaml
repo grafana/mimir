@@ -4,10 +4,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: test-oss-multizone-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.4
+    chart: minio-5.0.14
     release: test-oss-multizone-values
     heritage: Helm
 data:
@@ -48,7 +47,7 @@ data:
     # Check if the bucket exists, by using the exit code of `mc ls`
     checkBucketExists() {
       BUCKET=$1
-      CMD=$(${MC} ls myminio/$BUCKET > /dev/null 2>&1)
+      CMD=$(${MC} stat myminio/$BUCKET > /dev/null 2>&1)
       return $?
     }
     
@@ -94,7 +93,7 @@ data:
     
     
       # set versioning for bucket if objectlocking is disabled or not set
-      if [ -z $OBJECTLOCKING ] ; then
+      if [ $OBJECTLOCKING = false ] ; then
       if [ ! -z $VERSIONING ] ; then
         if [ $VERSIONING = true ] ; then
             echo "Enabling versioning for '$BUCKET'"
@@ -199,7 +198,9 @@ data:
       # set policy for user
       if [ ! -z $POLICY -a $POLICY != " " ] ; then
           echo "Adding policy '$POLICY' for '$USER'"
-          ${MC} admin policy set myminio $POLICY user=$USER
+          set +e ; # policy already attach errors out, allow it.
+          ${MC} admin policy attach myminio $POLICY --user=$USER
+          set -e
       else
           echo "User '$USER' has no policy attached."
       fi
@@ -269,13 +270,14 @@ data:
       else
         echo "Policy '$NAME' already exists."
       fi
-      ${MC} admin policy add myminio $NAME /config/$FILENAME.json
+      ${MC} admin policy create myminio $NAME /config/$FILENAME.json
     
     }
     
     # Try connecting to MinIO instance
     scheme=http
     connectToMinio $scheme
+    
     
     
   add-svcacct: |-

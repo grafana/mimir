@@ -9,10 +9,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/push"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // PushGatewayConfig configures the pushgateway
@@ -34,7 +34,7 @@ func (l *PushGatewayConfig) Register(app *kingpin.Application, _ EnvVarNames) {
 	app.Flag("push-gateway.interval", "interval to forward metrics to the push gateway").Default("1m").DurationVar(&l.Interval)
 }
 
-func (l *PushGatewayConfig) setup(pc *kingpin.ParseContext) error {
+func (l *PushGatewayConfig) setup(_ *kingpin.ParseContext) error {
 	if l.Endpoint == nil || l.JobName == "" {
 		logrus.Debugln("push-gateway not configured")
 		return nil

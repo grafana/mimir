@@ -16,7 +16,7 @@ import (
 	seriesset "github.com/grafana/mimir/pkg/storage/series"
 )
 
-type chunkIteratorFunc func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator
+type chunkIteratorFunc func(reuse chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator
 
 // Series in the returned set are sorted alphabetically by labels.
 func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkIteratorFunc) storage.SeriesSet {
@@ -37,7 +37,7 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkI
 		})
 	}
 
-	return seriesset.NewConcreteSeriesSet(series)
+	return seriesset.NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // Implements SeriesWithChunks
@@ -53,8 +53,8 @@ func (s *chunkSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (s *chunkSeries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
-	return s.chunkIteratorFunc(s.chunks, model.Time(s.mint), model.Time(s.maxt))
+func (s *chunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	return s.chunkIteratorFunc(it, s.chunks, model.Time(s.mint), model.Time(s.maxt))
 }
 
 // Chunks implements SeriesWithChunks interface.

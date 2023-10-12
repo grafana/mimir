@@ -13,6 +13,7 @@ metadata:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
   {{- if not .Values.store_gateway.autoscaling.enabled }}
   replicas: {{ $rolloutZone.replicas }}
   {{- end }}
@@ -35,11 +36,12 @@ spec:
           {{- toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.store_gateway.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.store_gateway.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.store_gateway.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.store_gateway.persistentVolume.storageClass }}"
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:
@@ -64,7 +66,7 @@ spec:
       priorityClassName: {{ .Values.store_gateway.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.store_gateway.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
       initContainers:
         {{- toYaml .Values.store_gateway.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -77,8 +79,7 @@ spec:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
@@ -139,7 +140,7 @@ spec:
             - name: storage
               mountPath: "/data"
               {{- if .Values.store_gateway.persistentVolume.subPath }}
-              subPath: {{ .Values.store_gateway.persistentVolume.subPath }}             
+              subPath: {{ .Values.store_gateway.persistentVolume.subPath }}
               {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
@@ -167,6 +168,18 @@ spec:
             {{- end }}
             {{- with .Values.store_gateway.env }}
               {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.store_gateway.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
+              {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
+            - name: "GOMAXPROCS"
+              value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
+            {{- end }}
+            {{- $mem_request := dig "requests" "memory" nil .Values.store_gateway.resources }}
+            {{- if $mem_request }}
+            - name: "GOMEMLIMIT"
+              value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}

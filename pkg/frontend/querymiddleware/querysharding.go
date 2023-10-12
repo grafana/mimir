@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -97,15 +98,20 @@ func newQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
-	defer log.Span.Finish()
+	log := spanlogger.FromContext(ctx, s.logger)
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, log)
+	// Parse the query.
+	queryExpr, err := parser.ParseExpr(r.GetQuery())
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+	}
+
+	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return s.next.Do(ctx, r)
@@ -142,7 +148,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := newShardedQueryable(r, s.next)
 
-	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -162,10 +168,11 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
-func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),
@@ -175,6 +182,7 @@ func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (pr
 		)
 	case *PrometheusInstantQueryRequest:
 		return engine.NewInstantQuery(
+			ctx,
 			queryable,
 			nil,
 			r.GetQuery(),
@@ -239,9 +247,11 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 		return "", nil, err
 	}
 
+	// The mapper can modify the input expression in-place, so we must re-parse the original query
+	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
+		return "", nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 
 	shardedQuery, err := mapper.Map(expr)
@@ -253,7 +263,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, spanLog log.Logger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog log.Logger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -263,6 +273,20 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 	if totalShards <= 1 {
 		return 1
+	}
+
+	// Ensure there's no regexp matcher longer than the configured limit.
+	maxRegexpSizeBytes := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.QueryShardingMaxRegexpSizeBytes)
+	if maxRegexpSizeBytes > 0 {
+		if longest := longestRegexpMatcherBytes(queryExpr); longest > maxRegexpSizeBytes {
+			level.Debug(spanLog).Log(
+				"msg", "query sharding has been disabled because the query contains a regexp matcher longer than the limit",
+				"longest regexp bytes", longest,
+				"limit bytes", maxRegexpSizeBytes,
+			)
+
+			return 1
+		}
 	}
 
 	// Honor the number of shards specified in the request (if any).
@@ -384,19 +408,33 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	case promql.Vector:
 		res := make([]SampleStream, 0, len(v))
 		for _, sample := range v {
-			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
-				Samples: []mimirpb.Sample{{TimestampMs: sample.Point.T, Value: sample.Point.V}}})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+			}
+			if sample.H != nil {
+				ss.Histograms = mimirpb.FromHPointsToHistograms([]promql.HPoint{{T: sample.T, H: sample.H}})
+			} else {
+				ss.Samples = mimirpb.FromFPointsToSamples([]promql.FPoint{{T: sample.T, F: sample.F}})
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 
 	case promql.Matrix:
 		res := make([]SampleStream, 0, len(v))
 		for _, series := range v {
-			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
-				Samples: fromPointsToSamples(series.Points),
-			})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
+			}
+			samples := mimirpb.FromFPointsToSamples(series.Floats)
+			if len(samples) > 0 {
+				ss.Samples = samples
+			}
+			histograms := mimirpb.FromHPointsToHistograms(series.Histograms)
+			if len(histograms) > 0 {
+				ss.Histograms = histograms
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 
@@ -405,12 +443,20 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
 }
 
-// Note this is relatively expensive.
-func fromPointsToSamples(points []promql.Point) []mimirpb.Sample {
-	samples := make([]mimirpb.Sample, len(points))
-	for i := 0; i < len(points); i++ {
-		samples[i].TimestampMs = points[i].T
-		samples[i].Value = points[i].V
+// longestRegexpMatcherBytes returns the length (in bytes) of the longest regexp
+// matcher found in the query, or 0 if the query has no regexp matcher.
+func longestRegexpMatcherBytes(expr parser.Expr) int {
+	var longest int
+
+	for _, selectors := range parser.ExtractSelectors(expr) {
+		for _, matcher := range selectors {
+			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
+				continue
+			}
+
+			longest = util_math.Max(longest, len(matcher.Value))
+		}
 	}
-	return samples
+
+	return longest
 }

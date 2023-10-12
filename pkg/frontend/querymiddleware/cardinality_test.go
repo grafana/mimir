@@ -12,10 +12,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
@@ -65,6 +65,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, tt.expected, generateCardinalityEstimationCacheKey(tt.userID, tt.r, 24*time.Hour))
@@ -112,7 +113,7 @@ func Test_cardinalityEstimation_lookupCardinalityForKey(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ce := cardinalityEstimation{cache: tt.cache}
-			ce.storeCardinalityForKey(ctx, actualKey, actualValue)
+			ce.storeCardinalityForKey(actualKey, actualValue)
 			estimate, ok := ce.lookupCardinalityForKey(ctx, tt.key)
 			if tt.cache != nil {
 				expectedFetchCount++
@@ -226,7 +227,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 			}
 			numSetupStoreCalls := 0
 			if len(tt.cacheContent) > 0 {
-				c.Store(ctx, tt.cacheContent, time.Minute)
+				c.StoreAsync(tt.cacheContent, time.Minute)
 				numSetupStoreCalls++
 			}
 
@@ -334,6 +335,7 @@ func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			keyA := generateCardinalityEstimationCacheKey(tt.tenantA, tt.requestA, cardinalityEstimateBucketSize)

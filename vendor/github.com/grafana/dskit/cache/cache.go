@@ -1,3 +1,6 @@
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package cache
 
 import (
@@ -20,7 +23,7 @@ type RemoteCacheClient interface {
 	// SetAsync enqueues an asynchronous operation to store a key into memcached.
 	// Returns an error in case it fails to enqueue the operation. In case the
 	// underlying async operation will fail, the error will be tracked/logged.
-	SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error
+	SetAsync(key string, value []byte, ttl time.Duration) error
 
 	// Delete deletes a key from memcached.
 	// This is a synchronous operation. If an asynchronous set operation for key is still
@@ -33,20 +36,20 @@ type RemoteCacheClient interface {
 
 // Cache is a generic interface.
 type Cache interface {
-	// Store data into the cache.
+	// StoreAsync writes data into the cache asynchronously.
 	//
 	// Note that individual byte buffers may be retained by the cache!
-	Store(ctx context.Context, data map[string][]byte, ttl time.Duration)
+	StoreAsync(data map[string][]byte, ttl time.Duration)
 
 	// Fetch multiple keys from cache. Returns map of input keys to data.
 	// If key isn't in the map, data for given key was not found. One or more
 	// Option instances may be passed to modify the behavior of this Fetch call.
 	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
-	Name() string
-
 	// Delete cache entry with the given key if it exists.
 	Delete(ctx context.Context, key string) error
+
+	Name() string
 }
 
 // Options are used to modify the behavior of an individual call to get results
@@ -87,19 +90,22 @@ const (
 )
 
 type BackendConfig struct {
-	Backend   string          `yaml:"backend"`
-	Memcached MemcachedConfig `yaml:"memcached"`
+	Backend   string                `yaml:"backend"`
+	Memcached MemcachedClientConfig `yaml:"memcached"`
+	Redis     RedisClientConfig     `yaml:"redis"`
 }
 
 // Validate the config.
 func (cfg *BackendConfig) Validate() error {
-	if cfg.Backend != "" && cfg.Backend != BackendMemcached {
+	if cfg.Backend != "" && cfg.Backend != BackendMemcached && cfg.Backend != BackendRedis {
 		return fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
 	}
 
 	switch cfg.Backend {
 	case BackendMemcached:
 		return cfg.Memcached.Validate()
+	case BackendRedis:
+		return cfg.Redis.Validate()
 	}
 	return nil
 }
@@ -111,12 +117,17 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 
 	case BackendMemcached:
-		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), reg)
+		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
 		return NewMemcachedCache(cacheName, logger, client, reg), nil
-
+	case BackendRedis:
+		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to create redis client")
+		}
+		return NewRedisCache(cacheName, logger, client, reg), nil
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

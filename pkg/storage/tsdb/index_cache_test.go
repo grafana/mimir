@@ -43,10 +43,38 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 		},
 		"one memcached address should pass": {
 			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{Backend: IndexCacheBackendMemcached,
-					Memcached: cache.MemcachedConfig{
-						Addresses: "dns+localhost:11211",
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendMemcached,
+					Memcached: cache.MemcachedClientConfig{
+						Addresses:           []string{"dns+localhost:11211"},
+						MaxAsyncConcurrency: 1,
 					},
+				},
+			},
+		},
+		"no redis address should fail": {
+			cfg: IndexCacheConfig{
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendRedis,
+				},
+			},
+			expected: cache.ErrRedisConfigNoEndpoint,
+		},
+		"one redis address should pass": {
+			cfg: IndexCacheConfig{
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendRedis,
+					Redis: cache.RedisClientConfig{
+						Endpoint:            []string{"localhost:6379"},
+						MaxAsyncConcurrency: 1,
+					},
+				},
+			},
+		},
+		"inmemory should pass": {
+			cfg: IndexCacheConfig{
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendInMemory,
 				},
 			},
 		},

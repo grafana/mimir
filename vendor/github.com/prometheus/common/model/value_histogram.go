@@ -140,12 +140,12 @@ type SampleHistogramPair struct {
 }
 
 func (s SampleHistogramPair) MarshalJSON() ([]byte, error) {
+	if s.Histogram == nil {
+		return nil, fmt.Errorf("histogram is nil")
+	}
 	t, err := json.Marshal(s.Timestamp)
 	if err != nil {
 		return nil, err
-	}
-	if s.Histogram == nil {
-		return nil, fmt.Errorf("histogram is nil")
 	}
 	v, err := json.Marshal(s.Histogram)
 	if err != nil {

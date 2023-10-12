@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.graphite.querier.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.graphite.querier.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
       initContainers:
         {{- with .Values.graphite.querier.initContainers }}
         {{- toYaml . | nindent 8 }}

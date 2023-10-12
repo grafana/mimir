@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	lru "github.com/hashicorp/golang-lru/simplelru"
+	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -18,7 +18,7 @@ type LRUCache struct {
 	name       string
 
 	mtx sync.Mutex
-	lru *lru.LRU
+	lru *lru.LRU[string, *Item]
 
 	requests prometheus.Counter
 	hits     prometheus.Counter
@@ -37,14 +37,14 @@ type Item struct {
 // The LRU cache is limited in number of items using `lruSize`. This means this cache is not tailored for large items or items that have a big
 // variation in size.
 func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
-	lru, err := lru.NewLRU(lruSize, nil)
+	l, err := lru.NewLRU[string, *Item](lruSize, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	cache := &LRUCache{
 		c:          c,
-		lru:        lru,
+		lru:        l,
 		name:       name,
 		defaultTTL: defaultTTL,
 
@@ -74,9 +74,9 @@ func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize i
 	return cache, nil
 }
 
-func (l *LRUCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+func (l *LRUCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	// store the data in the shared cache.
-	l.c.Store(ctx, data, ttl)
+	l.c.StoreAsync(data, ttl)
 
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -100,12 +100,11 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (re
 	)
 
 	for _, k := range keys {
-		val, ok := l.lru.Get(k)
+		item, ok := l.lru.Get(k)
 		if !ok {
 			miss = append(miss, k)
 			continue
 		}
-		item := val.(*Item)
 		if item.ExpiresAt.After(now) {
 			found[k] = item.Data
 			continue

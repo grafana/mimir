@@ -111,15 +111,21 @@ func TestLoadRules(t *testing.T) {
 		require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 	}
 
-	allGroupsMap := map[string]rulespb.RuleGroupList{}
-	for _, u := range []string{"user1", "user2", "user3"} {
-		rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
-		require.NoError(t, err)
-		allGroupsMap[u] = rgl
+	// Utility function used to run each test case in isolation.
+	listAllRuleGroups := func() map[string]rulespb.RuleGroupList {
+		allGroupsMap := map[string]rulespb.RuleGroupList{}
+		for _, u := range []string{"user1", "user2", "user3"} {
+			rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
+			require.NoError(t, err)
+			allGroupsMap[u] = rgl
+		}
+		return allGroupsMap
 	}
 
 	// Before load, rules are not loaded
 	{
+		allGroupsMap := listAllRuleGroups()
+
 		require.Len(t, allGroupsMap, 3)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup"},
@@ -131,11 +137,14 @@ func TestLoadRules(t *testing.T) {
 		}, allGroupsMap["user2"])
 	}
 
-	err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
-	require.NoError(t, err)
-
 	// After load, rules are loaded.
 	{
+		allGroupsMap := listAllRuleGroups()
+
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.NoError(t, err)
+		require.Empty(t, missing)
+
 		require.NoError(t, err)
 		require.Len(t, allGroupsMap, 3)
 
@@ -160,13 +169,39 @@ func TestLoadRules(t *testing.T) {
 		}, allGroupsMap["user3"])
 	}
 
-	// Loading group with mismatched info fails.
-	require.NoError(t, rs.SetRuleGroup(context.Background(), "user1", "hello", &rulespb.RuleGroupDesc{User: "user2", Namespace: "world", Name: "first testGroup"}))
-	require.EqualError(t, rs.LoadRuleGroups(context.Background(), allGroupsMap), "mismatch between requested rule group and loaded rule group, requested: user=\"user1\", namespace=\"hello\", group=\"first testGroup\", loaded: user=\"user2\", namespace=\"world\", group=\"first testGroup\"")
+	// Load a missing rule groups doesn't fail but return missing ones.
+	{
+		allGroupsMap := listAllRuleGroups()
 
-	// Load with missing rule groups fails.
-	require.NoError(t, rs.DeleteRuleGroup(context.Background(), "user1", "hello", "first testGroup"))
-	require.EqualError(t, rs.LoadRuleGroups(context.Background(), allGroupsMap), "get rule group user=\"user2\", namespace=\"world\", name=\"first testGroup\": group does not exist")
+		require.NoError(t, rs.DeleteRuleGroup(context.Background(), "user1", "hello", "first testGroup"))
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.NoError(t, err)
+		require.ElementsMatch(t, rulespb.RuleGroupList{{User: "user1", Namespace: "hello", Name: "first testGroup"}}, missing)
+
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"}, // The missing one still exists in the rule groups map, but has not been loaded.
+			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},
+			{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
+		}, allGroupsMap["user1"])
+
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
+		}, allGroupsMap["user2"])
+
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+		}, allGroupsMap["user3"])
+	}
+
+	// Loading group with mismatched info fails.
+	{
+		require.NoError(t, rs.SetRuleGroup(context.Background(), "user1", "hello", &rulespb.RuleGroupDesc{User: "user2", Namespace: "world", Name: "first testGroup"}))
+
+		allGroupsMap := listAllRuleGroups()
+		missing, err := rs.LoadRuleGroups(context.Background(), allGroupsMap)
+		require.EqualError(t, err, "mismatch between requested rule group and loaded rule group, requested: user=\"user1\", namespace=\"hello\", group=\"first testGroup\", loaded: user=\"user2\", namespace=\"world\", group=\"first testGroup\"")
+		require.Empty(t, missing)
+	}
 }
 
 func TestDelete(t *testing.T) {
@@ -400,7 +435,7 @@ type mockBucket struct {
 	names []string
 }
 
-func (mb mockBucket) Iter(_ context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
+func (mb mockBucket) Iter(_ context.Context, _ string, f func(string) error, _ ...objstore.IterOption) error {
 	for _, n := range mb.names {
 		if err := f(n); err != nil {
 			return err

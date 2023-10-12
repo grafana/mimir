@@ -3,6 +3,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // The store-gateway runs a statefulset.
   local store_gateway_data_pvc =
@@ -13,6 +14,7 @@
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -27,33 +29,39 @@
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
-
-      // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
-      'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
-      'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
-
-      'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
-
-      // We should keep a number of idle connections equal to the max "get" concurrency,
-      // in order to avoid re-opening connections continuously (this would be slower
-      // and fill up the conntrack table too).
-      //
-      // The downside of this approach is that we'll end up with an higher number of
-      // active connections to memcached, so we have to make sure connections limit
-      // set in memcached is high enough.
-      'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
-      'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'],
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
+      // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+      'store-gateway.sharding-ring.unregister-on-shutdown': false,
     } +
+    (if $._config.store_gateway_lazy_loading_enabled then {
+       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'true',
+       'blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout': '60m',
+     } else {
+       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'false',
+       // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
+       'blocks-storage.bucket-store.block-sync-concurrency': 4,
+       'blocks-storage.bucket-store.tenant-sync-concurrency': 1,
+     }) +
+    $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
     $.bucket_index_config +
     $.mimirRuntimeConfigFile,
 
   store_gateway_ports:: $.util.defaultPorts,
+
+  store_gateway_env_map:: {
+    // Dynamically set GOMAXPROCS based on CPU request.
+    GOMAXPROCS: std.toString(
+      std.ceil(
+        std.max(
+          $.util.parseCPU($.store_gateway_container.resources.requests.cpu) * 2,
+          $.util.parseCPU($.store_gateway_container.resources.requests.cpu) + 4
+        ),
+      )
+    ),
+    // Dynamically set GOMEMLIMIT based on memory request.
+    GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory))),
+  },
 
   store_gateway_container::
     container.new('store-gateway', $._images.store_gateway) +
@@ -72,7 +80,9 @@
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
+    self.newStoreGatewayStatefulSet('store-gateway',
+                                    $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
+                                    !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
   store_gateway_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),

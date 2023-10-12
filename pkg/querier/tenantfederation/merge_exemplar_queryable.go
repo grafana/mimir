@@ -8,12 +8,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -28,8 +27,8 @@ import (
 // By setting bypassWithSingleQuerier to true, tenant federation logic gets
 // bypassed if the request is only for a single tenant. The requests will also
 // not contain the pseudo series label __tenant_id__ in this case.
-func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, logger log.Logger) storage.ExemplarQueryable {
-	return NewMergeExemplarQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, logger)
+func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.ExemplarQueryable {
+	return NewMergeExemplarQueryable(defaultTenantLabel, upstream, bypassWithSingleQuerier, maxConcurrency, logger)
 }
 
 // NewMergeExemplarQueryable returns an exemplar queryable that makes requests for
@@ -42,13 +41,14 @@ func NewExemplarQueryable(upstream storage.ExemplarQueryable, bypassWithSingleQu
 // By setting bypassWithSingleQuerier to true, tenant federation logic gets
 // bypassed if the request is only for a single tenant. The requests will also
 // not contain the pseudo series label `idLabelName` in this case.
-func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, logger log.Logger) storage.ExemplarQueryable {
+func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQueryable, bypassWithSingleQuerier bool, maxConcurrency int, logger log.Logger) storage.ExemplarQueryable {
 	return &mergeExemplarQueryable{
 		logger:                  logger,
 		idLabelName:             idLabelName,
 		bypassWithSingleQuerier: bypassWithSingleQuerier,
 		upstream:                upstream,
 		resolver:                tenant.NewMultiResolver(),
+		maxConcurrency:          maxConcurrency,
 	}
 }
 
@@ -58,6 +58,7 @@ type mergeExemplarQueryable struct {
 	bypassWithSingleQuerier bool
 	upstream                storage.ExemplarQueryable
 	resolver                tenant.Resolver
+	maxConcurrency          int
 }
 
 // tenantsAndQueriers returns a list of tenant IDs and corresponding queriers based on the context
@@ -97,11 +98,12 @@ func (m *mergeExemplarQueryable) ExemplarQuerier(ctx context.Context) (storage.E
 	}
 
 	return &mergeExemplarQuerier{
-		logger:      m.logger,
-		ctx:         ctx,
-		idLabelName: m.idLabelName,
-		tenants:     ids,
-		queriers:    queriers,
+		logger:         m.logger,
+		ctx:            ctx,
+		idLabelName:    m.idLabelName,
+		tenants:        ids,
+		queriers:       queriers,
+		maxConcurrency: m.maxConcurrency,
 	}, nil
 }
 
@@ -112,11 +114,12 @@ type exemplarJob struct {
 }
 
 type mergeExemplarQuerier struct {
-	logger      log.Logger
-	ctx         context.Context
-	idLabelName string
-	tenants     []string
-	queriers    []storage.ExemplarQuerier
+	logger         log.Logger
+	ctx            context.Context
+	idLabelName    string
+	tenants        []string
+	queriers       []storage.ExemplarQuerier
+	maxConcurrency int
 }
 
 // Select returns the union exemplars within the time range that match each slice of
@@ -187,7 +190,7 @@ func (m *mergeExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Ma
 		return nil
 	}
 
-	err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run)
+	err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run)
 	if err != nil {
 		return nil, err
 	}

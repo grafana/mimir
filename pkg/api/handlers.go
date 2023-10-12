@@ -17,7 +17,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,8 +30,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-	"github.com/weaveworks/common/instrument"
-	"github.com/weaveworks/common/middleware"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -233,6 +233,11 @@ func NewQuerierHandler(
 		Help:      "Current number of inflight requests to the querier.",
 	}, []string{"method", "route"})
 
+	const (
+		remoteWriteEnabled = false
+		oltpEnabled        = false
+	)
+
 	api := v1.NewAPI(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
@@ -259,6 +264,8 @@ func NewQuerierHandler(
 		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
 		reg,
 		nil,
+		remoteWriteEnabled,
+		oltpEnabled,
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -291,6 +298,7 @@ func NewQuerierHandler(
 	seriesQueryStats := usagestats.NewRequestsMiddleware("querier_series_query_requests")
 	metadataQueryStats := usagestats.NewRequestsMiddleware("querier_metadata_query_requests")
 	cardinalityQueryStats := usagestats.NewRequestsMiddleware("querier_cardinality_query_requests")
+	formattingQueryStats := usagestats.NewRequestsMiddleware("querier_formatting_requests")
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
@@ -304,6 +312,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(prefix, "/api/v1/format_query")).Methods("GET", "POST").Handler(formattingQueryStats.Wrap(promRouter))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

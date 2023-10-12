@@ -109,7 +109,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ),
       )
       .addPanel(
-        $.panel('Tenants compaction progress') +
+        $.timeseriesPanel('Tenants compaction progress') +
         $.queryPanel(
           |||
             (
@@ -118,18 +118,17 @@ local fixTargetsForTransformations(panel, refIds) = panel {
               cortex_compactor_tenants_skipped{%(job)s}
             )
             /
-            cortex_compactor_tenants_discovered{%(job)s}
+            cortex_compactor_tenants_discovered{%(job)s} > 0
           ||| % {
             job: $.jobMatcher($._config.job_names.compactor),
           },
           '{{%s}}' % $._config.per_instance_label
         ) +
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        { fieldConfig: { defaults: { unit: 'percentunit', max: 1, noValue: 1 } } } +
         $.panelDescription(
           'Tenants compaction progress',
           |||
             In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
-            Reset to <tt>0</tt> after the compaction run is completed for all tenants in the shard.
           |||
         ),
       )

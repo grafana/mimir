@@ -540,7 +540,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_notifications_alertmanagers_discovered"}, e2e.WaitMissingMetrics))
 }
 
-func TestRulerMetricsForInvalidQueries(t *testing.T) {
+func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -573,6 +573,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 			// Very low limit so that ruler hits it.
 			"-querier.max-fetched-chunks-per-query": "5",
+
+			// Enable query stats for ruler to test metric for no fetched series
+			"-ruler.query-stats-enabled": "true",
 		},
 	)
 
@@ -597,7 +600,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Push some series to Mimir -- enough so that we can hit some limits.
 	for i := 0; i < 10; i++ {
-		series, _, _ := generateSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
+		series, _, _ := generateAlternatingSeries(i)("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -606,6 +609,33 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	totalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
 	require.NoError(t, err)
+
+	addNewRuleAndWait := func(groupName, expression string, shouldFail bool) {
+		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
+		m := ruleGroupMatcher(user, namespace, groupName)
+
+		// Wait until ruler has loaded the group.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		// Wait until rule group has tried to evaluate the rule, and succeeded.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+
+		if shouldFail {
+			// Verify that evaluation of the rule failed.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		} else {
+			// Verify that evaluation of the rule succeeded.
+			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		}
+	}
+
+	deleteRuleAndWait := func(groupName string) {
+		// Delete rule to prepare for next part of test.
+		require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
+
+		// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+	}
 
 	// Verify that user-failures don't increase cortex_ruler_queries_failed_total
 	for groupName, expression := range map[string]string{
@@ -616,28 +646,15 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		"too_many_chunks_group": `sum(metric)`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-			m := ruleGroupMatcher(user, namespace, groupName)
+			addNewRuleAndWait(groupName, expression, true)
 
-			// Wait until ruler has loaded the group.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Wait until rule group has tried to evaluate the rule.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// Verify that evaluation of the rule failed.
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-			// But these failures were not reported as "failed queries"
+			// Ensure that these failures were not reported as "failed queries"
 			sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 			require.NoError(t, err)
 			require.Equal(t, float64(0), sum[0])
 
-			// Delete rule before checkin "cortex_ruler_queries_total", as we want to reuse value for next test.
-			require.NoError(t, c.DeleteRuleGroup(namespace, groupName))
-
-			// Wait until ruler has unloaded the group. We don't use any matcher, so there should be no groups (in fact, metric disappears).
-			require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_group_rules"}, e2e.SkipMissingMetrics))
+			// Delete rule before checking "cortex_ruler_queries_total", as we want to reuse value for next test.
+			deleteRuleAndWait(groupName)
 
 			// Check that cortex_ruler_queries_total went up since last test.
 			newTotalQueries, err := ruler.SumMetrics([]string{"cortex_ruler_queries_total"})
@@ -653,23 +670,51 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
-
-		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
-		m := ruleGroupMatcher(user, namespace, groupName)
-
-		// Wait until ruler has loaded the group.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_prometheus_rule_group_rules"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-
-		// Wait until rule group has tried to evaluate the rule, and succeeded.
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
-		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_prometheus_rule_evaluation_failures_total"}, e2e.WithLabelMatchers(m), e2e.WaitMissingMetrics))
+		addNewRuleAndWait(groupName, expression, false)
 
 		// Still no failures.
 		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_failed_total"})
 		require.NoError(t, err)
 		require.Equal(t, float64(0), sum[0])
 
-		// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+		deleteRuleAndWait(groupName)
+	})
+
+	// Now let's test the metric for no fetched series.
+	t.Run("no_fetched_series_metric", func(t *testing.T) {
+		const groupName = "good_rule_with_fetched_series_but_no_samples"
+		const expression = `sum(metric{foo=~"1|2"}) < -1`
+		addNewRuleAndWait(groupName, expression, false)
+
+		// Ensure that no samples were returned.
+		sum, err := ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		// Ensure that the metric for no fetched series was not incremented.
+		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		deleteRuleAndWait(groupName)
+
+		const groupName2 = "good_rule_with_no_fetched_series_and_no_samples"
+		const expression2 = `sum(metric{foo="10000"})`
+		addNewRuleAndWait(groupName2, expression2, false)
+
+		// Ensure that no samples were returned.
+		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		require.Equal(t, float64(0), sum[0])
+
+		// Ensure that the metric for no fetched series was incremented.
+		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		require.Equal(t, float64(1), sum[0])
+	})
+
+	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
+	t.Run("stop_ingester", func(t *testing.T) {
 		require.NoError(t, s.Stop(ingester))
 
 		// We should start getting "real" failures now.
@@ -693,7 +738,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			name:               "separate source tenants and destination tenant",
 			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
 			ruleGroupOwner:     "tenant-3",
-			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			ruleExpression:     "count(count_over_time(metric[1h]))",
 			groupSourceTenants: []string{"tenant-1", "tenant-2"},
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
@@ -778,14 +823,20 @@ func TestRulerFederatedRules(t *testing.T) {
 		tc = isolatedTestCase(tc, i)
 		t.Run(tc.name, func(t *testing.T) {
 			// Generate some series under different tenants
-			sampleTime := time.Now()
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _, _ := generateSeries("metric", sampleTime)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series)
+				res, err := client.Push(seriesFloat)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
@@ -829,29 +880,40 @@ func TestRulerFederatedRules(t *testing.T) {
 
 func TestRulerRemoteEvaluation(t *testing.T) {
 	tcs := map[string]struct {
-		tenantsWithMetrics []string
-		groupSourceTenants []string
-		ruleGroupOwner     string
-		ruleExpression     string
-		assertEvalResult   func(model.Vector)
+		tenantsWithMetrics       []string
+		groupSourceTenants       []string
+		ruleGroupOwner           string
+		ruleExpression           string
+		queryResultPayloadFormat string
+		assertEvalResult         func(model.Vector)
 	}{
 		"non federated rule group": {
 			tenantsWithMetrics: []string{"tenant-1"},
 			ruleGroupOwner:     "tenant-1",
-			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			ruleExpression:     "count(count_over_time(metric[1h]))",
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
 			},
 		},
 		"federated rule group": {
-			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
-			ruleGroupOwner:     "tenant-2",
+			tenantsWithMetrics: []string{"tenant-2", "tenant-3"},
+			ruleGroupOwner:     "tenant-3",
 			ruleExpression:     "count(group by (__tenant_id__) (metric))",
-			groupSourceTenants: []string{"tenant-1", "tenant-2"},
+			groupSourceTenants: []string{"tenant-2", "tenant-3"},
 			assertEvalResult: func(evalResult model.Vector) {
 				require.Len(t, evalResult, 1)
 				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
+			},
+		},
+		"protobuf query result payload format": {
+			tenantsWithMetrics:       []string{"tenant-4"},
+			ruleGroupOwner:           "tenant-4",
+			ruleExpression:           "count(count_over_time(metric[1h]))",
+			queryResultPayloadFormat: "protobuf",
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
 			},
 		},
 	}
@@ -887,29 +949,47 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	// Start up services
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
 	require.NoError(t, s.WaitReady(queryFrontend))
 
-	// Wait until both the distributor and ruler are ready
+	// Wait until the distributor is ready
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
-	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 	for tName, tc := range tcs {
 		t.Run(tName, func(t *testing.T) {
+			if tc.queryResultPayloadFormat == "" {
+				delete(flags, "-ruler.query-frontend.query-result-response-format")
+			} else {
+				flags["-ruler.query-frontend.query-result-response-format"] = tc.queryResultPayloadFormat
+			}
+
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(ruler))
+			t.Cleanup(func() {
+				_ = s.Stop(ruler)
+			})
+
+			// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
 			// Generate some series under different tenants
-			sampleTime := time.Now()
+			floatTs := time.Now()
+			histTs := floatTs.Add(time.Second)
 			for _, tenantID := range tc.tenantsWithMetrics {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _, _ := generateSeries("metric", sampleTime)
+				seriesFloat, _, _ := generateFloatSeries("metric", floatTs)
+				seriesHist, _, _ := generateHistogramSeries("metric", histTs)
 
-				res, err := client.Push(series)
+				res, err := client.Push(seriesFloat)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+
+				res, err = client.Push(seriesHist)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}

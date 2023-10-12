@@ -14,6 +14,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,9 +24,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/tenant"
-
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -32,10 +31,6 @@ import (
 )
 
 const (
-	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
-	resultsCacheTTL = 7 * 24 * time.Hour
-	// resultsCacheLowerTTL is the smaller TTL used in specific cases. For example OOO queries.
-	resultsCacheLowerTTL                  = 10 * time.Minute
 	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
 	notCachableReasonTooNew               = "too-new"
 	notCachableReasonModifiersNotCachable = "has-modifiers"
@@ -48,6 +43,8 @@ var (
 )
 
 type splitAndCacheMiddlewareMetrics struct {
+	*resultsCacheMetrics
+
 	splitQueriesCount              prometheus.Counter
 	queryResultCacheAttemptedCount prometheus.Counter
 	queryResultCacheSkippedCount   *prometheus.CounterVec
@@ -55,6 +52,7 @@ type splitAndCacheMiddlewareMetrics struct {
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
 	m := &splitAndCacheMiddlewareMetrics{
+		resultsCacheMetrics: newResultsCacheMetrics("query_range", reg),
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
 			Help: "Total number of underlying query requests after the split by interval is applied.",
@@ -92,12 +90,14 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled           bool
-	cacheUnalignedRequests bool
-	cache                  cache.Cache
-	splitter               CacheSplitter
-	extractor              Extractor
-	shouldCacheReq         shouldCacheFn
+	cacheEnabled   bool
+	cache          cache.Cache
+	splitter       CacheSplitter
+	extractor      Extractor
+	shouldCacheReq shouldCacheFn
+
+	// Can be set from tests
+	currentTime func() time.Time
 }
 
 // newSplitAndCacheMiddleware makes a new splitAndCacheMiddleware.
@@ -105,7 +105,6 @@ func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
 	splitInterval time.Duration,
-	cacheUnalignedRequests bool,
 	limits Limits,
 	merger Merger,
 	cache cache.Cache,
@@ -118,19 +117,19 @@ func newSplitAndCacheMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:           splitEnabled,
-			cacheEnabled:           cacheEnabled,
-			cacheUnalignedRequests: cacheUnalignedRequests,
-			next:                   next,
-			limits:                 limits,
-			merger:                 merger,
-			splitInterval:          splitInterval,
-			metrics:                metrics,
-			cache:                  cache,
-			splitter:               splitter,
-			extractor:              extractor,
-			shouldCacheReq:         shouldCacheReq,
-			logger:                 logger,
+			splitEnabled:   splitEnabled,
+			cacheEnabled:   cacheEnabled,
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			splitInterval:  splitInterval,
+			metrics:        metrics,
+			cache:          cache,
+			splitter:       splitter,
+			extractor:      extractor,
+			shouldCacheReq: shouldCacheReq,
+			logger:         logger,
+			currentTime:    time.Now,
 		}
 	})
 }
@@ -151,6 +150,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
+	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
 	// Lookup the results cache.
 	if isCacheEnabled {
@@ -162,7 +162,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
@@ -174,7 +174,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		}
 
 		// Lookup all keys from cache.
-		fetchedExtents := s.fetchCacheExtents(ctx, lookupKeys)
+		fetchedExtents := s.fetchCacheExtents(ctx, s.currentTime(), tenantIDs, lookupKeys)
 
 		for lookupIdx, extents := range fetchedExtents {
 			if len(extents) == 0 {
@@ -220,6 +220,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSplitQueries(uint32(len(execReqs)))
 
+	queryTime := s.currentTime()
+
 	if len(execReqs) > 0 {
 		execResps, err := doRequests(ctx, s.next, execReqs, true)
 		if err != nil {
@@ -242,7 +244,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
+			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
 				continue
 			}
 
@@ -255,7 +257,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes))
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime)
 				if err != nil {
 					return nil, err
 				}
@@ -281,7 +283,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(ctx, splitReq.cacheKey, tenantIDs, filteredExtents)
+			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -321,7 +323,8 @@ func (s *splitAndCacheMiddleware) splitRequestByInterval(req Request) (splitRequ
 // is guaranteed to have the same length of the input keys. For each input key, the fetched
 // extents are stored in the returned slice at the same position. In case of error or cache miss,
 // the returned extents are empty.
-func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []string) [][]Extent {
+// Extents created from queries that outlived current configured TTL are filtered out.
+func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now time.Time, tenantIDs []string, keys []string) [][]Extent {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "fetchCacheExtents")
 	defer spanLog.Finish()
 
@@ -341,11 +344,17 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 		spanLog.LogKV("key", key, "hashedKey", hashed)
 	}
 
+	// Lookup the cache.
+	s.metrics.cacheRequests.Add(float64(len(keys)))
 	founds := s.cache.Fetch(ctx, hashedKeys)
+	s.metrics.cacheHits.Add(float64(len(founds)))
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))
 	returnedBytes := 0
+	extentsOutOfTTL := 0
+
+	ttl, ttlForExtentsInOOOWindow, oooWindow := s.getCacheOptions(tenantIDs)
 
 	for foundKey, foundData := range founds {
 		// Find the index of this cache key.
@@ -369,27 +378,51 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 			continue
 		}
 
-		extents[keyIdx] = resp.Extents
+		extents[keyIdx] = make([]Extent, 0, len(resp.Extents))
+
+		// Filter out extents that are outside TTL.
+		for ix := range resp.Extents {
+			// If we don't know the query timestamp, we use the cached result.
+			// This is temporary ... after max 7 days (previous hardcoded TTL) all cached results will have query timestamp recorded.
+			usedTTL := getTTLForExtent(now, ttl, ttlForExtentsInOOOWindow, oooWindow, &resp.Extents[ix])
+			if resp.Extents[ix].QueryTimestampMs > 0 && resp.Extents[ix].QueryTimestampMs < now.UnixMilli()-usedTTL.Milliseconds() {
+				extentsOutOfTTL++
+				continue
+			}
+
+			extents[keyIdx] = append(extents[keyIdx], resp.Extents[ix])
+		}
+
+		if len(extents[keyIdx]) == 0 {
+			extents[keyIdx] = nil
+		}
+
 		returnedBytes += len(foundData)
 	}
 
 	spanLog.LogKV("requested keys", len(hashedKeys))
 	spanLog.LogKV("found keys", len(founds))
 	spanLog.LogKV("returned bytes", returnedBytes)
+	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
 
 	return extents
 }
 
+func (s *splitAndCacheMiddleware) getCacheOptions(tenantIDs []string) (ttl, ttlInOOO, oooWindow time.Duration) {
+	ttl = validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.ResultsCacheTTL)
+	ttlInOOO = validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.ResultsCacheTTLForOutOfOrderTimeWindow)
+	oooWindow = validation.MaxDurationPerTenant(tenantIDs, s.limits.OutOfOrderTimeWindow)
+	return
+}
+
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, tenantIDs []string, extents []Extent) {
-	ttl := resultsCacheTTL
-	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, func(tenantID string) time.Duration {
-		return time.Duration(s.limits.OutOfOrderTimeWindow(tenantID))
-	})
-	if lowerTTLWithinTimePeriod > 0 && len(extents) > 0 &&
-		extents[len(extents)-1].End >= time.Now().Add(-lowerTTLWithinTimePeriod).UnixMilli() {
-		ttl = resultsCacheLowerTTL
+func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []string, extents []Extent) {
+	if len(extents) == 0 {
+		return
 	}
+
+	ttl, ttlInOOO, oooWindow := s.getCacheOptions(tenantIDs)
+	usedTTL := getTTLForExtent(time.Now(), ttl, ttlInOOO, oooWindow, &extents[len(extents)-1])
 
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
@@ -400,7 +433,14 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, ttl)
+	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+}
+
+func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e *Extent) time.Duration {
+	if oooWindow > 0 && e.End >= now.Add(-oooWindow).UnixMilli() {
+		return ttlInOOOWindow
+	}
+	return ttl
 }
 
 // splitRequest holds information about a split request.
@@ -588,7 +628,7 @@ func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) 
 func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, err.Error())
+		return "", apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		if selector, ok := n.(*parser.VectorSelector); ok {

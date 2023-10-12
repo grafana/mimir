@@ -41,15 +41,14 @@ spec:
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml $.ctx.Values.memcached.podSecurityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" $.ctx "component" "memcached") | nindent 8 }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       nodeSelector:
         {{- toYaml .nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" $ | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" $ | nindent 6 }}
       tolerations:
         {{- toYaml .tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
@@ -58,6 +57,10 @@ spec:
       {{- range $.ctx.Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
+      {{- end }}
+      {{- if .extraVolumes }}
+      volumes:
+        {{- toYaml .extraVolumes | nindent 8 }}
       {{- end }}
       containers:
         {{- if .extraContainers }}
@@ -85,14 +88,13 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
-            - -o
-            - modern
+            - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
             - -c 16384
             - -v
             - -u {{ .port }}
             {{- range $key, $value := .extraArgs }}
-            - "-{{ $key }} {{ $value }}"
+            - "-{{ $key }}{{ if $value }} {{ $value }}{{ end }}"
             {{- end }}
           env:
             {{- with $.ctx.Values.global.extraEnv }}
@@ -104,6 +106,10 @@ spec:
             {{- end }}
           securityContext:
             {{- toYaml $.ctx.Values.memcached.containerSecurityContext | nindent 12 }}
+          {{- if .extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
+          {{- end }}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter
@@ -117,10 +123,17 @@ spec:
           args:
             - "--memcached.address=localhost:{{ .port }}"
             - "--web.listen-address=0.0.0.0:9150"
+            {{- range $key, $value := $.ctx.Values.memcachedExporter.extraArgs }}
+            - "--{{ $key }}{{ if $value }}={{ $value }}{{ end }}"
+            {{- end }}
           resources:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
+          {{- if .extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml .extraVolumeMounts | nindent 12 }}
+          {{- end }}
       {{- end }}
 {{- end -}}
 {{- end -}}

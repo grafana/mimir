@@ -38,6 +38,7 @@ type queryFrontendTestConfig struct {
 	querySchedulerDiscoveryMode string
 	queryStatsEnabled           bool
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
+	withHistograms              bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -53,6 +54,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -69,6 +71,7 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -86,6 +89,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -107,6 +111,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "dns",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 
@@ -115,6 +120,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 			querySchedulerEnabled:       true,
 			querySchedulerDiscoveryMode: "ring",
 			setup:                       setup,
+			withHistograms:              true,
 		})
 	})
 }
@@ -135,6 +141,7 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -148,6 +155,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 
 			return mimirConfigFile, e2e.EmptyFlags()
 		},
+		withHistograms: true,
 	})
 }
 
@@ -194,6 +202,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 
 			return "", flags
 		},
+		withHistograms: true,
 	})
 }
 
@@ -207,9 +216,6 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 					flags = mergeFlags(
 						BlocksStorageFlags(),
 						BlocksStorageS3Flags(),
-						map[string]string{
-							"-query-frontend.query-result-response-format": format,
-						},
 					)
 
 					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -217,6 +223,7 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 
 					return "", flags
 				},
+				withHistograms: format == "protobuf",
 			})
 		})
 	}
@@ -297,7 +304,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u], _ = generateSeries("series_1", now)
+		genSeries := generateFloatSeries
+		if cfg.withHistograms && u%2 > 0 {
+			genSeries = generateHistogramSeries
+		}
+		series, expectedVectors[u], _ = genSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -457,7 +468,7 @@ overrides:
 	require.NoError(t, err)
 
 	for i := 0; i < 50; i++ {
-		series, _, _ := generateSeries(
+		series, _, _ := generateFloatSeries(
 			"metric",
 			now,
 			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
@@ -510,7 +521,7 @@ overrides:
 				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": 1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "range vector instead of instant vector",
@@ -518,7 +529,7 @@ overrides:
 				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": 1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
 		},
 		{
 			name: "start after end",
@@ -588,7 +599,7 @@ overrides:
 				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"invalid parameter \"query\": invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -610,16 +621,16 @@ overrides:
 	}
 }
 
-func TestQueryFrontendWithQueryShardingAndTooLargeEntryRequest(t *testing.T) {
+func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 	runQueryFrontendWithQueryShardingHTTPTest(
 		t,
 		queryFrontendTestConfig{
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// Set the maximum entry size to 50 byte.
-					// The query size is 64 bytes, so it will be a too large entry request.
-					"-querier.frontend-client.grpc-max-send-msg-size": "50",
+					// Set the maximum entity size to 100 bytes.
+					// The query result payload is 107 bytes, so it will be too large for the configured limit.
+					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -765,13 +776,13 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _, _ = generateSeries("series_1", now)
+	series, _, _ = generateFloatSeries("series_1", now, prompb.Label{Name: "group", Value: "a-really-really-really-long-name-that-will-pad-out-the-response-payload-size"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	resp, _, err := c.QueryRaw("sum(series_1)")
+	resp, _, err := c.QueryRawAt("sum by (group) (series_1)", now)
 	require.NoError(t, err)
 	require.Equal(t, expectHTTPSStatus, resp.StatusCode)
 

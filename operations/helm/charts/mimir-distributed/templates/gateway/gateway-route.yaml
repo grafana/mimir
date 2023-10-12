@@ -17,7 +17,7 @@ spec:
     name: {{ include "mimir.gateway.service.name" . }}
     weight: 100
   port:
-    targetPort: http-metric
+    targetPort: http-metrics
 {{- with .Values.gateway.route.tls }}
   tls:
     {{- toYaml . | nindent 4 }}

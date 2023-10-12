@@ -26,13 +26,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/kv/consul"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
+	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
@@ -42,13 +45,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
-
-	amconfig "github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -923,6 +922,102 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 	}
 }
 
+func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.T) {
+	ctx := context.Background()
+
+	const (
+		user1 = "user1"
+		user2 = "user2"
+	)
+
+	alertStore := prepareInMemoryAlertStore()
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	createInstance := func(i int) *MultitenantAlertmanager {
+		reg := prometheus.NewPedanticRegistry()
+		cfg := mockAlertmanagerConfig(t)
+
+		cfg.ShardingRing.ReplicationFactor = 1
+		cfg.ShardingRing.Common.InstanceID = fmt.Sprintf("instance-%d", i)
+		cfg.ShardingRing.Common.InstanceAddr = fmt.Sprintf("127.0.0.1-%d", i)
+
+		// Increase state write interval so that state gets written sooner, making test faster.
+		cfg.Persister.Interval = 500 * time.Millisecond
+
+		// Disable state cleanup.
+		cfg.EnableStateCleanup = false
+
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, log.NewLogfmtLogger(os.Stdout), reg)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
+		})
+		require.NoError(t, services.StartAndAwaitRunning(ctx, am))
+
+		return am
+	}
+
+	// Create two instances. With replication factor of 1, this means that only one
+	// of the instances will own the user. This tests that an instance does not delete
+	// state for users that are configured, but are owned by other instances.
+	am1 := createInstance(1)
+	am2 := createInstance(2)
+
+	// Configure the users and wait for the state persister to write some state for both.
+	{
+		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      user1,
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      user2,
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.Eventually(t, func() bool {
+			_, err1 := alertStore.GetFullState(context.Background(), user1)
+			_, err2 := alertStore.GetFullState(context.Background(), user2)
+			return err1 == nil && err2 == nil
+		}, 5*time.Second, 100*time.Millisecond, "timed out waiting for state to be persisted")
+	}
+
+	// Perform another sync to trigger cleanup; this should have no effect.
+	{
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		_, err = alertStore.GetFullState(context.Background(), user1)
+		require.NoError(t, err)
+		_, err = alertStore.GetFullState(context.Background(), user2)
+		require.NoError(t, err)
+	}
+
+	// Delete one configuration and trigger cleanup; state should not be deleted.
+	{
+		require.NoError(t, alertStore.DeleteAlertConfig(ctx, user1))
+
+		err := am1.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+		err = am2.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		_, err = alertStore.GetFullState(context.Background(), user1)
+		require.NoError(t, err)
+		_, err = alertStore.GetFullState(context.Background(), user2)
+		require.NoError(t, err)
+	}
+}
+
 func createFile(t *testing.T, path string) string {
 	dir := filepath.Dir(path)
 	require.NoError(t, os.MkdirAll(dir, 0777))
@@ -1194,7 +1289,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 			name:          "with an instance already in the ring with ACTIVE state and all tokens",
 			existing:      true,
 			initialState:  ring.ACTIVE,
-			initialTokens: ring.GenerateTokens(128, nil),
+			initialTokens: ring.NewRandomTokenGenerator().GenerateTokens(128, nil),
 		},
 		{
 			name:          "with an instance already in the ring with LEAVING state and all tokens",
@@ -1542,7 +1637,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now())
+		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now())
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -2190,15 +2285,15 @@ type passthroughAlertmanagerClient struct {
 	server alertmanagerpb.AlertmanagerServer
 }
 
-func (am *passthroughAlertmanagerClient) UpdateState(ctx context.Context, in *clusterpb.Part, opts ...grpc.CallOption) (*alertmanagerpb.UpdateStateResponse, error) {
+func (am *passthroughAlertmanagerClient) UpdateState(ctx context.Context, in *clusterpb.Part, _ ...grpc.CallOption) (*alertmanagerpb.UpdateStateResponse, error) {
 	return am.server.UpdateState(ctx, in)
 }
 
-func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *alertmanagerpb.ReadStateRequest, opts ...grpc.CallOption) (*alertmanagerpb.ReadStateResponse, error) {
+func (am *passthroughAlertmanagerClient) ReadState(ctx context.Context, in *alertmanagerpb.ReadStateRequest, _ ...grpc.CallOption) (*alertmanagerpb.ReadStateResponse, error) {
 	return am.server.ReadState(ctx, in)
 }
 
-func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, opts ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+func (am *passthroughAlertmanagerClient) HandleRequest(ctx context.Context, in *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 	return am.server.HandleRequest(ctx, in)
 }
 
@@ -2246,31 +2341,31 @@ type mockAlertManagerLimits struct {
 	maxAlertsSizeBytes             int
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(string) int {
 	return m.maxTemplatesCount
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerMaxTemplateSize(tenant string) int {
+func (m *mockAlertManagerLimits) AlertmanagerMaxTemplateSize(string) int {
 	return m.maxSizeOfTemplate
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockCIDRNetworks(user string) []flagext.CIDR {
+func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockCIDRNetworks(string) []flagext.CIDR {
 	panic("implement me")
 }
 
-func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockPrivateAddresses(user string) bool {
+func (m *mockAlertManagerLimits) AlertmanagerReceiversBlockPrivateAddresses(string) bool {
 	panic("implement me")
 }
 
-func (m *mockAlertManagerLimits) NotificationRateLimit(_ string, integration string) rate.Limit {
+func (m *mockAlertManagerLimits) NotificationRateLimit(string, string) rate.Limit {
 	return m.emailNotificationRateLimit
 }
 
-func (m *mockAlertManagerLimits) NotificationBurstSize(_ string, integration string) int {
+func (m *mockAlertManagerLimits) NotificationBurstSize(string, string) int {
 	return m.emailNotificationBurst
 }
 

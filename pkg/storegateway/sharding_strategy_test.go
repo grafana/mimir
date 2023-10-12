@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
@@ -397,7 +397,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 
-				metas := map[ulid.ULID]*metadata.Meta{
+				metas := map[ulid.ULID]*block.Meta{
 					block1: {},
 					block2: {},
 					block3: {},

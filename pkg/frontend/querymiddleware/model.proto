@@ -70,6 +70,7 @@ message PrometheusData {
 message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
+  repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
 }
 
 message CachedResponse  {
@@ -86,6 +87,10 @@ message Extent  {
   reserved 3;
   string trace_id = 4 [(gogoproto.jsontag) = "-"];
   google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
+  // Unix timestamp when the query with this response was executed.
+  // If the response is combination of multiple queries over time, all of which had timestamp set, this is the timestamp of oldest query.
+  // When merging extents and some of them have 0 query timestamp, we keep non-zero timestamp, if possible.
+  int64 query_timestamp_ms = 6;
 }
 
 message Options {
@@ -110,4 +115,26 @@ message Hints {
 
 message QueryStatistics {
   uint64 EstimatedSeriesCount = 1;
+}
+
+// CachedHTTPResponse holds a generic HTTP response in the query results cache.
+message CachedHTTPResponse  {
+  // cacheKey contains the non-hashed cache key, used to guarantee there haven't
+  // been any hashed cache key collision.
+  string cache_key = 1;
+
+  // statusCode contains the HTTP response status code.
+  int32 status_code = 2;
+
+  // headers contains the HTTP response headers.
+  repeated CachedHTTPHeader headers = 3;
+
+  // body contains the HTTP response body.
+  bytes body = 4;
+}
+
+// CachedHTTPHeader holds a HTTP header.
+message CachedHTTPHeader {
+  string name = 1;
+  string value = 2;
 }

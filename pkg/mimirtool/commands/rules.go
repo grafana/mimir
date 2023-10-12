@@ -11,15 +11,16 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp" //lint:ignore faillint Required by kingpin for regexp flags
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -78,10 +79,12 @@ type RuleCommand struct {
 	RuleFilesPath string
 
 	// Sync/Diff Rules Config
-	Namespaces           string
-	namespacesMap        map[string]struct{}
-	IgnoredNamespaces    string
-	ignoredNamespacesMap map[string]struct{}
+	Namespaces             string
+	namespacesMap          map[string]struct{}
+	NamespacesRegex        *regexp.Regexp
+	IgnoredNamespaces      string
+	IgnoredNamespacesRegex *regexp.Regexp
+	ignoredNamespacesMap   map[string]struct{}
 
 	// Sync Rules Config
 	SyncConcurrency int
@@ -149,7 +152,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		Action(r.lint)
 	checkCmd := rulesCmd.
 		Command("check", "Run various best practice checks against rules.").
-		Action(r.checkRecordingRuleNames)
+		Action(r.checkRules)
 	deleteNamespaceCmd := rulesCmd.
 		Command("delete-namespace", "Delete a namespace from the ruler.").
 		Action(r.deleteNamespace)
@@ -197,20 +200,22 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Get RuleGroup Command
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
-	getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().StringVar(&r.RuleGroup)
+	getRuleGroupCmd.Arg("group", "Name of the rulegroup to retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	// Delete RuleGroup Command
 	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
-	deleteRuleGroupCmd.Arg("group", "Name of the rulegroup ot delete.").Required().StringVar(&r.RuleGroup)
+	deleteRuleGroupCmd.Arg("group", "Name of the rulegroup to delete.").Required().StringVar(&r.RuleGroup)
 
 	// Load Rules Command
 	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
 
 	// Diff Command
 	diffRulesCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
-	diffRulesCmd.Flag("namespaces", "comma-separated list of namespaces to check during a diff. Cannot be used together with --ignored-namespaces.").StringVar(&r.Namespaces)
-	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff. Cannot be used together with --namespaces.").StringVar(&r.IgnoredNamespaces)
+	diffRulesCmd.Flag("namespaces", "comma-separated list of namespaces to check during a diff. Cannot be used together with other namespaces options.").StringVar(&r.Namespaces)
+	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff. Cannot be used together with other namespaces options.").StringVar(&r.IgnoredNamespaces)
+	diffRulesCmd.Flag("namespaces-regex", "regex matching namespaces to check during a diff. Cannot be used together with other namespaces options.").RegexpVar(&r.NamespacesRegex)
+	diffRulesCmd.Flag("ignored-namespaces-regex", "regex matching namespaces to ignore during a diff. Cannot be used together with other namespaces options.").RegexpVar(&r.IgnoredNamespacesRegex)
 	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	diffRulesCmd.Flag(
 		"rule-dirs",
@@ -221,8 +226,10 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 
 	// Sync Command
 	syncRulesCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
-	syncRulesCmd.Flag("namespaces", "comma-separated list of namespaces to check during a diff. Cannot be used together with --ignored-namespaces.").StringVar(&r.Namespaces)
-	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync. Cannot be used together with --namespaces.").StringVar(&r.IgnoredNamespaces)
+	syncRulesCmd.Flag("namespaces", "comma-separated list of namespaces to check during a sync. Cannot be used together with other namespaces options.").StringVar(&r.Namespaces)
+	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync. Cannot be used together with other namespaces options.").StringVar(&r.IgnoredNamespaces)
+	syncRulesCmd.Flag("namespaces-regex", "regex matching namespaces to check during a sync. Cannot be used together with other namespaces options.").RegexpVar(&r.NamespacesRegex)
+	syncRulesCmd.Flag("ignored-namespaces-regex", "regex matching namespaces to ignore during a sync. Cannot be used together with other namespaces options.").RegexpVar(&r.IgnoredNamespacesRegex)
 	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	syncRulesCmd.Flag(
 		"rule-dirs",
@@ -295,9 +302,11 @@ func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) 
 	return nil
 }
 
-func (r *RuleCommand) setupFiles() error {
-	if r.Namespaces != "" && r.IgnoredNamespaces != "" {
-		return errors.New("--namespaces and --ignored-namespaces cannot be set at the same time")
+func (r *RuleCommand) setupArgs() error {
+	if (r.Namespaces != "" && r.IgnoredNamespaces != "") ||
+		(r.NamespacesRegex != nil && r.IgnoredNamespacesRegex != nil) ||
+		(r.Namespaces != "" || r.IgnoredNamespaces != "") && (r.NamespacesRegex != nil || r.IgnoredNamespacesRegex != nil) {
+		return errors.New("only one namespace option can be specified")
 	}
 
 	// Set up ignored namespaces map for sync/diff command
@@ -370,7 +379,7 @@ func (r *RuleCommand) setupFiles() error {
 	return nil
 }
 
-func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
@@ -381,7 +390,7 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 	return p.PrintRuleSet(rules, r.Format, os.Stdout)
 }
 
-func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -395,7 +404,7 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	return p.PrintRuleGroups(rules)
 }
 
-func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
+func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -409,7 +418,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	return p.PrintRuleGroup(*group)
 }
 
-func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
+func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete rule group from Grafana Mimir, %v", err)
@@ -417,7 +426,7 @@ func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
 	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
@@ -464,6 +473,13 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 
 // shouldCheckNamespace returns whether the namespace should be checked according to the allowed and ignored namespaces
 func (r *RuleCommand) shouldCheckNamespace(namespace string) bool {
+	if r.NamespacesRegex != nil {
+		return r.NamespacesRegex.MatchString(namespace)
+	}
+	if r.IgnoredNamespacesRegex != nil {
+		return !r.IgnoredNamespacesRegex.MatchString(namespace)
+	}
+
 	// when we have an allow list, only check those that we have explicitly defined.
 	if r.namespacesMap != nil {
 		_, allowed := r.namespacesMap[namespace]
@@ -474,10 +490,10 @@ func (r *RuleCommand) shouldCheckNamespace(namespace string) bool {
 	return !ignored
 }
 
-func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
-	err := r.setupFiles()
+func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
+	err := r.setupArgs()
 	if err != nil {
-		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
+		return errors.Wrap(err, "diff operation unsuccessful, invalid arguments")
 	}
 
 	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
@@ -537,15 +553,15 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	return p.PrintComparisonResult(changes, r.Verbose)
 }
 
-func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
+func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 	// Check the configuration.
 	if r.SyncConcurrency < 1 || r.SyncConcurrency > maxSyncConcurrency {
 		return fmt.Errorf("the configured concurrency (%d) must be a value between 1 and %d", r.SyncConcurrency, maxSyncConcurrency)
 	}
 
-	err := r.setupFiles()
+	err := r.setupArgs()
 	if err != nil {
-		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
+		return errors.Wrap(err, "sync operation unsuccessful, invalid arguments")
 	}
 
 	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
@@ -650,10 +666,10 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	return nil
 }
 
-func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
-	err := r.setupFiles()
+func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
+	err := r.setupArgs()
 	if err != nil {
-		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
+		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
 	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
@@ -688,10 +704,10 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
-	err := r.setupFiles()
+func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
+	err := r.setupArgs()
 	if err != nil {
-		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
+		return errors.Wrap(err, "prepare operation unsuccessful, invalid arguments")
 	}
 
 	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
@@ -722,15 +738,20 @@ func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
-	err := r.setupFiles()
+func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
+	err := r.setupArgs()
 	if err != nil {
-		return errors.Wrap(err, "check operation unsuccessful, unable to load rules files")
+		return errors.Wrap(err, "check operation unsuccessful, invalid arguments")
 	}
 
 	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
+	}
+
+	lvl := log.WarnLevel
+	if r.Strict {
+		lvl = log.ErrorLevel
 	}
 
 	for _, ruleNamespace := range namespaces {
@@ -740,14 +761,24 @@ func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
 		}
 		duplicateRules := checkDuplicates(ruleNamespace.Groups)
 		if len(duplicateRules) != 0 {
-			fmt.Printf("%d duplicate rule(s) found.\n", len(duplicateRules))
+			log.WithFields(log.Fields{
+				"namespace":       ruleNamespace.Namespace,
+				"error":           "rules should emit unique series, to avoid producing inconsistencies while recording expressions",
+				"duplicate_rules": len(duplicateRules),
+			}).Logf(lvl, "duplicate rules found")
 			for _, n := range duplicateRules {
-				fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
-				for i, l := range n.label {
-					fmt.Printf("\t%s: %s\n", i, l)
+				fields := log.Fields{
+					"namespace": ruleNamespace.Namespace,
+					"metric":    n.metric,
 				}
+				for i, l := range n.label {
+					fields["label["+i+"]"] = l
+				}
+				log.WithFields(fields).Logf(lvl, "duplicate rule")
 			}
-			fmt.Println("Might cause inconsistency while recording expressions.")
+			if r.Strict {
+				return fmt.Errorf("%d duplicate rules found in namespace %q", len(duplicateRules), ruleNamespace.Namespace)
+			}
 		}
 	}
 
@@ -814,7 +845,7 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 	return nil
 }
 
-func (r *RuleCommand) deleteNamespace(k *kingpin.ParseContext) error {
+func (r *RuleCommand) deleteNamespace(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteNamespace(context.Background(), r.Namespace)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete namespace from Grafana Mimir, %v", err)

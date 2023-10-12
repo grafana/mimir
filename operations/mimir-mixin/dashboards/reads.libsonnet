@@ -177,11 +177,10 @@ local filename = 'mimir-reads.json';
         $.panel('Requests / sec') +
         $.queryPanel(
           |||
-            # Query metrics before and after migration to new memcached backend.
             sum (
-              rate(cortex_cache_request_duration_seconds_count{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_memcached_operation_duration_seconds_count{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              rate(thanos_memcached_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+              or ignoring(backend)
+              rate(thanos_cache_operations_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
@@ -192,8 +191,9 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel(
+        $.backwardsCompatibleLatencyPanel(
           'thanos_memcached_operation_duration_seconds',
+          'thanos_cache_operation_duration_seconds',
           '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
         )
       )
@@ -252,6 +252,10 @@ local filename = 'mimir-reads.json';
     .addRowIf(
       $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+    )
+    .addRowIf(
+      $._config.autoscaling.query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Query-frontend'),
     )
     .addRowIf(
       $._config.autoscaling.querier.enabled,
@@ -318,12 +322,14 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           [
             |||
-              keda_metrics_adapter_scaler_metrics_value
-              /
-              on(metric) group_left
-              label_replace(
-                  kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
-                  "metric", "$1", "metric_name", "(.+)"
+              sum by (scaledObject) (
+                keda_metrics_adapter_scaler_metrics_value
+                /
+                on(metric) group_left
+                label_replace(
+                    kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
+                    "metric", "$1", "metric_name", "(.+)"
+                )
               )
             ||| % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
           ], [
@@ -365,6 +371,7 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           |||
             sum by(operation) (
+              # Backwards compatibility
               rate(
                 thanos_memcached_operations_total{
                   component="store-gateway",
@@ -372,16 +379,29 @@ local filename = 'mimir-reads.json';
                   %s
                 }[$__rate_interval]
               )
+              or ignoring(backend)
+              rate(
+                thanos_cache_operations_total{
+                  component="store-gateway",
+                  name="index-cache",
+                  %s
+                }[$__rate_interval]
+              )
             )
-          ||| % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}'
+          ||| % [
+            $.jobMatcher($._config.job_names.store_gateway),
+            $.jobMatcher($._config.job_names.store_gateway),
+          ],
+          '{{operation}}'
         ) +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
-        $.latencyPanel(
+        $.backwardsCompatibleLatencyPanel(
           'thanos_memcached_operation_duration_seconds',
+          'thanos_cache_operation_duration_seconds',
           |||
             {
               %s,

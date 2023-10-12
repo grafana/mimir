@@ -9,9 +9,9 @@
           alert: $.alertName('IngesterHasNotShippedBlocks'),
           'for': '15m',
           expr: |||
-            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 60 * 60 * 4)
             and
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_shipper_last_successful_upload_time) > 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
             and
             # Only if the ingester has ingested samples over the last 4h.
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -39,7 +39,7 @@
           alert: $.alertName('IngesterHasNotShippedBlocksSinceStart'),
           'for': '4h',
           expr: |||
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_shipper_last_successful_upload_time) == 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
           ||| % {
@@ -139,10 +139,32 @@
         {
           alert: $.alertName('IngesterTSDBWALCorrupted'),
           expr: |||
-            rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
-          |||,
+            # alert when there are more than one corruptions
+            count by (%(alert_aggregation_labels)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0) > 1
+            and
+            # and there is only one zone
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) == 1
+          ||| % $._config,
           labels: {
             severity: 'critical',
+            deployment: 'single-zone',
+          },
+          annotations: {
+            message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('IngesterTSDBWALCorrupted'),
+          expr: |||
+            # alert when there are more than one corruptions
+            count by (%(alert_aggregation_labels)s) (sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0)) > 1
+            and
+            # and there are multiple zones
+            count by (%(alert_aggregation_labels)s) (group by (%(alert_aggregation_labels)s, %(per_job_label)s) (cortex_ingester_tsdb_wal_corruptions_total)) > 1
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+            deployment: 'multi-zone',
           },
           annotations: {
             message: '%(product)s Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
@@ -175,30 +197,6 @@
           },
           annotations: {
             message: '%(product)s Querier %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully scanned the bucket since {{ $value | humanizeDuration }}.' % $._config,
-          },
-        },
-        {
-          // Alert if the number of queries for which we had to refetch series from different store-gateways
-          // (because of missing blocks) is greater than a %.
-          alert: $.alertName('QuerierHighRefetchRate'),
-          'for': '10m',
-          expr: |||
-            100 * (
-              (
-                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-                -
-                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
-              )
-              /
-              sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
-            )
-            > 1
-          ||| % $._config,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s Queries in %(alert_aggregation_variables)s are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%%.0f" $value }}%% of queries.' % $._config,
           },
         },
         {
@@ -242,20 +240,6 @@
           },
           annotations: {
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
-          },
-        },
-        {
-          // Alert if a we consistently find partial blocks for a given tenant over a relatively large time range.
-          alert: $.alertName('TenantHasPartialBlocks'),
-          'for': '6h',
-          expr: |||
-            max by(%(alert_aggregation_labels)s, user) (cortex_bucket_blocks_partials_count) > 0
-          ||| % $._config,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s tenant {{ $labels.user }} in %(alert_aggregation_variables)s has {{ $value }} partial blocks.' % $._config,
           },
         },
       ],

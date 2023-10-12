@@ -19,7 +19,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, sleepTime time.Duration) error {
@@ -60,7 +59,7 @@ func drainAndCloseBody(resp *http.Response) {
 
 func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry, sleepTime time.Duration) error {
 	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
-	blockMeta, err := getBlockMeta(blockDir)
+	blockMeta, err := GetBlockMeta(blockDir)
 	if err != nil {
 		return err
 	}
@@ -100,11 +99,18 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 		}
 	}
 
-	resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
-	if err != nil {
-		return errors.Wrap(err, "request to finish block upload failed")
+	for {
+		resp, err = c.doRequest(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
+		if err == nil {
+			drainAndCloseBody(resp)
+			break
+		}
+		if !errors.Is(err, errTooManyRequests) {
+			return errors.Wrap(err, "request to finish block upload failed")
+		}
+		logctx.WithField("error", err).Warning("will sleep and try again")
+		time.Sleep(sleepTime)
 	}
-	drainAndCloseBody(resp)
 
 	for {
 		uploadResult, err := c.getBlockUpload(ctx, path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))
@@ -149,7 +155,7 @@ func (c *MimirClient) getBlockUpload(ctx context.Context, url string) (result, e
 	return r, nil
 }
 
-func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
+func (c *MimirClient) uploadBlockFile(ctx context.Context, tf block.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -170,10 +176,10 @@ func (c *MimirClient) uploadBlockFile(ctx context.Context, tf metadata.File, blo
 	return nil
 }
 
-// getBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
+// GetBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
 // list of local files from the local block.
-func getBlockMeta(blockDir string) (metadata.Meta, error) {
-	var blockMeta metadata.Meta
+func GetBlockMeta(blockDir string) (block.Meta, error) {
+	var blockMeta block.Meta
 
 	metaPath := filepath.Join(blockDir, block.MetaFilename)
 	f, err := os.Open(metaPath)
@@ -193,7 +199,7 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 			block.MetaFilename, blockMeta.Version)
 	}
 
-	blockMeta.Thanos.Files = []metadata.File{
+	blockMeta.Thanos.Files = []block.File{
 		{
 			RelPath: block.MetaFilename,
 		},
@@ -225,7 +231,7 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 			return blockMeta, fmt.Errorf("not a file: %q", p)
 		}
 
-		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, metadata.File{
+		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, block.File{
 			RelPath:   relPath,
 			SizeBytes: st.Size(),
 		})

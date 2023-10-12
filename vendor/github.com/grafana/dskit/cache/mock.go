@@ -1,3 +1,6 @@
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package cache
 
 import (
@@ -24,7 +27,7 @@ func NewMockCache() *MockCache {
 	return c
 }
 
-func (m *MockCache) Store(_ context.Context, data map[string][]byte, ttl time.Duration) {
+func (m *MockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,9 +101,9 @@ func NewInstrumentedMockCache() *InstrumentedMockCache {
 	}
 }
 
-func (m *InstrumentedMockCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+func (m *InstrumentedMockCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	m.storeCount.Inc()
-	m.cache.Store(ctx, data, ttl)
+	m.cache.StoreAsync(data, ttl)
 }
 
 func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
@@ -115,6 +118,14 @@ func (m *InstrumentedMockCache) Name() string {
 func (m *InstrumentedMockCache) Delete(ctx context.Context, key string) error {
 	m.deleteCount.Inc()
 	return m.cache.Delete(ctx, key)
+}
+
+func (m *InstrumentedMockCache) GetItems() map[string]Item {
+	return m.cache.GetItems()
+}
+
+func (m *InstrumentedMockCache) Flush() {
+	m.cache.Flush()
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {

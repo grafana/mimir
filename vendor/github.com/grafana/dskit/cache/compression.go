@@ -1,3 +1,6 @@
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package cache
 
 import (
@@ -67,14 +70,14 @@ func NewSnappy(next Cache, logger log.Logger) Cache {
 	}
 }
 
-// Store implements Cache.
-func (s *snappyCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+// StoreAsync implements Cache.
+func (s *snappyCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	encoded := make(map[string][]byte, len(data))
 	for key, value := range data {
 		encoded[key] = snappy.Encode(nil, value)
 	}
 
-	s.next.Store(ctx, encoded, ttl)
+	s.next.StoreAsync(encoded, ttl)
 }
 
 // Fetch implements Cache.

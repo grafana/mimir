@@ -1,8 +1,9 @@
-FROM golang:1.18.4
+ARG BUILD_IMAGE # Use ./compose-up.sh to build this image.
+FROM $BUILD_IMAGE
 ENV CGO_ENABLED=0
-RUN go install github.com/go-delve/delve/cmd/dlv@v1.7.3
+RUN go install github.com/go-delve/delve/cmd/dlv@v1.21.0
 
-FROM alpine:3.17.1
+FROM alpine:3.18.4
 
 RUN     mkdir /mimir
 WORKDIR /mimir

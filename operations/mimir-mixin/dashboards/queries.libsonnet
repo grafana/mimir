@@ -24,11 +24,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_frontend_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_frontend)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(
@@ -45,11 +46,12 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Queue length (per user)') +
+        $.timeseriesPanel('Queue length (per user)') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_scheduler)],
           '{{user}}'
-        ),
+        ) +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'short' } } }
       )
     )
     .addRow(
@@ -68,46 +70,36 @@ local filename = 'mimir-queries.json';
         $.panel('Query results cache hit ratio') +
         $.queryPanel(
           |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+            # Query the new metric introduced in Mimir 2.10.
+            (
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{%(frontend)s}[$__rate_interval]))
+              /
+              sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{%(frontend)s}[$__rate_interval]))
             )
-            /
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+            # Otherwise fallback to the previous general-purpose metrics.
+            or
+            (
+              label_replace(
+                # Query metrics before and after migration to new memcached backend.
+                sum (
+                  rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                )
+                /
+                sum (
+                  rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+                  or
+                  rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+                ),
+                "request_type", "query_range", "", "")
             )
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Hit ratio',
+          '{{request_type}}',
         ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
-      )
-      .addPanel(
-        $.panel('Query results cache misses') +
-        $.queryPanel(
-          |||
-            # Query metrics before and after migration to new memcached backend.
-            sum (
-              rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_requests_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-            -
-            sum (
-              rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-              or
-              rate(thanos_cache_memcached_hits_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
-            )
-          ||| % {
-            frontend: $.jobMatcher($._config.job_names.query_frontend),
-          },
-          'Missed query results per second'
-        ),
       )
       .addPanel(
         $.panel('Query results cache skipped') +
@@ -191,6 +183,17 @@ local filename = 'mimir-queries.json';
         $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
+      .addPanel(
+        $.panel('Rejected queries') +
+        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{%(job_matcher)s}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{%(job_matcher)s, route=~"%(routes_regex)s"}[$__rate_interval]))' % { job_matcher: $.jobMatcher($._config.job_names.querier), routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Rejected queries',
+          |||
+            The proportion of all queries received by queriers that were rejected for some reason.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('')
@@ -227,82 +230,29 @@ local filename = 'mimir-queries.json';
         $.panel('Data fetched / sec') +
         $.queryPanel(|||
           sum by(data_type) (
-            # non-streaming store-gateway will not have the stage label on any fetched metrics
-            rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway", stage="", %(jobMatcher)s}[$__rate_interval])
-            or
-            # streaming store-gateway with new caching will have overlapping metrics for fetched chunks data; we select only the most narrow one - "fetched"
-            rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway", data_type="chunks, stage="fecthed", %(jobMatcher)s}[$__rate_interval])
+            # Exclude "chunks refetched".
+            rate(cortex_bucket_store_series_data_size_fetched_bytes_sum{component="store-gateway", stage!="refetched", %(jobMatcher)s}[$__rate_interval])
           )
         ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
         $.stack +
-        { yaxes: $.yaxes('ops') },
+        { yaxes: $.yaxes('binBps') },
       )
       .addPanel(
         $.panel('Data touched / sec') +
         $.queryPanel(|||
           sum by(data_type) (
-            # non-streaming store-gateway will not have the stage label on any touched metrics
-            rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway", stage="",%(jobMatcher)s}[$__rate_interval])
-            or
-            # streaming store-gateway with new caching will have overlapping metrics for touched chunks data; we select only the most narrow one - "returned"
-            rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway", data_type="chunks", stage="returned",%(jobMatcher)s}[$__rate_interval])
+            # Exclude "chunks processed" to only count "chunks returned", other than postings and series.
+            rate(cortex_bucket_store_series_data_size_touched_bytes_sum{component="store-gateway", stage!="processed",%(jobMatcher)s}[$__rate_interval])
           )
         ||| % { jobMatcher: $.jobMatcher($._config.job_names.store_gateway) }, '{{data_type}}') +
         $.stack +
-        { yaxes: $.yaxes('ops') },
+        { yaxes: $.yaxes('binBps') },
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Series request average latency (streaming disabled)') +
-        $.queryPanel([
-          // Fetch series and chunks.
-          |||
-            sum(rate(cortex_bucket_store_series_get_all_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-            sum(rate(cortex_bucket_store_series_get_all_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          // Merge series and chunks.
-          |||
-            sum(rate(cortex_bucket_store_series_merge_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-            sum(rate(cortex_bucket_store_series_merge_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-        ], [
-          'Fetch series and chunks',
-          'Merge series and chunks',
-        ]) +
-        $.stack +
-        { yaxes: $.yaxes('s') },
-      )
-      .addPanel(
-        $.panel('Series request 99th percentile latency (streaming disabled)') +
-        $.queryPanel([
-          // Fetch series and chunks.
-          |||
-            histogram_quantile(0.99, sum by(le) (rate(cortex_bucket_store_series_get_all_duration_seconds_bucket{%s}[$__rate_interval])))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
-          // Merge series and chunks.
-          |||
-            histogram_quantile(0.99, sum by(le) (rate(cortex_bucket_store_series_merge_duration_seconds_bucket{%s}[$__rate_interval])))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
-        ], [
-          'Fetch series and chunks',
-          'Merge series and chunks',
-        ]) +
-        $.stack +
-        { yaxes: $.yaxes('s') },
-      )
-      .addPanel(
-        $.panel('Series returned (per request)') +
-        $.queryPanel('sum(rate(cortex_bucket_store_series_result_series_sum{component="store-gateway",%s}[$__rate_interval])) / sum(rate(cortex_bucket_store_series_result_series_count{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'avg series returned'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.panel('Series request average latency (streaming enabled)') +
+        $.panel('Series request average latency') +
         $.queryPanel(
           |||
             sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
@@ -315,7 +265,7 @@ local filename = 'mimir-queries.json';
         { yaxes: $.yaxes('s') },
       )
       .addPanel(
-        $.panel('Series request 99th percentile latency (streaming enabled)') +
+        $.panel('Series request 99th percentile latency') +
         $.queryPanel(
           |||
             histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{%s}[$__rate_interval])))
@@ -326,7 +276,7 @@ local filename = 'mimir-queries.json';
         { yaxes: $.yaxes('s') },
       )
       .addPanel(
-        $.panel('Series batch preloading efficiency (streaming enabled)') +
+        $.panel('Series batch preloading efficiency') +
         $.queryPanel(
           |||
             # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
@@ -353,9 +303,18 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Blocks currently loaded') +
+        $.panel('Blocks currently owned') +
         $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
-        { fill: 0 }
+        { fill: 0 } +
+        $.panelDescription(
+          'Blocks currently owned',
+          |||
+            This panel shows the number of blocks owned by each store-gateway replica.
+            For each owned block, the store-gateway keeps its index-header on disk, and
+            eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
+            is enabled and the index-header was loaded).
+          |||
+        ),
       )
       .addPanel(
         $.panel('Blocks loaded / sec') +
@@ -384,6 +343,16 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.panel('Index-header lazy load duration') +
         $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+      )
+      .addPanel(
+        $.panel('Index-header lazy load gate latency') +
+        $.latencyPanel('cortex_bucket_stores_gate_duration_seconds', '{%s,gate="index_header"}' % $.jobMatcher($._config.job_names.store_gateway)) +
+        $.panelDescription(
+          'Index-header lazy load gate latency',
+          |||
+            Time spent waiting for a turn to load an index header. This time is not included in "Index-header lazy load duration."
+          |||
+        )
       )
     )
     .addRow(

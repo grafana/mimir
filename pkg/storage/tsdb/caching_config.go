@@ -13,9 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/golang/snappy"
 	"github.com/grafana/dskit/cache"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
@@ -25,34 +23,32 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // subrangeSize is the size of each subrange that bucket objects are split into for better caching
 const subrangeSize int64 = 16000
 
+var supportedCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
 type ChunksCacheConfig struct {
 	cache.BackendConfig `yaml:",inline"`
 
-	MaxGetRangeRequests             int           `yaml:"max_get_range_requests" category:"advanced"`
-	AttributesTTL                   time.Duration `yaml:"attributes_ttl" category:"advanced"`
-	AttributesInMemoryMaxItems      int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
-	SubrangeTTL                     time.Duration `yaml:"subrange_ttl" category:"advanced"`
-	FineGrainedChunksCachingEnabled bool          `yaml:"fine_grained_chunks_caching_enabled" category:"experimental"`
+	MaxGetRangeRequests        int           `yaml:"max_get_range_requests" category:"advanced"`
+	AttributesTTL              time.Duration `yaml:"attributes_ttl" category:"advanced"`
+	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items" category:"advanced"`
+	SubrangeTTL                time.Duration `yaml:"subrange_ttl" category:"advanced"`
 }
 
-func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string, logger log.Logger) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
-	// TODO: Deprecated in Mimir 2.7, remove in Mimir 2.9
-	flagext.DeprecatedFlag(f, prefix+"subrange-size", fmt.Sprintf("Deprecated, %d bytes is now always used. Size of each subrange that bucket object is split into for better caching.", subrangeSize), logger)
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 50000, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
-	f.BoolVar(&cfg.FineGrainedChunksCachingEnabled, prefix+"fine-grained-chunks-caching-enabled", false, "Enable fine-grained caching of chunks in the store-gateway. This reduces the required bandwidth and memory utilization.")
 }
 
 func (cfg *ChunksCacheConfig) Validate() error {
@@ -76,9 +72,10 @@ type MetadataCacheConfig struct {
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", cache.BackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", strings.Join(supportedCacheBackends, ", ")))
 
-	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
+	cfg.Memcached.RegisterFlagsWithPrefix(prefix+"memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix(prefix+"redis.", f)
 
 	f.DurationVar(&cfg.TenantsListTTL, prefix+"tenants-list-ttl", 15*time.Minute, "How long to cache list of tenants in the bucket.")
 	f.DurationVar(&cfg.TenantBlocksListTTL, prefix+"tenant-blocks-list-ttl", 5*time.Minute, "How long to cache list of blocks for each tenant.")
@@ -115,7 +112,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{bucketcache.JSONIterCodec{}}
+		codec := bucketcache.SnappyIterCodec{IterCodec: bucketcache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
@@ -139,9 +136,7 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
-		if !chunksConfig.FineGrainedChunksCachingEnabled {
-			cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
-		}
+		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, subrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {
@@ -149,7 +144,11 @@ func CreateCachingBucket(chunksCache cache.Cache, chunksConfig ChunksCacheConfig
 		return bkt, nil
 	}
 
-	return bucketcache.NewCachingBucket(bkt, cfg, logger, reg)
+	// NOTE: the bucket ID should be "blocks" but we're passing an empty string to not cause
+	// a massive cache invalidation when rolling out a new Mimir version introducing the bucket
+	// ID. This is still fine, as far as all other caching bucket implementations specify their
+	// own unique ID.
+	return bucketcache.NewCachingBucket("", bkt, cfg, logger, reg)
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
@@ -157,7 +156,7 @@ var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
 func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }
 
 func isMetaFile(name string) bool {
-	return strings.HasSuffix(name, "/"+metadata.MetaFilename) || strings.HasSuffix(name, "/"+metadata.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)
+	return strings.HasSuffix(name, "/"+block.MetaFilename) || strings.HasSuffix(name, "/"+block.DeletionMarkFilename) || strings.HasSuffix(name, "/"+TenantDeletionMarkPath)
 }
 
 func isBlockIndexFile(name string) bool {
@@ -187,24 +186,4 @@ func isTenantBlocksDir(name string) bool {
 
 func isChunksDir(name string) bool {
 	return strings.HasSuffix(name, "/chunks")
-}
-
-type snappyIterCodec struct {
-	bucketcache.IterCodec
-}
-
-func (i snappyIterCodec) Encode(files []string) ([]byte, error) {
-	b, err := i.IterCodec.Encode(files)
-	if err != nil {
-		return nil, err
-	}
-	return snappy.Encode(nil, b), nil
-}
-
-func (i snappyIterCodec) Decode(cachedData []byte) ([]string, error) {
-	b, err := snappy.Decode(nil, cachedData)
-	if err != nil {
-		return nil, errors.Wrap(err, "snappyIterCodec")
-	}
-	return i.IterCodec.Decode(b)
 }

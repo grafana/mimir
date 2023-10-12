@@ -29,13 +29,36 @@ message Chunk {
     Chunk_FloatHistogram = 2;
   }
   Encoding type  = 1;
-  bytes data     = 2;
+  bytes data     = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.UnsafeByteSlice"];
 }
 
 message Series {
   repeated cortexpb.LabelPair labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
+
+message StreamingSeries {
+  repeated cortexpb.LabelPair labels  = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+}
+
+message StreamingSeriesBatch {
+  repeated StreamingSeries series = 1;
+  bool is_end_of_series_stream = 2;
+}
+
+message StreamingChunks {
+  uint64 series_index = 1; // Index into list of all series previously sent with SeriesResponse messages by this storegateway during this query response.
+  repeated AggrChunk chunks = 2 [(gogoproto.nullable) = false];
+}
+
+message StreamingChunksBatch {
+  repeated StreamingChunks series = 1;
+}
+
+message StreamingChunksEstimate {
+  uint64 estimated_chunk_count = 1;
+}
+
 
 message AggrChunk {
   int64 min_time = 1;

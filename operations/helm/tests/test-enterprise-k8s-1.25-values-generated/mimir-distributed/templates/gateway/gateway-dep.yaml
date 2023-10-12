@@ -20,6 +20,9 @@ spec:
       app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
       app.kubernetes.io/component: gateway
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -84,14 +87,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
-              app.kubernetes.io/component: gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
+            app.kubernetes.io/component: gateway
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

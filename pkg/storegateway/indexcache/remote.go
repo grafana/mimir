@@ -8,8 +8,11 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"strconv"
+	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -26,6 +29,14 @@ import (
 
 const (
 	remoteDefaultTTL = 7 * 24 * time.Hour
+)
+
+var (
+	postingsCacheKeyLabelHashBufferPool = sync.Pool{New: func() any {
+		// We assume the label name/value pair is typically not longer than 1KB.
+		b := make([]byte, 1024)
+		return &b
+	}}
 )
 
 // RemoteIndexCache is a memcached or redis based index cache.
@@ -63,8 +74,8 @@ func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg 
 }
 
 // set stores a value for the given key in the remote cache.
-func (c *RemoteIndexCache) set(ctx context.Context, typ string, key string, val []byte) {
-	if err := c.remote.SetAsync(ctx, key, val, remoteDefaultTTL); err != nil {
+func (c *RemoteIndexCache) set(typ string, key string, val []byte) {
+	if err := c.remote.SetAsync(key, val, remoteDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to set item in remote cache", "type", typ, "err", err)
 	}
 }
@@ -83,71 +94,114 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(ctx, cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
+func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+	c.set(cacheTypePostings, postingsCacheKey(userID, blockID.String(), l), v)
 }
 
-// FetchMultiPostings fetches multiple postings - each identified by a label -
-// and returns a map containing cache hits, along with a list of missing keys.
-// In case of error, it logs and return an empty cache hits map.
-func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	// Build the cache keys, while keeping a map between input matchers and the cache key
-	// so that we can easily reverse it back after the GetMulti().
+// FetchMultiPostings fetches multiple postings - each identified by a label.
+// In case of error, it logs and return an empty result.
+func (c *RemoteIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) BytesResult {
+	blockIDStr := blockID.String()
+
 	keys := make([]string, 0, len(lbls))
-	keysMapping := map[labels.Label]string{}
-
 	for _, lbl := range lbls {
-		key := postingsCacheKey(userID, blockID, lbl)
-
-		keys = append(keys, key)
-		keysMapping[lbl] = key
+		keys = append(keys, postingsCacheKey(userID, blockIDStr, lbl))
 	}
 
 	// Fetch the keys from the remote cache in a single request.
 	c.requests.WithLabelValues(cacheTypePostings).Add(float64(len(keys)))
 	results := c.remote.GetMulti(ctx, keys)
-	if len(results) == 0 {
-		return nil, lbls
+	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(results)))
+
+	return &MapIterator[string]{
+		Keys: keys,
+		M:    results,
 	}
-
-	// Construct the resulting hits map and list of missing keys. We iterate on the input
-	// list of labels to be able to easily create the list of ones in a single iteration.
-	hits = map[labels.Label][]byte{}
-
-	for _, lbl := range lbls {
-		key, ok := keysMapping[lbl]
-		if !ok {
-			level.Error(c.logger).Log("msg", "keys mapping inconsistency found in remote index cache client", "type", "postings", "label", lbl.Name+":"+lbl.Value)
-			continue
-		}
-
-		// Check if the key has been found in the remote cache. If not, we add it to the list
-		// of missing keys.
-		value, ok := results[key]
-		if !ok {
-			misses = append(misses, lbl)
-			continue
-		}
-
-		hits[lbl] = value
-	}
-
-	c.hits.WithLabelValues(cacheTypePostings).Add(float64(len(hits)))
-	return hits, misses
 }
 
-func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
+// postingsCacheKey returns the cache key used to store postings matching the input
+// label name/value pair in the given block.
+func postingsCacheKey(userID, blockID string, l labels.Label) string {
+	const (
+		prefix    = "P2:"
+		separator = ":"
+	)
+
+	// Compute the label hash.
+	lblHash, hashLen := postingsCacheKeyLabelID(l)
+
+	// Preallocate the byte slice used to store the cache key.
+	encodedHashLen := base64.RawURLEncoding.EncodedLen(hashLen)
+	expectedLen := len(prefix) + len(userID) + 1 + ulid.EncodedSize + 1 + encodedHashLen
+	key := make([]byte, expectedLen)
+	offset := 0
+
+	offset += copy(key[offset:], prefix)
+	offset += copy(key[offset:], userID)
+	offset += copy(key[offset:], separator)
+	offset += copy(key[offset:], blockID)
+	offset += copy(key[offset:], separator)
+	base64.RawURLEncoding.Encode(key[offset:], lblHash[:hashLen])
+	offset += encodedHashLen
+
+	sizedKey := key[:offset]
+	// Convert []byte to string with no extra allocation.
+	return *(*string)(unsafe.Pointer(&sizedKey))
+}
+
+// postingsCacheKeyLabelID returns the hash of the input label or the label itself if it is shorter than the size of the hash.
+// This is used as part of the cache key generated by postingsCacheKey().
+func postingsCacheKeyLabelID(l labels.Label) (out [blake2b.Size256]byte, outLen int) {
+	const separator = ":"
+
+	// Compute the expected length.
+	expectedLen := len(l.Name) + len(separator) + len(l.Value)
+
+	// If the whole label is smaller than the hash, then shortcut hashing and directly write out the result.
+	if expectedLen <= blake2b.Size256 {
+		offset := 0
+		offset += copy(out[offset:], l.Name)
+		offset += copy(out[offset:], separator)
+		offset += copy(out[offset:], l.Value)
+		return out, offset
+	}
+
+	// Get a buffer from the pool and fill it with the label name/value pair to hash.
+	bp := postingsCacheKeyLabelHashBufferPool.Get().(*[]byte)
+	buf := *bp
+
+	if cap(buf) < expectedLen {
+		buf = make([]byte, expectedLen)
+	} else {
+		buf = buf[:expectedLen]
+	}
+
+	offset := 0
+	offset += copy(buf[offset:], l.Name)
+	offset += copy(buf[offset:], separator)
+	offset += copy(buf[offset:], l.Value)
+
+	// This is expected to be always equal. If it's not, then it's a severe bug.
+	if offset != expectedLen {
+		panic(fmt.Sprintf("postingsCacheKeyLabelID() computed an invalid expected length (expected: %d, actual: %d)", expectedLen, offset))
+	}
+
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
-	lblHash := blake2b.Sum256([]byte(l.Name + ":" + l.Value))
-	return "P:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
+	hash := blake2b.Sum256(buf)
+
+	// Reuse the same pointer to put the buffer back into the pool.
+	*bp = buf
+	postingsCacheKeyLabelHashBufferPool.Put(bp)
+
+	return hash, len(hash)
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
+func (c *RemoteIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -157,7 +211,7 @@ func (c *RemoteIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID s
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
-	keysMapping := map[storage.SeriesRef]string{}
+	keysMapping := make(map[storage.SeriesRef]string, len(ids))
 
 	for _, id := range ids {
 		key := seriesForRefCacheKey(userID, blockID, id)
@@ -175,7 +229,10 @@ func (c *RemoteIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID s
 
 	// Construct the resulting hits map and list of missing keys. We iterate on the input
 	// list of ids to be able to easily create the list of ones in a single iteration.
-	hits = map[storage.SeriesRef][]byte{}
+	hits = make(map[storage.SeriesRef][]byte, len(results))
+	if numMisses := len(ids) - len(results); numMisses > 0 {
+		misses = make([]storage.SeriesRef, 0, numMisses)
+	}
 
 	for _, id := range ids {
 		key, ok := keysMapping[id]
@@ -206,39 +263,23 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *RemoteIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
+func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	c.set(cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey))
+func (c *RemoteIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy))
 }
 
-func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey) string {
+func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string) string {
 	hash := blake2b.Sum256([]byte(lmKey))
-	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
-}
-
-// StoreSeries stores the result of a Series() call.
-func (c *RemoteIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard), v)
-}
-
-// FetchSeries fetches the result of a Series() call.
-func (c *RemoteIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
-	return c.get(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard))
-}
-
-func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) string {
-	hash := blake2b.Sum256([]byte(matchersKey))
-	// We use SS: as S: is already used for SeriesForRef
-	return "SS:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "E2:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:]) + ":" + postingsSelectionStrategy
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *RemoteIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.set(ctx, cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
+func (c *RemoteIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(cacheTypeSeriesForPostings, seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
@@ -258,8 +299,8 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *RemoteIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
+func (c *RemoteIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
@@ -273,8 +314,8 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *RemoteIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
+func (c *RemoteIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.
@@ -284,5 +325,5 @@ func (c *RemoteIndexCache) FetchLabelValues(ctx context.Context, userID string, 
 
 func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	return "LV:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "LV2:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }

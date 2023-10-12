@@ -22,14 +22,16 @@ data:
     blocks_storage:
       backend: s3
       bucket_store:
-        max_chunk_pool_bytes: 12884901888
         sync_dir: /data/tsdb-sync
       tsdb:
         dir: /data/tsdb
+        head_compaction_interval: 15m
+        wal_replay_concurrency: 3
     compactor:
       compaction_interval: 30m
       data_dir: /data
       deletion_delay: 2h
+      first_level_compaction_wait_period: 25m
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       sharding_ring:
@@ -73,7 +75,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
@@ -82,6 +83,7 @@ data:
         kvstore:
           prefix: multi-zone/
         tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
         wait_stability_min_duration: 1m
         zone_awareness_enabled: true
     usage_stats:

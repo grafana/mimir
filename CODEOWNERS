@@ -4,5 +4,18 @@
 # Documentation.
 /docs/ @grafana/docs-metrics @grafana/mimir-maintainers
 
+# Alertmanager and ruler.
 /pkg/alertmanager/ @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
 /pkg/ruler/ @grafana/mimir-ruler-and-alertmanager-maintainers @grafana/mimir-maintainers
+
+# Packages.
+/Makefile @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
+/packaging/ @wilfriedroset @vaxvms @bubu11e @grafana/mimir-maintainers
+
+# No owners - allows sub-maintainers to merge changes.
+CHANGELOG.md
+
+# Dependencies
+go.mod @grafana/mimir-maintainers @grafanabot
+go.sum @grafana/mimir-maintainers @grafanabot
+/vendor/ @grafana/mimir-maintainers @grafanabot

@@ -99,7 +99,7 @@ func (f *symbolFlushers) loop() {
 		}
 	}
 
-	for range f.jobs {
+	for range f.jobs { //nolint:revive // This "empty" block is intentional
 		// drain the channel, don't do more flushing. only used when error occurs.
 	}
 }
@@ -143,11 +143,6 @@ func newSymbolsBatcher(limit int, dir string, flushers *symbolFlushers) *symbols
 		buffer:   make(map[string]struct{}, limit),
 		flushers: flushers,
 	}
-}
-
-func (sw *symbolsBatcher) addSymbol(sym string) error {
-	sw.buffer[sym] = struct{}{}
-	return sw.flushSymbols(false)
 }
 
 func (sw *symbolsBatcher) flushSymbols(force bool) error {

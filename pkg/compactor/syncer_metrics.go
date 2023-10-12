@@ -20,7 +20,6 @@ type aggregatedSyncerMetrics struct {
 	metaSync                  prometheus.Counter
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
-	metaSyncConsistencyDelay  prometheus.Gauge
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
@@ -43,10 +42,6 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		"cortex_compactor_meta_sync_duration_seconds",
 		"Duration of the blocks metadata synchronization in seconds.",
 		nil, nil))
-	m.metaSyncConsistencyDelay = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "cortex_compactor_meta_sync_consistency_delay_seconds",
-		Help: "Configured consistency delay in seconds.",
-	})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_garbage_collection_total",
@@ -88,7 +83,6 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 	m.metaSync.Add(mfm.SumCounters("blocks_meta_syncs_total"))
 	m.metaSyncFailures.Add(mfm.SumCounters("blocks_meta_sync_failures_total"))
 	m.metaSyncDuration.Add(mfm.SumHistograms("blocks_meta_sync_duration_seconds"))
-	m.metaSyncConsistencyDelay.Set(mfm.MaxGauges("consistency_delay_seconds"))
 
 	m.garbageCollections.Add(mfm.SumCounters("thanos_compact_garbage_collection_total"))
 	m.garbageCollectionFailures.Add(mfm.SumCounters("thanos_compact_garbage_collection_failures_total"))

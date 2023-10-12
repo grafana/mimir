@@ -11,7 +11,7 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 type compactionStage string
@@ -56,8 +56,8 @@ func (j *job) conflicts(other *job) bool {
 	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		myLabels := labels.NewBuilder(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels(nil)
-		otherLabels := labels.NewBuilder(labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)).Del(tsdb.CompactorShardIDExternalLabel).Labels(nil)
+		myLabels := labelsWithoutShard(j.blocksGroup.blocks[0].Thanos.Labels)
+		otherLabels := labelsWithoutShard(other.blocksGroup.blocks[0].Thanos.Labels)
 		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
@@ -94,9 +94,9 @@ func (j *job) String() string {
 
 // blocksGroup holds a group of blocks within the same time range.
 type blocksGroup struct {
-	rangeStart int64            // Included.
-	rangeEnd   int64            // Excluded.
-	blocks     []*metadata.Meta // Sorted by MinTime.
+	rangeStart int64         // Included.
+	rangeEnd   int64         // Excluded.
+	blocks     []*block.Meta // Sorted by MinTime.
 }
 
 // overlaps returns whether the group range overlaps with the input group.
@@ -132,8 +132,8 @@ func (g blocksGroup) maxTime() int64 {
 }
 
 // getNonShardedBlocks returns the list of non-sharded blocks.
-func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
-	var out []*metadata.Meta
+func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
+	var out []*block.Meta
 
 	for _, b := range g.blocks {
 		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {

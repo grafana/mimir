@@ -47,6 +47,31 @@ patches:
 
   - target:
       kind: MimirConfig
+      name: 'ruler|querier'
+    patch: |-
+      - op: remove
+        path: /config/blocks_storage/bucket_store/metadata_cache/memcached/max_idle_connections
+
+  # Do not check the TSDB settings on any component different than ingester (it's irrelevant).
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|ruler|query-frontend|query-scheduler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/blocks_storage/tsdb/head_compaction_interval
+      - op: remove
+        path: /config/blocks_storage/tsdb/wal_replay_concurrency
+
+  # Do not check the ruler storage settings on any component different than ruler (it's irrelevant).
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/ruler_storage
+
+  - target:
+      kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway|query-scheduler'
     patch: |-
       - op: remove
@@ -153,3 +178,11 @@ patches:
     patch: |-
       - op: remove
         path: /config/alertmanager/fallback_config_file
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      # Jsonnet doesn't set this on non-store-gateway components
+      - op: remove
+        path: /config/store_gateway/sharding_ring/unregister_on_shutdown

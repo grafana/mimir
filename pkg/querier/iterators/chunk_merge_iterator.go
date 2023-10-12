@@ -7,7 +7,6 @@ package iterators
 
 import (
 	"container/heap"
-	"errors"
 	"fmt"
 	"sort"
 
@@ -22,13 +21,16 @@ type chunkMergeIterator struct {
 	its []*nonOverlappingIterator
 	h   seriesIteratorHeap
 
-	currTime  int64
-	currValue float64
-	currErr   error
+	currTime           int64
+	currValueType      chunkenc.ValueType
+	currValue          float64
+	currHistogram      *histogram.Histogram
+	currFloatHistogram *histogram.FloatHistogram
+	currErr            error
 }
 
 // NewChunkMergeIterator creates a chunkenc.Iterator for a set of chunks.
-func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
+func NewChunkMergeIterator(_ chunkenc.Iterator, cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
 	its := buildIterators(cs)
 	c := &chunkMergeIterator{
 		currTime: -1,
@@ -38,13 +40,12 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 
 	for _, iter := range c.its {
 		valType := iter.Next()
-		// TODO for native histograms: allow all types
-		if valType == chunkenc.ValFloat {
+		if valType == chunkenc.ValFloat || valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
 			c.h = append(c.h, iter)
 			continue
 		}
 		if valType != chunkenc.ValNone {
-			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			c.currErr = fmt.Errorf("chunkMergeIterator: unsupported value type %v", valType)
 			break
 		}
 
@@ -89,6 +90,7 @@ outer:
 }
 
 func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
+	c.currValueType = chunkenc.ValNone
 	if c.currErr != nil {
 		return chunkenc.ValNone
 	}
@@ -96,13 +98,12 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 
 	for _, iter := range c.its {
 		valType := iter.Seek(t)
-		// TODO for native histograms: allow all types
-		if valType == chunkenc.ValFloat {
+		if valType == chunkenc.ValFloat || valType == chunkenc.ValHistogram || valType == chunkenc.ValFloatHistogram {
 			c.h = append(c.h, iter)
 			continue
 		}
 		if valType != chunkenc.ValNone {
-			c.currErr = fmt.Errorf("unsupported value type %v", valType)
+			c.currErr = fmt.Errorf("chunkMergeIterator: unsupported value type %v", valType)
 			return chunkenc.ValNone
 		}
 
@@ -115,21 +116,46 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 	heap.Init(&c.h)
 
 	if len(c.h) > 0 {
-		c.currTime, c.currValue = c.h[0].At()
-		return chunkenc.ValFloat
+		valType := c.h[0].AtType()
+		switch valType {
+		case chunkenc.ValFloat:
+			c.currTime, c.currValue = c.h[0].At()
+		case chunkenc.ValHistogram:
+			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+		case chunkenc.ValFloatHistogram:
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
+		default:
+			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
+			return chunkenc.ValNone
+		}
+		c.currValueType = valType
+		return valType
 	}
 
 	return chunkenc.ValNone
 }
 
 func (c *chunkMergeIterator) Next() chunkenc.ValueType {
+	c.currValueType = chunkenc.ValNone
 	if len(c.h) == 0 || c.currErr != nil {
 		return chunkenc.ValNone
 	}
 
 	lastTime := c.currTime
+	var valType chunkenc.ValueType
 	for c.currTime == lastTime && len(c.h) > 0 {
-		c.currTime, c.currValue = c.h[0].At()
+		valType = c.h[0].AtType()
+		switch valType {
+		case chunkenc.ValFloat:
+			c.currTime, c.currValue = c.h[0].At()
+		case chunkenc.ValHistogram:
+			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+		case chunkenc.ValFloatHistogram:
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
+		default:
+			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
+			return chunkenc.ValNone
+		}
 
 		if c.h[0].Next() != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
@@ -144,24 +170,34 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	}
 
 	if c.currTime != lastTime {
-		// TODO for native histograms: return the correct type
-		return chunkenc.ValFloat
+		c.currValueType = valType
+		return valType
 	}
 	return chunkenc.ValNone
 }
 
 func (c *chunkMergeIterator) At() (t int64, v float64) {
+	if c.currValueType != chunkenc.ValFloat {
+		panic(fmt.Errorf("chunkMergeIterator: calling At when cursor is at different type %v", c.currValueType))
+	}
 	return c.currTime, c.currValue
 }
 
-// Histogram support isn't complete yet
 func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
-	panic(errors.New("chunkMergeIterator: AtHistogram is not implemented"))
+	if c.currValueType != chunkenc.ValHistogram {
+		panic(fmt.Errorf("chunkMergeIterator: calling AtHistogram when cursor is at different type %v", c.currValueType))
+	}
+	return c.currTime, c.currHistogram
 }
 
-// Histogram suppport isn't complete yet
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic(errors.New("chunkMergeIterator: AtFloatHistogram is not implemented"))
+	if c.currValueType == chunkenc.ValHistogram {
+		return c.currTime, c.currHistogram.ToFloat()
+	}
+	if c.currValueType != chunkenc.ValFloatHistogram {
+		panic(fmt.Errorf("chunkMergeIterator: calling AtFloatHistogram when cursor is at different type %v", c.currValueType))
+	}
+	return c.currTime, c.currFloatHistogram
 }
 
 func (c *chunkMergeIterator) AtT() int64 {
@@ -174,7 +210,8 @@ func (c *chunkMergeIterator) Err() error {
 
 type extraIterator interface {
 	chunkenc.Iterator
-	AtTime() int64
+	AtT() int64
+	AtType() chunkenc.ValueType
 }
 
 type seriesIteratorHeap []extraIterator
@@ -183,8 +220,15 @@ func (h *seriesIteratorHeap) Len() int      { return len(*h) }
 func (h *seriesIteratorHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
 
 func (h *seriesIteratorHeap) Less(i, j int) bool {
-	iT := (*h)[i].AtTime()
-	jT := (*h)[j].AtTime()
+	iT := (*h)[i].AtT()
+	jT := (*h)[j].AtT()
+	if iT == jT {
+		iTyp := (*h)[i].AtType()
+		jTyp := (*h)[j].AtType()
+		// In case of time equality prefer histograms as they contain more information.
+		// Returns false if types are equal which is the original way of working.
+		return iTyp > jTyp
+	}
 	return iT < jT
 }
 
@@ -241,10 +285,6 @@ func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-func (it *nonOverlappingIterator) AtTime() int64 {
-	return it.chunks[it.curr].AtTime()
-}
-
 func (it *nonOverlappingIterator) At() (int64, float64) {
 	return it.chunks[it.curr].At()
 }
@@ -259,6 +299,10 @@ func (it *nonOverlappingIterator) AtFloatHistogram() (int64, *histogram.FloatHis
 
 func (it *nonOverlappingIterator) AtT() int64 {
 	return it.chunks[it.curr].AtT()
+}
+
+func (it *nonOverlappingIterator) AtType() chunkenc.ValueType {
+	return it.chunks[it.curr].AtType()
 }
 
 func (it *nonOverlappingIterator) Err() error {

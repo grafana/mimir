@@ -12,33 +12,36 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/signals"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -53,6 +56,7 @@ import (
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -67,12 +71,12 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/ephemeral"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
+	"github.com/grafana/mimir/pkg/vault"
 )
 
 var errInvalidBucketConfig = errors.New("invalid bucket config")
@@ -99,8 +103,9 @@ type Config struct {
 	Target                          flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
-	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
+	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
+	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
@@ -119,6 +124,7 @@ type Config struct {
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
 	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
+	Vault            vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -131,12 +137,16 @@ type Config struct {
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
+
+	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 }
 
 // RegisterFlags registers flag.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
+	// Enable native histograms for enabled scrapers with 10% bucket growth.
+	c.Server.MetricsNativeHistogramFactor = 1.1
 	c.Server.ExcludeRequestInLog = true
 	c.Server.DisableRequestSuccessLog = true
 
@@ -152,6 +162,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
+	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
+	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -163,15 +175,16 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
-	c.BlocksStorage.RegisterFlags(f, logger)
+	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f, logger)
-	c.RulerStorage.RegisterFlags(f, logger)
+	c.RulerStorage.RegisterFlags(f)
+	c.Vault.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f, logger)
-	c.AlertmanagerStorage.RegisterFlags(f, logger)
+	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
@@ -179,7 +192,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.UsageStats.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
-	c.Common.RegisterFlags(f, logger)
+	c.Common.RegisterFlags(f)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -219,10 +232,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
-	if err := c.Ruler.Validate(c.LimitsConfig, log); err != nil {
+	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
 	}
-	if err := c.BlocksStorage.Validate(); err != nil {
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
@@ -235,13 +248,16 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Worker.Validate(log); err != nil {
+	if err := c.Ingester.Validate(); err != nil {
+		return errors.Wrap(err, "invalid ingester config")
+	}
+	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.Frontend.Validate(log); err != nil {
+	if err := c.Frontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-frontend config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
@@ -259,6 +275,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.UsageStats.Validate(); err != nil {
 		return errors.Wrap(err, "invalid usage stats config")
 	}
+	if err := c.Vault.Validate(); err != nil {
+		return errors.Wrap(err, "invalid vault config")
+	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
@@ -266,6 +285,19 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
+	}
+	// validate the default limits
+	if err := c.ValidateLimits(c.LimitsConfig); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ValidateLimits validates the runtime limits that can be set for each tenant against static configs
+func (c *Config) ValidateLimits(limits validation.Limits) error {
+	if err := c.Querier.ValidateLimits(limits); err != nil {
+		return errors.Wrap(err, "invalid limits config for querier")
 	}
 	return nil
 }
@@ -411,7 +443,7 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 	}
 
 	// Alertmanager.
-	if c.isAnyModuleEnabled(AlertManager) {
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		paths = append(paths, pathConfig{
 			name:       "alertmanager data directory",
 			cfgValue:   c.Alertmanager.DataDir,
@@ -601,8 +633,8 @@ type CommonConfigInheritance struct {
 }
 
 // RegisterFlags registers flag.
-func (c *CommonConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	c.Storage.RegisterFlagsWithPrefix("common.storage.", f, logger)
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -661,18 +693,17 @@ type Mimir struct {
 	QueryFrontendTripperware querymiddleware.Tripperware
 	QueryFrontendCodec       querymiddleware.Codec
 	Ruler                    *ruler.Ruler
-	RulerStorage             rulestore.RuleStore
+	RulerDirectStorage       rulestore.RuleStore
+	RulerCachedStorage       rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway
+	StoreQueryable           prom_storage.Queryable
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
+	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
-	EphemeralChecker         ephemeral.SeriesCheckerByUser
-
-	// Queryables that the querier should use to query the long term storage.
-	StoreQueryables []querier.QueryableWithFilter
 }
 
 // New makes a new Mimir.
@@ -683,6 +714,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		}
 		os.Exit(0)
 	}
+
+	setUpGoRuntimeMetrics(cfg, reg)
 
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
 	if cfg.TenantFederation.Enabled {
@@ -699,6 +732,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/grpc.health.v1.Health/Check",
 			"/frontend.Frontend/Process",
 			"/frontend.Frontend/NotifyClientShutdown",
+			"/ruler.Ruler/SyncRules",
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
@@ -715,11 +749,34 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
+	mimir.Cfg.Server.Router = mux.NewRouter()
+	middleware.InitHTTPGRPCMiddleware(mimir.Cfg.Server.Router)
+
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
 	}
 
 	return mimir, nil
+}
+
+func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
+	rules := []collectors.GoRuntimeMetricsRule{
+		// Enable the mutex wait time metric.
+		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+	}
+
+	if cfg.EnableGoRuntimeMetrics {
+		// Enable all available runtime metrics.
+		rules = append(rules, collectors.MetricsAll)
+	}
+
+	// Unregister the default Go collector...
+	reg.Unregister(collectors.NewGoCollector())
+
+	// ...and replace it with our own that adds our extra rules.
+	reg.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(rules...),
+	))
 }
 
 // setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
@@ -731,6 +788,8 @@ func (t *Mimir) setupObjstoreTracing() {
 
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
+	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
 		if t.Registerer != nil {
@@ -757,7 +816,7 @@ func (t *Mimir) Run() error {
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
 
-	// register ingester ring handlers, if they exists prefer the full ring
+	// register ingester ring handlers, if they exist prefer the full ring
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.Ring != nil {

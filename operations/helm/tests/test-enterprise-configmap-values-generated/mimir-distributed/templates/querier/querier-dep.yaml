@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: test-enterprise-configmap-values
       app.kubernetes.io/component: querier
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -96,14 +99,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-configmap-values
-              app.kubernetes.io/component: querier
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-configmap-values
+            app.kubernetes.io/component: querier
       tolerations:
         []
       terminationGracePeriodSeconds: 180

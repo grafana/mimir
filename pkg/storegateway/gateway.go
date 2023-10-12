@@ -16,11 +16,11 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -86,6 +86,8 @@ type StoreGateway struct {
 	subservicesWatcher *services.FailureWatcher
 
 	bucketSync *prometheus.CounterVec
+	// Shutdown marker for store-gateway scale down
+	shutdownMarker prometheus.Gauge
 }
 
 func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer, tracker *activitytracker.ActivityTracker) (*StoreGateway, error) {
@@ -121,6 +123,10 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 			Name: "cortex_storegateway_bucket_sync_total",
 			Help: "Total number of times the bucket sync operation triggered.",
 		}, []string{"reason"}),
+		shutdownMarker: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_storegateway_prepare_shutdown_requested",
+			Help: "If the store-gateway has been requested to prepare for shutdown via endpoint or marker file.",
+		}),
 	}
 
 	// Init metrics.
@@ -141,7 +147,9 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	delegate := ring.BasicLifecyclerDelegate(ring.NewInstanceRegisterDelegate(ring.JOINING, RingNumTokens))
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewTokensPersistencyDelegate(gatewayCfg.ShardingRing.TokensFilePath, ring.JOINING, delegate, logger)
-	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
+	if gatewayCfg.ShardingRing.AutoForgetEnabled {
+		delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*gatewayCfg.ShardingRing.HeartbeatTimeout, delegate, logger)
+	}
 
 	g.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 	if err != nil {
@@ -179,6 +187,11 @@ func (g *StoreGateway) starting(ctx context.Context) (err error) {
 			level.Error(g.logger).Log("msg", "failed to gracefully stop store-gateway dependencies", "err", stopErr)
 		}
 	}()
+
+	err = g.setPrepareShutdownFromShutdownMarker()
+	if err != nil {
+		return err
+	}
 
 	// First of all we register the instance in the ring and wait
 	// until the lifecycler successfully started.
@@ -277,8 +290,12 @@ func (g *StoreGateway) running(ctx context.Context) error {
 
 func (g *StoreGateway) stopping(_ error) error {
 	if g.subservices != nil {
-		return services.StopManagerAndAwaitStopped(context.Background(), g.subservices)
+		if err := services.StopManagerAndAwaitStopped(context.Background(), g.subservices); err != nil {
+			level.Warn(g.logger).Log("msg", "failed to stop store-gateway subservices", "err", err)
+		}
 	}
+
+	g.unsetPrepareShutdownMarker()
 	return nil
 }
 

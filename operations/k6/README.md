@@ -37,6 +37,7 @@ The [load-testing-with-k6.js] script can be configured using the following envir
 | `K6_SCRAPE_INTERVAL_SECONDS`  |          | 20            | Simulated Prometheus scrape interval in seconds.                                      |
 | `K6_HA_REPLICAS`              |          | 1             | Number of HA replicas to simulate (use 1 for no HA).                                  |
 | `K6_HA_CLUSTERS`              |          | 1             | Number of HA clusters to simulate.                                                    |
+| `K6_TENANT_ID`                |          | ''            | Tenant ID used for load test to read metrics from and write metrics to.               |
 
 For example, if Mimir is running on `localhost:80` you can run a small scale test with this command:
 

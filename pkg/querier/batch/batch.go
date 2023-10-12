@@ -6,6 +6,8 @@
 package batch
 
 import (
+	"fmt"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -54,19 +56,27 @@ type iterator interface {
 }
 
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
-func NewChunkMergeIterator(chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
+func NewChunkMergeIterator(it chunkenc.Iterator, chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
 
-	return NewGenericChunkMergeIterator(converted)
+	return NewGenericChunkMergeIterator(it, converted)
 }
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
-func NewGenericChunkMergeIterator(chunks []GenericChunk) chunkenc.Iterator {
-	iter := newMergeIterator(chunks)
-	return newIteratorAdapter(iter)
+func NewGenericChunkMergeIterator(it chunkenc.Iterator, chunks []GenericChunk) chunkenc.Iterator {
+	var iter *mergeIterator
+
+	adapter, ok := it.(*iteratorAdapter)
+	if ok {
+		iter = newMergeIterator(adapter.underlying, chunks)
+	} else {
+		iter = newMergeIterator(nil, chunks)
+	}
+
+	return newIteratorAdapter(adapter, iter)
 }
 
 // iteratorAdapter turns a batchIterator into a chunkenc.Iterator.
@@ -78,7 +88,13 @@ type iteratorAdapter struct {
 	underlying iterator
 }
 
-func newIteratorAdapter(underlying iterator) chunkenc.Iterator {
+func newIteratorAdapter(it *iteratorAdapter, underlying iterator) chunkenc.Iterator {
+	if it != nil {
+		it.batchSize = 1
+		it.underlying = underlying
+		it.curr = chunk.Batch{}
+		return it
+	}
 	return &iteratorAdapter{
 		batchSize:  1,
 		underlying: underlying,
@@ -93,16 +109,14 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
-			// TODO native histograms: return correct batch type
-			return chunkenc.ValFloat
+			return a.curr.ValueType
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
 			}
-			// TODO native histograms: return correct batch type
-			return chunkenc.ValFloat
+			return a.curr.ValueType
 		}
 	}
 
@@ -129,25 +143,39 @@ func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	}
 
 	if a.curr.Index < a.curr.Length {
-		// TODO native histograms: return correct batch type
-		return chunkenc.ValFloat
+		return a.curr.ValueType
 	}
 	return chunkenc.ValNone
 }
 
 // At implements chunkenc.Iterator.
 func (a *iteratorAdapter) At() (int64, float64) {
+	if a.curr.ValueType != chunkenc.ValFloat {
+		panic(fmt.Sprintf("Cannot read float from batch %v", a.curr.ValueType))
+	}
 	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
 }
 
 // AtHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
-	panic("iteratorAdapter.AtHistogram not yet implemented")
+	if a.curr.ValueType != chunkenc.ValHistogram {
+		panic(fmt.Sprintf("Cannot read histogram from batch %v", a.curr.ValueType))
+	}
+	return a.curr.Timestamps[a.curr.Index], (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic("iteratorAdapter.AtFloatHistogram not yet implemented")
+	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
+	// and will call AtFloatHistogram on a Histogram
+	if a.curr.ValueType == chunkenc.ValFloatHistogram {
+		return a.curr.Timestamps[a.curr.Index], (*histogram.FloatHistogram)(a.curr.PointerValues[a.curr.Index])
+	}
+	if a.curr.ValueType == chunkenc.ValHistogram {
+		h := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
+		return a.curr.Timestamps[a.curr.Index], h.ToFloat()
+	}
+	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))
 }
 
 // AtT implements chunkenc.Iterator.

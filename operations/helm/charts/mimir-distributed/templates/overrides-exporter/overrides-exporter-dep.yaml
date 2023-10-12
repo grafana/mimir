@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.overrides_exporter.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -82,10 +82,10 @@ spec:
             {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.overrides_exporter.env }}
-              {{ toYaml . | nindent 12 }}
+              {{- toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
@@ -101,8 +101,7 @@ spec:
         {{- toYaml .Values.overrides_exporter.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.overrides_exporter.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.overrides_exporter.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.overrides_exporter.terminationGracePeriodSeconds }}

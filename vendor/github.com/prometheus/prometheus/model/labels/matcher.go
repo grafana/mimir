@@ -126,7 +126,7 @@ func (m *Matcher) SetMatches() []string {
 	if m.re == nil {
 		return nil
 	}
-	return m.re.setMatches
+	return m.re.SetMatches()
 }
 
 // Prefix returns the required prefix of the value to match, if possible.
@@ -136,4 +136,12 @@ func (m *Matcher) Prefix() string {
 		return ""
 	}
 	return m.re.prefix
+}
+
+// IsRegexOptimized returns whether regex is optimized.
+func (m *Matcher) IsRegexOptimized() bool {
+	if m.re == nil {
+		return false
+	}
+	return m.re.IsOptimized()
 }

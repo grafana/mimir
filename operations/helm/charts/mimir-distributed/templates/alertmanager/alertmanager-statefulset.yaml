@@ -37,11 +37,12 @@ spec:
           {{ toYaml .Values.alertmanager.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.alertmanager.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.alertmanager.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.alertmanager.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.alertmanager.persistentVolume.storageClass }}"
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:
@@ -69,7 +70,7 @@ spec:
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -82,8 +83,7 @@ spec:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}

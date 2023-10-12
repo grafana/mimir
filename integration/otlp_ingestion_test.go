@@ -4,7 +4,7 @@
 package integration
 
 import (
-	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -12,10 +12,12 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestOTLPIngestion(t *testing.T) {
@@ -32,13 +34,14 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
-	flags := map[string]string{
-		"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":       blocksBucketName,
-		"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":          "true",
-	}
+	flags := mergeFlags(
+		DefaultSingleBinaryFlags(),
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-distributor.enable-otlp-metadata-storage": "true",
+		},
+	)
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 	require.NoError(t, s.StartAndWaitReady(mimir))
@@ -48,9 +51,15 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	metadata := []mimirpb.MetricMetadata{
+		{
+			Help: "foo",
+			Unit: "foo",
+		},
+	}
 
-	res, err := c.PushOTLP(series)
+	res, err := c.PushOTLP(series, metadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
@@ -60,11 +69,11 @@ func TestOTLPIngestion(t *testing.T) {
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	labelValues, err := c.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
+	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
@@ -72,4 +81,76 @@ func TestOTLPIngestion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+
+	// Query the metadata
+	metadataResult, err := c.GetPrometheusMetadata()
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err := io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
+
+	expectedJSON := `
+	{
+	   "status":"success",
+	   "data":{
+		  "series_1":[
+			 {
+				"type":"gauge",
+				"help":"foo",
+				"unit":"foo"
+			 }
+		  ]
+	   }
+	}
+	`
+
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
+
+	// Push series with histograms to Mimir
+	series, expectedVector, _ = generateHistogramSeries("series", now)
+	res, err = c.PushOTLP(series, metadata)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	result, err = c.Query("series", now)
+	require.NoError(t, err)
+
+	want := expectedVector[0]
+	got := result.(model.Vector)[0]
+	assert.Equal(t, want.Histogram.Sum, got.Histogram.Sum)
+	assert.Equal(t, want.Histogram.Count, got.Histogram.Count)
+	// it is not possible to assert with assert.ElementsMatch(t, expectedVector, result.(model.Vector))
+	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
+	// to test setup logic
+
+	expectedJSON = `
+		{
+		   "status":"success",
+		   "data":{
+			  "series":[
+				 {
+					"type":"histogram",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ],
+			  "series_1":[
+				 {
+					"type":"gauge",
+					"help":"foo",
+					"unit":"foo"
+				 }
+			  ]
+		   }
+		}
+	`
+
+	metadataResult, err = c.GetPrometheusMetadata()
+	require.NoError(t, err)
+	require.Equal(t, 200, metadataResult.StatusCode)
+
+	metadataResponseBody, err = io.ReadAll(metadataResult.Body)
+	require.NoError(t, err)
+	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 }

@@ -116,7 +116,8 @@ var (
 
 	RulerFlags = func() map[string]string {
 		return map[string]string{
-			"-ruler.poll-interval": "2s",
+			"-ruler.poll-interval":             "2s",
+			"-ruler.evaluation-delay-duration": "0",
 		}
 	}
 

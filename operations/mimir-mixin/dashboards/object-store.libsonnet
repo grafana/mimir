@@ -14,9 +14,9 @@ local filename = 'mimir-object-store.json';
         { yaxes: $.yaxes('reqps') },
       )
       .addPanel(
-        $.panel('Error rate / component') +
-        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{component}}') +
-        { yaxes: $.yaxes('percentunit') },
+        $.timeseriesPanel('Error rate / component') +
+        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval])) >= 0' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{component}}') +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
       )
     )
     .addRow(
@@ -28,9 +28,9 @@ local filename = 'mimir-object-store.json';
         { yaxes: $.yaxes('reqps') },
       )
       .addPanel(
-        $.panel('Error rate / operation') +
-        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{operation}}') +
-        { yaxes: $.yaxes('percentunit') },
+        $.timeseriesPanel('Error rate / operation') +
+        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval])) >= 0' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{operation}}') +
+        { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
       )
     )
     .addRow(

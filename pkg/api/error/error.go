@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 type Type string
@@ -28,6 +28,7 @@ const (
 	TypeNotFound        Type = "not_found"
 	TypeTooManyRequests Type = "too_many_requests"
 	TypeTooLargeEntry   Type = "too_large_entry"
+	TypeNotAcceptable   Type = "not_acceptable"
 )
 
 type apiError struct {
@@ -58,6 +59,10 @@ func (e *apiError) statusCode() int {
 		return http.StatusTooManyRequests
 	case TypeTooLargeEntry:
 		return http.StatusRequestEntityTooLarge
+	case TypeNotAcceptable:
+		return http.StatusNotAcceptable
+	case TypeUnavailable:
+		return http.StatusServiceUnavailable
 	}
 	return http.StatusInternalServerError
 }
@@ -101,7 +106,7 @@ func New(typ Type, msg string) error {
 	}
 }
 
-// Newf creates a new apiError with a static string message
+// Newf creates a new apiError with a formatted message
 func Newf(typ Type, tmpl string, args ...interface{}) error {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
@@ -111,4 +116,17 @@ func Newf(typ Type, tmpl string, args ...interface{}) error {
 func IsAPIError(err error) bool {
 	apiErr := &apiError{}
 	return errors.As(err, &apiErr)
+}
+
+// IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
+func IsNonRetryableAPIError(err error) bool {
+	apiErr := &apiError{}
+	// Reasoning:
+	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
+	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
+	// TypeCanceled means something wants us to stop.
+	// TypeExec, TypeBadData and TypeTooLargeEntry are caused by the input data.
+	// TypeInternal can be a 500 error e.g. from querier failing to contact store-gateway.
+
+	return errors.As(err, &apiErr) && apiErr.Type != TypeInternal
 }

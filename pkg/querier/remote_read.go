@@ -88,7 +88,7 @@ func remoteReadSamples(
 				return
 			}
 
-			querier, err := q.Querier(ctx, int64(from), int64(to))
+			querier, err := q.Querier(int64(from), int64(to))
 			if err != nil {
 				errCh <- err
 				return
@@ -98,7 +98,7 @@ func remoteReadSamples(
 				Start: int64(from),
 				End:   int64(to),
 			}
-			seriesSet := querier.Select(false, params, matchers...)
+			seriesSet := querier.Select(ctx, false, params, matchers...)
 			resp.Results[i], err = seriesSetToQueryResponse(seriesSet)
 			errCh <- err
 		}(i, qr)
@@ -163,7 +163,7 @@ func processReadStreamedQueryRequest(
 		return err
 	}
 
-	querier, err := q.ChunkQuerier(ctx, int64(from), int64(to))
+	querier, err := q.ChunkQuerier(int64(from), int64(to))
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func processReadStreamedQueryRequest(
 	return streamChunkedReadResponses(
 		prom_remote.NewChunkedWriter(w, f),
 		// The streaming API has to provide the series sorted.
-		querier.Select(true, params, matchers...),
+		querier.Select(ctx, true, params, matchers...),
 		idx,
 		maxBytesInFrame,
 	)
@@ -189,24 +189,38 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 	for s.Next() {
 		series := s.At()
 		samples := []mimirpb.Sample{}
+		histograms := []mimirpb.Histogram{}
 		it = series.Iterator(it)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-			if valType != chunkenc.ValFloat {
-				return nil, fmt.Errorf("unsupported value type %v", valType)
+			switch valType {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: t,
+					Value:       v,
+				})
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+			case chunkenc.ValFloatHistogram:
+				t, h := it.AtFloatHistogram()
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
+			default:
+				return nil, fmt.Errorf("unsupported value type: %v", valType)
 			}
-			t, v := it.At()
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: t,
-				Value:       v,
-			})
 		}
+
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			Samples: samples,
-		})
+
+		ts := mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			Samples:    samples,
+			Histograms: histograms,
+		}
+
+		result.Timeseries = append(result.Timeseries, ts)
 	}
 
 	return result, s.Err()
@@ -242,11 +256,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 		iter = series.Iterator(iter)
 		lbls = mimirpb.FromLabelsToLabelAdapters(series.Labels())
 
-		frameBytesLeft := maxBytesInFrame
-		for _, lbl := range lbls {
-			frameBytesLeft -= lbl.Size()
-		}
-
+		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()
 
 		for isNext {
@@ -263,11 +273,11 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				Type:      client.StreamChunk_Encoding(chk.Chunk.Encoding()),
 				Data:      chk.Chunk.Bytes(),
 			})
-			frameBytesLeft -= chks[len(chks)-1].Size()
+			frameBytesRemaining -= chks[len(chks)-1].Size()
 
 			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
 			isNext = iter.Next()
-			if frameBytesLeft > 0 && isNext {
+			if frameBytesRemaining > 0 && isNext {
 				continue
 			}
 
@@ -288,10 +298,19 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 				return errors.Wrap(err, "write to stream")
 			}
 			chks = chks[:0]
+			frameBytesRemaining = initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		}
 		if err := iter.Err(); err != nil {
 			return err
 		}
 	}
 	return ss.Err()
+}
+
+func initializedFrameBytesRemaining(maxBytesInFrame int, lbls []mimirpb.LabelAdapter) int {
+	frameBytesLeft := maxBytesInFrame
+	for _, lbl := range lbls {
+		frameBytesLeft -= lbl.Size()
+	}
+	return frameBytesLeft
 }

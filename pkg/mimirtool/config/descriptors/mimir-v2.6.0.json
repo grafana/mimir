@@ -3505,33 +3505,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_endpoint",
-          "required": false,
-          "desc": "Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldType": "string"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_drop_older_than",
-          "required": false,
-          "desc": "If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "forwarding_rules",
-          "required": false,
-          "desc": "Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint.",
-          "fieldValue": null,
-          "fieldDefaultValue": {},
-          "fieldType": "map of string to validation.ForwardingRule"
         }
       ],
       "fieldValue": null,

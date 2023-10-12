@@ -11,96 +11,103 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error)
+	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
 	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error)
-	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
+	MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
-	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error)
+	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, logger log.Logger) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return distributorQueryable{
-		logger:               logger,
-		distributor:          distributor,
-		iteratorFn:           iteratorFn,
-		queryIngestersWithin: queryIngestersWithin,
+		logger:       logger,
+		distributor:  distributor,
+		iteratorFn:   iteratorFn,
+		cfgProvider:  cfgProvider,
+		queryMetrics: queryMetrics,
 	}
 }
 
-type distributorQueryable struct {
-	logger               log.Logger
-	distributor          Distributor
-	iteratorFn           chunkIteratorFunc
-	queryIngestersWithin time.Duration
+type distributorQueryableConfigProvider interface {
+	QueryIngestersWithin(userID string) time.Duration
 }
 
-func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+type distributorQueryable struct {
+	logger       log.Logger
+	distributor  Distributor
+	iteratorFn   chunkIteratorFunc
+	cfgProvider  distributorQueryableConfigProvider
+	queryMetrics *stats.QueryMetrics
+}
+
+func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	return &distributorQuerier{
-		logger:               d.logger,
-		distributor:          d.distributor,
-		ctx:                  ctx,
-		mint:                 mint,
-		maxt:                 maxt,
-		chunkIterFn:          d.iteratorFn,
-		queryIngestersWithin: d.queryIngestersWithin,
+		logger:       d.logger,
+		distributor:  d.distributor,
+		mint:         mint,
+		maxt:         maxt,
+		chunkIterFn:  d.iteratorFn,
+		queryMetrics: d.queryMetrics,
+		cfgProvider:  d.cfgProvider,
 	}, nil
 }
 
-func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bool {
-	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.queryIngestersWithin))
-}
-
 type distributorQuerier struct {
-	logger               log.Logger
-	distributor          Distributor
-	ctx                  context.Context
-	mint, maxt           int64
-	chunkIterFn          chunkIteratorFunc
-	queryIngestersWithin time.Duration
+	logger       log.Logger
+	distributor  Distributor
+	mint, maxt   int64
+	chunkIterFn  chunkIteratorFunc
+	cfgProvider  distributorQueryableConfigProvider
+	queryMetrics *stats.QueryMetrics
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
-	defer spanlog.Finish()
+func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.Select")
+	defer spanLog.Finish()
+
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
 
 	minT, maxT := q.mint, q.maxt
 	if sp != nil {
 		minT, maxT = sp.Start, sp.End
 	}
 
-	// If queryIngestersWithin is enabled, we do manipulate the query mint to query samples up until
-	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
-	// optimization is particularly important for the blocks storage where the blocks retention in the
-	// ingesters could be way higher than queryIngestersWithin.
-	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", spanlog))
-
-	if minT > maxT {
-		level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
+	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return storage.EmptySeriesSet()
 	}
+
+	now := time.Now().UnixMilli()
+	minT = clampMinTime(spanLog, minT, now, -queryIngestersWithin, "query ingesters within")
 
 	if sp != nil && sp.Func == "series" {
 		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(minT), model.Time(maxT), matchers...)
@@ -114,7 +121,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	results, err := q.distributor.QueryStream(ctx, model.Time(minT), model.Time(maxT), matchers...)
+	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -133,7 +140,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
-		chunks, err := chunkcompat.FromChunks(ls, result.Chunks)
+		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
@@ -148,7 +155,28 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSet(serieses))
+		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
+	}
+
+	if len(results.StreamingSeries) > 0 {
+		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
+		streamingChunkSeriesConfig := &streamingChunkSeriesContext{
+			chunkIteratorFunc: q.chunkIterFn,
+			mint:              minT,
+			maxt:              maxT,
+			queryMetrics:      q.queryMetrics,
+			queryStats:        stats.FromContext(ctx),
+		}
+
+		for _, s := range results.StreamingSeries {
+			streamingSeries = append(streamingSeries, &streamingChunkSeries{
+				labels:  s.Labels,
+				sources: s.Sources,
+				context: streamingChunkSeriesConfig,
+			})
+		}
+
+		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
 	if len(sets) == 0 {
@@ -157,35 +185,52 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	if len(sets) == 1 {
 		return sets[0]
 	}
-	// Sets need to be sorted. Both series.NewConcreteSeriesSet and newTimeSeriesSeriesSet take care of that.
+	// Sets need to be sorted. Both series.NewConcreteSeriesSetFromUnsortedSeries and newTimeSeriesSeriesSet take care of that.
 	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 }
 
-func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", q.logger)
+func (q *distributorQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
+	defer spanLog.Span.Finish()
 
-	if minT > model.Time(q.maxt) {
-		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
+
+	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return nil, nil, nil
 	}
 
-	lvs, err := q.distributor.LabelValuesForLabelName(q.ctx, minT, model.Time(q.maxt), model.LabelName(name), matchers...)
+	now := time.Now().UnixMilli()
+	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
+
+	lvs, err := q.distributor.LabelValuesForLabelName(ctx, model.Time(q.mint), model.Time(q.maxt), model.LabelName(name), matchers...)
 
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
-	defer log.Span.Finish()
+func (q *distributorQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
+	defer spanLog.Span.Finish()
 
-	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
 
-	if minT > model.Time(q.maxt) {
-		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
 		return nil, nil, nil
 	}
 
-	ln, err := q.distributor.LabelNames(ctx, minT, model.Time(q.maxt), matchers...)
+	now := time.Now().UnixMilli()
+	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
+
+	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	return ln, nil, err
 }
 

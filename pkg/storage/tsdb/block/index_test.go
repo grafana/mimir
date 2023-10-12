@@ -12,22 +12,22 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestRewrite(t *testing.T) {
+	const excludeTime int64 = 600
+
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
 
-	b, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
+	b, err := CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -46,9 +46,9 @@ func TestRewrite(t *testing.T) {
 
 	defer func() { require.NoError(t, cr.Close()) }()
 
-	m := &metadata.Meta{
+	m := &Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: ULID(1)},
-		Thanos:    metadata.Thanos{},
+		Thanos:    ThanosMeta{},
 	}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))
@@ -61,9 +61,19 @@ func TestRewrite(t *testing.T) {
 
 	defer cw.Close()
 
-	require.NoError(t, rewrite(log.NewNopLogger(), ir, cr, iw, cw, m, []ignoreFnType{func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error) {
-		return curr.MaxTime == 696, nil
+	totalChunks := 0
+	ignoredChunks := 0
+	require.NoError(t, rewrite(ctx, log.NewNopLogger(), ir, cr, iw, cw, m, []ignoreFnType{func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error) {
+		totalChunks++
+		if curr.OverlapsClosedInterval(excludeTime, excludeTime) {
+			// Ignores all chunks that overlap with the excludeTime. excludeTime was randomly selected inside the block.
+			ignoredChunks++
+			return true, nil
+		}
+		return false, nil
 	}}))
+	require.Greater(t, ignoredChunks, 0)           // Sanity check.
+	require.Greater(t, totalChunks, ignoredChunks) // Sanity check.
 
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
@@ -73,14 +83,23 @@ func TestRewrite(t *testing.T) {
 
 	defer func() { require.NoError(t, ir2.Close()) }()
 
-	all, err := ir2.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	all, err := ir2.Postings(ctx, n, v)
 	require.NoError(t, err)
 
+	resultChunks := 0
 	for p := ir2.SortedPostings(all); p.Next(); {
 		var builder labels.ScratchBuilder
 		var chks []chunks.Meta
 
 		require.NoError(t, ir2.Series(p.At(), &builder, &chks))
-		require.Equal(t, 1, len(chks))
+		for _, chkMeta := range chks {
+			require.NoError(t, err)
+			require.True(t, chkMeta.MinTime > excludeTime || chkMeta.MaxTime < excludeTime)
+		}
+		resultChunks += len(chks)
 	}
+	require.Equal(t, totalChunks-ignoredChunks, resultChunks)
 }
+
+func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }

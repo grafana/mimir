@@ -14,10 +14,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
@@ -26,11 +29,10 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 type fakePusher struct {
@@ -39,61 +41,166 @@ type fakePusher struct {
 	err      error
 }
 
-func (p *fakePusher) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	p.request = r
 	return p.response, p.err
 }
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", nil, promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(pusher, "user-1", promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
+
+	type sample struct {
+		series         string
+		value          float64
+		histogram      *histogram.Histogram
+		floatHistogram *histogram.FloatHistogram
+		ts             int64
+	}
 
 	for _, tc := range []struct {
-		name       string
-		series     string
-		value      float64
-		expectedTS int64
+		name         string
+		hasNanSample bool // If true, it will be a single float sample with NaN.
+		samples      []sample
 	}{
 		{
-			name:       "tenant without delay, normal value",
-			series:     "foo_bar",
-			value:      1.234,
-			expectedTS: 120_000,
+			name: "tenant without delay, normal value",
+			samples: []sample{
+				{
+					series: "foo_bar",
+					value:  1.234,
+					ts:     120_000,
+				},
+			},
 		},
 		{
-			name:       "tenant without delay, stale nan value",
-			series:     "foo_bar",
-			value:      math.Float64frombits(value.StaleNaN),
-			expectedTS: 120_000,
+			name:         "tenant without delay, stale nan value",
+			hasNanSample: true,
+			samples: []sample{
+				{
+					series: "foo_bar",
+					value:  math.Float64frombits(value.StaleNaN),
+					ts:     120_000,
+				},
+			},
 		},
 		{
-			name:       "ALERTS, normal value",
-			series:     `ALERTS{alertname="boop"}`,
-			value:      1.234,
-			expectedTS: 120_000,
+			name: "ALERTS, normal value",
+			samples: []sample{
+				{
+					series: `ALERTS{alertname="boop"}`,
+					value:  1.234,
+					ts:     120_000,
+				},
+			},
 		},
 		{
-			name:       "ALERTS, stale nan value",
-			series:     `ALERTS{alertname="boop"}`,
-			value:      math.Float64frombits(value.StaleNaN),
-			expectedTS: 120_000,
+			name:         "ALERTS, stale nan value",
+			hasNanSample: true,
+			samples: []sample{
+				{
+					series: `ALERTS{alertname="boop"}`,
+					value:  math.Float64frombits(value.StaleNaN),
+					ts:     120_000,
+				},
+			},
+		},
+		{
+			name: "tenant without delay, histogram value",
+			samples: []sample{
+				{
+					series:    "foo_bar",
+					histogram: test.GenerateTestHistogram(10),
+					ts:        200_000,
+				},
+			},
+		},
+		{
+			name: "tenant without delay, float histogram value",
+			samples: []sample{
+				{
+					series:         "foo_bar",
+					floatHistogram: test.GenerateTestFloatHistogram(10),
+					ts:             230_000,
+				},
+			},
+		},
+		{
+			name: "mix of float and float histogram",
+			samples: []sample{
+				{
+					series: "foo_bar1",
+					value:  999,
+					ts:     230_000,
+				},
+				{
+					series: "foo_bar3",
+					value:  888,
+					ts:     230_000,
+				},
+				{
+					series:         "foo_bar2",
+					floatHistogram: test.GenerateTestFloatHistogram(10),
+					ts:             230_000,
+				},
+				{
+					series:         "foo_bar4",
+					floatHistogram: test.GenerateTestFloatHistogram(99),
+					ts:             230_000,
+				},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 
-			lbls, err := parser.ParseMetric(tc.series)
-			require.NoError(t, err)
+			var expReq []mimirpb.PreallocTimeseries
 
 			pusher.response = &mimirpb.WriteResponse{}
 			a := pa.Appender(ctx)
-			_, err = a.Append(0, lbls, 120_000, tc.value)
-			require.NoError(t, err)
+			for _, sm := range tc.samples {
+				lbls, err := parser.ParseMetric(sm.series)
+				require.NoError(t, err)
+				timeseries := mimirpb.PreallocTimeseries{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:    mimirpb.FromLabelsToLabelAdapters(lbls),
+						Exemplars: []mimirpb.Exemplar{},
+						Samples:   []mimirpb.Sample{},
+					},
+				}
+				expReq = append(expReq, timeseries)
 
+				if sm.histogram != nil || sm.floatHistogram != nil {
+					_, err = a.AppendHistogram(0, lbls, sm.ts, sm.histogram, sm.floatHistogram)
+					if sm.histogram != nil {
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromHistogramToHistogramProto(sm.ts, sm.histogram))
+					} else {
+						timeseries.Histograms = append(timeseries.Histograms, mimirpb.FromFloatHistogramToHistogramProto(sm.ts, sm.floatHistogram))
+					}
+				} else {
+					_, err = a.Append(0, lbls, sm.ts, sm.value)
+					timeseries.Samples = append(timeseries.Samples, mimirpb.Sample{
+						TimestampMs: sm.ts,
+						Value:       sm.value,
+					})
+				}
+				require.NoError(t, err)
+			}
 			require.NoError(t, a.Commit())
 
-			require.Equal(t, tc.expectedTS, pusher.request.Timeseries[0].Samples[0].TimestampMs)
+			if !tc.hasNanSample {
+				require.Equal(t, expReq, pusher.request.Timeseries)
+				return
+			}
 
+			// For NaN, we cannot use require.Equal.
+			require.Len(t, pusher.request.Timeseries, 1)
+			require.Len(t, pusher.request.Timeseries[0].Samples, 1)
+			lbls, err := parser.ParseMetric(tc.samples[0].series)
+			require.NoError(t, err)
+			require.Equal(t, 0, labels.Compare(mimirpb.FromLabelAdaptersToLabels(pusher.request.Timeseries[0].Labels), lbls))
+			require.Equal(t, tc.samples[0].ts, pusher.request.Timeseries[0].Samples[0].TimestampMs)
+			require.True(t, math.IsNaN(pusher.request.Timeseries[0].Samples[0].Value))
 		})
 	}
 }
@@ -134,11 +241,7 @@ func TestPusherErrors(t *testing.T) {
 
 			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
-				defaults.RulerEvaluationDelay = 0
-			})
-
-			pa := NewPusherAppendable(pusher, "user-1", limits, writes, failures)
+			pa := NewPusherAppendable(pusher, "user-1", writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
 			require.NoError(t, err)
@@ -243,15 +346,21 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
 	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), log.NewNopLogger())
-	_, _ = qf(context.Background(), "test", time.Now())
+	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
 
-	require.GreaterOrEqual(t, testutil.ToFloat64(queryTime.WithLabelValues("userID")), float64(1))
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
 // TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
@@ -260,7 +369,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
-	dummyRules := []*rulespb.RuleDesc{mockRecordingRuleDesc("sum:up", "sum(up)")}
+	dummyRules := []*rulespb.RuleDesc{createRecordingRule("sum:up", "sum(up)")}
 
 	testCases := map[string]struct {
 		ruleGroup rulespb.RuleGroupDesc
@@ -306,7 +415,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			options := applyPrepareOptions()
+			options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
 			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
@@ -330,7 +439,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// load rules into manager and start
-			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
 			go manager.Run()
 
 			select {
@@ -368,7 +477,7 @@ func newMockQueryable() *mockQueryable {
 	}
 }
 
-func (m *mockQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	select {
 	case <-m.called:
 		// already closed

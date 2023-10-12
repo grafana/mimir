@@ -71,22 +71,38 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			// Utility function to get the names of the loaded rule groups.
+			getLoadedRuleGroupNames := func(r *DefaultMultiTenantManager) []string {
+				var loadedGroupsNames []string
+				for _, g := range r.GetRules(userID) {
+					loadedGroupsNames = append(loadedGroupsNames, g.Name())
+				}
+				return loadedGroupsNames
+			}
 
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = tc.tenantFederationEnabled
 			existingRules := map[string]rulespb.RuleGroupList{userID: tc.existingRules}
 
-			r := prepareRulerManager(t, cfg)
-			t.Cleanup(r.Stop)
+			t.Run("SyncFullRuleGroups()", func(t *testing.T) {
+				r := prepareRulerManager(t, cfg)
+				t.Cleanup(r.Stop)
 
-			r.SyncRuleGroups(context.Background(), existingRules)
+				r.SyncFullRuleGroups(context.Background(), existingRules)
+				r.Start()
 
-			var loadedGroupsNames []string
-			for _, g := range r.GetRules(userID) {
-				loadedGroupsNames = append(loadedGroupsNames, g.Name())
-			}
+				require.ElementsMatch(t, tc.expectedRunningGroupsNames, getLoadedRuleGroupNames(r))
+			})
 
-			require.ElementsMatch(t, tc.expectedRunningGroupsNames, loadedGroupsNames)
+			t.Run("SyncPartialRuleGroups()", func(t *testing.T) {
+				r := prepareRulerManager(t, cfg)
+				t.Cleanup(r.Stop)
+
+				r.SyncPartialRuleGroups(context.Background(), existingRules)
+				r.Start()
+
+				require.ElementsMatch(t, tc.expectedRunningGroupsNames, getLoadedRuleGroupNames(r))
+			})
 		})
 	}
 }

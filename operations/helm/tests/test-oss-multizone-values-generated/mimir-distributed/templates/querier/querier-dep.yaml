@@ -21,6 +21,9 @@ spec:
       app.kubernetes.io/instance: test-oss-multizone-values
       app.kubernetes.io/component: querier
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -87,20 +90,22 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
           envFrom:
       nodeSelector:
         {}
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-oss-multizone-values
-              app.kubernetes.io/component: querier
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-multizone-values
+            app.kubernetes.io/component: querier
       tolerations:
         []
       terminationGracePeriodSeconds: 180

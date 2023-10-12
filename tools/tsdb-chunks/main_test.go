@@ -9,13 +9,11 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -23,23 +21,23 @@ func TestTSDBChunks(t *testing.T) {
 	userID := "user"
 	tmpDir := t.TempDir()
 
-	spec := testutil.BlockSeriesSpec{
+	spec := block.SeriesSpec{
 		Labels: labels.FromStrings(labels.MetricName, "asdf"),
 		Chunks: []chunks.Meta{
-			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
+			must(chunks.ChunkFromSamples([]chunks.Sample{
 				sample{10, 11, nil, nil},
 				sample{20, 12, nil, nil},
 				sample{30, 13, nil, nil},
-			}),
-			tsdbutil.ChunkFromSamples([]tsdbutil.Sample{
-				sample{40, 0, tsdb.GenerateTestHistogram(1), nil},
-				sample{50, 0, tsdb.GenerateTestHistogram(2), nil},
-				sample{60, 0, tsdb.GenerateTestHistogram(3), nil},
-			}),
+			})),
+			must(chunks.ChunkFromSamples([]chunks.Sample{
+				sample{40, 0, test.GenerateTestHistogram(1), nil},
+				sample{50, 0, test.GenerateTestHistogram(2), nil},
+				sample{60, 0, test.GenerateTestHistogram(3), nil},
+			})),
 		},
 	}
 
-	meta, err := testutil.GenerateBlockFromSpec(userID, tmpDir, []*testutil.BlockSeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	co := test.CaptureOutput(t)
@@ -55,10 +53,10 @@ Chunk #0, sample #0: ts: 10 (1970-01-01T00:00:00.01Z), val: 11
 Chunk #0, sample #1: ts: 20 (1970-01-01T00:00:00.02Z), val: 12
 Chunk #0, sample #2: ts: 30 (1970-01-01T00:00:00.03Z), val: 13
 Chunk #0: minTS=10 (1970-01-01T00:00:00.01Z), maxTS=30 (1970-01-01T00:00:00.03Z)
-Chunk #1: position: 29 length: 56 encoding: histogram, crc32: 3e1d4429, samples: 3
-Chunk #1, sample #0: ts: 40 (1970-01-01T00:00:00.04Z), val: {count:18, sum:36.8, [-4,-2.82842712474619):2, [-2.82842712474619,-2):2, [-1.414213562373095,-1):3, [-1,-0.7071067811865475):2, [-0.001,0.001]:3, (0.7071067811865475,1]:2, (1,1.414213562373095]:3, (2,2.82842712474619]:2, (2.82842712474619,4]:2}
-Chunk #1, sample #1: ts: 50 (1970-01-01T00:00:00.05Z), val: {count:26, sum:55.199999999999996, [-4,-2.82842712474619):3, [-2.82842712474619,-2):3, [-1.414213562373095,-1):4, [-1,-0.7071067811865475):3, [-0.001,0.001]:4, (0.7071067811865475,1]:3, (1,1.414213562373095]:4, (2,2.82842712474619]:3, (2.82842712474619,4]:3}
-Chunk #1, sample #2: ts: 60 (1970-01-01T00:00:00.06Z), val: {count:34, sum:73.6, [-4,-2.82842712474619):4, [-2.82842712474619,-2):4, [-1.414213562373095,-1):5, [-1,-0.7071067811865475):4, [-0.001,0.001]:5, (0.7071067811865475,1]:4, (1,1.414213562373095]:5, (2,2.82842712474619]:4, (2.82842712474619,4]:4}
+Chunk #1: position: 29 length: 56 encoding: histogram, crc32: 2232509d, samples: 3
+Chunk #1, sample #0: ts: 40 (1970-01-01T00:00:00.04Z), val: {count:21, sum:36.8, [-4,-2.82842712474619):2, [-2.82842712474619,-2):2, [-1.414213562373095,-1):3, [-1,-0.7071067811865475):2, [-0.001,0.001]:3, (0.7071067811865475,1]:2, (1,1.414213562373095]:3, (2,2.82842712474619]:2, (2.82842712474619,4]:2}
+Chunk #1, sample #1: ts: 50 (1970-01-01T00:00:00.05Z), val: {count:30, sum:55.199999999999996, [-4,-2.82842712474619):3, [-2.82842712474619,-2):3, [-1.414213562373095,-1):4, [-1,-0.7071067811865475):3, [-0.001,0.001]:4, (0.7071067811865475,1]:3, (1,1.414213562373095]:4, (2,2.82842712474619]:3, (2.82842712474619,4]:3}
+Chunk #1, sample #2: ts: 60 (1970-01-01T00:00:00.06Z), val: {count:39, sum:73.6, [-4,-2.82842712474619):4, [-2.82842712474619,-2):4, [-1.414213562373095,-1):5, [-1,-0.7071067811865475):4, [-0.001,0.001]:5, (0.7071067811865475,1]:4, (1,1.414213562373095]:5, (2,2.82842712474619]:4, (2.82842712474619,4]:4}
 Chunk #1: minTS=40 (1970-01-01T00:00:00.04Z), maxTS=60 (1970-01-01T00:00:00.06Z)
 `
 	expected = fmt.Sprintf(expected, chunkFilename)
@@ -74,7 +72,7 @@ type sample struct {
 }
 
 func (s sample) T() int64                      { return s.t }
-func (s sample) V() float64                    { return s.v }
+func (s sample) F() float64                    { return s.v }
 func (s sample) H() *histogram.Histogram       { return s.h }
 func (s sample) FH() *histogram.FloatHistogram { return s.fh }
 
@@ -87,4 +85,11 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

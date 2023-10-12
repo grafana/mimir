@@ -24,8 +24,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const (
@@ -35,6 +33,8 @@ const (
 	IndexFilename = "index"
 	// IndexHeaderFilename is the canonical name for binary index header file that stores essential information.
 	IndexHeaderFilename = "index-header"
+	// SparseIndexHeaderFilename is the canonical name for sparse index header file that stores abbreviated slices of index-header.
+	SparseIndexHeaderFilename = "sparse-index-header"
 	// ChunksDirname is the known dir name for chunks with compressed samples.
 	ChunksDirname = "chunks"
 
@@ -42,7 +42,7 @@ const (
 	DebugMetas = "debug/metas"
 )
 
-// Download downloads directory that is mean to be block directory. If any of the files
+// Download downloads directory that is meant to be block directory. If any of the files
 // have a hash calculated in the meta file and it matches with what is in the destination path then
 // we do not download it. We always re-download the meta file.
 func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
@@ -50,7 +50,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), path.Join(dst, MetaFilename)); err != nil {
+	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), filepath.Join(dst, MetaFilename)); err != nil {
 		return err
 	}
 
@@ -65,7 +65,6 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 		// This can happen if block is empty. We cannot easily upload empty directory, so create one here.
 		return os.Mkdir(chunksDir, os.ModePerm)
 	}
-
 	if err != nil {
 		return errors.Wrapf(err, "stat %s", chunksDir)
 	}
@@ -79,7 +78,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 // meta.json file must still exist.
 //
 // - Meta struct is updated with gatherFileStats
-func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *metadata.Meta) error {
+func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *Meta) error {
 	df, err := os.Stat(blockDir)
 	if err != nil {
 		return err
@@ -95,7 +94,7 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 	}
 
 	if meta == nil {
-		meta, err = metadata.ReadFromDir(blockDir)
+		meta, err = ReadMetaFromDir(blockDir)
 		if err != nil {
 			// No meta or broken meta file.
 			return errors.Wrap(err, "read meta")
@@ -145,7 +144,7 @@ func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error
 
 // MarkForDeletion creates a file which stores information about when the block was marked for deletion.
 func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, details string, markedForDeletion prometheus.Counter) error {
-	deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
+	deletionMarkFile := path.Join(id.String(), DeletionMarkFilename)
 	deletionMarkExists, err := bkt.Exists(ctx, deletionMarkFile)
 	if err != nil {
 		return errors.Wrapf(err, "check exists %s in bucket", deletionMarkFile)
@@ -155,10 +154,10 @@ func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 		return nil
 	}
 
-	deletionMark, err := json.Marshal(metadata.DeletionMark{
+	deletionMark, err := json.Marshal(DeletionMark{
 		ID:           id,
 		DeletionTime: time.Now().Unix(),
-		Version:      metadata.DeletionMarkVersion1,
+		Version:      DeletionMarkVersion1,
 		Details:      details,
 	})
 	if err != nil {
@@ -181,7 +180,7 @@ func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 //   - This avoids deleting empty dir (whole bucket) by mistake.
 func Delete(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) error {
 	metaFile := path.Join(id.String(), MetaFilename)
-	deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
+	deletionMarkFile := path.Join(id.String(), DeletionMarkFilename)
 
 	// Delete block meta file.
 	ok, err := bkt.Exists(ctx, metaFile)
@@ -243,22 +242,22 @@ func deleteDirRec(ctx context.Context, logger log.Logger, bkt objstore.Bucket, d
 
 // DownloadMeta downloads only meta file from bucket by block ID.
 // TODO(bwplotka): Differentiate between network error & partial upload.
-func DownloadMeta(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) (metadata.Meta, error) {
+func DownloadMeta(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) (Meta, error) {
 	rc, err := bkt.Get(ctx, path.Join(id.String(), MetaFilename))
 	if err != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "meta.json bkt get for %s", id.String())
+		return Meta{}, errors.Wrapf(err, "meta.json bkt get for %s", id.String())
 	}
 	defer runutil.CloseWithLogOnErr(logger, rc, "download meta bucket client")
 
-	var m metadata.Meta
+	var m Meta
 
 	obj, err := io.ReadAll(rc)
 	if err != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "read meta.json for block %s", id.String())
+		return Meta{}, errors.Wrapf(err, "read meta.json for block %s", id.String())
 	}
 
 	if err = json.Unmarshal(obj, &m); err != nil {
-		return metadata.Meta{}, errors.Wrapf(err, "unmarshal meta.json for block %s", id.String())
+		return Meta{}, errors.Wrapf(err, "unmarshal meta.json for block %s", id.String())
 	}
 
 	return m, nil
@@ -285,8 +284,8 @@ func GetSegmentFiles(blockDir string) []string {
 	return result
 }
 
-// GatherFileStats returns metadata.File entry for files inside TSDB block (index, chunks, meta.json).
-func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
+// GatherFileStats returns File entry for files inside TSDB block (index, chunks, meta.json).
+func GatherFileStats(blockDir string) (res []File, _ error) {
 	files, err := os.ReadDir(filepath.Join(blockDir, ChunksDirname))
 	if err != nil {
 		return nil, errors.Wrapf(err, "read dir %v", filepath.Join(blockDir, ChunksDirname))
@@ -297,7 +296,7 @@ func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
 			return nil, errors.Wrapf(err, "getting file info %v", filepath.Join(ChunksDirname, f.Name()))
 		}
 
-		mf := metadata.File{
+		mf := File{
 			RelPath:   filepath.Join(ChunksDirname, f.Name()),
 			SizeBytes: fi.Size(),
 		}
@@ -308,7 +307,7 @@ func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, IndexFilename))
 	}
-	mf := metadata.File{
+	mf := File{
 		RelPath:   indexFile.Name(),
 		SizeBytes: indexFile.Size(),
 	}
@@ -318,7 +317,7 @@ func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "stat %v", filepath.Join(blockDir, MetaFilename))
 	}
-	res = append(res, metadata.File{RelPath: metaFile.Name()})
+	res = append(res, File{RelPath: metaFile.Name()})
 
 	sort.Slice(res, func(i, j int) bool {
 		return strings.Compare(res[i].RelPath, res[j].RelPath) < 0
@@ -327,8 +326,8 @@ func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
 }
 
 // MarkForNoCompact creates a file which marks block to be not compacted.
-func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason metadata.NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
-	m := path.Join(id.String(), metadata.NoCompactMarkFilename)
+func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
+	m := path.Join(id.String(), NoCompactMarkFilename)
 	noCompactMarkExists, err := bkt.Exists(ctx, m)
 	if err != nil {
 		return errors.Wrapf(err, "check exists %s in bucket", m)
@@ -338,9 +337,9 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return nil
 	}
 
-	noCompactMark, err := json.Marshal(metadata.NoCompactMark{
+	noCompactMark, err := json.Marshal(NoCompactMark{
 		ID:      id,
-		Version: metadata.NoCompactMarkVersion1,
+		Version: NoCompactMarkVersion1,
 
 		NoCompactTime: time.Now().Unix(),
 		Reason:        reason,

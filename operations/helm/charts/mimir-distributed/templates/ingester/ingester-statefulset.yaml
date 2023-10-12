@@ -36,11 +36,12 @@ spec:
           {{- toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.ingester.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.ingester.persistentVolume.storageClass) }}
+        {{- $storageClass := default .Values.ingester.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- if $storageClass }}
+        {{- if (eq "-" $storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.ingester.persistentVolume.storageClass }}"
+        storageClassName: {{ $storageClass }}
         {{- end }}
         {{- end }}
         accessModes:
@@ -65,7 +66,7 @@ spec:
       priorityClassName: {{ .Values.ingester.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.ingester.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ingester.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -78,8 +79,7 @@ spec:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.ingester.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
@@ -122,6 +122,7 @@ spec:
             - "-blocks-storage.tsdb.flush-blocks-on-shutdown=true"
             - "-ingester.ring.unregister-on-shutdown=true"
             {{- end }}
+            - "-server.grpc-max-concurrent-streams=500"
             {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"

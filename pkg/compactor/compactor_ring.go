@@ -7,7 +7,8 @@ package compactor
 
 import (
 	"flag"
-	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -55,7 +56,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 }
 
 func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger, cfg.Common.EnableIPv6)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
@@ -64,7 +65,7 @@ func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLif
 
 	return ring.BasicLifecyclerConfig{
 		ID:                              cfg.Common.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		HeartbeatPeriod:                 cfg.Common.HeartbeatPeriod,
 		HeartbeatTimeout:                cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod:             cfg.ObservePeriod,

@@ -114,7 +114,7 @@ func newBaseClient(
 	}
 }
 
-func (c *baseClient) setAsync(ctx context.Context, key string, value []byte, ttl time.Duration, f func(ctx context.Context, key string, buf []byte, ttl time.Duration) error) error {
+func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) error {
 	if c.maxItemSize > 0 && uint64(len(value)) > c.maxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
 		return nil
@@ -124,7 +124,7 @@ func (c *baseClient) setAsync(ctx context.Context, key string, value []byte, ttl
 		start := time.Now()
 		c.metrics.operations.WithLabelValues(opSet).Inc()
 
-		err := f(ctx, key, value, ttl)
+		err := f(key, value, ttl)
 		if err != nil {
 			level.Debug(c.logger).Log(
 				"msg", "failed to store item to cache",

@@ -2,7 +2,7 @@ version: '3.4'
 services:
 
   consul:
-    image: consul
+    image: consul:1.15  # latest tag not supported
     command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
     ports:
       - 8500:8500
@@ -33,8 +33,8 @@ services:
 
   prometheus:
 
-    image: prom/prometheus:v2.16.0
-    command: ["--config.file=/etc/prometheus/prometheus.yaml"]
+    image: prom/prometheus:v2.47.1
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
     ports:
@@ -43,7 +43,7 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    image: grafana/agent:v0.2.0
+    image: grafana/agent:v0.37.1
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
       - ./config:/etc/agent-config

@@ -24,10 +24,14 @@ import (
 	"github.com/google/gopacket/pcap"
 	"github.com/google/gopacket/tcpassembly"
 	"github.com/google/gopacket/tcpassembly/tcpreader"
+	"github.com/grafana/dskit/flagext"
 	"go.uber.org/atomic"
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	parser := &parser{}
 
 	parser.RegisterFlags(flag.CommandLine)
@@ -39,7 +43,10 @@ func main() {
 	assemblersMaxPagesPerConnection := flag.Int("assembler.max-pages-per-connection", 0, "Upper limit on the number of pages buffered for a single connection. If this limit is reached for a connection, the smallest sequence number will be flushed, along with any contiguous data. If <= 0, this is ignored.")
 	httpServer := flag.String("http-listen", ":18080", "Listen address for HTTP server (useful for profiling of this tool)")
 
-	flag.Parse()
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	if *httpServer != "" {
 		go func() {

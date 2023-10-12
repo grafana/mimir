@@ -6,7 +6,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -20,13 +19,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/httpgrpc/server"
-
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
@@ -49,13 +48,15 @@ var (
 
 // Config for a Handler.
 type HandlerConfig struct {
-	LogQueriesLongerThan time.Duration `yaml:"log_queries_longer_than"`
-	MaxBodySize          int64         `yaml:"max_body_size" category:"advanced"`
-	QueryStatsEnabled    bool          `yaml:"query_stats_enabled" category:"advanced"`
+	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
+	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
+	MaxBodySize            int64                  `yaml:"max_body_size" category:"advanced"`
+	QueryStatsEnabled      bool                   `yaml:"query_stats_enabled" category:"advanced"`
 }
 
 func (cfg *HandlerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.LogQueriesLongerThan, "query-frontend.log-queries-longer-than", 0, "Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.")
+	f.Var(&cfg.LogQueryRequestHeaders, "query-frontend.log-query-request-headers", "Comma-separated list of request header names to include in query logs. Applies to both query stats and slow queries logs.")
 	f.Int64Var(&cfg.MaxBodySize, "query-frontend.max-body-size", 10*1024*1024, "Max body size for downstream prometheus.")
 	f.BoolVar(&cfg.QueryStatsEnabled, "query-frontend.query-stats-enabled", true, "False to disable query statistics tracking. When enabled, a message with some statistics is logged for every query.")
 }
@@ -69,11 +70,12 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds *prometheus.CounterVec
-	querySeries  *prometheus.CounterVec
-	queryBytes   *prometheus.CounterVec
-	queryChunks  *prometheus.CounterVec
-	activeUsers  *util.ActiveUsersCleanupService
+	querySeconds    *prometheus.CounterVec
+	querySeries     *prometheus.CounterVec
+	queryChunkBytes *prometheus.CounterVec
+	queryChunks     *prometheus.CounterVec
+	queryIndexBytes *prometheus.CounterVec
+	activeUsers     *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -102,7 +104,7 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of series fetched to execute a query.",
 		}, []string{"user"})
 
-		h.queryBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		h.queryChunkBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_fetched_chunk_bytes_total",
 			Help: "Number of chunk bytes fetched to execute a query.",
 		}, []string{"user"})
@@ -112,12 +114,18 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Help: "Number of chunks fetched to execute a query.",
 		}, []string{"user"})
 
+		h.queryIndexBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_fetched_index_bytes_total",
+			Help: "Number of TSDB index bytes fetched from store-gateway to execute a query.",
+		}, []string{"user"})
+
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
 			h.querySeconds.DeleteLabelValues(user, "false")
 			h.querySeries.DeleteLabelValues(user)
-			h.queryBytes.DeleteLabelValues(user)
+			h.queryChunkBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
+			h.queryIndexBytes.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -166,28 +174,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
+	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Limit the read body size.
+	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	// Parse the form, as it's needed to build the activity for the activity-tracker.
-	if err := r.ParseForm(); err != nil {
+	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	// Store a copy of the params and restore the request state.
-	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
-	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
-	params := copyValues(r.Form)
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	r.Form, r.PostForm = nil, nil
 
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
 	defer f.at.Delete(activityIndex)
@@ -198,7 +195,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, stats, err)
+		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
 		return
 	}
 
@@ -213,13 +210,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
-	_, _ = io.Copy(w, resp.Body)
+	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
 		f.reportSlowQuery(r, params, queryResponseTime)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, stats, nil)
+		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
 	}
 }
 
@@ -233,10 +230,14 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 		"time_taken", queryResponseTime.String(),
 	}, formatQueryString(queryString)...)
 
+	if len(f.cfg.LogQueryRequestHeaders) != 0 {
+		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
+
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -253,8 +254,9 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
 		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
-		f.queryBytes.WithLabelValues(userID).Add(float64(numBytes))
+		f.queryChunkBytes.WithLabelValues(userID).Add(float64(numBytes))
 		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
+		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
 	}
 
@@ -266,6 +268,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
 		"response_time", queryResponseTime,
+		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
 		"fetched_series_count", numSeries,
 		"fetched_chunk_bytes", numBytes,
@@ -275,6 +278,10 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 	}, formatQueryString(queryString)...)
+
+	if len(f.cfg.LogQueryRequestHeaders) != 0 {
+		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
+	}
 
 	if queryErr != nil {
 		logStatus := "failed"
@@ -302,6 +309,15 @@ func formatQueryString(queryString url.Values) (fields []interface{}) {
 	return fields
 }
 
+func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
+	for _, s := range headersToLog {
+		if v := h.Get(s); v != "" {
+			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
+		}
+	}
+	return fields
+}
+
 func writeError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, context.Canceled):
@@ -314,7 +330,7 @@ func writeError(w http.ResponseWriter, err error) {
 		}
 	}
 
-	// if the error error is an APIError, ensure it gets written as a JSON response
+	// if the error is an APIError, ensure it gets written as a JSON response
 	if resp, ok := apierror.HTTPResponseFromError(err); ok {
 		_ = server.WriteResponse(w, resp)
 		return
@@ -350,12 +366,4 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
-}
-
-func copyValues(src url.Values) url.Values {
-	dst := make(url.Values, len(src))
-	for k, vs := range src {
-		dst[k] = append([]string(nil), vs...)
-	}
-	return dst
 }

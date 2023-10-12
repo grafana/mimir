@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type instantSplitter struct {
@@ -194,7 +195,7 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr) (mapped parser.Ex
 
 	return &parser.ParenExpr{
 		Expr:     parenExpr,
-		PosRange: parser.PositionRange{},
+		PosRange: posrange.PositionRange{},
 	}, true, nil
 }
 
@@ -331,7 +332,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterva
 		Param:    nil,
 		Grouping: grouping,
 		Without:  groupingWithout,
-		PosRange: parser.PositionRange{},
+		PosRange: posrange.PositionRange{},
 	}, true, nil
 }
 

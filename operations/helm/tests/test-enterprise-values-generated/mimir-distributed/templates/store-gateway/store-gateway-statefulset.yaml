@@ -14,9 +14,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-a
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -66,14 +67,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -136,6 +137,10 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
+            - name: "GOMEMLIMIT"
+              value: "536870912"
           envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
@@ -153,9 +158,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-b
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -205,14 +211,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -275,6 +281,10 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
+            - name: "GOMEMLIMIT"
+              value: "536870912"
           envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
@@ -292,9 +302,10 @@ metadata:
     rollout-group: store-gateway
     zone: zone-c
   annotations:
-    rollout-max-unavailable: "10"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -344,14 +355,14 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-enterprise-values
-              app.kubernetes.io/component: store-gateway
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-enterprise-values
+            app.kubernetes.io/component: store-gateway
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -414,4 +425,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
+            - name: "GOMEMLIMIT"
+              value: "536870912"
           envFrom:

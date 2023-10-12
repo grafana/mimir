@@ -13,7 +13,7 @@
     // 1: Shared crosshair, the crosshair will appear on all panels but the
     // tooltip will  appear only on the panel under the cursor
     // 2: Shared Tooltip, both crosshair and tooltip will appear on all panels
-    graph_tooltip: 0,
+    graph_tooltip: 1,
 
     // Tags for dashboards.
     tags: ['mimir'],
@@ -67,34 +67,34 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
+    // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
-      ingester: '(ingester.*|cortex|mimir|mimir-write.*)',  // Match also custom and per-zone ingester deployments.
-      distributor: '(distributor|cortex|mimir|mimir-write.*)',
-      querier: '(querier.*|cortex|mimir|mimir-read.*)',  // Match also custom querier deployments.
-      ruler_querier: '(ruler-querier.*)',  // Match also custom querier deployments.
-      ruler: '(ruler|cortex|mimir|mimir-backend.*)',
-      query_frontend: '(query-frontend.*|cortex|mimir|mimir-read.*)',  // Match also custom query-frontend deployments.
-      ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
-      query_scheduler: '(query-scheduler.*|mimir-backend.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ruler_query_scheduler: '(ruler-query-scheduler.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
-      store_gateway: '(store-gateway.*|cortex|mimir|mimir-backend.*)',  // Match also per-zone store-gateway deployments.
-      gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-      compactor: '(compactor.*|cortex|mimir|mimir-backend.*)',  // Match also custom compactor deployments.
-      alertmanager: '(alertmanager|cortex|mimir|mimir-backend.*)',
-      overrides_exporter: '(overrides-exporter|mimir-backend.*)',
+      ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],
+      querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
+      ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
+      ruler: ['ruler', 'cortex', 'mimir', 'mimir-backend.*'],
+      query_frontend: ['query-frontend.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom query-frontend deployments.
+      ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
+      query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
+      gateway: ['gateway', 'cortex-gw', 'cortex-gw-internal'],
+      compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
+      alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
+      overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
 
       // The following are job matchers used to select all components in a given "path".
-      write: '(distributor|ingester.*|mimir-write.*)',
-      read: '(query-frontend.*|querier.*|ruler-query-frontend.*|ruler-querier.*|mimir-read.*)',
-      backend: '(ruler|query-scheduler.*|ruler-query-scheduler.*|store-gateway.*|compactor.*|alertmanager|overrides-exporter|mimir-backend.*)',
+      write: ['distributor', 'ingester.*', 'mimir-write.*'],
+      read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
+      backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
-      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*-mimir-)?%s' % regexp else regexp,
+      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*mimir-)?%s' % regexp else regexp,
       // Wrap the regexp to match any prefix if the deployment type is "baremetal".
       local baremetalCompatibleMatcher = function(regexp) if $._config.deployment_type == 'baremetal' then '.*%s' % regexp else regexp,
       local instanceMatcher = function(regexp) baremetalCompatibleMatcher(helmCompatibleMatcher('%s.*' % regexp)),
@@ -199,9 +199,6 @@
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
 
-    // Whether the Distributor's forwarding feature is enabled.
-    forwarding_enabled: false,
-
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
@@ -215,14 +212,14 @@
     alertmanager_alerts: {
       kubernetes: {
         memory_allocation: |||
-          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(allocationpercent)s
+          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(threshold)s
           and
           (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
         |||,
       },
       baremetal: {
         memory_allocation: |||
-          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(instanceLabel)s) node_memory_MemTotal_bytes{}) > %(allocationpercent)s
+          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(per_instance_label)s) node_memory_MemTotal_bytes{}) > %(threshold)s
         |||,
       },
     },
@@ -235,7 +232,10 @@
             container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
               /
             ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
-          ) > %(allocationpercent)s
+          )
+          # Match only Mimir namespaces.
+          * on(%(alert_aggregation_labels)s) group_left max by(%(alert_aggregation_labels)s) (cortex_build_info)
+          > %(threshold)s
         |||,
       },
       baremetal: {
@@ -243,8 +243,8 @@
           (
             process_resident_memory_bytes{job=~".*/(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
               /
-            on(%(instanceLabel)s) node_memory_MemTotal_bytes{}
-          ) > %(allocationpercent)s
+            on(%(per_instance_label)s) node_memory_MemTotal_bytes{}
+          ) > %(threshold)s
         |||,
       },
     },
@@ -272,7 +272,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[1m])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -594,6 +594,14 @@
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
     autoscaling: {
+      query_frontend: {
+        enabled: false,
+        hpa_name: 'keda-hpa-query-frontend',
+      },
+      ruler_query_frontend: {
+        enabled: false,
+        hpa_name: 'keda-hpa-ruler-query-frontend',
+      },
       querier: {
         enabled: false,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
@@ -619,7 +627,9 @@
 
 
     // The routes to exclude from alerts.
-    alert_excluded_routes: [],
+    alert_excluded_routes: [
+      'debug_pprof',
+    ],
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
@@ -629,5 +639,19 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to inject rows into dashboards at specific places that support it.
+    injectRows: {},
+
+    // Used to add additional services to dashboards that support it.
+    extraServiceNames: [],
+
+    // When using rejecting inflight requests in ingesters early (using -ingester.limit-inflight-requests-using-grpc-method-limiter option),
+    // rejected requests will not count towards standard Mimir metrics like cortex_request_duration_seconds_count.
+    // Enabling this will make them visible on the dashboard again.
+    //
+    // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter is not used (default), then rejected requests
+    // are already counted as failures.
+    show_rejected_requests_on_writes_dashboard: false,
   },
 }

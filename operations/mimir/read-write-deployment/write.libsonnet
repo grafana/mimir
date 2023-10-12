@@ -21,6 +21,9 @@
 
       // No ballast required.
       'mem-ballast-size-bytes': null,
+
+      // Same as ingester, but reading the actual CPU request from mimir-write container.
+      'blocks-storage.tsdb.wal-replay-concurrency': std.max(1, std.floor($.util.parseCPU($.mimir_write_container.resources.requests.cpu) - 1)),
     },
 
   mimir_write_zone_a_args:: $.ingester_zone_a_args {},

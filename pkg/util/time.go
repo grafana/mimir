@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/common/model"
-	"github.com/weaveworks/common/httpgrpc"
 )
 
 func TimeToMillis(t time.Time) int64 {
@@ -73,6 +73,19 @@ func DurationWithPositiveJitter(input time.Duration, variancePerc float64) time.
 	jitter := rand.Int63n(variance)
 
 	return input + time.Duration(jitter)
+}
+
+// DurationWithNegativeJitter returns random duration from "input - input*variance" to "input" interval.
+func DurationWithNegativeJitter(input time.Duration, variancePerc float64) time.Duration {
+	// No duration? No jitter.
+	if input == 0 {
+		return 0
+	}
+
+	variance := int64(float64(input) * variancePerc)
+	jitter := rand.Int63n(variance)
+
+	return input - time.Duration(jitter)
 }
 
 // NewDisableableTicker essentially wraps NewTicker but allows the ticker to be disabled by passing

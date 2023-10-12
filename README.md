@@ -15,29 +15,29 @@ Grafana Mimir is an open source software project that provides a scalable long-t
 
 If you're migrating to Grafana Mimir, refer to the following documents:
 
-- [Migrating from Thanos or Prometheus to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-thanos-or-prometheus/).
-- [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-cortex/)
+- [Migrating from Thanos or Prometheus to Grafana Mimir](https://grafana.com/docs/mimir/latest/set-up/migrate/migrate-from-thanos-or-prometheus/).
+- [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/set-up/migrate/migrate-from-cortex/)
 
 ## Deploying Grafana Mimir
 
-For information about how to deploy Grafana Mimir, refer to [Deploy Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/).
+For information about how to deploy Grafana Mimir, refer to [Deploy Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/).
 
 ## Getting started
 
-If you’re new to Grafana Mimir, read the [Getting started guide](https://grafana.com/docs/mimir/latest/operators-guide/getting-started/).
+If you’re new to Grafana Mimir, read the [Get started guide](https://grafana.com/docs/mimir/latest/get-started/).
 
 Before deploying Grafana Mimir in a production environment, read:
 
 1. [An overview of Grafana Mimir’s architecture](https://grafana.com/docs/mimir/latest/operators-guide/architecture/)
-1. [Configure Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configuring/)
-1. [Run Grafana Mimir in production](https://grafana.com/docs/mimir/latest/operators-guide/running-production-environment/)
+1. [Configure Grafana Mimir](https://grafana.com/docs/mimir/latest/operators-guide/configure/)
+1. [Run Grafana Mimir in production](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/)
 
 ## Documentation
 
 Refer to the following links to access Grafana Mimir documentation:
 
 - [Latest release](https://grafana.com/docs/mimir/latest/)
-- [Upcoming release](https://grafana.com/docs/mimir/next/), at the tip of the main branch
+- [Upcoming release](https://grafana.com/docs/mimir/next/), at the tip of the `main` branch
 
 ## Contributing
 

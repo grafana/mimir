@@ -31,12 +31,13 @@ type queryStats struct {
 	cachedPostingsDecompressionErrors  int
 	cachedPostingsDecompressionTimeSum time.Duration
 
-	seriesTouched          int
-	seriesTouchedSizeSum   int
+	seriesProcessed        int
+	seriesProcessedSizeSum int
+	seriesOmitted          int
 	seriesFetched          int
 	seriesFetchedSizeSum   int
-	seriesFetchCount       int
 	seriesFetchDurationSum time.Duration
+	seriesRefetches        int
 
 	seriesHashCacheRequests int
 	seriesHashCacheHits     int
@@ -47,6 +48,8 @@ type queryStats struct {
 	chunksFetchedSizeSum   int
 	chunksRefetched        int
 	chunksRefetchedSizeSum int
+	chunksProcessed        int
+	chunksProcessedSizeSum int
 	chunksReturned         int
 	chunksReturnedSizeSum  int
 
@@ -66,16 +69,13 @@ type queryStats struct {
 	// ready to send it to the client.
 	streamingSeriesWaitBatchLoadedDuration time.Duration
 
-	// The Series() request timing breakdown when streaming store-gateway is enabled.
+	// The Series() request timing breakdown.
 	streamingSeriesExpandPostingsDuration       time.Duration
 	streamingSeriesFetchSeriesAndChunksDuration time.Duration
 	streamingSeriesEncodeResponseDuration       time.Duration
 	streamingSeriesSendResponseDuration         time.Duration
 	streamingSeriesOtherDuration                time.Duration
-
-	// The Series() request timing breakdown when streaming store-gateway is disabled.
-	synchronousSeriesGetAllDuration time.Duration
-	synchronousSeriesMergeDuration  time.Duration
+	streamingSeriesIndexHeaderLoadDuration      time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -98,12 +98,13 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.cachedPostingsDecompressionErrors += o.cachedPostingsDecompressionErrors
 	s.cachedPostingsDecompressionTimeSum += o.cachedPostingsDecompressionTimeSum
 
-	s.seriesTouched += o.seriesTouched
-	s.seriesTouchedSizeSum += o.seriesTouchedSizeSum
+	s.seriesProcessed += o.seriesProcessed
+	s.seriesProcessedSizeSum += o.seriesProcessedSizeSum
+	s.seriesOmitted += o.seriesOmitted
 	s.seriesFetched += o.seriesFetched
 	s.seriesFetchedSizeSum += o.seriesFetchedSizeSum
-	s.seriesFetchCount += o.seriesFetchCount
 	s.seriesFetchDurationSum += o.seriesFetchDurationSum
+	s.seriesRefetches += o.seriesRefetches
 
 	s.seriesHashCacheRequests += o.seriesHashCacheRequests
 	s.seriesHashCacheHits += o.seriesHashCacheHits
@@ -114,6 +115,8 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.chunksFetchedSizeSum += o.chunksFetchedSizeSum
 	s.chunksRefetched += o.chunksRefetched
 	s.chunksRefetchedSizeSum += o.chunksRefetchedSizeSum
+	s.chunksProcessed += o.chunksProcessed
+	s.chunksProcessedSizeSum += o.chunksProcessedSizeSum
 	s.chunksReturned += o.chunksReturned
 	s.chunksReturnedSizeSum += o.chunksReturnedSizeSum
 
@@ -130,8 +133,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
 	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
 
-	s.synchronousSeriesGetAllDuration += o.synchronousSeriesGetAllDuration
-	s.synchronousSeriesMergeDuration += o.synchronousSeriesMergeDuration
+	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 
 	return &s
 }
@@ -169,6 +171,14 @@ func (s *safeQueryStats) export() *queryStats {
 	s.unsafeStatsMx.Lock()
 	defer s.unsafeStatsMx.Unlock()
 
-	copy := *s.unsafeStats
-	return &copy
+	copied := *s.unsafeStats
+	return &copied
+}
+
+// seriesAndChunksCount return the value of mergedSeriesCount and mergedChunksCount fields.
+func (s *safeQueryStats) seriesAndChunksCount() (seriesCount, chunksCount int) {
+	s.unsafeStatsMx.Lock()
+	defer s.unsafeStatsMx.Unlock()
+
+	return s.unsafeStats.mergedSeriesCount, s.unsafeStats.mergedChunksCount
 }

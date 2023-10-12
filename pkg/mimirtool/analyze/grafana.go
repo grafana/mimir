@@ -13,11 +13,19 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
+)
+
+var (
+	lvRegexp        = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
+	lvNoQueryRegexp = regexp.MustCompile(`(?s)label_values\((.+)\)`)
+	qrRegexp        = regexp.MustCompile(`(?s)query_result\((.+)\)`)
+	validMetricName = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 )
 
 type MetricsInGrafana struct {
@@ -58,12 +66,12 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Process metrics in templating
 	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics)...)
 
-	var parseErrs []string
+	parseErrs := make([]string, 0, len(parseErrors))
 	for _, err := range parseErrors {
 		parseErrs = append(parseErrs, err.Error())
 	}
 
-	var metricsInBoard []string
+	metricsInBoard := make([]string, 0, len(metrics))
 	for metric := range metrics {
 		if metric == "" {
 			continue
@@ -111,19 +119,21 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 			continue
 		}
 
-		// label_values
-		if strings.Contains(query, "label_values") {
-			re := regexp.MustCompile(`label_values\(([a-zA-Z0-9_]+)`)
-			sm := re.FindStringSubmatch(query)
+		// label_values(query, label)
+		if lvRegexp.MatchString(query) {
+			sm := lvRegexp.FindStringSubmatch(query)
 			// In case of really gross queries, like - https://github.com/grafana/jsonnet-libs/blob/e97ab17f67ab40d5fe3af7e59151dd43be03f631/hass-mixin/dashboard.libsonnet#L93
 			if len(sm) > 0 {
 				query = sm[1]
+			} else {
+				continue
 			}
-		}
-		// query_result
-		if strings.Contains(query, "query_result") {
-			re := regexp.MustCompile(`query_result\((.+)\)`)
-			query = re.FindStringSubmatch(query)[1]
+		} else if lvNoQueryRegexp.MatchString(query) {
+			// No query so no metric.
+			continue
+		} else if qrRegexp.MatchString(query) {
+			// query_result(query)
+			query = qrRegexp.FindStringSubmatch(query)[1]
 		}
 		err = parseQuery(query, metrics)
 		if err != nil {
@@ -209,7 +219,18 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
-			metrics[n.Name] = struct{}{}
+			// VectorSelector has .Name when it's explicitly set as `name{...}`.
+			// Otherwise we need to look into the matchers.
+			if n.Name != "" {
+				metrics[n.Name] = struct{}{}
+				return nil
+			}
+			for _, m := range n.LabelMatchers {
+				if m.Name == labels.MetricName && validMetricName.MatchString(m.Value) {
+					metrics[m.Value] = struct{}{}
+					return nil
+				}
+			}
 		}
 
 		return nil

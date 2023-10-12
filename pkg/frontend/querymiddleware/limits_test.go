@@ -7,20 +7,23 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/common/model"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
@@ -127,6 +130,77 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	}
 }
 
+func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
+	now := time.Now()
+
+	tests := map[string]struct {
+		query       string
+		queryLimits map[string]int
+		expectError bool
+	}{
+		"should fail for queries longer than the limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: true,
+		},
+		"should fail for queries longer than a one tenant limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 2000},
+			expectError: true,
+		},
+		"should fail for queries longer than a one tenant limit with one limit disabled": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 1000)),
+			queryLimits: map[string]int{"test1": 100, "test2": 0},
+			expectError: true,
+		},
+		"should work for queries under the limit": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 100, "test2": 100},
+			expectError: false,
+		},
+		"should work for queries when the limit is disabled": {
+			query:       fmt.Sprintf("up{foo=\"%s\"}", strings.Repeat("a", 50)),
+			queryLimits: map[string]int{"test1": 0, "test2": 0},
+			expectError: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				Query: testData.query,
+				Start: util.TimeToMillis(now.Add(-time.Hour * 2)),
+				End:   util.TimeToMillis(now.Add(-time.Hour)),
+			}
+
+			tenant.WithDefaultResolver(tenant.NewMultiResolver())
+			limits := multiTenantMockLimits{
+				byTenant: map[string]mockLimits{
+					"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},
+					"test2": {maxQueryExpressionSizeBytes: testData.queryLimits["test2"]},
+				},
+			}
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := newEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "test1|test2")
+			outer := middleware.Wrap(inner)
+			res, err := outer.Do(ctx, req)
+
+			if testData.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "err-mimir-max-query-expression-size-bytes")
+			} else {
+				require.NoError(t, err)
+				require.Same(t, innerRes, res)
+			}
+		})
+	}
+}
+
 func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	const (
 		thirtyDays = 30 * 24 * time.Hour
@@ -227,11 +301,11 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 		creationGracePeriod time.Duration
 		expectedEndTime     time.Time
 	}{
-		"should not manipulate time range if creation grace period is disabled": {
+		"should manipulate time range if creation grace period is set to 0": {
 			reqStartTime:        now.Add(-time.Hour),
 			reqEndTime:          now.Add(2 * time.Hour),
 			creationGracePeriod: 0,
-			expectedEndTime:     now.Add(2 * time.Hour),
+			expectedEndTime:     now,
 		},
 		"should not manipulate time range for a query in now + creation_grace_period": {
 			reqStartTime:        now.Add(-time.Hour),
@@ -278,27 +352,120 @@ func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
 	}
 }
 
+type multiTenantMockLimits struct {
+	byTenant map[string]mockLimits
+}
+
+func (m multiTenantMockLimits) MaxQueryLookback(userID string) time.Duration {
+	return m.byTenant[userID].maxQueryLookback
+}
+
+func (m multiTenantMockLimits) MaxQueryLength(userID string) time.Duration {
+	return m.byTenant[userID].maxQueryLength
+}
+
+func (m multiTenantMockLimits) MaxTotalQueryLength(userID string) time.Duration {
+	return m.byTenant[userID].maxTotalQueryLength
+}
+
+func (m multiTenantMockLimits) MaxQueryExpressionSizeBytes(userID string) int {
+	return m.byTenant[userID].maxQueryExpressionSizeBytes
+}
+
+func (m multiTenantMockLimits) MaxQueryParallelism(userID string) int {
+	return m.byTenant[userID].maxQueryParallelism
+}
+
+func (m multiTenantMockLimits) MaxCacheFreshness(userID string) time.Duration {
+	return m.byTenant[userID].maxCacheFreshness
+}
+
+func (m multiTenantMockLimits) QueryShardingTotalShards(userID string) int {
+	return m.byTenant[userID].totalShards
+}
+
+func (m multiTenantMockLimits) QueryShardingMaxShardedQueries(userID string) int {
+	return m.byTenant[userID].maxShardedQueries
+}
+
+func (m multiTenantMockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int {
+	return m.byTenant[userID].maxRegexpSizeBytes
+}
+
+func (m multiTenantMockLimits) SplitInstantQueriesByInterval(userID string) time.Duration {
+	return m.byTenant[userID].splitInstantQueriesInterval
+}
+
+func (m multiTenantMockLimits) CompactorSplitAndMergeShards(userID string) int {
+	return m.byTenant[userID].compactorShards
+}
+
+func (m multiTenantMockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration {
+	return m.byTenant[userID].compactorBlocksRetentionPeriod
+}
+
+func (m multiTenantMockLimits) OutOfOrderTimeWindow(userID string) time.Duration {
+	return m.byTenant[userID].outOfOrderTimeWindow
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTL(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTL
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheOutOfOrderWindowTTL
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTLForCardinalityQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForCardinalityQuery
+}
+
+func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
+}
+
+func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
+	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
+}
+
+func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
+	return m.byTenant[userID].blockedQueries
+}
+
+func (m multiTenantMockLimits) CreationGracePeriod(userID string) time.Duration {
+	return m.byTenant[userID].creationGracePeriod
+}
+
+func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) bool {
+	return m.byTenant[userID].nativeHistogramsIngestionEnabled
+}
+
 type mockLimits struct {
-	maxQueryLookback               time.Duration
-	maxQueryLength                 time.Duration
-	maxTotalQueryLength            time.Duration
-	maxCacheFreshness              time.Duration
-	maxQueryParallelism            int
-	maxShardedQueries              int
-	splitInstantQueriesInterval    time.Duration
-	totalShards                    int
-	compactorShards                int
-	compactorBlocksRetentionPeriod time.Duration
-	outOfOrderTimeWindow           model.Duration
-	creationGracePeriod            time.Duration
+	maxQueryLookback                     time.Duration
+	maxQueryLength                       time.Duration
+	maxTotalQueryLength                  time.Duration
+	maxQueryExpressionSizeBytes          int
+	maxCacheFreshness                    time.Duration
+	maxQueryParallelism                  int
+	maxShardedQueries                    int
+	maxRegexpSizeBytes                   int
+	splitInstantQueriesInterval          time.Duration
+	totalShards                          int
+	compactorShards                      int
+	compactorBlocksRetentionPeriod       time.Duration
+	outOfOrderTimeWindow                 time.Duration
+	creationGracePeriod                  time.Duration
+	nativeHistogramsIngestionEnabled     bool
+	resultsCacheTTL                      time.Duration
+	resultsCacheOutOfOrderWindowTTL      time.Duration
+	resultsCacheTTLForCardinalityQuery   time.Duration
+	resultsCacheTTLForLabelsQuery        time.Duration
+	resultsCacheForUnalignedQueryEnabled bool
+	blockedQueries                       []*validation.BlockedQuery
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
 	return m.maxQueryLookback
-}
-
-func (m mockLimits) MaxQueryLength(string) time.Duration {
-	return m.maxQueryLength
 }
 
 func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
@@ -306,6 +473,10 @@ func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
 		return m.maxQueryLength
 	}
 	return m.maxTotalQueryLength
+}
+
+func (m mockLimits) MaxQueryExpressionSizeBytes(string) int {
+	return m.maxQueryExpressionSizeBytes
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {
@@ -327,24 +498,56 @@ func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 	return m.maxShardedQueries
 }
 
+func (m mockLimits) QueryShardingMaxRegexpSizeBytes(string) int {
+	return m.maxRegexpSizeBytes
+}
+
 func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
 	return m.splitInstantQueriesInterval
 }
 
-func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
+func (m mockLimits) CompactorSplitAndMergeShards(string) int {
 	return m.compactorShards
 }
 
-func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration {
+func (m mockLimits) CompactorBlocksRetentionPeriod(string) time.Duration {
 	return m.compactorBlocksRetentionPeriod
 }
 
-func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
+func (m mockLimits) OutOfOrderTimeWindow(string) time.Duration {
 	return m.outOfOrderTimeWindow
 }
 
-func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
+func (m mockLimits) ResultsCacheTTL(string) time.Duration {
+	return m.resultsCacheTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration {
+	return m.resultsCacheOutOfOrderWindowTTL
+}
+
+func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
+	return m.resultsCacheTTLForCardinalityQuery
+}
+
+func (m mockLimits) BlockedQueries(string) []*validation.BlockedQuery {
+	return m.blockedQueries
+}
+
+func (m mockLimits) ResultsCacheTTLForLabelsQuery(string) time.Duration {
+	return m.resultsCacheTTLForLabelsQuery
+}
+
+func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
+	return m.resultsCacheForUnalignedQueryEnabled
+}
+
+func (m mockLimits) CreationGracePeriod(string) time.Duration {
 	return m.creationGracePeriod
+}
+
+func (m mockLimits) NativeHistogramsIngestionEnabled(string) bool {
+	return m.nativeHistogramsIngestionEnabled
 }
 
 type mockHandler struct {
@@ -378,7 +581,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
@@ -422,7 +625,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
@@ -463,7 +666,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 
 	codec := newTestPrometheusCodec()
 	r, err := codec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
-		Path:  "/query_range",
+		Path:  "/api/v1/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
@@ -503,4 +706,69 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		}),
 	).RoundTrip(r)
 	require.NoError(t, err)
+}
+
+func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
+	maxParallelism := 10
+	workDuration := 20 * time.Millisecond
+	ctx := user.InjectOrgID(context.Background(), "test-org-id")
+
+	downstream := RoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		// Simulate some work
+		time.Sleep(workDuration)
+		return &http.Response{
+			Body: http.NoBody,
+		}, nil
+	})
+
+	codec := newTestPrometheusCodec()
+	r, err := codec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
+		Path:  "/api/v1/query_range",
+		Start: time.Now().Add(time.Hour).Unix(),
+		End:   util.TimeToMillis(time.Now()),
+		Step:  int64(1 * time.Second * time.Millisecond),
+		Query: `foo`,
+	})
+	require.Nil(b, err)
+
+	for _, concurrentRequestCount := range []int{1, 10, 100} {
+		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
+			tripper := newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
+				MiddlewareFunc(func(next Handler) Handler {
+					return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+						wg := sync.WaitGroup{}
+						for i := 0; i < subRequestCount; i++ {
+							wg.Add(1)
+							go func() {
+								defer wg.Done()
+								_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
+							}()
+						}
+						wg.Wait()
+						return newEmptyPrometheusResponse(), nil
+					})
+				}),
+			)
+
+			b.Run(fmt.Sprintf("%v concurrent requests with %v sub requests each, max parallelism %v, sub request duration %v", concurrentRequestCount, subRequestCount, maxParallelism, workDuration.String()), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					wg := sync.WaitGroup{}
+
+					for i := 0; i < concurrentRequestCount; i++ {
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							_, err := tripper.RoundTrip(r)
+
+							if err != nil {
+								require.NoError(b, err)
+							}
+						}()
+					}
+
+					wg.Wait()
+				}
+			})
+		}
+	}
 }

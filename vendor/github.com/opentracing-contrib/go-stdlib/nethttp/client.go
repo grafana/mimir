@@ -1,3 +1,4 @@
+//go:build go1.7
 // +build go1.7
 
 package nethttp
@@ -34,7 +35,7 @@ type Transport struct {
 type clientOptions struct {
 	operationName            string
 	componentName            string
-	urlTagFunc         func(u *url.URL) string
+	urlTagFunc               func(u *url.URL) string
 	disableClientTrace       bool
 	disableInjectSpanContext bool
 	spanObserver             func(span opentracing.Span, r *http.Request)
@@ -149,6 +150,18 @@ func (c closeTracker) Close() error {
 	return err
 }
 
+type writerCloseTracker struct {
+	io.ReadWriteCloser
+	sp opentracing.Span
+}
+
+func (c writerCloseTracker) Close() error {
+	err := c.ReadWriteCloser.Close()
+	c.sp.LogFields(log.String("event", "ClosedBody"))
+	c.sp.Finish()
+	return err
+}
+
 // TracerFromRequest retrieves the Tracer from the request. If the request does
 // not have a Tracer it will return nil.
 func TracerFromRequest(req *http.Request) *Tracer {
@@ -170,31 +183,37 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return rt.RoundTrip(req)
 	}
 
-	tracer.start(req)
+	sp := tracer.start(req)
 
-	ext.HTTPMethod.Set(tracer.sp, req.Method)
-	ext.HTTPUrl.Set(tracer.sp, tracer.opts.urlTagFunc(req.URL))
-	tracer.opts.spanObserver(tracer.sp, req)
+	ext.HTTPMethod.Set(sp, req.Method)
+	ext.HTTPUrl.Set(sp, tracer.opts.urlTagFunc(req.URL))
+	ext.PeerAddress.Set(sp, req.URL.Host)
+	tracer.opts.spanObserver(sp, req)
 
 	if !tracer.opts.disableInjectSpanContext {
 		carrier := opentracing.HTTPHeadersCarrier(req.Header)
-		tracer.sp.Tracer().Inject(tracer.sp.Context(), opentracing.HTTPHeaders, carrier)
+		sp.Tracer().Inject(sp.Context(), opentracing.HTTPHeaders, carrier)
 	}
 
 	resp, err := rt.RoundTrip(req)
 
 	if err != nil {
-		tracer.sp.Finish()
+		sp.Finish()
 		return resp, err
 	}
-	ext.HTTPStatusCode.Set(tracer.sp, uint16(resp.StatusCode))
+	ext.HTTPStatusCode.Set(sp, uint16(resp.StatusCode))
 	if resp.StatusCode >= http.StatusInternalServerError {
-		ext.Error.Set(tracer.sp, true)
+		ext.Error.Set(sp, true)
 	}
 	if req.Method == "HEAD" {
-		tracer.sp.Finish()
+		sp.Finish()
 	} else {
-		resp.Body = closeTracker{resp.Body, tracer.sp}
+		readWriteCloser, ok := resp.Body.(io.ReadWriteCloser)
+		if ok {
+			resp.Body = writerCloseTracker{readWriteCloser, sp}
+		} else {
+			resp.Body = closeTracker{resp.Body, sp}
+		}
 	}
 	return resp, nil
 }
@@ -223,8 +242,7 @@ func (h *Tracer) start(req *http.Request) opentracing.Span {
 	}
 
 	ctx := h.root.Context()
-	h.sp = h.tr.StartSpan("HTTP "+req.Method, opentracing.ChildOf(ctx))
-	ext.SpanKindRPCClient.Set(h.sp)
+	h.sp = h.tr.StartSpan("HTTP "+req.Method, opentracing.ChildOf(ctx), ext.SpanKindRPCClient)
 
 	componentName := h.opts.componentName
 	if componentName == "" {
@@ -266,8 +284,7 @@ func (h *Tracer) clientTrace() *httptrace.ClientTrace {
 }
 
 func (h *Tracer) getConn(hostPort string) {
-	ext.HTTPUrl.Set(h.sp, hostPort)
-	h.sp.LogFields(log.String("event", "GetConn"))
+	h.sp.LogFields(log.String("event", "GetConn"), log.String("hostPort", hostPort))
 }
 
 func (h *Tracer) gotConn(info httptrace.GotConnInfo) {

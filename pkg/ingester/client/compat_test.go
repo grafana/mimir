@@ -10,11 +10,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestQueryRequest(t *testing.T) {
@@ -60,8 +59,13 @@ func TestQueryRequest(t *testing.T) {
 	if !reflect.DeepEqual(haveTo, to) {
 		t.Fatalf("Bad to FromQueryRequest(ToQueryRequest) round trip")
 	}
-	if !reflect.DeepEqual(haveMatchers, matchers) {
-		t.Fatalf("Bad have FromQueryRequest(ToQueryRequest) round trip - %v != %v", haveMatchers, matchers)
+
+	// Assert same matchers. We do some optimizations in mimir-prometheus which make
+	// the label matchers not comparable with reflect.DeepEqual() so we're going to
+	// compare their string representation.
+	require.Len(t, haveMatchers, len(matchers))
+	for i := 0; i < len(matchers); i++ {
+		assert.Equal(t, matchers[i].String(), haveMatchers[i].String())
 	}
 }
 

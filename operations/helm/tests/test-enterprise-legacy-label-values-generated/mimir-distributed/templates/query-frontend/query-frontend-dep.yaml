@@ -18,6 +18,9 @@ spec:
       app: enterprise-metrics-query-frontend
       release: test-enterprise-legacy-label-values
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -88,13 +91,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-query-frontend
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-query-frontend
+            release: test-enterprise-legacy-label-values
       tolerations:
         []
       terminationGracePeriodSeconds: 180

@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // AccessControlCommand is the kingpin command for ACLs.
@@ -30,7 +30,7 @@ func (a *AccessControlCommand) Register(app *kingpin.Application, envVars EnvVar
 	generateHeaderCmd.Flag("rule", "The access control rules (Prometheus selectors). Set it multiple times to set multiple rules.").Required().StringsVar(&a.ACLs)
 }
 
-func (a *AccessControlCommand) generateHeader(k *kingpin.ParseContext) error {
+func (a *AccessControlCommand) generateHeader(_ *kingpin.ParseContext) error {
 	for _, acl := range a.ACLs {
 		_, err := parser.ParseMetricSelector(acl)
 		if err != nil {

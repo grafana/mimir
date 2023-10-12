@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -13,21 +14,30 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	shards := 0
-
 	flag.IntVar(&shards, "shard-count", 0, "number of shards")
-	flag.Parse()
 
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Println("no block directory specified")
 		return
 	}
@@ -44,8 +54,9 @@ func main() {
 		}
 	}
 
-	for _, blockDir := range flag.Args() {
-		err := analyseSymbols(blockDir, uniqueSymbols, uniqueSymbolsPerShard)
+	ctx := context.Background()
+	for _, blockDir := range args {
+		err := analyseSymbols(ctx, blockDir, uniqueSymbols, uniqueSymbolsPerShard)
 		if err != nil {
 			log.Println("failed to analyse symbols for", blockDir, "due to error:", err)
 		}
@@ -78,7 +89,7 @@ func main() {
 	fmt.Println("Analysis complete in", time.Since(startTime))
 }
 
-func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
+func analyseSymbols(ctx context.Context, blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
 	block, err := tsdb.OpenBlock(gokitlog.NewLogfmtLogger(os.Stderr), blockDir, nil)
 	if err != nil {
 		return fmt.Errorf("failed to open block: %v", err)
@@ -126,7 +137,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	}
 
 	k, v := index.AllPostingsKey()
-	p, err := idx.Postings(k, v)
+	p, err := idx.Postings(ctx, k, v)
 
 	if err != nil {
 		return fmt.Errorf("failed to get postings: %v", err)
@@ -148,7 +159,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 			shardID = labels.StableHash(lbls) % uint64(shards)
 		}
 
-		for _, l := range lbls {
+		lbls.Range(func(l labels.Label) {
 			uniqueSymbols[l.Name] = struct{}{}
 			uniqueSymbols[l.Value] = struct{}{}
 
@@ -159,7 +170,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 				uniqueSymbolsPerShard[shardID][l.Name] = struct{}{}
 				uniqueSymbolsPerShard[shardID][l.Value] = struct{}{}
 			}
-		}
+		})
 	}
 
 	if p.Err() != nil {
@@ -170,14 +181,14 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	return nil
 }
 
-func readMetadata(dir string) (*metadata.Meta, error) {
+func readMetadata(dir string) (*block.Meta, error) {
 	f, err := os.Open(filepath.Join(dir, "meta.json"))
 	if err != nil {
 		return nil, err
 	}
 
 	// this also closes reader
-	return metadata.Read(f)
+	return block.ReadMeta(f)
 }
 
 // https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md

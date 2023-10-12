@@ -45,7 +45,7 @@ spec:
       priorityClassName: {{ .Values.nginx.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.nginx.podSecurityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "nginx") | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
       containers:
         - name: nginx
@@ -102,8 +102,7 @@ spec:
       affinity:
         {{- tpl . $ | nindent 8 }}
       {{- end }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 6 }}
       {{- with .Values.nginx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

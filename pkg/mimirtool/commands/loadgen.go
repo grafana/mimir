@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
@@ -28,7 +29,8 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 var (
@@ -113,7 +115,7 @@ func (c *LoadgenCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registere
 	return nil
 }
 
-func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
+func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 	if c.writeURL == "" && c.queryURL == "" {
 		return errors.New("either a -write-url or -query-url flag must be provided to run the loadgen command")
 	}
@@ -136,6 +138,9 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
 			URL:     &config.URL{URL: writeURL},
 			Timeout: model.Duration(c.writeTimeout),
+			Headers: map[string]string{
+				"User-Agent": client.UserAgent,
+			},
 		})
 		if err != nil {
 			return err
@@ -226,7 +231,7 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 	compressed := snappy.Encode(nil, data)
 
 	start := time.Now()
-	if err := c.writeClient.Store(context.Background(), compressed); err != nil {
+	if err := c.writeClient.Store(context.Background(), compressed, 0); err != nil {
 		c.writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return err
 	}

@@ -1,9 +1,13 @@
-.DEFAULT_GOAL: help
-
-# Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
-.PHONY: help
-help: ## Display this help.
-help:
-	@awk 'BEGIN {FS = ": ##"; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_\.\-\/%]+: ##/ { printf "  %-45s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+.ONESHELL:
+.DELETE_ON_ERROR:
+export SHELL     := bash
+export SHELLOPTS := pipefail:errexit
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rule
 
 include docs.mk
+
+$(GIT_ROOT_PARENT)/mimir-$(MIMIR_DOCS_VERSION):
+	git worktree add -f $@ origin/$(MIMIR_DOCS_BRANCH)
+
+docs: $(GIT_ROOT_PARENT)/mimir-$(MIMIR_DOCS_VERSION)

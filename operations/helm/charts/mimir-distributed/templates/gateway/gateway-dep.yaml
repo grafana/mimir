@@ -38,7 +38,7 @@ spec:
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" $ "component" "gateway") | nindent 8 }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       {{- if $.Values.image.pullSecrets }}
@@ -129,8 +129,7 @@ spec:
         {{- toYaml .nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $ "component" "gateway") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" $ "component" "gateway") | nindent 6 }}
       {{- with .tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}

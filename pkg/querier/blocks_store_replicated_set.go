@@ -98,7 +98,8 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 }
 
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blockIDs []ulid.ULID, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
-	shards := map[string][]ulid.ULID{}
+	blocks := make(map[string][]ulid.ULID)
+	instances := make(map[string]ring.InstanceDesc)
 
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
@@ -114,30 +115,31 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blockIDs []ulid
 		}
 
 		// Pick a non excluded store-gateway instance.
-		addr := getNonExcludedInstanceAddr(set, exclude[blockID], s.balancingStrategy)
-		if addr == "" {
+		inst := getNonExcludedInstance(set, exclude[blockID], s.balancingStrategy)
+		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID.String())
 		}
 
-		shards[addr] = append(shards[addr], blockID)
+		instances[inst.Addr] = *inst
+		blocks[inst.Addr] = append(blocks[inst.Addr], blockID)
 	}
 
 	clients := map[BlocksStoreClient][]ulid.ULID{}
 
 	// Get the client for each store-gateway.
-	for addr, blockIDs := range shards {
-		c, err := s.clientsPool.GetClientFor(addr)
+	for addr, instance := range instances {
+		c, err := s.clientsPool.GetClientForInstance(instance)
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get store-gateway client for %s", addr)
+			return nil, errors.Wrapf(err, "failed to get store-gateway client for %s %s", instance.Id, addr)
 		}
 
-		clients[c.(BlocksStoreClient)] = blockIDs
+		clients[c.(BlocksStoreClient)] = blocks[addr]
 	}
 
 	return clients, nil
 }
 
-func getNonExcludedInstanceAddr(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy) string {
+func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy) *ring.InstanceDesc {
 	if balancingStrategy == randomLoadBalancing {
 		// Randomize the list of instances to not always query the same one.
 		rand.Shuffle(len(set.Instances), func(i, j int) {
@@ -147,9 +149,9 @@ func getNonExcludedInstanceAddr(set ring.ReplicationSet, exclude []string, balan
 
 	for _, instance := range set.Instances {
 		if !util.StringsContain(exclude, instance.Addr) {
-			return instance.Addr
+			return &instance
 		}
 	}
 
-	return ""
+	return nil
 }

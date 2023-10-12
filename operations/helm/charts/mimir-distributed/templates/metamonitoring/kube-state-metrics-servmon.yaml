@@ -20,12 +20,17 @@ spec:
     - port: http-metrics
       metricRelabelings:
         - action: keep
-          regex: {{ include "mimir.resourceName" (dict "ctx"  $) }}.*
+          regex: "(^|.*;){{ include "mimir.resourceName" (dict "ctx"  $) }}.*"
           sourceLabels:
             - deployment
             - statefulset
             - pod
-          separator: ''
+          separator: ';'
+      {{- if kindIs "string" .clusterLabel }}
+      relabelings:
+        - targetLabel: cluster
+          replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $) }}"
+      {{- end }}
       path: /metrics
       honorLabels: true # retain namespace label from kube-state-metrics
       {{- with .scrapeTimeout }}

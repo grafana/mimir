@@ -28,7 +28,7 @@ spec:
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
       initContainers:
         {{- toYaml .Values.ruler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}
@@ -118,8 +118,7 @@ spec:
         {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.ruler.affinity | nindent 8 }}
-      topologySpreadConstraints:
-        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler") | nindent 8 }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler") | nindent 6 }}
       tolerations:
         {{- toYaml .Values.ruler.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}

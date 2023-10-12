@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -46,7 +47,7 @@ func (t *timeSeriesSeriesSet) At() storage.Series {
 func (t *timeSeriesSeriesSet) Err() error { return nil }
 
 // Warnings implements storage.SeriesSet interface.
-func (t *timeSeriesSeriesSet) Warnings() storage.Warnings { return nil }
+func (t *timeSeriesSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // timeseries is a type wrapper that implements the storage.Series interface
 type timeseries struct {
@@ -55,8 +56,10 @@ type timeseries struct {
 
 // timeSeriesSeriesIterator is a wrapper around a mimirpb.TimeSeries to implement the chunkenc.Iterator.
 type timeSeriesSeriesIterator struct {
-	ts *timeseries
-	i  int
+	ts  *timeseries
+	iF  int
+	iH  int
+	atH bool
 }
 
 type byTimeSeriesLabels []mimirpb.TimeSeries
@@ -64,7 +67,7 @@ type byTimeSeriesLabels []mimirpb.TimeSeries
 func (b byTimeSeriesLabels) Len() int      { return len(b) }
 func (b byTimeSeriesLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
 func (b byTimeSeriesLabels) Less(i, j int) bool {
-	return labels.Compare(mimirpb.FromLabelAdaptersToLabels(b[i].Labels), mimirpb.FromLabelAdaptersToLabels(b[j].Labels)) < 0
+	return mimirpb.CompareLabelAdapters(b[i].Labels, b[j].Labels) < 0
 }
 
 // Labels implements the storage.Series interface.
@@ -77,58 +80,147 @@ func (t *timeseries) Labels() labels.Labels {
 func (t *timeseries) Iterator(_ chunkenc.Iterator) chunkenc.Iterator {
 	return &timeSeriesSeriesIterator{
 		ts: t,
-		i:  -1,
+		iF: -1,
+		iH: -1,
 	}
+}
+
+// atTypeHisto is an internal method to differentiate between histogram and float histogram value types
+// Checking that t.iH is a valid index in the t.ts.series.Histograms array and that
+// t.atH is true must be done outside of this
+func (t *timeSeriesSeriesIterator) atTypeHisto() chunkenc.ValueType {
+	if t.ts.series.Histograms[t.iH].IsFloatHistogram() {
+		return chunkenc.ValFloatHistogram
+	}
+	return chunkenc.ValHistogram
+}
+
+// atType returns current timestamp and value type
+func (t *timeSeriesSeriesIterator) atType() (int64, chunkenc.ValueType) {
+	if t.atH {
+		if t.iH < 0 || t.iH >= len(t.ts.series.Histograms) {
+			return 0, chunkenc.ValNone
+		}
+		return t.ts.series.Histograms[t.iH].Timestamp, t.atTypeHisto()
+	}
+	if t.iF < 0 || t.iF >= len(t.ts.series.Samples) {
+		return 0, chunkenc.ValNone
+	}
+	return t.ts.series.Samples[t.iF].TimestampMs, chunkenc.ValFloat
 }
 
 // Seek implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
-	offset := 0
-	if t.i > 0 {
-		offset = t.i // only advance via Seek
+	oldTime, oldType := t.atType()
+	if oldTime >= s { // only advance via Seek
+		return oldType
 	}
 
-	t.i = sort.Search(len(t.ts.series.Samples[offset:]), func(i int) bool {
-		return t.ts.series.Samples[offset+i].TimestampMs >= s
-	}) + offset
+	t.iF = sort.Search(len(t.ts.series.Samples), func(i int) bool {
+		return t.ts.series.Samples[i].TimestampMs >= s
+	})
+	t.iH = sort.Search(len(t.ts.series.Histograms), func(i int) bool {
+		return t.ts.series.Histograms[i].Timestamp >= s
+	})
 
-	if t.i < len(t.ts.series.Samples) {
+	if t.iF >= len(t.ts.series.Samples) && t.iH >= len(t.ts.series.Histograms) {
+		return chunkenc.ValNone
+	}
+	if t.iF >= len(t.ts.series.Samples) {
+		t.atH = true
+		return t.atTypeHisto()
+	}
+	if t.iH >= len(t.ts.series.Histograms) {
+		t.atH = false
 		return chunkenc.ValFloat
 	}
-	return chunkenc.ValNone
+	if t.ts.series.Samples[t.iF].TimestampMs < t.ts.series.Histograms[t.iH].Timestamp {
+		t.iH--
+		t.atH = false
+		return chunkenc.ValFloat
+	}
+	t.iF--
+	t.atH = true
+	return t.atTypeHisto()
 }
 
 // At implements the implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) At() (int64, float64) {
-	if t.i < 0 || t.i >= len(t.ts.series.Samples) {
+	if t.atH {
+		panic(errors.New("timeSeriesSeriesIterator: Calling At() when cursor is at histogram"))
+	}
+	if t.iF < 0 || t.iF >= len(t.ts.series.Samples) {
 		return 0, 0
 	}
-	return t.ts.series.Samples[t.i].TimestampMs, t.ts.series.Samples[t.i].Value
+	return t.ts.series.Samples[t.iF].TimestampMs, t.ts.series.Samples[t.iF].Value
 }
 
 // AtHistogram implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
+	if !t.atH {
+		panic(errors.New("timeSeriesSeriesIterator: Calling AtHistogram() when cursor is not at histogram"))
+	}
+	if t.iH < 0 || t.iH >= len(t.ts.series.Histograms) {
+		return 0, nil
+	}
+	h := t.ts.series.Histograms[t.iH]
+	return h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h)
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
+	if !t.atH {
+		panic(errors.New("timeSeriesSeriesIterator: Calling AtFloatHistogram() when cursor is not at histogram"))
+	}
+	if t.iH < 0 || t.iH >= len(t.ts.series.Histograms) {
+		return 0, nil
+	}
+	h := t.ts.series.Histograms[t.iH]
+	if h.IsFloatHistogram() {
+		return h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h)
+	}
+	return h.Timestamp, mimirpb.FromHistogramProtoToFloatHistogram(&h)
 }
 
-// AtT implements implements chunkenc.Iterator.
+// AtT implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtT() int64 {
-	ts, _ := t.At()
-	return ts
+	if t.atH {
+		if t.iH < 0 || t.iH >= len(t.ts.series.Histograms) {
+			return 0
+		}
+		return t.ts.series.Histograms[t.iH].Timestamp
+	}
+	if t.iF < 0 || t.iF >= len(t.ts.series.Samples) {
+		return 0
+	}
+	return t.ts.series.Samples[t.iF].TimestampMs
 }
 
 // Next implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
-	t.i++
-	if t.i < len(t.ts.series.Samples) {
+	if t.iF+1 >= len(t.ts.series.Samples) && t.iH+1 >= len(t.ts.series.Histograms) {
+		t.iF = len(t.ts.series.Samples)
+		t.iH = len(t.ts.series.Histograms)
+		return chunkenc.ValNone
+	}
+	if t.iF+1 >= len(t.ts.series.Samples) {
+		t.iH++
+		t.atH = true
+		return t.atTypeHisto()
+	}
+	if t.iH+1 >= len(t.ts.series.Histograms) {
+		t.iF++
+		t.atH = false
 		return chunkenc.ValFloat
 	}
-	return chunkenc.ValNone
+	if t.ts.series.Samples[t.iF+1].TimestampMs < t.ts.series.Histograms[t.iH+1].Timestamp {
+		t.iF++
+		t.atH = false
+		return chunkenc.ValFloat
+	}
+	t.iH++
+	t.atH = true
+	return t.atTypeHisto()
 }
 
 // Err implements the implements chunkenc.Iterator.

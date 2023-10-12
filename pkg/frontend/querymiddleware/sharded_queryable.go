@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -50,8 +51,8 @@ func newShardedQueryable(req Request, next Handler) *shardedQueryable {
 }
 
 // Querier implements storage.Queryable.
-func (q *shardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
+func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
+	return &shardedQuerier{req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -64,7 +65,6 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
 type shardedQuerier struct {
-	ctx     context.Context
 	req     Request
 	handler Handler
 
@@ -74,7 +74,7 @@ type shardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -100,16 +100,16 @@ func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...
 		return storage.ErrSeriesSet(err)
 	}
 
-	return q.handleEmbeddedQueries(queries, hints)
+	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
+func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []string, hints *storage.SelectHints) storage.SeriesSet {
 	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
-	err := concurrency.ForEachJob(q.ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
+	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
 		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
 		if err != nil {
 			return err
@@ -133,12 +133,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
@@ -248,10 +248,40 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 				})
 			}
 
-			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples))
+			// same logic as samples above
+			var histograms []mimirpb.Histogram
+			if len(stream.Histograms) > 0 {
+				// If there are histograms, which is less likely currently,
+				// we add an extra 10 items to account for some stale markers that could be injected.
+				// We're trading a lower chance of reallocation in case stale markers are added for a
+				// slightly higher memory utilisation.
+				histograms = make([]mimirpb.Histogram, 0, len(stream.Histograms)+10)
+			} else {
+				histograms = make([]mimirpb.Histogram, 0)
+			}
+
+			for idx, histogram := range stream.Histograms {
+				if step > 0 && idx > 0 && histogram.TimestampMs > stream.Histograms[idx-1].TimestampMs+step {
+					histograms = append(histograms, mimirpb.Histogram{
+						Timestamp: stream.Histograms[idx-1].TimestampMs + step,
+						Sum:       math.Float64frombits(value.StaleNaN),
+					})
+				}
+
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(histogram.TimestampMs, histogram.Histogram.ToPrometheusModel()))
+			}
+
+			if len(histograms) > 0 && step > 0 {
+				histograms = append(histograms, mimirpb.Histogram{
+					Timestamp: histograms[len(histograms)-1].Timestamp + step,
+					Sum:       math.Float64frombits(value.StaleNaN),
+				})
+			}
+
+			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples, histograms))
 		}
 	}
-	return series.NewConcreteSeriesSet(set)
+	return series.NewConcreteSeriesSetFromUnsortedSeries(set)
 }
 
 // responseToSamples is needed to map back from api response to the underlying series data

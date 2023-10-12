@@ -13,11 +13,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -104,14 +104,14 @@ func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNam
 	bvCmd.Flag("bucket-config-help", "Help text explaining how to use the -bucket-config parameter").BoolVar(&b.bucketConfigHelp)
 }
 
-func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
+func (b *BucketValidationCommand) validate(_ *kingpin.ParseContext) error {
 	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	if b.bucketConfigHelp {
-		b.printBucketConfigHelp(b.logger)
+		b.printBucketConfigHelp()
 		return nil
 	}
 
-	err := b.parseBucketConfig(b.logger)
+	err := b.parseBucketConfig()
 	if err != nil {
 		return errors.Wrap(err, "error when parsing bucket config")
 	}
@@ -163,9 +163,9 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (b *BucketValidationCommand) printBucketConfigHelp(logger log.Logger) {
+func (b *BucketValidationCommand) printBucketConfigHelp() {
 	fs := flag.NewFlagSet("bucket-config", flag.ContinueOnError)
-	b.cfg.RegisterFlags(fs, logger)
+	b.cfg.RegisterFlags(fs)
 
 	fmt.Fprintf(fs.Output(), `
 The following help text describes the arguments
@@ -179,9 +179,9 @@ mimirtool bucket-validation --bucket-config='-backend=s3 -s3.endpoint=localhost:
 	fs.Usage()
 }
 
-func (b *BucketValidationCommand) parseBucketConfig(logger log.Logger) error {
+func (b *BucketValidationCommand) parseBucketConfig() error {
 	fs := flag.NewFlagSet("bucket-config", flag.ContinueOnError)
-	b.cfg.RegisterFlags(fs, logger)
+	b.cfg.RegisterFlags(fs)
 	err := fs.Parse(strings.Split(b.bucketConfig, " "))
 	if err != nil {
 		return err

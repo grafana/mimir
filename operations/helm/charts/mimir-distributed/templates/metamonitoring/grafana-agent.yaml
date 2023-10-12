@@ -20,13 +20,25 @@ spec:
   securityContext:
     {{- . | toYaml | nindent 4 }}
   {{- end }}
-  {{- with .containerSecurityContext }}
   containers:
     # The container specs here are merged with the ones in the operator using a strategic merge patch.
     - name: config-reloader
+  {{- if .imageRepo }}{{ if .imageRepo.configReloader }}
+  {{- with .imageRepo.configReloader }}
+      image: {{ .repo }}/{{ .image }}:{{ .tag }}
+  {{- end }}
+  {{- end }}{{ end }}
+  {{- with .containerSecurityContext }}
       securityContext:
         {{- . | toYaml | nindent 8 }}
+  {{- end }}
     - name: grafana-agent
+  {{- if .imageRepo }}{{ if .imageRepo.grafanaAgent }}
+  {{- with .imageRepo.grafanaAgent }}
+      image: {{ .repo }}/{{ .image }}:{{ .tag }}
+  {{- end }}
+  {{- end }}{{ end }}
+  {{- with .containerSecurityContext }}
       securityContext:
         {{- . | toYaml | nindent 8 }}
   {{- end }}

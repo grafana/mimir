@@ -13,6 +13,8 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/zeropool"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -23,24 +25,17 @@ const (
 )
 
 var (
-
-	/*
-		We cannot pool these as pointer-to-slice because the place we use them is in WriteRequest which is generated from Protobuf
-		and we don't have an option to make it a pointer. There is overhead here 24 bytes of garbage every time a PreallocTimeseries
-		is re-used. But since the slices are far far larger, we come out ahead.
-	*/
-	slicePool = sync.Pool{
-		New: func() interface{} {
-			return make([]PreallocTimeseries, 0, expectedTimeseries)
-		},
-	}
+	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
+		return make([]PreallocTimeseries, 0, expectedTimeseries)
+	})
 
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:    make([]LabelAdapter, 0, expectedLabels),
-				Samples:   make([]Sample, 0, expectedSamplesPerSeries),
-				Exemplars: make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Labels:     make([]LabelAdapter, 0, expectedLabels),
+				Samples:    make([]Sample, 0, expectedSamplesPerSeries),
+				Exemplars:  make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Histograms: nil,
 			}
 		},
 	}
@@ -68,6 +63,12 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
+func (p *WriteRequest) ClearTimeseriesUnmarshalData() {
+	for idx := range p.Timeseries {
+		p.Timeseries[idx].clearUnmarshalData()
+	}
+}
+
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
 type PreallocTimeseries struct {
 	*TimeSeries
@@ -77,12 +78,136 @@ type PreallocTimeseries struct {
 	// If it is set to a non-nil value then it must be returned to the yoloSlicePool on cleanup,
 	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
 	yoloSlice *[]byte
+
+	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
+	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
+	marshalledData []byte
 }
 
-// Unmarshal implements proto.Message.
+// RemoveLabel removes the label labelName from this timeseries, if it exists.
+func (p *PreallocTimeseries) RemoveLabel(labelName string) {
+	for i := 0; i < len(p.Labels); i++ {
+		pair := p.Labels[i]
+		if pair.Name == labelName {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
+			p.clearUnmarshalData()
+			return
+		}
+	}
+}
+
+func (p *PreallocTimeseries) SetLabels(lbls []LabelAdapter) {
+	p.Labels = lbls
+
+	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
+	// (Maybe we could, if labels are exactly the same, but it's expensive to check.)
+	p.clearUnmarshalData()
+}
+
+// RemoveEmptyLabelValues remove labels with value=="" from this timeseries, updating the slice in-place.
+func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
+	modified := false
+	for i := len(p.Labels) - 1; i >= 0; i-- {
+		if p.Labels[i].Value == "" {
+			p.Labels = append(p.Labels[:i], p.Labels[i+1:]...)
+			modified = true
+		}
+	}
+	if modified {
+		p.clearUnmarshalData()
+	}
+}
+
+// SortLabelsIfNeeded sorts labels if they were not sorted before.
+func (p *PreallocTimeseries) SortLabelsIfNeeded() {
+	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
+	// we can avoid extra memory allocations (mostly interface-related) this way.
+	sorted := true
+	last := ""
+	for _, l := range p.Labels {
+		if last > l.Name {
+			sorted = false
+			break
+		}
+		last = l.Name
+	}
+
+	if sorted {
+		return
+	}
+
+	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		default:
+			return 0
+		}
+	})
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) ClearExemplars() {
+	ClearExemplars(p.TimeSeries)
+	p.clearUnmarshalData()
+}
+
+// DeleteExemplarByMovingLast deletes the exemplar by moving the last one on top and shortening the slice
+func (p *PreallocTimeseries) DeleteExemplarByMovingLast(ix int) {
+	last := len(p.Exemplars) - 1
+	if ix < last {
+		p.Exemplars[ix] = p.Exemplars[last]
+	}
+	p.Exemplars = p.Exemplars[:last]
+	p.clearUnmarshalData()
+}
+
+// clearUnmarshalData removes cached unmarshalled version of the message.
+func (p *PreallocTimeseries) clearUnmarshalData() {
+	p.marshalledData = nil
+}
+
+var TimeseriesUnmarshalCachingEnabled = true
+
+// Unmarshal implements proto.Message. Input data slice is retained.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
+	if TimeseriesUnmarshalCachingEnabled {
+		p.marshalledData = dAtA
+	}
 	p.TimeSeries = TimeseriesFromPool()
 	return p.TimeSeries.Unmarshal(dAtA)
+}
+
+func (p *PreallocTimeseries) Size() int {
+	if p.marshalledData != nil {
+		return len(p.marshalledData)
+	}
+	return p.TimeSeries.Size()
+}
+
+func (p *PreallocTimeseries) Marshal() ([]byte, error) {
+	if p.marshalledData != nil {
+		return p.marshalledData, nil
+	}
+	return p.TimeSeries.Marshal()
+}
+
+func (p *PreallocTimeseries) MarshalTo(buf []byte) (int, error) {
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
+	}
+	return p.TimeSeries.MarshalTo(buf)
+}
+
+func (p *PreallocTimeseries) MarshalToSizedBuffer(buf []byte) (int, error) {
+	if p.marshalledData != nil && len(buf) >= len(p.marshalledData) {
+		copy(buf, p.marshalledData)
+		return len(p.marshalledData), nil
+	}
+	return p.TimeSeries.MarshalToSizedBuffer(buf)
 }
 
 // LabelAdapter is a labels.Label that can be marshalled to/from protos.
@@ -283,7 +408,7 @@ func (bs *LabelAdapter) Compare(other LabelAdapter) int {
 // PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
 // ReuseSlice should be called once done.
 func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
-	return slicePool.Get().([]PreallocTimeseries)
+	return preallocTimeseriesSlicePool.Get()
 }
 
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
@@ -296,7 +421,7 @@ func ReuseSlice(ts []PreallocTimeseries) {
 		ReusePreallocTimeseries(&ts[i])
 	}
 
-	slicePool.Put(ts[:0]) //nolint:staticcheck //see comment on slicePool for more details
+	preallocTimeseriesSlicePool.Put(ts[:0])
 }
 
 // TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
@@ -314,6 +439,7 @@ func ReuseTimeseries(ts *TimeSeries) {
 	}
 	ts.Labels = ts.Labels[:0]
 	ts.Samples = ts.Samples[:0]
+	ts.Histograms = ts.Histograms[:0]
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -341,6 +467,8 @@ func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 		reuseYoloSlice(ts.yoloSlice)
 		ts.yoloSlice = nil
 	}
+
+	ts.marshalledData = nil
 }
 
 func yoloSliceFromPool() *[]byte {
@@ -353,7 +481,7 @@ func reuseYoloSlice(val *[]byte) {
 }
 
 // DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
-// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
+// It copies all the properties (except histograms), sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
 func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) PreallocTimeseries {
@@ -365,18 +493,18 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 	dstTs := dst.TimeSeries
 
 	// Prepare a buffer which is large enough to hold all the label names and values of src.
-	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries, keepExemplars)
+	requiredYoloSliceCap := countTotalLabelLen(srcTs, keepExemplars)
 	dst.yoloSlice = yoloSliceFromPool()
 	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
 
 	// Copy the time series labels by using the prepared buffer.
-	dst.TimeSeries.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
+	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
 	// Copy the samples.
-	if cap(dst.TimeSeries.Samples) < len(src.TimeSeries.Samples) {
-		dstTs.Samples = make([]Sample, len(src.Samples))
+	if cap(dstTs.Samples) < len(srcTs.Samples) {
+		dstTs.Samples = make([]Sample, len(srcTs.Samples))
 	} else {
-		dstTs.Samples = dstTs.Samples[:len(src.Samples)]
+		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
 	}
 	copy(dstTs.Samples, srcTs.Samples)
 
@@ -388,17 +516,20 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
 		}
 
-		for exemplarIdx := range src.Exemplars {
+		for exemplarIdx := range srcTs.Exemplars {
 			// Copy the exemplar labels by using the prepared buffer.
-			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
+			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, srcTs.Exemplars[exemplarIdx].Labels)
 
 			// Copy the other exemplar properties.
-			dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
-			dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+			dstTs.Exemplars[exemplarIdx].Value = srcTs.Exemplars[exemplarIdx].Value
+			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
+
+	// do not keep histograms
+	dstTs.Histograms = nil
 
 	return dst
 }

@@ -7,7 +7,8 @@ package alertmanager
 
 import (
 	"flag"
-	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -76,7 +77,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // ToLifecyclerConfig returns a LifecyclerConfig based on the alertmanager
 // ring config.
 func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.Common.InstanceAddr, cfg.Common.InstanceInterfaceNames, logger, cfg.Common.EnableIPv6)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}
@@ -85,7 +86,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 
 	return ring.BasicLifecyclerConfig{
 		ID:                  cfg.Common.InstanceID,
-		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		HeartbeatPeriod:     cfg.Common.HeartbeatPeriod,
 		HeartbeatTimeout:    cfg.Common.HeartbeatTimeout,
 		TokensObservePeriod: 0,

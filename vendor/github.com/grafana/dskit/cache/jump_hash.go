@@ -1,3 +1,6 @@
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package cache
 
 // jumpHash consistently chooses a hash bucket number in the range

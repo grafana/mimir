@@ -28,18 +28,31 @@ type mergeIterator struct {
 	currErr error
 }
 
-func newMergeIterator(cs []GenericChunk) *mergeIterator {
-	css := partitionChunks(cs)
-	its := make([]*nonOverlappingIterator, 0, len(css))
-	for _, cs := range css {
-		its = append(its, newNonOverlappingIterator(cs))
+func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
+	c, ok := it.(*mergeIterator)
+	if ok {
+		c.nextBatchBuf[0] = chunk.Batch{}
+		c.currErr = nil
+	} else {
+		c = &mergeIterator{}
 	}
 
-	c := &mergeIterator{
-		its:        its,
-		h:          make(iteratorHeap, 0, len(its)),
-		batches:    make(batchStream, 0, len(its)),
-		batchesBuf: make(batchStream, len(its)),
+	css := partitionChunks(cs)
+	if cap(c.its) >= len(css) {
+		c.its = c.its[:len(css)]
+		c.h = c.h[:0]
+		c.batches = c.batches[:0]
+		// We are not resetting the content of c.batchesBuf because they will be
+		// reset once we call mergeStreams() on them.
+		c.batchesBuf = c.batchesBuf[:len(css)]
+	} else {
+		c.its = make([]*nonOverlappingIterator, len(css))
+		c.h = make(iteratorHeap, 0, len(c.its))
+		c.batches = make(batchStream, 0, len(c.its))
+		c.batchesBuf = make(batchStream, len(c.its))
+	}
+	for i, cs := range css {
+		c.its[i] = newNonOverlappingIterator(c.its[i], cs)
 	}
 
 	for _, iter := range c.its {
@@ -129,8 +142,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	}
 
 	if len(c.batches) > 0 {
-		// TODO for native histograms: return the type of batch assembled
-		return chunkenc.ValFloat
+		return c.batches[0].ValueType
 	}
 	return chunkenc.ValNone
 }

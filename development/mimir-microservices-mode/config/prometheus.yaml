@@ -11,7 +11,8 @@ scrape_configs:
           - 'distributor-2:8001'
           - 'ingester-1:8002'
           - 'ingester-2:8003'
-          - 'querier:8004'
+          - 'ingester-3:8004'
+          - 'querier:8005'
           - 'ruler-1:8021'
           - 'ruler-2:8022'
           - 'compactor:8006'
@@ -19,6 +20,8 @@ scrape_configs:
           - 'store-gateway-1:8008'
           - 'store-gateway-2:8009'
           - 'query-scheduler:8011'
+          - 'memcached-exporter:9150'
+          - 'load-generator:9900'
         labels:
           cluster: 'docker-compose'
           namespace: 'mimir-microservices-mode'
@@ -32,11 +35,17 @@ scrape_configs:
         separator: '/'
         regex: '(.+?)(-\d+)?'
         replacement: '${1}'
+      - source_labels: ['pod']
+        target_label: 'container'
+        regex: '(.+?)(-\d+)?'
+        replacement: '${1}'
+    scrape_classic_histograms: true
 
 remote_write:
   - url: http://distributor-1:8000/api/v1/push
+    send_native_histograms: true
     send_exemplars: true
 
 rule_files:
-  - '/etc/alerts/alerts.yaml'
-
+  - '/etc/mixin/mimir-alerts.yaml'
+  - '/etc/mixin/mimir-rules.yaml'

@@ -23,4 +23,4 @@ ${KUSTOMIZE_BUILD[@]} $lhs | yq -s "\"scratch/$lhs/\" + .metadata.name + \"-\" +
 ${KUSTOMIZE_BUILD[@]} $rhs | yq -s "\"scratch/$rhs/\" + .metadata.name + \"-\" + .kind" "select(.kind != null) | $filter"
 
 # difft --missing-as-empty --skip-unchanged scratch/$lhs scratch/$rhs
-diff -r -u -N scratch/$lhs scratch/$rhs
+diff -r -U 15 -N scratch/$lhs scratch/$rhs

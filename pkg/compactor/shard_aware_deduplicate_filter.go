@@ -14,12 +14,11 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const duplicateMeta = "duplicate"
 
-// ShardAwareDeduplicateFilter is a BaseFetcher filter that filters out older blocks that have exactly the same data.
+// ShardAwareDeduplicateFilter is a MetaFetcher filter that filters out older blocks that have exactly the same data.
 // Not go-routine safe.
 type ShardAwareDeduplicateFilter struct {
 	// List of duplicate IDs after last Filter call.
@@ -33,10 +32,10 @@ func NewShardAwareDeduplicateFilter() *ShardAwareDeduplicateFilter {
 
 // Filter filters out from metas, the initial map of blocks, all the blocks that are contained in other, compacted, blocks.
 // The removed blocks are source blocks of the blocks that remain in metas after the filtering is executed.
-func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
+func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec) error {
 	f.duplicateIDs = f.duplicateIDs[:0]
 
-	metasByResolution := make(map[int64][]*metadata.Meta)
+	metasByResolution := make(map[int64][]*block.Meta)
 	for _, meta := range metas {
 		res := meta.Thanos.Downsample.Resolution
 		metasByResolution[res] = append(metasByResolution[res], meta)
@@ -114,7 +113,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 // There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
 // So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See
 // blockWithSuccessors structure -- it uses maps to pointers to handle all this cross-referencing correctly.
-func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*metadata.Meta) (map[ulid.ULID]struct{}, error) {
+func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*block.Meta) (map[ulid.ULID]struct{}, error) {
 	// We create a tree of blocks with successors (blockWithSuccessors) by
 	// 1) sorting the input blocks by number of sources, and
 	// 2) iterating through each input block, and adding it to the correct place in the tree of blocks with successors.
@@ -163,14 +162,14 @@ func (f *ShardAwareDeduplicateFilter) DuplicateIDs() []ulid.ULID {
 //
 // Then B is a successor of A (A sources are subset of B sources, but not vice versa), and D is a successor of A, B and C.
 type blockWithSuccessors struct {
-	meta    *metadata.Meta         // If meta is nil, then this is root node of the tree.
+	meta    *block.Meta            // If meta is nil, then this is root node of the tree.
 	shardID string                 // Shard ID label value extracted from meta. If not empty, all successors must have the same shardID.
 	sources map[ulid.ULID]struct{} // Sources extracted from meta for easier comparison.
 
 	successors map[ulid.ULID]*blockWithSuccessors
 }
 
-func newBlockWithSuccessors(m *metadata.Meta) *blockWithSuccessors {
+func newBlockWithSuccessors(m *block.Meta) *blockWithSuccessors {
 	b := &blockWithSuccessors{meta: m}
 	if m != nil {
 		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]

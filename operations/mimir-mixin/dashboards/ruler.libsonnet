@@ -28,7 +28,17 @@ local filename = 'mimir-ruler.json';
       )
       .addPanel(
         $.panel('Read from ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
+        $.panelDescription(
+          'Read from ingesters - QPS',
+          |||
+            Note: Even while operating in Remote ruler mode you will still see values for this panel.
+
+            This is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.
+
+            For a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Write to ingesters - QPS') +
@@ -94,16 +104,20 @@ local filename = 'mimir-ruler.json';
       $.row('Reads (ingesters)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler))
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler))
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier))
       )
     )
     .addRowIf(
       $._config.autoscaling.ruler.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Ruler'),
+    )
+    .addRowIf(
+      $._config.autoscaling.ruler_query_frontend.enabled,
+      $.cpuAndMemoryBasedAutoScalingRow('Ruler-query-frontend'),
     )
     .addRow(
       $.kvStoreRow('Ruler - key-value store for rulers ring', 'ruler', 'ruler')
@@ -129,13 +143,14 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Notifications')
       .addPanel(
-        $.panel('Delivery errors') +
+        $.timeseriesPanel('Delivery errors') +
         $.queryPanel(|||
           sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
+          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]) > 0)
           > 0
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
+        { fieldConfig: { defaults: { unit: 'short', noValue: 0 } } }
       )
       .addPanel(
         $.panel('Queue length') +
@@ -144,12 +159,14 @@ local filename = 'mimir-ruler.json';
             /
           sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
         ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
+        { fieldConfig: { defaults: { unit: 'percentunit', noValue: 0 } } }
       )
       .addPanel(
-        $.panel('Dropped') +
+        $.timeseriesPanel('Dropped') +
         $.queryPanel(|||
           sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
-        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}')
+        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}') +
+        { fieldConfig: { defaults: { unit: 'short', noValue: 0 } } }
       )
     )
     .addRow(

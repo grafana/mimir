@@ -5,7 +5,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -16,8 +15,8 @@ import (
 
 type protobufCodec struct{}
 
-func (c protobufCodec) ContentType() string {
-	return mimirpb.QueryResponseMimeType
+func (c protobufCodec) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: mimirpb.QueryResponseMimeTypeType, SubType: mimirpb.QueryResponseMimeTypeSubType}
 }
 
 func (c protobufCodec) CanEncode(resp *v1.Response) bool {
@@ -59,19 +58,11 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 			p.Data = &mimirpb.QueryResponse_Scalar{Scalar: &s}
 
 		case parser.ValueTypeVector:
-			v, err := c.encodeVector(data.Result.(promql.Vector))
-			if err != nil {
-				return nil, err
-			}
-
+			v := c.encodeVector(data.Result.(promql.Vector))
 			p.Data = &mimirpb.QueryResponse_Vector{Vector: &v}
 
 		case parser.ValueTypeMatrix:
-			m, err := c.encodeMatrix(data.Result.(promql.Matrix))
-			if err != nil {
-				return nil, err
-			}
-
+			m := c.encodeMatrix(data.Result.(promql.Matrix))
 			p.Data = &mimirpb.QueryResponse_Matrix{Matrix: &m}
 
 		default:
@@ -84,19 +75,19 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 
 func (c protobufCodec) encodeString(s promql.String) mimirpb.StringData {
 	return mimirpb.StringData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
 func (c protobufCodec) encodeScalar(s promql.Scalar) mimirpb.ScalarData {
 	return mimirpb.ScalarData{
-		TimestampMilliseconds: s.T,
-		Value:                 s.V,
+		TimestampMs: s.T,
+		Value:       s.V,
 	}
 }
 
-func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error) {
+func (c protobufCodec) encodeVector(v promql.Vector) mimirpb.VectorData {
 	histogramCount := 0
 
 	for _, s := range v {
@@ -113,19 +104,15 @@ func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error)
 
 		if s.H == nil {
 			samples = append(samples, mimirpb.VectorSample{
-				Metric:                metric,
-				TimestampMilliseconds: s.T,
-				Value:                 s.V,
+				Metric:      metric,
+				TimestampMs: s.T,
+				Value:       s.F,
 			})
 		} else {
-			h, err := protobufHistogramFromPoint(s.Point)
-			if err != nil {
-				return mimirpb.VectorData{}, err
-			}
-
 			histograms = append(histograms, mimirpb.VectorHistogram{
-				Metric:    metric,
-				Histogram: h,
+				Metric:      metric,
+				TimestampMs: s.T,
+				Histogram:   *mimirpb.FloatHistogramFromPrometheusModel(s.H),
 			})
 		}
 	}
@@ -133,59 +120,43 @@ func (c protobufCodec) encodeVector(v promql.Vector) (mimirpb.VectorData, error)
 	return mimirpb.VectorData{
 		Samples:    samples,
 		Histograms: histograms,
-	}, nil
+	}
 }
 
-func (c protobufCodec) encodeMatrix(m promql.Matrix) (mimirpb.MatrixData, error) {
+func (c protobufCodec) encodeMatrix(m promql.Matrix) mimirpb.MatrixData {
 	protobufSeries := make([]mimirpb.MatrixSeries, len(m))
 
 	for i, s := range m {
-		series, err := c.encodeMatrixSeries(s)
-		if err != nil {
-			return mimirpb.MatrixData{}, err
-		}
-
-		protobufSeries[i] = series
+		protobufSeries[i] = c.encodeMatrixSeries(s)
 	}
 
 	return mimirpb.MatrixData{
 		Series: protobufSeries,
-	}, nil
+	}
 }
 
-func (c protobufCodec) encodeMatrixSeries(s promql.Series) (mimirpb.MatrixSeries, error) {
-	histogramCount := 0
-
-	for _, p := range s.Points {
-		if p.H != nil {
-			histogramCount++
-		}
+func (c protobufCodec) encodeMatrixSeries(s promql.Series) mimirpb.MatrixSeries {
+	samples := make([]mimirpb.Sample, 0, len(s.Floats))
+	for _, p := range s.Floats {
+		samples = append(samples, mimirpb.Sample{
+			TimestampMs: p.T,
+			Value:       p.F,
+		})
 	}
 
-	samples := make([]mimirpb.MatrixSample, 0, len(s.Points)-histogramCount)
-	histograms := make([]mimirpb.FloatHistogram, 0, histogramCount)
-
-	for _, p := range s.Points {
-		if p.H == nil {
-			samples = append(samples, mimirpb.MatrixSample{
-				TimestampMilliseconds: p.T,
-				Value:                 p.V,
-			})
-		} else {
-			h, err := protobufHistogramFromPoint(p)
-			if err != nil {
-				return mimirpb.MatrixSeries{}, nil
-			}
-
-			histograms = append(histograms, h)
-		}
+	histograms := make([]mimirpb.FloatHistogramPair, 0, len(s.Histograms))
+	for _, p := range s.Histograms {
+		histograms = append(histograms, mimirpb.FloatHistogramPair{
+			TimestampMs: p.T,
+			Histogram:   mimirpb.FloatHistogramFromPrometheusModel(p.H),
+		})
 	}
 
 	return mimirpb.MatrixSeries{
 		Metric:     labelsToStringArray(s.Metric),
 		Samples:    samples,
 		Histograms: histograms,
-	}, nil
+	}
 }
 
 func labelsToStringArray(l labels.Labels) []string {
@@ -199,39 +170,4 @@ func labelsToStringArray(l labels.Labels) []string {
 	})
 
 	return strings
-}
-
-func protobufHistogramFromPoint(p promql.Point) (mimirpb.FloatHistogram, error) {
-	resetHint, err := mimirpb.HistogramResetHintFromPrometheusModelType(p.H.CounterResetHint)
-	if err != nil {
-		return mimirpb.FloatHistogram{}, err
-	}
-
-	return mimirpb.FloatHistogram{
-		Timestamp: p.T,
-
-		ResetHint:      resetHint,
-		Schema:         p.H.Schema,
-		ZeroThreshold:  p.H.ZeroThreshold,
-		ZeroCountFloat: p.H.ZeroCount,
-		CountFloat:     p.H.Count,
-		Sum:            p.H.Sum,
-		PositiveSpans:  protobufSpansFromSpans(p.H.PositiveSpans),
-		NegativeSpans:  protobufSpansFromSpans(p.H.NegativeSpans),
-		PositiveCounts: p.H.PositiveBuckets,
-		NegativeCounts: p.H.NegativeBuckets,
-	}, nil
-}
-
-func protobufSpansFromSpans(spans []histogram.Span) []mimirpb.BucketSpan {
-	protobufSpans := make([]mimirpb.BucketSpan, len(spans))
-
-	for i, s := range spans {
-		protobufSpans[i] = mimirpb.BucketSpan{
-			Offset: s.Offset,
-			Length: s.Length,
-		}
-	}
-
-	return protobufSpans
 }

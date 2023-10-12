@@ -70,6 +70,10 @@ type Context interface {
 	// In the case when no related data presented, returns an empty string.
 	Text() string
 
+	// Entities returns the message entities, whether it's media caption's or the text's.
+	// In the case when no entities presented, returns a nil.
+	Entities() Entities
+
 	// Data returns the current data, depending on the context type.
 	// If the context contains command, returns its arguments string.
 	// If the context contains payment, returns its payload.
@@ -295,6 +299,17 @@ func (c *nativeContext) Text() string {
 		return m.Caption
 	}
 	return m.Text
+}
+
+func (c *nativeContext) Entities() Entities {
+	m := c.Message()
+	if m == nil {
+		return nil
+	}
+	if len(m.CaptionEntities) > 0 {
+		return m.CaptionEntities
+	}
+	return m.Entities
 }
 
 func (c *nativeContext) Data() string {

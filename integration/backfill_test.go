@@ -4,9 +4,12 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,13 +26,13 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
-	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
 
 func TestMimirtoolBackfill(t *testing.T) {
@@ -40,24 +43,24 @@ func TestMimirtoolBackfill(t *testing.T) {
 	tmpDir := t.TempDir()
 	blockEnd := time.Now().Truncate(2 * time.Hour)
 
-	block1, err := testhelper.CreateBlock(
+	block1, err := block.CreateBlock(
 		context.Background(), tmpDir,
 		[]labels.Labels{
 			labels.FromStrings("test", "test1", "a", "1"),
 			labels.FromStrings("test", "test1", "a", "2"),
 			labels.FromStrings("test", "test1", "a", "3"),
 		},
-		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 	require.NoError(t, err)
 
-	block2, err := testhelper.CreateBlock(
+	block2, err := block.CreateBlock(
 		context.Background(), tmpDir,
 		[]labels.Labels{
 			labels.FromStrings("test", "test2", "a", "1"),
 			labels.FromStrings("test", "test2", "a", "2"),
 			labels.FromStrings("test", "test2", "a", "3"),
 		},
-		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 	require.NoError(t, err)
 
 	s, err := e2e.NewScenario(networkName)
@@ -71,9 +74,13 @@ func TestMimirtoolBackfill(t *testing.T) {
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
+	dataDir := filepath.Join(s.SharedDir(), "data")
+	err = os.Mkdir(dataDir, os.ModePerm)
+	require.NoError(t, err)
 
-	// Configure the compactor with runtime config (for overrides)
+	// Configure the compactor with a data directory and runtime config (for overrides)
 	flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), map[string]string{
+		"-compactor.data-dir":           filepath.Join(e2e.ContainerSharedDir, "data"),
 		"-runtime-config.reload-period": "100ms",
 		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, overridesFile),
 	})
@@ -143,14 +150,14 @@ overrides:
 
 	{
 		// Let's try to upload a block without meta.json.
-		b, err := testhelper.CreateBlock(
+		b, err := block.CreateBlock(
 			context.Background(), tmpDir,
 			[]labels.Labels{
 				labels.FromStrings("test", "bad", "a", "1"),
 				labels.FromStrings("test", "bad", "a", "2"),
 				labels.FromStrings("test", "bad", "a", "3"),
 			},
-			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil)
+			100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
 		require.NoError(t, err)
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
@@ -163,7 +170,7 @@ overrides:
 		// Let's try block with external labels. Mimir currently rejects those.
 		extLabels := labels.FromStrings("ext", "labels")
 
-		b, err := testhelper.CreateBlock(
+		b, err := block.CreateBlock(
 			context.Background(), tmpDir,
 			[]labels.Labels{
 				labels.FromStrings("test", "bad", "a", "1"),
@@ -179,6 +186,116 @@ overrides:
 	}
 }
 
+func TestBackfillSlowUploadSpeed(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	dataDir := filepath.Join(s.SharedDir(), "data")
+	require.NoError(t, os.Mkdir(dataDir, os.ModePerm))
+
+	const httpServerTimeout = 2 * time.Second
+
+	flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), map[string]string{
+		"-compactor.data-dir": filepath.Join(e2e.ContainerSharedDir, "data"),
+
+		// Enable uploads for all tenants
+		"-compactor.block-upload-enabled": "true",
+
+		// Use short timeouts for HTTP endpoints.
+		// This timeout will not be applied to file upload endpoint.
+		"-server.http-read-timeout":  httpServerTimeout.String(),
+		"-server.http-write-timeout": httpServerTimeout.String(),
+		"-querier.timeout":           httpServerTimeout.String(), // must be set too, otherwise validation check fails because default value is too high compared to -server.http-write-timeout.
+		"-log.level":                 "debug",
+	})
+
+	// Start Mimir compactor.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
+	// Create block that we will try to upload.
+	tmpDir := t.TempDir()
+	blockEnd := time.Now().Truncate(2 * time.Hour)
+
+	block, err := block.CreateBlock(
+		context.Background(), tmpDir,
+		[]labels.Labels{
+			labels.FromStrings("test", "test1", "a", "1"),
+			labels.FromStrings("test", "test1", "a", "2"),
+			labels.FromStrings("test", "test1", "a", "3"),
+		},
+		100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), labels.EmptyLabels())
+	require.NoError(t, err)
+
+	httpClient := &http.Client{}
+
+	// Initiate new block upload.
+	{
+		// client.GetBlockMeta will generate correct meta.json file ready for initiating upload of our block.
+		meta, err := client.GetBlockMeta(fmt.Sprintf("%s/%s", tmpDir, block.String()))
+		require.NoError(t, err)
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, json.NewEncoder(buf).Encode(meta))
+
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/start", compactor.HTTPEndpoint(), block.String()), buf)
+		req.Header.Set("X-Scope-OrgID", userID)
+		require.NoError(t, err)
+
+		resp, err := httpClient.Do(req)
+		require.NoError(t, err)
+
+		body := readAndCloseBody(t, resp.Body)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+	}
+
+	// Now start uploading block data, slowly, so that it takes longer than http server timeout.
+	// This will only succeed if timeout is overridden for the endpoint.
+	{
+		const targetDuration = httpServerTimeout * 2
+		chunksFilename := fmt.Sprintf("%s/%s/chunks/000001", tmpDir, block.String())
+		chunksFiledata, err := os.ReadFile(chunksFilename)
+		require.NoError(t, err)
+
+		// We add one second, because rate-limited reader already allows reading in time 0.
+		rateLimit := float64(len(chunksFiledata)) / (targetDuration.Seconds() + 1)
+		require.True(t, rateLimit > 0) // sanity check
+
+		rr := newRateLimitedReader(bytes.NewReader(chunksFiledata), rateLimit, int(rateLimit))
+
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/upload/block/%s/files?path=chunks/000001", compactor.HTTPEndpoint(), block.String()), rr)
+		req.Header.Set("X-Scope-OrgID", userID)
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := httpClient.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err)
+
+		body := readAndCloseBody(t, resp.Body)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode, string(body))
+
+		// Verify that it actually took as long as we expected.
+		require.True(t, elapsed > targetDuration)
+	}
+}
+
+func readAndCloseBody(t *testing.T, r io.ReadCloser) []byte {
+	b, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	return b
+}
+
 func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath string) {
 	for _, fn := range []string{"index", "chunks/000001"} {
 		a, err := client.Attributes(context.Background(), path.Join("blocks/anonymous", ulid.String(), fn))
@@ -190,7 +307,7 @@ func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath
 		require.Equal(t, fi.Size(), a.Size)
 	}
 
-	localMeta, err := metadata.ReadFromDir(localPath)
+	localMeta, err := block.ReadMetaFromDir(localPath)
 	require.NoError(t, err)
 
 	remoteMeta, err := block.DownloadMeta(context.Background(), log.NewNopLogger(), bucket.NewPrefixedBucketClient(client, "blocks/anonymous"), ulid)
@@ -238,4 +355,54 @@ func getURL(url string) (string, error) {
 	body, err := io.ReadAll(res.Body)
 
 	return string(body), err
+}
+
+func newRateLimitedReader(r io.Reader, bytesPerSec float64, burst int) io.Reader {
+	return &rateLimitedReader{
+		r:      r,
+		burst:  burst,
+		bucket: rate.NewLimiter(rate.Limit(bytesPerSec), burst),
+	}
+}
+
+type rateLimitedReader struct {
+	r      io.Reader
+	burst  int
+	bucket *rate.Limiter
+}
+
+func (r *rateLimitedReader) Read(buf []byte) (int, error) {
+	// We can't wait for more bytes than our burst size.
+	if len(buf) > r.burst {
+		buf = buf[:r.burst]
+	}
+
+	n, err := r.r.Read(buf)
+	if n <= 0 {
+		return n, err
+	}
+
+	err1 := r.bucket.WaitN(context.Background(), n)
+	if err == nil {
+		err = err1
+	}
+	return n, err
+}
+
+func TestRateLimitedReader(t *testing.T) {
+	t.Skip("slow test, checking implementation of rate-limited reader.")
+
+	const dataLen = 16384
+	const dataRate = 4096
+
+	data := make([]byte, dataLen)
+
+	start := time.Now()
+	n, err := io.Copy(io.Discard, newRateLimitedReader(bytes.NewReader(data), dataRate, dataRate))
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(len(data)), n)
+	// rate limiter starts "full", hence "dataLen - dataRate".
+	require.InDelta(t, elapsed.Seconds(), (dataLen-dataRate)/dataRate, 1)
 }

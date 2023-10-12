@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/runtimeconfig"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -33,7 +34,8 @@ type runtimeConfigValues struct {
 
 	IngesterChunkStreaming *bool `yaml:"ingester_stream_chunks_when_using_blocks"`
 
-	IngesterLimits *ingester.InstanceLimits `yaml:"ingester_limits"`
+	IngesterLimits    *ingester.InstanceLimits    `yaml:"ingester_limits"`
+	DistributorLimits *distributor.InstanceLimits `yaml:"distributor_limits"`
 }
 
 // runtimeConfigTenantLimits provides per-tenant limit overrides based on a runtimeconfig.Manager
@@ -63,7 +65,12 @@ func (l *runtimeConfigTenantLimits) AllByUserID() map[string]*validation.Limits 
 	return nil
 }
 
-func loadRuntimeConfig(r io.Reader) (interface{}, error) {
+// runtimeConfigLoader loads and validates the per-tenant limits
+type runtimeConfigLoader struct {
+	validate func(limits validation.Limits) error
+}
+
+func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	var overrides = &runtimeConfigValues{}
 
 	decoder := yaml.NewDecoder(r)
@@ -77,6 +84,17 @@ func loadRuntimeConfig(r io.Reader) (interface{}, error) {
 	// Ensure the provided YAML config is not composed of multiple documents,
 	if err := decoder.Decode(&runtimeConfigValues{}); !errors.Is(err, io.EOF) {
 		return nil, errMultipleDocuments
+	}
+
+	if l.validate != nil {
+		for _, limits := range overrides.TenantLimits {
+			if limits == nil {
+				continue
+			}
+			if err := l.validate(*limits); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return overrides, nil
@@ -140,6 +158,20 @@ func ingesterInstanceLimits(manager *runtimeconfig.Manager) func() *ingester.Ins
 		val := manager.GetConfig()
 		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
 			return cfg.IngesterLimits
+		}
+		return nil
+	}
+}
+
+func distributorInstanceLimits(manager *runtimeconfig.Manager) func() *distributor.InstanceLimits {
+	if manager == nil {
+		return nil
+	}
+
+	return func() *distributor.InstanceLimits {
+		val := manager.GetConfig()
+		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
+			return cfg.DistributorLimits
 		}
 		return nil
 	}

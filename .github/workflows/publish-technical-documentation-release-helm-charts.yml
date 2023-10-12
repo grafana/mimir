@@ -4,28 +4,17 @@ on:
   push:
     tags:  # this excludes pre-releases, e.g. mimir-distributed-2.2.0-weekly.192
     - "mimir-distributed-[0-9]+.[0-9]+.[0-9]+"
-    branch: # this excludes pre-releases, e.g. mimir-distributed-2.2.0-weekly.192
+    branches: # this excludes pre-releases, e.g. mimir-distributed-2.2.0-weekly.192
     - "mimir-distributed-release-[0-9]+.[0-9]+"
     paths:
     - "docs/sources/helm-charts/**"
+    - "operations/helm/charts/mimir-distributed/Chart.yaml"
 
   workflow_dispatch: # for manual testing
 
 jobs:
   test:
-    runs-on: "ubuntu-latest"
-    steps:
-    - name: "Check out code"
-      uses: "actions/checkout@v3"
-    - name: "Build website"
-      run: |
-        docker run \
-          -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-          -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
-          -e HUGO_REFLINKSERRORLEVEL=ERROR \
-          --rm \
-            grafana/docs-base:latest \
-              /bin/bash -c 'make hugo'
+    uses: ./.github/workflows/test-docs.yml
 
   sync:
     runs-on: "ubuntu-latest"
@@ -33,12 +22,12 @@ jobs:
     steps:
 
     - name: "Checkout Mimir repo"
-      uses: "actions/checkout@v3"
+      uses: "actions/checkout@v4"
       with:
         fetch-depth: 0
 
     - name: "Checkout Actions library"
-      uses: "actions/checkout@v3"
+      uses: "actions/checkout@v4"
       with:
         repository: "grafana/grafana-github-actions"
         path: "./actions"

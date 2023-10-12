@@ -24,12 +24,12 @@ func NewVersioned(c Cache, version uint) Versioned {
 	}
 }
 
-func (c Versioned) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+func (c Versioned) StoreAsync(data map[string][]byte, ttl time.Duration) {
 	versioned := make(map[string][]byte, len(data))
 	for k, v := range data {
 		versioned[c.addVersion(k)] = v
 	}
-	c.cache.Store(ctx, versioned, ttl)
+	c.cache.StoreAsync(versioned, ttl)
 }
 
 func (c Versioned) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {

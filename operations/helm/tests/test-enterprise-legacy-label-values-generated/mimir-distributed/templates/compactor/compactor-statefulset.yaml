@@ -12,6 +12,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  podManagementPolicy: OrderedReady
   replicas: 1
   selector:
     matchLabels:
@@ -55,13 +56,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-compactor
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-compactor
+            release: test-enterprise-legacy-label-values
       tolerations:
         []
       terminationGracePeriodSeconds: 240

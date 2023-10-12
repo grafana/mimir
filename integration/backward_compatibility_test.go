@@ -89,8 +89,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push some series to Mimir.
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := generateFloatSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2, _ := generateFloatSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := generateFloatSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
 	res, err = c.Push(series3)
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, _ := generateSeries("series_1", now)
+	series, expectedVector, _ := generateFloatSeries("series_1", now)
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
@@ -286,12 +286,12 @@ type instantQueryTest struct {
 type testingLogger interface{ Logf(string, ...interface{}) }
 
 func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
-	overrides, err := parsePrevioiusImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
+	overrides, err := parsePreviousImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
 	require.NoError(t, err)
 	return overrides
 }
 
-func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
+func parsePreviousImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
 	if env == "" {
 		return nil, nil
 	}
@@ -314,20 +314,20 @@ func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[
 
 func TestParsePreviousImageVersionOverrides(t *testing.T) {
 	t.Run("empty overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("", t)
+		overrides, err := parsePreviousImageVersionOverrides("", t)
 		require.NoError(t, err)
 		require.Empty(t, overrides)
 	})
 
 	t.Run("one version override", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first", t)
+		overrides, err := parsePreviousImageVersionOverrides("first", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 1)
 		require.NotNil(t, overrides["first"])
 	})
 
 	t.Run("comma separated overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first,second", t)
+		overrides, err := parsePreviousImageVersionOverrides("first,second", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 		require.NotNil(t, overrides["first"])
@@ -359,7 +359,7 @@ func TestParsePreviousImageVersionOverrides(t *testing.T) {
 				"second": []
 			}`
 
-		overrides, err := parsePrevioiusImageVersionOverrides(jsonOverrides, t)
+		overrides, err := parsePreviousImageVersionOverrides(jsonOverrides, t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 

@@ -30,9 +30,6 @@ message WriteRequest {
 
   // Skip validation of label names.
   bool skip_label_name_validation = 1000;
-
-  // Timeseries that are stored to ephemeral storage only.
-  repeated TimeSeries ephemeral_timeseries = 1001 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocTimeseries"];
 }
 
 message WriteResponse {}
@@ -51,7 +48,7 @@ message LabelPair {
 }
 
 message Sample {
-  // Fields order MUST match promql.Point so that we can cast types between them.
+	// Fields order MUST match promql.FPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
   double value       = 1;
 }
@@ -88,6 +85,9 @@ message Exemplar {
 // This is based on https://github.com/prometheus/prometheus/blob/main/prompb/types.proto
 message Histogram {
   enum ResetHint {
+    // These values are based on CounterResetHint from https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+    // The values must remain in sync with the constants defined there.
+
     option (gogoproto.goproto_enum_prefix) = true;
     UNKNOWN = 0; // Need to test for a counter reset explicitly.
     YES     = 1; // This is the 1st histogram after a counter reset.
@@ -135,42 +135,24 @@ message Histogram {
   int64 timestamp = 15;
 }
 
+// FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
+// The fields below must be the same types and in the same order as Prometheus' histogram.FloatHistogram type so we can cast between
+// them safely.
 message FloatHistogram {
   // Reserve fields used in Histogram type for integer histograms to prevent any confusion if a payload is accidentally decoded with the wrong type.
-  reserved 1, 6, 9, 12;
-  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas";
+  reserved 1, 6, 9, 12, 15;
+  reserved "count_int", "zero_count_int", "negative_deltas", "positive_deltas", "timestamp";
 
-  double count_float = 2;
-
-  double sum = 3; // Sum of observations in the histogram.
-  // The schema defines the bucket schema. Currently, valid numbers
-  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
-  // is a bucket boundary in each case, and then each power of two is
-  // divided into 2^n logarithmic buckets. Or in other words, each
-  // bucket boundary is the previous boundary times 2^(2^-n). In the
-  // future, more bucket schemas may be added using numbers < -4 or >
-  // 8.
-  sint32 schema             = 4;
-  double zero_threshold     = 5; // Breadth of the zero bucket.
-  double zero_count_float   = 7;
-
-  // Negative Buckets.
-  repeated BucketSpan negative_spans =  8 [(gogoproto.nullable) = false];
-  // Use either "negative_deltas" or "negative_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
-  repeated double negative_counts    = 10; // Absolute count of each bucket.
-
-  // Positive Buckets.
+  uint32 counter_reset_hint = 14 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/histogram.CounterResetHint"];
+  sint32 schema = 4;
+  double zero_threshold = 5;
+  double zero_count = 7;
+  double count = 2;
+  double sum = 3;
   repeated BucketSpan positive_spans = 11 [(gogoproto.nullable) = false];
-  // Use either "positive_deltas" or "positive_counts", the former for
-  // regular histograms with integer counts, the latter for float
-  // histograms.
-  repeated double positive_counts    = 13; // Absolute count of each bucket.
-
-  Histogram.ResetHint reset_hint     = 14;
-  // timestamp is in ms format
-  int64 timestamp = 15;
+  repeated BucketSpan negative_spans = 8 [(gogoproto.nullable) = false];
+  repeated double positive_buckets = 13;
+  repeated double negative_buckets = 10;
 }
 
 // A BucketSpan defines a number of consecutive buckets with their
@@ -178,9 +160,19 @@ message FloatHistogram {
 // bucket counts in the Span. However, the protobuf representation is
 // more compact in the way the data is structured here (with all the
 // buckets in a single array separate from the Spans).
+//
+// BucketSpan is based on Prometheus' histogram.Span type defined in https://github.com/prometheus/prometheus/blob/main/model/histogram/histogram.go.
+// The fields below must be the same types and in the same order Prometheus' histogram.Span type so we can cast between
+// them safely.
 message BucketSpan {
   sint32 offset = 1;
   uint32 length = 2;
+}
+
+message FloatHistogramPair {
+	// Fields order MUST match promql.HPoint so that we can cast types between them.
+  int64 timestamp_ms = 2;
+  FloatHistogram histogram = 1 [(gogoproto.nullable) = true];
 }
 
 // SampleHistogram is based on https://github.com/prometheus/common/blob/main/model/value_histogram.go
@@ -225,6 +217,7 @@ message QueryResponse {
     INTERNAL = 5;
     UNAVAILABLE = 6;
     NOT_FOUND = 7;
+    NOT_ACCEPTABLE = 8;
   }
 
   Status status = 1;
@@ -241,7 +234,7 @@ message QueryResponse {
 
 message StringData {
   string value = 1;
-  int64 timestamp_milliseconds = 2;
+  int64 timestamp_ms = 2;
 }
 
 message VectorData {
@@ -254,7 +247,7 @@ message VectorSample {
   repeated string metric = 1;
 
   double value = 2;
-  int64 timestamp_milliseconds = 3;
+  int64 timestamp_ms = 3;
 }
 
 message VectorHistogram {
@@ -262,11 +255,12 @@ message VectorHistogram {
   repeated string metric = 1;
 
   FloatHistogram histogram = 2 [(gogoproto.nullable) = false];
+  int64 timestamp_ms = 3;
 }
 
 message ScalarData {
   double value = 1;
-  int64 timestamp_milliseconds = 2;
+  int64 timestamp_ms = 2;
 }
 
 message MatrixData {
@@ -277,11 +271,6 @@ message MatrixSeries {
   // Why not use a map<...> here? We want to preserve the order of the labels.
   repeated string metric = 1;
 
-  repeated MatrixSample samples = 2 [(gogoproto.nullable) = false];
-  repeated FloatHistogram histograms = 3 [(gogoproto.nullable) = false];
-}
-
-message MatrixSample {
-  double value = 1;
-  int64 timestamp_milliseconds = 2;
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }

@@ -58,10 +58,7 @@ func writeExclusivePEMFile(path, marker string, mode os.FileMode, data []byte) (
 	}
 	defer runutil.CloseWithErrCapture(&err, f, "write pem file")
 
-	if err := pem.Encode(f, &pem.Block{Type: marker, Bytes: data}); err != nil {
-		return err
-	}
-	return nil
+	return pem.Encode(f, &pem.Block{Type: marker, Bytes: data})
 }
 
 func (ca *CA) WriteCACertificate(path string) error {

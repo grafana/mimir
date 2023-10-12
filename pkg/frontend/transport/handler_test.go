@@ -21,14 +21,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -84,7 +84,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 POST /api/v1/query query=some_metric&time=42",
 		},
 		{
@@ -97,7 +97,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
 		},
 		{
@@ -107,7 +107,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				return httptest.NewRequest("GET", "/api/v1/query", nil)
 			},
 			expectedParams:   url.Values{},
-			expectedMetrics:  4,
+			expectedMetrics:  5,
 			expectedActivity: "12345 GET /api/v1/query (no params)",
 		},
 		{
@@ -155,7 +155,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			_, _ = io.ReadAll(resp.Body)
+			responseData, _ := io.ReadAll(resp.Body)
 			require.Equal(t, resp.Code, http.StatusOK)
 
 			count, err := promtest.GatherAndCount(
@@ -164,6 +164,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"cortex_query_fetched_series_total",
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
+				"cortex_query_fetched_index_bytes_total",
 			)
 
 			assert.NoError(t, err)
@@ -177,7 +178,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 17+len(tt.expectedParams))
+				require.Len(t, msg, 18+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -187,6 +188,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Equal(t, req.URL.Path, msg["path"])
 				require.Equal(t, req.UserAgent(), msg["user_agent"])
 				require.Contains(t, msg, "response_time")
+				require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
 				require.Contains(t, msg, "query_wall_time_seconds")
 				require.EqualValues(t, 0, msg["fetched_series_count"])
 				require.EqualValues(t, 0, msg["fetched_chunk_bytes"])
@@ -228,7 +230,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 		{
 			name:                "Failed round trip with no query params",
 			cfg:                 HandlerConfig{QueryStatsEnabled: true},
-			expectedMetrics:     4,
+			expectedMetrics:     5,
 			path:                "/api/v1/query",
 			expectQueryParamLog: false,
 			queryErr:            context.Canceled,
@@ -258,6 +260,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_series_total",
 				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
+				"cortex_query_fetched_index_bytes_total",
 			)
 
 			require.NoError(t, err)
@@ -375,4 +378,19 @@ func (t *testLogger) Log(keyvals ...interface{}) error {
 
 	t.logMessages = append(t.logMessages, msg)
 	return nil
+}
+
+func TestFormatRequestHeaders(t *testing.T) {
+	h := http.Header{}
+	h.Add("X-Header-To-Log", "i should be logged!")
+	h.Add("X-Header-To-Not-Log", "i shouldn't be logged!")
+
+	fields := formatRequestHeaders(&h, []string{"X-Header-To-Log", "X-Header-Not-Present"})
+
+	expected := []interface{}{
+		"header_x_header_to_log",
+		"i should be logged!",
+	}
+
+	assert.Equal(t, expected, fields)
 }

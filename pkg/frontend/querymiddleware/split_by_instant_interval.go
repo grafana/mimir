@@ -130,7 +130,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
 	}
 
 	instantSplitQuery, err := mapper.Map(expr)
@@ -174,7 +174,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	req = req.WithQuery(instantSplitQuery.String()).WithTotalQueriesHint(int32(mapperStats.GetSplitQueries()))
 	shardedQueryable := newShardedQueryable(req, s.next)
 
-	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to create new query from splittable request", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())

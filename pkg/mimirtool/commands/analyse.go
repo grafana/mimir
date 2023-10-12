@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strconv"
 
-	"gopkg.in/alecthomas/kingpin.v2"
+	"github.com/alecthomas/kingpin/v2"
 )
 
 type AnalyzeCommand struct{}
@@ -23,6 +23,9 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Envar(envVars.Address).
 		Required().
 		StringVar(&paCmd.address)
+	prometheusAnalyzeCmd.Flag("prometheus-http-prefix", "HTTP URL path under which the Prometheus api will be served.").
+		Default("").
+		StringVar(&paCmd.prometheusHTTPPrefix)
 	prometheusAnalyzeCmd.Flag("id", "Username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Default("").
@@ -64,6 +67,8 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	grafanaAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("metrics-in-grafana.json").
 		StringVar(&gaCmd.outputFile)
+	grafanaAnalyzeCmd.Flag("folder-title", "Limit dashboards analysis for unused metrics based on their exact folder title. When repeated any of the matching folders will be analyzed.").
+		SetValue(&gaCmd.folders)
 
 	raCmd := &RulerAnalyzeCommand{}
 	rulerAnalyzeCmd := analyzeCmd.Command("ruler", "Analyze and extract the metrics that are used in Grafana Mimir rules").

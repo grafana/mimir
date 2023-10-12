@@ -13,12 +13,19 @@ uninstall() {
     systemctl stop mimir.service ||:
 }
 
+upgrade() {
+    :
+}
+
 # Step 2, check if this is a clean install or an upgrade
 action="$1"
 
 case "$action" in
   "0" | "remove")
     uninstall
+    ;;
+  "2" | "upgrade")
+    upgrade
     ;;
   *)
     echo "Unsupported action: ${action}"

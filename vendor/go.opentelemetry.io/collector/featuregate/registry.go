@@ -1,154 +1,146 @@
 // Copyright The OpenTelemetry Authors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: Apache-2.0
 
 package featuregate // import "go.opentelemetry.io/collector/featuregate"
 
 import (
 	"fmt"
+	"sort"
 	"sync"
+	"sync/atomic"
 )
 
-var reg = NewRegistry()
+var globalRegistry = NewRegistry()
 
-// GetRegistry returns the global Registry.
-func GetRegistry() *Registry {
-	return reg
+// GlobalRegistry returns the global Registry.
+func GlobalRegistry() *Registry {
+	return globalRegistry
 }
 
 type Registry struct {
-	mu    sync.RWMutex
-	gates map[string]Gate
+	gates sync.Map
 }
 
 // NewRegistry returns a new empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{gates: make(map[string]Gate)}
+	return &Registry{}
 }
 
-// RegistryOption allows to configure additional information about a Gate during registration.
-type RegistryOption interface {
+// RegisterOption allows to configure additional information about a Gate during registration.
+type RegisterOption interface {
 	apply(g *Gate)
 }
 
-type registerOption struct {
-	applyFunc func(g *Gate)
-}
+type registerOptionFunc func(g *Gate)
 
-func (ro registerOption) apply(g *Gate) {
-	ro.applyFunc(g)
+func (ro registerOptionFunc) apply(g *Gate) {
+	ro(g)
 }
 
 // WithRegisterDescription adds description for the Gate.
-func WithRegisterDescription(description string) RegistryOption {
-	return registerOption{
-		applyFunc: func(g *Gate) {
-			g.description = description
-		},
-	}
+func WithRegisterDescription(description string) RegisterOption {
+	return registerOptionFunc(func(g *Gate) {
+		g.description = description
+	})
 }
 
-// WithRegisterReferenceURL adds an URL that has all the contextual information about the Gate.
-func WithRegisterReferenceURL(url string) RegistryOption {
-	return registerOption{
-		applyFunc: func(g *Gate) {
-			g.referenceURL = url
-		},
-	}
+// WithRegisterReferenceURL adds a URL that has all the contextual information about the Gate.
+func WithRegisterReferenceURL(url string) RegisterOption {
+	return registerOptionFunc(func(g *Gate) {
+		g.referenceURL = url
+	})
 }
 
-// WithRegisterRemovalVersion is used when the Gate is considered StageStable,
-// to inform users that referencing the gate is no longer needed.
-func WithRegisterRemovalVersion(version string) RegistryOption {
-	return registerOption{
-		applyFunc: func(g *Gate) {
-			g.removalVersion = version
-		},
-	}
+// WithRegisterFromVersion is used to set the Gate "FromVersion".
+// The "FromVersion" contains the Collector release when a feature is introduced.
+func WithRegisterFromVersion(fromVersion string) RegisterOption {
+	return registerOptionFunc(func(g *Gate) {
+		g.fromVersion = fromVersion
+	})
 }
 
-// Apply a configuration in the form of a map of Gate identifiers to boolean values.
-// Sets only those values provided in the map, other gate values are not changed.
-func (r *Registry) Apply(cfg map[string]bool) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	for id, val := range cfg {
-		g, ok := r.gates[id]
-		if !ok {
-			return fmt.Errorf("feature gate %s is unregistered", id)
-		}
-		if g.stage == StageStable {
-			return fmt.Errorf("feature gate %s is stable, can not be modified", id)
-		}
-		g.enabled = val
-		r.gates[g.id] = g
-	}
-	return nil
+// WithRegisterToVersion is used to set the Gate "ToVersion".
+// The "ToVersion", if not empty, contains the last Collector release in which you can still use a feature gate.
+// If the feature stage is either "Deprecated" or "Stable", the "ToVersion" is the Collector release when the feature is removed.
+func WithRegisterToVersion(toVersion string) RegisterOption {
+	return registerOptionFunc(func(g *Gate) {
+		g.toVersion = toVersion
+	})
 }
 
-// IsEnabled returns true if a registered feature gate is enabled and false otherwise.
-func (r *Registry) IsEnabled(id string) bool {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	g, ok := r.gates[id]
-	return ok && g.enabled
-}
-
-// MustRegisterID like RegisterID but panics if an invalid ID or gate options are provided.
-func (r *Registry) MustRegisterID(id string, stage Stage, opts ...RegistryOption) {
-	if err := r.RegisterID(id, stage, opts...); err != nil {
+// MustRegister like Register but panics if an invalid ID or gate options are provided.
+func (r *Registry) MustRegister(id string, stage Stage, opts ...RegisterOption) *Gate {
+	g, err := r.Register(id, stage, opts...)
+	if err != nil {
 		panic(err)
 	}
+	return g
 }
 
-func (r *Registry) RegisterID(id string, stage Stage, opts ...RegistryOption) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if _, ok := r.gates[id]; ok {
-		return fmt.Errorf("attempted to add pre-existing gate %q", id)
-	}
-	g := Gate{
+// Register a Gate and return it. The returned Gate can be used to check if is enabled or not.
+func (r *Registry) Register(id string, stage Stage, opts ...RegisterOption) (*Gate, error) {
+	g := &Gate{
 		id:    id,
 		stage: stage,
 	}
 	for _, opt := range opts {
-		opt.apply(&g)
+		opt.apply(g)
 	}
 	switch g.stage {
-	case StageAlpha:
-		g.enabled = false
+	case StageAlpha, StageDeprecated:
+		g.enabled = &atomic.Bool{}
 	case StageBeta, StageStable:
-		g.enabled = true
+		enabled := &atomic.Bool{}
+		enabled.Store(true)
+		g.enabled = enabled
 	default:
-		return fmt.Errorf("unknown stage value %q for gate %q", stage, id)
+		return nil, fmt.Errorf("unknown stage value %q for gate %q", stage, id)
 	}
-	if g.stage == StageStable && g.removalVersion == "" {
-		return fmt.Errorf("no removal version set for stable gate %q", id)
+	if (g.stage == StageStable || g.stage == StageDeprecated) && g.toVersion == "" {
+		return nil, fmt.Errorf("no removal version set for %v gate %q", g.stage.String(), id)
 	}
-	r.gates[id] = g
+	if _, loaded := r.gates.LoadOrStore(id, g); loaded {
+		return nil, fmt.Errorf("attempted to add pre-existing gate %q", id)
+	}
+	return g, nil
+}
+
+// Set the enabled valued for a Gate identified by the given id.
+func (r *Registry) Set(id string, enabled bool) error {
+	v, ok := r.gates.Load(id)
+	if !ok {
+		return fmt.Errorf("no such feature gate %q", id)
+	}
+	g := v.(*Gate)
+
+	switch g.stage {
+	case StageStable:
+		if !enabled {
+			return fmt.Errorf("feature gate %q is stable, can not be disabled", id)
+		}
+		fmt.Printf("Feature gate %q is stable and already enabled. It will be removed in version %v and continued use of the gate after version %v will result in an error.\n", id, g.toVersion, g.toVersion)
+	case StageDeprecated:
+		if enabled {
+			return fmt.Errorf("feature gate %q is deprecated, can not be enabled", id)
+		}
+		fmt.Printf("Feature gate %q is deprecated and already disabled. It will be removed in version %v and continued use of the gate after version %v will result in an error.\n", id, g.toVersion, g.toVersion)
+	default:
+		g.enabled.Store(enabled)
+	}
 	return nil
 }
 
-// List returns a slice of copies of all registered Gates.
-func (r *Registry) List() []Gate {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	ret := make([]Gate, len(r.gates))
-	i := 0
-	for _, gate := range r.gates {
-		ret[i] = gate
-		i++
+// VisitAll visits all the gates in lexicographical order, calling fn for each.
+func (r *Registry) VisitAll(fn func(*Gate)) {
+	var gates []*Gate
+	r.gates.Range(func(key, value any) bool {
+		gates = append(gates, value.(*Gate))
+		return true
+	})
+	sort.Slice(gates, func(i, j int) bool {
+		return gates[i].ID() < gates[j].ID()
+	})
+	for i := range gates {
+		fn(gates[i])
 	}
-
-	return ret
 }

@@ -7,10 +7,10 @@ package util
 
 import (
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,14 +36,14 @@ func TestTimeFromMillis(t *testing.T) {
 	}
 }
 
-func TestTimeRoundTrip(t *testing.T) {
+func TestTimeRoundTripUsingPrometheusMinAndMaxTimestamps(t *testing.T) {
 	refTime, _ := time.Parse(time.Layout, time.Layout)
 	var testExpr = []struct {
 		input time.Time
 	}{
 		{input: refTime},
-		{input: time.Unix(math.MinInt64/1000+62135596801, 0).UTC()},         // minTime from Prometheus API
-		{input: time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()}, // maxTime from Prometheus API
+		{input: v1.MinTime},
+		{input: v1.MaxTime},
 	}
 
 	for i, c := range testExpr {
@@ -81,6 +81,20 @@ func TestDurationWithPositiveJitter(t *testing.T) {
 
 func TestDurationWithPositiveJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(0), 0.5))
+}
+
+func TestDurationWithNegativeJitter(t *testing.T) {
+	const numRuns = 1000
+
+	for i := 0; i < numRuns; i++ {
+		actual := DurationWithNegativeJitter(time.Minute, 0.5)
+		assert.GreaterOrEqual(t, int64(actual), int64(30*time.Second))
+		assert.LessOrEqual(t, int64(actual), int64(60*time.Second))
+	}
+}
+
+func TestDurationWithNegativeJitter_ZeroInputDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(0), 0.5))
 }
 
 func TestParseTime(t *testing.T) {

@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 type SeriesEntry struct {
@@ -35,14 +34,16 @@ func (s *SeriesEntry) Iterator(it chunkenc.Iterator) chunkenc.Iterator { return 
 
 type ChunkSeriesEntry struct {
 	Lset            labels.Labels
+	ChunkCountFn    func() (int, error)
 	ChunkIteratorFn func(chunks.Iterator) chunks.Iterator
 }
 
 func (s *ChunkSeriesEntry) Labels() labels.Labels                       { return s.Lset }
 func (s *ChunkSeriesEntry) Iterator(it chunks.Iterator) chunks.Iterator { return s.ChunkIteratorFn(it) }
+func (s *ChunkSeriesEntry) ChunkCount() (int, error)                    { return s.ChunkCountFn() }
 
 // NewListSeries returns series entry with iterator that allows to iterate over provided samples.
-func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
+func NewListSeries(lset labels.Labels, s []chunks.Sample) *SeriesEntry {
 	samplesS := Samples(samples(s))
 	return &SeriesEntry{
 		Lset: lset,
@@ -58,7 +59,21 @@ func NewListSeries(lset labels.Labels, s []tsdbutil.Sample) *SeriesEntry {
 
 // NewListChunkSeriesFromSamples returns chunk series entry that allows to iterate over provided samples.
 // NOTE: It uses inefficient chunks encoding implementation, not caring about chunk size.
-func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sample) *ChunkSeriesEntry {
+// Use only for testing.
+func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]chunks.Sample) *ChunkSeriesEntry {
+	chksFromSamples := make([]chunks.Meta, 0, len(samples))
+	for _, s := range samples {
+		cfs, err := chunks.ChunkFromSamples(s)
+		if err != nil {
+			return &ChunkSeriesEntry{
+				Lset: lset,
+				ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
+					return errChunksIterator{err: err}
+				},
+			}
+		}
+		chksFromSamples = append(chksFromSamples, cfs)
+	}
 	return &ChunkSeriesEntry{
 		Lset: lset,
 		ChunkIteratorFn: func(it chunks.Iterator) chunks.Iterator {
@@ -69,15 +84,14 @@ func NewListChunkSeriesFromSamples(lset labels.Labels, samples ...[]tsdbutil.Sam
 			} else {
 				chks = make([]chunks.Meta, 0, len(samples))
 			}
-			for _, s := range samples {
-				chks = append(chks, tsdbutil.ChunkFromSamples(s))
-			}
+			chks = append(chks, chksFromSamples...)
 			if existing {
 				lcsi.Reset(chks...)
 				return lcsi
 			}
 			return NewListChunkSeriesIterator(chks...)
 		},
+		ChunkCountFn: func() (int, error) { return len(samples), nil }, // We create one chunk per slice of samples.
 	}
 }
 
@@ -86,14 +100,14 @@ type listSeriesIterator struct {
 	idx     int
 }
 
-type samples []tsdbutil.Sample
+type samples []chunks.Sample
 
-func (s samples) Get(i int) tsdbutil.Sample { return s[i] }
-func (s samples) Len() int                  { return len(s) }
+func (s samples) Get(i int) chunks.Sample { return s[i] }
+func (s samples) Len() int                { return len(s) }
 
-// Samples interface allows to work on arrays of types that are compatible with tsdbutil.Sample.
+// Samples interface allows to work on arrays of types that are compatible with chunks.Sample.
 type Samples interface {
-	Get(i int) tsdbutil.Sample
+	Get(i int) chunks.Sample
 	Len() int
 }
 
@@ -109,7 +123,7 @@ func (it *listSeriesIterator) Reset(samples Samples) {
 
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.samples.Get(it.idx)
-	return s.T(), s.V()
+	return s.T(), s.F()
 }
 
 func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
@@ -280,9 +294,10 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 
 func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	var (
-		chk chunkenc.Chunk
-		app chunkenc.Appender
-		err error
+		chk, newChk chunkenc.Chunk
+		app         chunkenc.Appender
+		err         error
+		recoded     bool
 	)
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
@@ -299,13 +314,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
 		if typ != lastType || i >= seriesToChunkEncoderSplit {
 			// Create a new chunk if the sample type changed or too many samples in the current one.
-			if chk != nil {
-				chks = append(chks, chunks.Meta{
-					MinTime: mint,
-					MaxTime: maxt,
-					Chunk:   chk,
-				})
-			}
+			chks = appendChunk(chks, mint, maxt, chk)
 			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -332,10 +341,34 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			app.Append(t, v)
 		case chunkenc.ValHistogram:
 			t, h = seriesIter.AtHistogram()
-			app.AppendHistogram(t, h)
+			newChk, recoded, app, err = app.AppendHistogram(nil, t, h, false)
+			if err != nil {
+				return errChunksIterator{err: err}
+			}
+			if newChk != nil {
+				if !recoded {
+					chks = appendChunk(chks, mint, maxt, chk)
+					mint = int64(math.MaxInt64)
+					// maxt is immediately overwritten below which is why setting it here won't make a difference.
+					i = 0
+				}
+				chk = newChk
+			}
 		case chunkenc.ValFloatHistogram:
 			t, fh = seriesIter.AtFloatHistogram()
-			app.AppendFloatHistogram(t, fh)
+			newChk, recoded, app, err = app.AppendFloatHistogram(nil, t, fh, false)
+			if err != nil {
+				return errChunksIterator{err: err}
+			}
+			if newChk != nil {
+				if !recoded {
+					chks = appendChunk(chks, mint, maxt, chk)
+					mint = int64(math.MaxInt64)
+					// maxt is immediately overwritten below which is why setting it here won't make a difference.
+					i = 0
+				}
+				chk = newChk
+			}
 		default:
 			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
 		}
@@ -350,6 +383,30 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 		return errChunksIterator{err: err}
 	}
 
+	chks = appendChunk(chks, mint, maxt, chk)
+
+	if existing {
+		lcsi.Reset(chks...)
+		return lcsi
+	}
+	return NewListChunkSeriesIterator(chks...)
+}
+
+func (s *seriesToChunkEncoder) ChunkCount() (int, error) {
+	// This method is expensive, but we don't expect to ever actually use this on the ingester query path in Mimir -
+	// it's just here to ensure things don't break if this assumption ever changes.
+
+	chunkCount := 0
+	it := s.Iterator(nil)
+
+	for it.Next() {
+		chunkCount++
+	}
+
+	return chunkCount, it.Err()
+}
+
+func appendChunk(chks []chunks.Meta, mint, maxt int64, chk chunkenc.Chunk) []chunks.Meta {
 	if chk != nil {
 		chks = append(chks, chunks.Meta{
 			MinTime: mint,
@@ -357,12 +414,7 @@ func (s *seriesToChunkEncoder) Iterator(it chunks.Iterator) chunks.Iterator {
 			Chunk:   chk,
 		})
 	}
-
-	if existing {
-		lcsi.Reset(chks...)
-		return lcsi
-	}
-	return NewListChunkSeriesIterator(chks...)
+	return chks
 }
 
 type errChunksIterator struct {
@@ -376,25 +428,32 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample) ([]chunks.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
-			return sample{t, v, h, fh}
+		newSampleFn = func(t int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) chunks.Sample {
+			switch {
+			case h != nil:
+				return hSample{t, h}
+			case fh != nil:
+				return fhSample{t, fh}
+			default:
+				return fSample{t, f}
+			}
 		}
 	}
 
-	var result []tsdbutil.Sample
+	var result []chunks.Sample
 	for {
 		switch iter.Next() {
 		case chunkenc.ValNone:
 			return result, iter.Err()
 		case chunkenc.ValFloat:
-			t, v := iter.At()
+			t, f := iter.At()
 			// NaNs can't be compared normally, so substitute for another value.
-			if math.IsNaN(v) {
-				v = -42
+			if math.IsNaN(f) {
+				f = -42
 			}
-			result = append(result, newSampleFn(t, v, nil, nil))
+			result = append(result, newSampleFn(t, f, nil, nil))
 		case chunkenc.ValHistogram:
 			t, h := iter.AtHistogram()
 			result = append(result, newSampleFn(t, 0, h, nil))

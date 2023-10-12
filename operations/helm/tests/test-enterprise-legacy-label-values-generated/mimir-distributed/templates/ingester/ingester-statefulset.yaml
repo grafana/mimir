@@ -12,7 +12,7 @@ metadata:
     rollout-group: ingester
     zone: zone-a
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -63,13 +63,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-ingester
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -147,7 +147,7 @@ metadata:
     rollout-group: ingester
     zone: zone-b
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -198,13 +198,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-ingester
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -282,7 +282,7 @@ metadata:
     rollout-group: ingester
     zone: zone-c
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -333,13 +333,13 @@ spec:
       affinity:
         {}
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: enterprise-metrics-ingester
-              release: test-enterprise-legacy-label-values
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: enterprise-metrics-ingester
+            release: test-enterprise-legacy-label-values
       tolerations:
         []
       terminationGracePeriodSeconds: 240

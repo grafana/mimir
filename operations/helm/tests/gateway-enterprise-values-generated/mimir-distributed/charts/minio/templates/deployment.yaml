@@ -4,10 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: gateway-enterprise-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.4
+    chart: minio-5.0.14
     release: gateway-enterprise-values
     heritage: Helm
 spec:
@@ -28,19 +27,19 @@ spec:
         app: minio
         release: gateway-enterprise-values
       annotations:
-        checksum/secrets: dc2f38dcd22731bc24743959819d245e339cf23fd7e2c9e33a4d18b3dccdafde
-        checksum/config: 0b2cfa950d43a5155c419a477947fc43d9262d99a1a0cd93b47b7dafb29e2c0f
+        checksum/secrets: e4b52e15d614ff34251a0ff592f442e4106a23e5c58d765e10e9558aa5e68ed4
+        checksum/config: ad79cceb30d1a6dfaeeb4113b927d28a12a8823620024d72873ae1940c9d4b32
     spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-
+      
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2022-12-12T19-27-27Z"
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

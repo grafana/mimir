@@ -8,7 +8,10 @@ import (
 	"testing"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestAllPrometheusStatusValues(t *testing.T) {
@@ -68,4 +71,11 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 	require.NotEmpty(t, strings)
 
 	return strings
+}
+
+// Check that the Prometheus histogram.FloatHistogram and MimirPb
+// FloatHistogram types converted into each other with unsafe.Pointer
+// are compatible
+func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
+	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false)
 }

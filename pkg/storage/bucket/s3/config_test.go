@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"testing"
 
+	s3_service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,8 +77,25 @@ func TestConfig_Validate(t *testing.T) {
 					BucketName:       "mimir-block",
 					SSE:              *sseCfg,
 					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
 				}
 				return cfg
+			},
+		},
+		"should fail if invalid storage class is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion: SignatureVersionV2,
+					StorageClass:     "foo",
+				}
+			},
+			expected: errUnsupportedStorageClass,
+		},
+		"should pass if valid storage signature version is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion: SignatureVersionV4, StorageClass: s3_service.StorageClassStandard,
+				}
 			},
 		},
 		"should fail on invalid endpoint prefix": {
@@ -86,9 +104,18 @@ func TestConfig_Validate(t *testing.T) {
 					Endpoint:         "mimir-blocks.s3.eu-central-1.amazonaws.com",
 					BucketName:       "mimir-blocks",
 					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
 				}
 			},
 			expected: errInvalidEndpointPrefix,
+		},
+		"should pass if native_aws_auth_enabled is set": {
+			setup: func() *Config {
+				return &Config{
+					SignatureVersion:     SignatureVersionV4,
+					NativeAWSAuthEnabled: true,
+				}
+			},
 		},
 	}
 

@@ -19,13 +19,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -62,27 +63,27 @@ func TestRequest(t *testing.T) {
 			},
 		},
 		{
-			url:         "api/v1/query_range?start=foo",
+			url:         "/api/v1/query_range?start=foo",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=bar",
+			url:         "/api/v1/query_range?start=123&end=bar",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=0",
+			url:         "/api/v1/query_range?start=123&end=0",
 			expectedErr: errEndBeforeStart,
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=456&step=baz",
+			url:         "/api/v1/query_range?start=123&end=456&step=baz",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
 		},
 		{
-			url:         "api/v1/query_range?start=123&end=456&step=-1",
+			url:         "/api/v1/query_range?start=123&end=456&step=-1",
 			expectedErr: errNegativeStep,
 		},
 		{
-			url:         "api/v1/query_range?start=0&end=11001&step=1",
+			url:         "/api/v1/query_range?start=0&end=11001&step=1",
 			expectedErr: errStepTooSmall,
 		},
 	} {
@@ -122,6 +123,83 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", encodedRequest.Header.Get("Accept"))
 			default:
 				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
+			}
+		})
+	}
+}
+
+func TestPrometheusCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
+	testResponse := &PrometheusResponse{
+		Status:    statusError,
+		ErrorType: string(v1.ErrExec),
+		Error:     "something went wrong",
+	}
+
+	jsonBody, err := jsonFormatter{}.EncodeResponse(testResponse)
+	require.NoError(t, err)
+
+	protobufBody, err := protobufFormatter{}.EncodeResponse(testResponse)
+	require.NoError(t, err)
+
+	scenarios := map[string]struct {
+		acceptHeader                string
+		expectedResponseContentType string
+		expectedResponseBody        []byte
+		expectedError               error
+	}{
+		"no content type in Accept header": {
+			acceptHeader:                "",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"unsupported content type in Accept header": {
+			acceptHeader:  "testing/not-a-supported-content-type",
+			expectedError: apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported"),
+		},
+		"multiple unsupported content types in Accept header": {
+			acceptHeader:  "testing/not-a-supported-content-type,testing/also-not-a-supported-content-type",
+			expectedError: apierror.New(apierror.TypeNotAcceptable, "none of the content types in the Accept header are supported"),
+		},
+		"single supported content type in Accept header": {
+			acceptHeader:                "application/json",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"wildcard subtype in Accept header": {
+			acceptHeader:                "application/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"wildcard in Accept header": {
+			acceptHeader:                "*/*",
+			expectedResponseContentType: jsonMimeType,
+			expectedResponseBody:        jsonBody,
+		},
+		"multiple supported content types in Accept header": {
+			acceptHeader:                "application/vnd.mimir.queryresponse+protobuf,application/json",
+			expectedResponseContentType: mimirpb.QueryResponseMimeType,
+			expectedResponseBody:        protobufBody,
+		},
+	}
+
+	codec := newTestPrometheusCodec()
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "/something", nil)
+			require.NoError(t, err)
+			req.Header.Set("Accept", scenario.acceptHeader)
+
+			encodedResponse, err := codec.EncodeResponse(context.Background(), req, testResponse)
+			require.Equal(t, scenario.expectedError, err)
+
+			if scenario.expectedError == nil {
+				actualResponseContentType := encodedResponse.Header.Get("Content-Type")
+				require.Equal(t, scenario.expectedResponseContentType, actualResponseContentType)
+
+				actualResponseBody, err := io.ReadAll(encodedResponse.Body)
+				require.NoError(t, err)
+				require.Equal(t, scenario.expectedResponseBody, actualResponseBody)
 			}
 		})
 	}
@@ -180,6 +258,19 @@ func TestDecodeFailedResponse(t *testing.T) {
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
 	})
+
+	t.Run("service unavailable", func(t *testing.T) {
+		_, err := codec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusServiceUnavailable), resp.Code)
+	})
 }
 
 func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
@@ -221,6 +312,44 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 
 func TestMergeAPIResponses(t *testing.T) {
 	codec := newTestPrometheusCodec()
+
+	histogram1 := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
+
+	histogram2 := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              100789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
+	}
 
 	for _, tc := range []struct {
 		name     string
@@ -435,7 +564,94 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 			},
-		}} {
+		},
+
+		{
+			name: "Handling single histogram result",
+			input: []Response{
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{TimestampMs: 1000, Histogram: &histogram1},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Histograms: []mimirpb.FloatHistogramPair{
+								{
+									TimestampMs: 1000,
+									Histogram:   &histogram1,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "Handling non overlapping histogram result",
+			input: []Response{
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{TimestampMs: 1000, Histogram: &histogram1},
+								},
+							},
+						},
+					},
+				},
+				&PrometheusResponse{
+					Status: statusSuccess,
+					Data: &PrometheusData{
+						ResultType: matrix,
+						Result: []SampleStream{
+							{
+								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Histograms: []mimirpb.FloatHistogramPair{
+									{TimestampMs: 2000, Histogram: &histogram2},
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: matrix,
+					Result: []SampleStream{
+						{
+							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Histograms: []mimirpb.FloatHistogramPair{
+								{TimestampMs: 1000, Histogram: &histogram1},
+								{TimestampMs: 2000, Histogram: &histogram2},
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			output, err := codec.MergeResponse(tc.input...)
 			require.NoError(t, err)
@@ -528,6 +744,8 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	)
 
 	codec := newTestPrometheusCodec()
+	req, err := http.NewRequest(http.MethodGet, "/something", nil)
+	require.NoError(b, err)
 
 	// Generate a mocked response and marshal it.
 	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
@@ -536,7 +754,7 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	b.ReportAllocs()
 
 	for n := 0; n < b.N; n++ {
-		_, err := codec.EncodeResponse(context.Background(), res)
+		_, err := codec.EncodeResponse(context.Background(), req, res)
 		require.NoError(b, err)
 	}
 }
@@ -584,6 +802,22 @@ func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples .
 				{
 					Labels:  series,
 					Samples: samples,
+				},
+			},
+		},
+	}
+}
+
+func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *PrometheusResponse {
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "matrix",
+			Result: []SampleStream{
+				{
+					Labels:     labels,
+					Samples:    samples,
+					Histograms: histograms,
 				},
 			},
 		},

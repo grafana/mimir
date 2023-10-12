@@ -13,10 +13,10 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/regexp"
+	objstoretracing "github.com/thanos-io/objstore/tracing/opentracing"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/azure"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -81,15 +81,15 @@ func (cfg *StorageBackendConfig) supportedBackends() []string {
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.RegisterFlagsWithPrefix("", f, logger)
+func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
 }
 
-func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet, logger log.Logger) {
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
 	cfg.RegisteredFlags = util.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
 		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
-		cfg.Azure.RegisterFlagsWithPrefix(prefix, f, logger)
+		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
 		cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
 		cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
@@ -97,8 +97,8 @@ func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(pref
 	})
 }
 
-func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f, logger)
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
 }
 
 func (cfg *StorageBackendConfig) Validate() error {
@@ -119,7 +119,7 @@ func (cfg *StorageBackendConfig) Validate() error {
 type Config struct {
 	StorageBackendConfig `yaml:",inline"`
 
-	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
+	StoragePrefix string `yaml:"storage_prefix"`
 
 	// Not used internally, meant to allow callers to wrap Buckets
 	// created using this config
@@ -127,17 +127,17 @@ type Config struct {
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	cfg.RegisterFlagsWithPrefix("", f, logger)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
 }
 
-func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet, logger log.Logger) {
-	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f, logger)
+func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
+	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
 }
 
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f, logger)
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
 }
 
 func (cfg *Config) Validate() error {
@@ -181,7 +181,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	instrumentedClient := objstore.NewTracingBucket(bucketWithMetrics(backendClient, name, reg))
+	instrumentedClient := objstoretracing.WrapWithTraces(bucketWithMetrics(backendClient, name, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
@@ -199,8 +199,14 @@ func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus
 		return bucketClient
 	}
 
-	return objstore.BucketWithMetrics(
-		"", // bucket label value
+	// Thanos objstore no longer includes a "thanos_" prefix but all our dashboards
+	// rely on object storage related metrics including a "thanos_" prefix.
+	reg = prometheus.WrapRegistererWithPrefix("thanos_", reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg)
+
+	return objstore.WrapWithMetrics(
 		bucketClient,
-		prometheus.WrapRegistererWith(prometheus.Labels{"component": name}, reg))
+		reg,
+		"", // bucket label value
+	)
 }

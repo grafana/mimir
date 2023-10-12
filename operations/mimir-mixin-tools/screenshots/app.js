@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const querystring = require('querystring');
 const puppeteer = require('puppeteer');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+const spawnSync = require('child_process').spawnSync;
 
 const defaultViewportWidth = 1400;
 const defaultViewportHeight = 2400;
@@ -80,6 +79,7 @@ async function takeScreenshot(browser, dashboard) {
         "var-datasource": "Mimir",
         "var-cluster": process.env.CLUSTER,
         "var-namespace": dashboard.name.includes("alertmanager") ? process.env.ALERTMANAGER_NAMESPACE : process.env.MIMIR_NAMESPACE,
+        "var-user": process.env.MIMIR_USER,
     })
 
     // Load the dashboard page.
@@ -103,19 +103,25 @@ async function takeScreenshot(browser, dashboard) {
     await page.close();
 
     // Optimize the png (lossless)
-    await exec(`pngquant --force --ext '.png' --skip-if-larger --speed 1 --strip --quality 100 ${screenshotPath}`);
+    const res = spawnSync('pngquant', ['--force', '--ext', '.png', '--skip-if-larger', '--speed', '1', '--strip', '--quality', '100', '--verbose', screenshotPath]);
+
+    // We accept status code 99 which is returned when pngquant doesn't optimize
+    // a file because the output would be larger than the input.
+    if (res.status !== 0 && res.status !== 99) {
+        throw new Error(`The pngquant command failed to run: ${res.error}`)
+    }
 }
 
 async function run() {
     // Ensure required environment variables have been set.
-    ["CLUSTER", "MIMIR_NAMESPACE", "ALERTMANAGER_NAMESPACE"].forEach((name) => {
+    ["CLUSTER", "MIMIR_NAMESPACE", "ALERTMANAGER_NAMESPACE", "MIMIR_USER"].forEach((name) => {
         if (!process.env[name]) {
             throw new Error(`The ${name} environment variable is missing`)
         }
     })
 
     const browser = await puppeteer.launch({
-        headless: true,
+        headless: "new",
         args: [
             "--disable-gpu",
             "--disable-dev-shm-usage",

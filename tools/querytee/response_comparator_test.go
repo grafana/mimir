@@ -252,6 +252,44 @@ func TestCompareSamplesResponse(t *testing.T) {
 			err: errors.New("expected status success but got fail"),
 		},
 		{
+			name: "same error and error type",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"errorType": "something",
+							"error": "something went wrong"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"errorType": "something",
+							"error": "something went wrong"
+						}`),
+			err: nil,
+		},
+		{
+			name: "difference in response error type",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"errorType": "something"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"errorType": "something-else"
+						}`),
+			err: errors.New("expected error type 'something' but got 'something-else'"),
+		},
+		{
+			name: "difference in response error",
+			expected: json.RawMessage(`{
+							"status": "error",
+							"error": "something went wrong"
+						}`),
+			actual: json.RawMessage(`{
+							"status": "error",
+							"error": "something else went wrong"
+						}`),
+			err: errors.New("expected error 'something went wrong' but got 'something else went wrong'"),
+		},
+		{
 			name: "difference in resultType",
 			expected: json.RawMessage(`{
 							"status": "success",
@@ -413,13 +451,15 @@ func TestCompareSamplesResponse(t *testing.T) {
 				UseRelativeError:  bool(tc.useRelativeError),
 				SkipRecentSamples: tc.skipRecentSamples,
 			})
-			err := samplesComparator.Compare(tc.expected, tc.actual)
+			result, err := samplesComparator.Compare(tc.expected, tc.actual)
 			if tc.err == nil {
 				require.NoError(t, err)
+				require.Equal(t, ComparisonSuccess, result)
 				return
 			}
 			require.Error(t, err)
 			require.Equal(t, tc.err.Error(), err.Error())
+			require.Equal(t, result, ComparisonFailed)
 		})
 	}
 }

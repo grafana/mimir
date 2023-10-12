@@ -105,6 +105,13 @@ func (d *Decbuf) ResetAt(off int) {
 		return
 	}
 
+	// If we are trying to reset at a position which is already buffered,
+	// we can avoid resetting the fileReader and just discard some of the buffer instead.
+	if dist := off - d.Position(); dist >= 0 && dist < d.r.buffered() {
+		d.E = d.r.skip(dist)
+		return
+	}
+
 	d.E = d.r.resetAt(off)
 }
 

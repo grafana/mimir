@@ -14,7 +14,7 @@ metadata:
     rollout-group: ingester
     zone: zone-a
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -82,20 +82,20 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-a
+                - zone-a
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-oss-multizone-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-multizone-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -173,7 +173,7 @@ metadata:
     rollout-group: ingester
     zone: zone-b
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -241,20 +241,20 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-b
+                - zone-b
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-oss-multizone-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-multizone-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -332,7 +332,7 @@ metadata:
     rollout-group: ingester
     zone: zone-c
   annotations:
-    rollout-max-unavailable: "25"
+    rollout-max-unavailable: "50"
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
@@ -400,20 +400,20 @@ spec:
                 operator: In
                 values:
                 - ingester
-              - key: app.kubernetes.io/component
+              - key: zone
                 operator: NotIn
                 values:
-                - ingester-zone-c
+                - zone-c
             topologyKey: kubernetes.io/hostname
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-oss-multizone-values
-              app.kubernetes.io/component: ingester
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-multizone-values
+            app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240

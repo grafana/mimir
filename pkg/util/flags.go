@@ -4,7 +4,12 @@ package util
 
 import (
 	"flag"
+	"fmt"
 	"strings"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 )
 
 // RegisteredFlags contains the flags registered by some config.
@@ -38,4 +43,9 @@ func TrackRegisteredFlags(prefix string, f *flag.FlagSet, register func(prefix s
 	})
 
 	return rf
+}
+
+func WarnDeprecatedConfig(flagName string, logger log.Logger) {
+	flagext.DeprecatedFlagsUsed.Inc()
+	level.Warn(logger).Log("msg", fmt.Sprintf("the configuration parameter -%s is deprecated and will be soon removed from Mimir", flagName))
 }

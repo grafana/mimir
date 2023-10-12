@@ -10,6 +10,7 @@
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
 
   alertmanager_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -42,15 +43,21 @@
       pvc.new() +
       pvc.mixin.metadata.withName('alertmanager-data') +
       pvc.mixin.spec.withAccessModes('ReadWriteOnce') +
-      pvc.mixin.spec.resources.withRequests({ storage: '100Gi' })
+      pvc.mixin.spec.resources.withRequests({ storage: $._config.alertmanager_data_disk_size }) +
+      if $._config.alertmanager_data_disk_class != null then
+        pvc.mixin.spec.withStorageClassName($._config.alertmanager_data_disk_class)
+      else {}
     else {},
 
   alertmanager_ports:: $.util.defaultPorts,
+
+  alertmanager_env_map:: {},
 
   alertmanager_container::
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
       container.withPorts($.alertmanager_ports) +
+      (if std.length($.alertmanager_env_map) > 0 then container.withEnvMap(std.prune($.alertmanager_env_map)) else {}) +
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args)

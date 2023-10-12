@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/regexp"
 )
 
@@ -115,14 +116,19 @@ func addLicense(dir string) error {
 }
 
 func main() {
-	// Parse the flags.
-	flag.Parse()
-	if flag.NArg() == 0 {
+	// Parse CLI arguments.
+	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+
+	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: add-license <dir> ...")
 		os.Exit(1)
 	}
 
-	for _, dir := range flag.Args() {
+	for _, dir := range args {
 		if err := addLicense(dir); err != nil {
 			log.Fatal(err)
 		}

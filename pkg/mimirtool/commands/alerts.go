@@ -14,9 +14,11 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,7 +26,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
@@ -75,7 +76,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
 
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
-	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	loadalertCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 
 	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
@@ -88,7 +89,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	verifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)
 }
 
-func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -98,7 +99,7 @@ func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
@@ -113,7 +114,7 @@ func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 	return p.PrintAlertmanagerConfig(cfg, templates)
 }
 
-func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (string, map[string]string, error) {
+func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]string, error) {
 	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
 		return "", nil, errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
@@ -125,31 +126,46 @@ func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (s
 		return "", nil, err
 	}
 
-	templates := map[string]string{}
-	for _, f := range a.TemplateFiles {
-		tmpl, err := os.ReadFile(f)
-		if err != nil {
-			return "", nil, errors.Wrap(err, "unable to load template file: "+f)
-		}
-		templates[f] = string(tmpl)
+	templates, err := a.readAlertManagerConfigTemplates()
+	if err != nil {
+		return "", nil, err
 	}
+
 	return cfg, templates, nil
 }
 
-func (a *AlertmanagerCommand) verifyAlertmanagerConfig(k *kingpin.ParseContext) error {
-	_, _, err := a.readAlertManagerConfig(k)
+func (a *AlertmanagerCommand) readAlertManagerConfigTemplates() (map[string]string, error) {
+	templates := map[string]string{}
+	originalPaths := map[string]string{}
+	for _, f := range a.TemplateFiles {
+		tmpl, err := os.ReadFile(f)
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to load template file: "+f)
+		}
+		name := filepath.Base(f)
+		if _, ok := templates[name]; ok {
+			return nil, errors.Errorf("cannot have multiple templates with same file names but different paths: %s collides with %s", f, originalPaths[name])
+		}
+		templates[name] = string(tmpl)
+		originalPaths[name] = f
+	}
+	return templates, nil
+}
+
+func (a *AlertmanagerCommand) verifyAlertmanagerConfig(_ *kingpin.ParseContext) error {
+	_, _, err := a.readAlertManagerConfig()
 	return err
 }
 
-func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
-	cfg, templates, err := a.readAlertManagerConfig(k)
+func (a *AlertmanagerCommand) loadConfig(_ *kingpin.ParseContext) error {
+	cfg, templates, err := a.readAlertManagerConfig()
 	if err != nil {
 		return err
 	}
 	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
-func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 	err := a.cli.DeleteAlermanagerConfig(context.Background())
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return err
@@ -203,7 +219,7 @@ type metric struct {
 	Metric map[string]string `json:"metric"`
 }
 
-func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
+func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	var empty interface{}
 	if a.IgnoreString != "" {
 		a.IgnoreAlerts = make(map[string]interface{})

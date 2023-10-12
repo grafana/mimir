@@ -32,13 +32,22 @@ get_yaml_node() {
   echo $(yq $yaml_node $filename)
 }
 
-# Increments the part of the string
+# Increments the part of the semver string
 # $1: version itself
 # $2: number of part: 0 – major, 1 – minor, 2 – patch
 increment_semver() {
   local delimiter=.
   local array=($(echo "$1" | tr $delimiter '\n'))
   array[$2]=$((array[$2]+1))
+  echo $(local IFS=$delimiter ; echo "${array[*]}")
+}
+
+# Sets the patch segment of a semver to 0
+# $1: version itself
+set_semver_patch_to_zero() {
+  local delimiter=.
+  local array=($(echo "$1" | tr $delimiter '\n'))
+  array[2]="0"
   echo $(local IFS=$delimiter ; echo "${array[*]}")
 }
 
@@ -51,8 +60,10 @@ calculate_next_chart_version() {
   local new_chart_semver=$current_chart_semver
   if [[ $current_chart_version != *weekly* ]]; then
     # If previous version was not a weekly, then it was a stable release.
-    # _This_ weekly release should have a semver that's one above the
+    # _This_ weekly release should have a semver that's one above the stable release.
     new_chart_semver=$(increment_semver $current_chart_semver 1)
+    # Also reset the patch release number to 0.
+    new_chart_semver=$(set_semver_patch_to_zero $new_chart_semver)
   fi
   echo "$new_chart_semver-weekly.$new_chart_weekly"
 }

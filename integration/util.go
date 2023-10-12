@@ -8,39 +8,64 @@ package integration
 
 import (
 	"bytes"
-	"math"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
+	"github.com/grafana/e2e"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 
-	"github.com/grafana/e2e"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var (
 	// Expose some utilities from the framework so that we don't have to prefix them
 	// with the package name in tests.
-	mergeFlags      = e2e.MergeFlags
-	generateSeries  = e2e.GenerateSeries
-	generateNSeries = e2e.GenerateNSeries
+	mergeFlags = e2e.MergeFlags
 
-	// These are the earliest and latest possible timestamps supported by the Prometheus API -
-	// the Prometheus API does not support omitting a time range from query requests,
-	// so we use these when we want to query over all time.
-	// These values are defined in github.com/prometheus/prometheus/web/api/v1/api.go but
-	// sadly not exported.
-	prometheusMinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
+	generateFloatSeries  = e2e.GenerateSeries
+	generateNFloatSeries = e2e.GenerateNSeries
+
+	// These are local, because e2e is used by non metric products that do not have native histograms
+	generateHistogramSeries         = GenerateHistogramSeries
+	generateNHistogramSeries        = GenerateNHistogramSeries
+	generateTestHistogram           = test.GenerateTestHistogram
+	generateTestFloatHistogram      = test.GenerateTestFloatHistogram
+	generateTestGaugeHistogram      = test.GenerateTestGaugeHistogram
+	generateTestGaugeFloatHistogram = test.GenerateTestGaugeFloatHistogram
+	generateTestSampleHistogram     = test.GenerateTestSampleHistogram
 )
+
+// generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
+type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+// Generates different typed series based on an index in i.
+// Use with a large enough number of series, e.g. i>100
+func generateAlternatingSeries(i int) generateSeriesFunc {
+	switch i % 5 {
+	case 0:
+		return generateFloatSeries
+	case 1:
+		return generateHistogramSeries
+	case 2:
+		return GenerateFloatHistogramSeries
+	case 3:
+		return GenerateGaugeHistogramSeries
+	case 4:
+		return GenerateGaugeFloatHistogramSeries
+	default:
+		return nil
+	}
+}
+
+// generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
+type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
 
 func getMimirProjectDir() string {
 	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
@@ -116,79 +141,34 @@ func getTLSFlagsWithPrefix(prefix string, servername string, http bool) map[stri
 	return flags
 }
 
-func GenerateTestHistogram(i int) *histogram.Histogram {
-	return tsdb.GenerateTestHistograms(i + 1)[i]
-}
-
-func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdb.GenerateTestFloatHistograms(i + 1)[i]
-}
-
-// explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
-func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
-	return &model.SampleHistogram{
-		Count: model.FloatString(10 + i*8),
-		Sum:   model.FloatString(18.4 * float64(i+1)),
-		Buckets: model.HistogramBuckets{
-			&model.HistogramBucket{
-				Boundaries: 1,
-				Lower:      -4,
-				Upper:      -2.82842712474619,
-				Count:      model.FloatString(1 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 1,
-				Lower:      -2.82842712474619,
-				Upper:      -2,
-				Count:      model.FloatString(1 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 1,
-				Lower:      -1.414213562373095,
-				Upper:      -1,
-				Count:      model.FloatString(2 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 1,
-				Lower:      -1,
-				Upper:      -0.7071067811865475,
-				Count:      model.FloatString(1 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 3,
-				Lower:      -0.001,
-				Upper:      0.001,
-				Count:      model.FloatString(2 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 0,
-				Lower:      0.7071067811865475,
-				Upper:      1,
-				Count:      model.FloatString(1 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 0,
-				Lower:      1,
-				Upper:      1.414213562373095,
-				Count:      model.FloatString(2 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 0,
-				Lower:      2,
-				Upper:      2.82842712474619,
-				Count:      model.FloatString(1 + i),
-			},
-			&model.HistogramBucket{
-				Boundaries: 0,
-				Lower:      2.82842712474619,
-				Upper:      4,
-				Count:      model.FloatString(1 + i),
-			},
-		},
-	}
-}
+// generateHistogramFunc defines what kind of native histograms to generate: float/integer, counter/gauge
+type generateHistogramFunc func(tsMillis int64, value int) prompb.Histogram
 
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.HistogramToHistogramProto(tsMillis, generateTestGaugeHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func GenerateGaugeFloatHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	return generateHistogramSeriesWrapper(func(tsMillis int64, value int) prompb.Histogram {
+		return remote.FloatHistogramToHistogramProto(tsMillis, generateTestGaugeFloatHistogram(value))
+	}, name, ts, additionalLabels...)
+}
+
+func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := e2e.TimeToMilliseconds(ts)
 
 	value := rand.Intn(1000)
@@ -208,7 +188,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 				{Name: "trace_id", Value: "1234"},
 			}},
 		},
-		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, GenerateTestHistogram(value))},
+		Histograms: []prompb.Histogram{generateHistogram(tsMillis, value)},
 	})
 
 	// Generate the expected vector and matrix when querying it
@@ -221,7 +201,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 	vector = append(vector, &model.Sample{
 		Metric:    metric,
 		Timestamp: model.Time(tsMillis),
-		Histogram: GenerateTestSampleHistogram(value),
+		Histogram: generateTestSampleHistogram(value),
 	})
 
 	matrix = append(matrix, &model.SampleStream{
@@ -229,7 +209,7 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 		Histograms: []model.SampleHistogramPair{
 			{
 				Timestamp: model.Time(tsMillis),
-				Histogram: GenerateTestSampleHistogram(value),
+				Histogram: generateTestSampleHistogram(value),
 			},
 		},
 	})
@@ -258,7 +238,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 
 		series = append(series, prompb.TimeSeries{
 			Labels:     lbls,
-			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, GenerateTestHistogram(i))},
+			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(i))},
 			Exemplars:  exemplars,
 		})
 	}
@@ -273,7 +253,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 		vector = append(vector, &model.Sample{
 			Metric:    metric,
 			Timestamp: model.Time(tsMillis),
-			Histogram: GenerateTestSampleHistogram(i),
+			Histogram: generateTestSampleHistogram(i),
 		})
 	}
 	return

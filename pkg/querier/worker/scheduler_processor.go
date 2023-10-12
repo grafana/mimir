@@ -17,15 +17,15 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -36,6 +36,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
+
+const maxNotifyFrontendRetries = 5
 
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
@@ -67,7 +69,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		HealthCheckTimeout: 1 * time.Second,
 	}
 
-	p.frontendPool = client.NewPool("frontend", poolConfig, nil, p.createFrontendClient, frontendClientsGauge, log)
+	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)
 	return p, []services.Service{p.frontendPool}
 }
 
@@ -118,7 +120,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 		}
 
 		if err := sp.querierLoop(c, address, inflightQuery); err != nil {
-			// Do not log an error is the query-scheduler is shutting down.
+			// Do not log an error if the query-scheduler is shutting down.
 			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
 				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 			}
@@ -153,8 +155,16 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		go func() {
 			defer inflightQuery.Store(false)
 
+			// Create a per-request context and cancel it once we're done processing the request.
+			// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
+			// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
+			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
+			// net/http package.
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
 			// We need to inject user into context for sending response back.
-			ctx := user.InjectOrgID(ctx, request.UserID)
+			ctx = user.InjectOrgID(ctx, request.UserID)
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
@@ -205,16 +215,30 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			Body: []byte(errMsg),
 		}
 	}
+	var c client.PoolClient
+	var retries int
 
-	c, err := sp.frontendPool.GetClientFor(frontendAddress)
-	if err == nil {
+	for {
+		c, err = sp.frontendPool.GetClientFor(frontendAddress)
+		if err != nil {
+			break
+		}
 		// Response is empty and uninteresting.
 		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(ctx, &frontendv2pb.QueryResultRequest{
 			QueryID:      queryID,
 			HttpResponse: response,
 			Stats:        stats,
 		})
+		if err == nil || retries >= maxNotifyFrontendRetries {
+			break
+		}
+		// If the used connection returned and error, remove it from the pool and retry.
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", retries)
+
+		sp.frontendPool.RemoveClientFor(frontendAddress)
+		retries++
 	}
+
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
 	}

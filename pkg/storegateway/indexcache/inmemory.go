@@ -13,7 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
-	lru "github.com/hashicorp/golang-lru/simplelru"
+	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,7 +43,7 @@ type InMemoryIndexCache struct {
 	mtx sync.Mutex
 
 	logger           log.Logger
-	lru              *lru.LRU
+	lru              *lru.LRU[cacheKey, []byte]
 	maxSizeBytes     uint64
 	maxItemSizeBytes uint64
 
@@ -179,15 +179,14 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	return c, nil
 }
 
-func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
-	k := key.(cacheKey)
-	typ := k.typ()
-	entrySize := sliceSize(val.([]byte))
+func (c *InMemoryIndexCache) onEvict(key cacheKey, val []byte) {
+	typ := key.typ()
+	entrySize := sliceSize(val)
 
 	c.evicted.WithLabelValues(typ).Inc()
 	c.current.WithLabelValues(typ).Dec()
 	c.currentSize.WithLabelValues(typ).Sub(float64(entrySize))
-	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + k.size()))
+	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + key.size()))
 
 	c.curSize -= entrySize
 }
@@ -204,7 +203,7 @@ func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
 		return nil, false
 	}
 	c.hits.WithLabelValues(typ).Inc()
-	return v.([]byte), true
+	return v, true
 }
 
 func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {
@@ -291,30 +290,30 @@ func copyLabel(l labels.Label) labels.Label {
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StorePostings(_ context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 
-// FetchMultiPostings fetches multiple postings - each identified by a label -
-// and returns a map containing cache hits, along with a list of missing keys.
-func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	hits = map[labels.Label][]byte{}
+// FetchMultiPostings fetches multiple postings - each identified by a label.
+func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, userID string, blockID ulid.ULID, keys []labels.Label) BytesResult {
+	hits := map[labels.Label][]byte{}
 
 	for _, key := range keys {
 		if b, ok := c.get(cacheKeyPostings{userID, blockID, key}); ok {
 			hits[key] = b
 			continue
 		}
-
-		misses = append(misses, key)
 	}
 
-	return hits, misses
+	return &MapIterator[labels.Label]{
+		Keys: keys,
+		M:    hits,
+	}
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
 	c.set(cacheKeySeriesForRef{userID, blockID, id}, v)
 }
 
@@ -336,37 +335,27 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID s
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	c.set(cacheKeyExpandedPostings{userID, blockID, key}, v)
+func (c *InMemoryIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
+	c.set(cacheKeyExpandedPostings{userID, blockID, key, postingsSelectionStrategy}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
-	return c.get(cacheKeyExpandedPostings{userID, blockID, key})
-}
-
-// StoreSeries stores the result of a Series() call.
-func (c *InMemoryIndexCache) StoreSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)}, v)
-}
-
-// FetchSeries fetches the result of a Series() call.
-func (c *InMemoryIndexCache) FetchSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
-	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)})
+func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, postingsSelectionStrategy string) ([]byte, bool) {
+	return c.get(cacheKeyExpandedPostings{userID, blockID, key, postingsSelectionStrategy})
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *InMemoryIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
 	c.set(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey}, v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *InMemoryIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+func (c *InMemoryIndexCache) FetchSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
 	return c.get(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey})
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *InMemoryIndexCache) StoreLabelNames(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+func (c *InMemoryIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
 	c.set(cacheKeyLabelNames{userID, blockID, matchersKey}, v)
 }
 
@@ -376,7 +365,7 @@ func (c *InMemoryIndexCache) FetchLabelNames(_ context.Context, userID string, b
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *InMemoryIndexCache) StoreLabelValues(_ context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+func (c *InMemoryIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
 	c.set(cacheKeyLabelValues{userID, blockID, labelName, matchersKey}, v)
 }
 
@@ -422,30 +411,16 @@ func (c cacheKeySeriesForRef) size() uint64 {
 
 // cacheKeyPostings implements cacheKey and is used to reference an expanded postings cache entry in the inmemory cache.
 type cacheKeyExpandedPostings struct {
-	userID      string
-	block       ulid.ULID
-	matchersKey LabelMatchersKey
+	userID                    string
+	block                     ulid.ULID
+	matchersKey               LabelMatchersKey
+	postingsSelectionStrategy string
 }
 
 func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
 
 func (c cacheKeyExpandedPostings) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey))
-}
-
-type cacheKeySeries struct {
-	userID      string
-	block       ulid.ULID
-	matchersKey LabelMatchersKey
-	shard       string
-}
-
-func (c cacheKeySeries) typ() string {
-	return cacheTypeSeries
-}
-
-func (c cacheKeySeries) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard)
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.postingsSelectionStrategy)
 }
 
 type cacheKeySeriesForPostings struct {

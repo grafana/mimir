@@ -17,6 +17,7 @@ const (
 	MissingMetricName             ID = "missing-metric-name"
 	InvalidMetricName             ID = "metric-name-invalid"
 	MaxLabelNamesPerSeries        ID = "max-label-names-per-series"
+	MaxNativeHistogramBuckets     ID = "max-native-histogram-buckets"
 	SeriesInvalidLabel            ID = "label-invalid"
 	SeriesLabelNameTooLong        ID = "label-name-too-long"
 	SeriesLabelValueTooLong       ID = "label-value-too-long"
@@ -26,21 +27,20 @@ const (
 	MaxSeriesPerMetric            ID = "max-series-per-metric"
 	MaxMetadataPerMetric          ID = "max-metadata-per-metric"
 	MaxSeriesPerUser              ID = "max-series-per-user"
-	MaxEphemeralSeriesPerUser     ID = "max-ephemeral-series-per-user"
 	MaxMetadataPerUser            ID = "max-metadata-per-user"
 	MaxChunksPerQuery             ID = "max-chunks-per-query"
 	MaxSeriesPerQuery             ID = "max-series-per-query"
 	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
+	MaxEstimatedChunksPerQuery    ID = "max-estimated-chunks-per-query"
 
 	DistributorMaxIngestionRate             ID = "distributor-max-ingestion-rate"
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
 	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"
 
-	IngesterMaxIngestionRate           ID = "ingester-max-ingestion-rate"
-	IngesterMaxTenants                 ID = "ingester-max-tenants"
-	IngesterMaxInMemorySeries          ID = "ingester-max-series"
-	IngesterMaxInMemoryEphemeralSeries ID = "ingester-max-ephemeral-series"
-	IngesterMaxInflightPushRequests    ID = "ingester-max-inflight-push-requests"
+	IngesterMaxIngestionRate        ID = "ingester-max-ingestion-rate"
+	IngesterMaxTenants              ID = "ingester-max-tenants"
+	IngesterMaxInMemorySeries       ID = "ingester-max-series"
+	IngesterMaxInflightPushRequests ID = "ingester-max-inflight-push-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
@@ -51,27 +51,24 @@ const (
 	MetricMetadataHelpTooLong       ID = "help-too-long" // unused, left here to prevent reuse for different purpose
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
-	MaxQueryLength       ID = "max-query-length"
-	MaxTotalQueryLength  ID = "max-total-query-length"
-	RequestRateLimited   ID = "tenant-max-request-rate"
-	IngestionRateLimited ID = "tenant-max-ingestion-rate"
-	TooManyHAClusters    ID = "tenant-too-many-ha-clusters"
+	MaxQueryLength              ID = "max-query-length"
+	MaxTotalQueryLength         ID = "max-total-query-length"
+	MaxQueryExpressionSizeBytes ID = "max-query-expression-size-bytes"
+	RequestRateLimited          ID = "tenant-max-request-rate"
+	IngestionRateLimited        ID = "tenant-max-ingestion-rate"
+	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
+	QueryBlocked                ID = "query-blocked"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"
 	SampleDuplicateTimestamp ID = "sample-duplicate-timestamp"
 	ExemplarSeriesMissing    ID = "exemplar-series-missing"
-
-	EphemeralSampleTimestampTooOld    ID = "ephemeral-sample-timestamp-too-old"
-	EphemeralSampleOutOfOrder         ID = "ephemeral-sample-out-of-order"
-	EphemeralSampleDuplicateTimestamp ID = "ephemeral-sample-duplicate-timestamp"
+	ExemplarTooFarInFuture   ID = "exemplar-too-far-in-future"
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
-
-	EphemeralStorageNotEnabledForUser ID = "ephemeral-storage-not-enabled-for-user"
 )
 
 // Message returns the provided msg, appending the error id.
@@ -91,6 +88,25 @@ func (id ID) MessageWithPerInstanceLimitConfig(msg, flag string, addFlags ...str
 func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...string) string {
 	flagsList, plural := buildFlagsList(flag, addFlags...)
 	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
+}
+
+// MessageWithStrategyAndPerTenantLimitConfig returns the provided msg, appending the error id and a
+// suggestion on which strategy to follow to try not hitting the limit, plus which configuration
+// flag(s) to otherwise change the per-tenant limit.
+func (id ID) MessageWithStrategyAndPerTenantLimitConfig(msg, strategy, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). %s. Otherwise, to adjust the related per-tenant limit%s, configure %s, or contact your service administrator.",
+		msg, errPrefix, id, strategy, plural, flagsList)
+}
+
+// LabelValue returns the error ID converted to a form suitable for use as a Prometheus label value.
+func (id ID) LabelValue() string {
+	return strings.ReplaceAll(string(id), "-", "_")
+}
+
+// Error implements error.
+func (id ID) Error() string {
+	return string(id)
 }
 
 func buildFlagsList(flag string, addFlags ...string) (string, string) {

@@ -23,6 +23,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -31,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -45,7 +47,9 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{cache.BackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached, cache.BackendRedis}
+
+	errUnsupportedBackend = errors.New("unsupported cache backend")
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -56,8 +60,9 @@ type ResultsCacheConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
-	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
+	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", strings.Join(supportedResultsCacheBackends, ", ")))
+	cfg.Memcached.RegisterFlagsWithPrefix("query-frontend.results-cache.memcached.", f)
+	cfg.Redis.RegisterFlagsWithPrefix("query-frontend.results-cache.redis.", f)
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
 
@@ -66,10 +71,16 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == cache.BackendMemcached {
+	switch cfg.Backend {
+	case cache.BackendMemcached:
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
+	case cache.BackendRedis:
+		if err := cfg.Redis.Validate(); err != nil {
+			return errors.Wrap(err, "query-frontend results cache")
+		}
+
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
@@ -79,8 +90,28 @@ func (cfg *ResultsCacheConfig) Validate() error {
 	return nil
 }
 
-func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
-	return fmt.Errorf("unsupported cache backend: %q, supported values: %v", unsupportedBackend, supportedResultsCacheBackends)
+func errUnsupportedResultsCacheBackend(backend string) error {
+	return fmt.Errorf("%w: %q, supported values: %v", errUnsupportedBackend, backend, supportedResultsCacheBackends)
+}
+
+type resultsCacheMetrics struct {
+	cacheRequests prometheus.Counter
+	cacheHits     prometheus.Counter
+}
+
+func newResultsCacheMetrics(requestType string, reg prometheus.Registerer) *resultsCacheMetrics {
+	return &resultsCacheMetrics{
+		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_requests_total",
+			Help:        "Total number of requests (or partial requests) looked up in the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_frontend_query_result_cache_hits_total",
+			Help:        "Total number of requests (or partial requests) fetched from the results cache.",
+			ConstLabels: map[string]string{"request_type": requestType},
+		}),
+	}
 }
 
 // newResultsCache creates a new results cache based on the input configuration.
@@ -328,6 +359,15 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 			return nil, err
 		}
 		accumulator.Response = merged
+
+		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
+			// Keep older (minimum) timestamp.
+			accumulator.QueryTimestampMs = math.Min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		} else {
+			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
+			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
+			accumulator.QueryTimestampMs = math.Max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+		}
 	}
 
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
@@ -339,15 +379,16 @@ type accumulator struct {
 }
 
 func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
-	any, err := types.MarshalAny(acc.Response)
+	marshalled, err := types.MarshalAny(acc.Response)
 	if err != nil {
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:    acc.Extent.Start,
-		End:      acc.Extent.End,
-		Response: any,
-		TraceId:  acc.Extent.TraceId,
+		Start:            acc.Extent.Start,
+		End:              acc.Extent.End,
+		Response:         marshalled,
+		TraceId:          acc.Extent.TraceId,
+		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }
 
@@ -362,16 +403,17 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
-	any, err := types.MarshalAny(res)
+func toExtent(ctx context.Context, req Request, res Response, queryTime time.Time) (Extent, error) {
+	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 	return Extent{
-		Start:    req.GetStart(),
-		End:      req.GetEnd(),
-		Response: any,
-		TraceId:  jaegerTraceID(ctx),
+		Start:            req.GetStart(),
+		End:              req.GetEnd(),
+		Response:         marshalled,
+		TraceId:          jaegerTraceID(ctx),
+		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
 
@@ -452,11 +494,11 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 				return nil, err
 			}
 			extracted := extractor.Extract(extents[i].Start, maxCacheTime, res)
-			any, err := types.MarshalAny(extracted)
+			marshalled, err := types.MarshalAny(extracted)
 			if err != nil {
 				return nil, err
 			}
-			extents[i].Response = any
+			extents[i].Response = marshalled
 		}
 	}
 	return extents, nil
@@ -487,17 +529,47 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 	return result
 }
 
-func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
-	result := SampleStream{
-		Labels:  stream.Labels,
-		Samples: make([]mimirpb.Sample, 0, len(stream.Samples)),
-	}
-	for _, sample := range stream.Samples {
+func filterFloatStream(start, end int64, streamSamples []mimirpb.Sample) []mimirpb.Sample {
+	result := make([]mimirpb.Sample, 0, len(streamSamples))
+	for _, sample := range streamSamples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
-			result.Samples = append(result.Samples, sample)
+			result = append(result, sample)
 		}
 	}
-	if len(result.Samples) == 0 {
+	return result
+}
+
+func filterHistogramStream(start, end int64, streamSamples []mimirpb.FloatHistogramPair) []mimirpb.FloatHistogramPair {
+	result := make([]mimirpb.FloatHistogramPair, 0, len(streamSamples))
+	for _, sample := range streamSamples {
+		if start <= sample.TimestampMs && sample.TimestampMs <= end {
+			result = append(result, sample)
+		}
+	}
+	return result
+}
+
+func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
+	result := SampleStream{
+		Labels: stream.Labels,
+	}
+	gotSamples := false
+	gotHistograms := false
+	if len(stream.Histograms) > 0 {
+		histograms := filterHistogramStream(start, end, stream.Histograms)
+		if len(histograms) > 0 {
+			result.Histograms = histograms
+			gotHistograms = true
+		}
+	}
+	if len(stream.Samples) > 0 {
+		samples := filterFloatStream(start, end, stream.Samples)
+		if len(samples) > 0 {
+			result.Samples = samples
+			gotSamples = true
+		}
+	}
+	if !gotHistograms && !gotSamples {
 		return SampleStream{}, false
 	}
 	return result, true

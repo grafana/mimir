@@ -15,26 +15,16 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
-	"sync"
-	"time"
-	"unsafe"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
 )
 
 const (
@@ -44,12 +34,15 @@ const (
 	indexTOCLen  = 6*8 + crc32.Size
 	binaryTOCLen = 2*8 + crc32.Size
 	// headerLen represents number of bytes reserved of index header for header.
+	// At present, it is:
+	// - 4 bytes for MagicIndex
+	// - 1 byte for index header version
+	// - 1 byte for TSDB index version
+	// - 8 bytes for an offset in the TSDB index after the last posting list.
 	headerLen = 4 + 1 + 1 + 8
 
 	// MagicIndex are 4 bytes at the head of an index-header file.
 	MagicIndex = 0xBAAAD792
-
-	postingLengthFieldSize = 4
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -92,7 +85,11 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	}
 	defer runutil.CloseWithErrCapture(&err, bw, "close binary writer for %s", tmpFilename)
 
-	if err := bw.AddIndexMeta(indexVersion, ir.toc.PostingsTable); err != nil {
+	// We put the end of the last posting list as the beginning of the label indices table.
+	// As of now this value is also the actual end of the last posting list. In the future
+	// it may be some bytes after the actual end (e.g. in case Prometheus starts adding padding
+	// after the last posting list).
+	if err := bw.AddIndexMeta(indexVersion, ir.toc.LabelIndicesTable); err != nil {
 		return errors.Wrap(err, "add index meta")
 	}
 
@@ -375,10 +372,12 @@ func (fw *FileWriter) Remove() error {
 	return os.Remove(fw.name)
 }
 
-func (w *binaryWriter) AddIndexMeta(indexVersion int, indexPostingOffsetTable uint64) error {
+func (w *binaryWriter) AddIndexMeta(indexVersion int, indexLastPostingListEndBound uint64) error {
 	w.buf.Reset()
 	w.buf.PutByte(byte(indexVersion))
-	w.buf.PutBE64(indexPostingOffsetTable)
+	// This value used to be the offset of the postings offset table up to and including Mimir 2.7.
+	// After that this is the offset of the label indices table.
+	w.buf.PutBE64(indexLastPostingListEndBound)
 	return w.f.Write(w.buf.Get())
 }
 
@@ -413,564 +412,7 @@ func (w *binaryWriter) Close() error {
 	return w.f.Close()
 }
 
-type postingValueOffsets struct {
-	offsets       []postingOffset
-	lastValOffset int64
-}
-
-func (e *postingValueOffsets) prefixOffset(prefix string) (int, bool) {
-	// Find the first offset that is greater or equal to the value.
-	offsetIdx := sort.Search(len(e.offsets), func(i int) bool {
-		return prefix <= e.offsets[i].value
-	})
-
-	// We always include the last value in the offsets,
-	// and given that prefix is always less or equal than the value,
-	// we can conclude that there are no values with this prefix.
-	if offsetIdx == len(e.offsets) {
-		return 0, false
-	}
-
-	// Prefix is lower than the first value in the offsets, and that first value doesn't have this prefix.
-	// Next values won't have the prefix, so we can return early.
-	if offsetIdx == 0 && prefix < e.offsets[0].value && !strings.HasPrefix(e.offsets[0].value, prefix) {
-		return 0, false
-	}
-
-	// If the value is not equal to the prefix, this value might have the prefix.
-	// But maybe the values in the previous offset also had the prefix,
-	// so we need to step back one offset to find all values with this prefix.
-	// Unless, of course, we are at the first offset.
-	if offsetIdx > 0 && e.offsets[offsetIdx].value != prefix {
-		offsetIdx--
-	}
-
-	return offsetIdx, true
-}
-
-type postingOffset struct {
-	// label value.
-	value string
-	// offset of this entry in posting offset table in index-header file.
-	tableOff int
-}
-
 const valueSymbolsCacheSize = 1024
-
-type BinaryReader struct {
-	b   index.ByteSlice
-	toc *BinaryTOC
-
-	// Close that releases the underlying resources of the byte slice.
-	c io.Closer
-
-	// Map of LabelName to a list of some LabelValues's position in the offset table.
-	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
-	postings map[string]*postingValueOffsets
-	// For the v1 format, labelname -> labelvalue -> offset.
-	postingsV1 map[string]map[string]index.Range
-
-	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the rest via mmap.
-	symbols *index.Symbols
-	// Cache of the label name symbol lookups,
-	// as there are not many and they are half of all lookups.
-	nameSymbols map[uint32]string
-	// Direct cache of values. This is much faster than an LRU cache and still provides
-	// a reasonable cache hit ratio.
-	valueSymbolsMx sync.Mutex
-	valueSymbols   [valueSymbolsCacheSize]struct {
-		index  uint32
-		symbol string
-	}
-
-	version             int
-	indexVersion        int
-	indexLastPostingEnd int64
-
-	postingOffsetsInMemSampling int
-}
-
-// NewBinaryReader loads or builds new index-header if not present on disk.
-func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (*BinaryReader, error) {
-	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
-	if err == nil {
-		return br, nil
-	}
-
-	level.Debug(logger).Log("msg", "failed to read index-header from disk; recreating", "path", binfn, "err", err)
-
-	start := time.Now()
-	if err := WriteBinary(ctx, bkt, id, binfn); err != nil {
-		return nil, errors.Wrap(err, "write index header")
-	}
-
-	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
-}
-
-func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Config) (bw *BinaryReader, err error) {
-	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			runutil.CloseWithErrCapture(&err, f, "index header close")
-		}
-	}()
-
-	r := &BinaryReader{
-		b:                           realByteSlice(f.Bytes()),
-		c:                           f,
-		postings:                    map[string]*postingValueOffsets{},
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
-	}
-
-	// Verify header.
-	if r.b.Len() < headerLen {
-		return nil, errors.Wrap(encoding.ErrInvalidSize, "index header's header")
-	}
-	if m := binary.BigEndian.Uint32(r.b.Range(0, 4)); m != MagicIndex {
-		return nil, errors.Errorf("invalid magic number %x", m)
-	}
-	r.version = int(r.b.Range(4, 5)[0])
-	r.indexVersion = int(r.b.Range(5, 6)[0])
-
-	r.indexLastPostingEnd = int64(binary.BigEndian.Uint64(r.b.Range(6, headerLen)))
-
-	if r.version != BinaryFormatV1 {
-		return nil, errors.Errorf("unknown index header file version %d", r.version)
-	}
-
-	r.toc, err = newBinaryTOCFromByteSlice(r.b)
-	if err != nil {
-		return nil, errors.Wrap(err, "read index header TOC")
-	}
-
-	// TODO(bwplotka): Consider contributing to Prometheus to allow specifying custom number for symbolsFactor.
-	r.symbols, err = index.NewSymbols(r.b, r.indexVersion, int(r.toc.Symbols))
-	if err != nil {
-		return nil, errors.Wrap(err, "read symbols")
-	}
-
-	if r.indexVersion == index.FormatV1 {
-		var lastLbl labels.Label
-		lastSet := false
-		// Earlier V1 formats don't have a sorted postings offset table, so
-		// load the whole offset table into memory.
-		r.postingsV1 = map[string]map[string]index.Range{}
-
-		var prevRng index.Range
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, postingsOffsetTableReader, func(lbl labels.Label, off uint64, _ int) error {
-			if lastSet {
-				prevRng.End = int64(off - crc32.Size)
-				r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
-			}
-
-			if _, ok := r.postingsV1[lbl.Name]; !ok {
-				r.postingsV1[lbl.Name] = map[string]index.Range{}
-				r.postings[lbl.Name] = nil // Used to get a list of labelnames in places.
-			}
-
-			lastSet = true
-			lastLbl = lbl
-			prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
-			return nil
-		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
-		}
-		if lastSet {
-			prevRng.End = r.indexLastPostingEnd - crc32.Size
-			r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
-		}
-	} else {
-		var lastLbl bytesLabel
-		lastSet := false
-		lastTableOff := 0
-		valueCount := 0
-
-		// For the postings offset table we keep every label name but only every nth
-		// label value (plus the first and last one), to save memory.
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, bytesPostingsOffsetTableReader, func(lbl bytesLabel, off uint64, tableOff int) error {
-			if _, ok := r.postings[string(lbl.name)]; !ok {
-				// Not seen before label name.
-				// We need to set a new key in the map, which will be kept in memory so we need a un-yoloed version of the label name.
-				r.postings[string(lbl.name)] = &postingValueOffsets{}
-				if lastSet {
-					// Always include last value for each label name, unless it was just added in previous iteration based
-					// on valueCount.
-					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[string(lastLbl.name)].offsets = append(r.postings[string(lastLbl.name)].offsets, postingOffset{value: string(lastLbl.value), tableOff: lastTableOff})
-					}
-					r.postings[string(lastLbl.name)].lastValOffset = int64(off - crc32.Size)
-				}
-				valueCount = 0
-			}
-
-			lastSet = true
-			lastLbl = lbl
-			lastTableOff = tableOff
-			valueCount++
-
-			if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-				r.postings[string(lbl.name)].offsets = append(r.postings[string(lbl.name)].offsets, postingOffset{value: string(lbl.value), tableOff: tableOff})
-			}
-
-			return nil
-		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
-		}
-		if lastSet {
-			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-				// Always include last value for each label name if not included already based on valueCount.
-				r.postings[string(lastLbl.name)].offsets = append(r.postings[string(lastLbl.name)].offsets, postingOffset{value: string(lastLbl.value), tableOff: lastTableOff})
-			}
-			// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
-			// In worst case we will overfetch a few bytes.
-			r.postings[string(lastLbl.name)].lastValOffset = r.indexLastPostingEnd - crc32.Size
-		}
-		// Trim any extra space in the slices.
-		for k, v := range r.postings {
-			l := make([]postingOffset, len(v.offsets))
-			copy(l, v.offsets)
-			r.postings[k].offsets = l
-		}
-	}
-
-	r.nameSymbols = make(map[uint32]string, len(r.postings))
-	for k := range r.postings {
-		if k == "" {
-			continue
-		}
-		off, err := r.symbols.ReverseLookup(k)
-		if err != nil {
-			return nil, errors.Wrap(err, "reverse symbol lookup")
-		}
-		r.nameSymbols[off] = k
-	}
-
-	return r, nil
-}
-
-// newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
-func newBinaryTOCFromByteSlice(bs index.ByteSlice) (*BinaryTOC, error) {
-	if bs.Len() < binaryTOCLen {
-		return nil, encoding.ErrInvalidSize
-	}
-	b := bs.Range(bs.Len()-binaryTOCLen, bs.Len())
-
-	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
-	d := encoding.Decbuf{B: b[:len(b)-4]}
-
-	if d.Crc32(castagnoliTable) != expCRC {
-		return nil, errors.Wrap(encoding.ErrInvalidChecksum, "read index header TOC")
-	}
-
-	if err := d.Err(); err != nil {
-		return nil, err
-	}
-
-	return &BinaryTOC{
-		Symbols:             d.Be64(),
-		PostingsOffsetTable: d.Be64(),
-	}, nil
-}
-
-func (r *BinaryReader) IndexVersion() (int, error) {
-	return r.indexVersion, nil
-}
-
-// TODO(bwplotka): Get advantage of multi value offset fetch.
-func (r *BinaryReader) PostingsOffset(name, value string) (index.Range, error) {
-	rngs, err := r.postingsOffset(name, value)
-	if err != nil {
-		return index.Range{}, err
-	}
-	if len(rngs) != 1 {
-		return index.Range{}, NotFoundRangeErr
-	}
-	return rngs[0], nil
-}
-
-func skipNAndName(d *encoding.Decbuf, buf *int) {
-	if *buf == 0 {
-		// Keycount+LabelName are always the same number of bytes,
-		// and it's faster to skip than parse.
-		*buf = d.Len()
-		d.Uvarint()      // Keycount.
-		d.UvarintBytes() // Label name.
-		*buf -= d.Len()
-		return
-	}
-	d.Skip(*buf)
-}
-func (r *BinaryReader) postingsOffset(name string, values ...string) ([]index.Range, error) {
-	rngs := make([]index.Range, 0, len(values))
-	if r.indexVersion == index.FormatV1 {
-		e, ok := r.postingsV1[name]
-		if !ok {
-			return nil, nil
-		}
-		for _, v := range values {
-			rng, ok := e[v]
-			if !ok {
-				continue
-			}
-			rngs = append(rngs, rng)
-		}
-		return rngs, nil
-	}
-
-	e, ok := r.postings[name]
-	if !ok {
-		return nil, nil
-	}
-
-	if len(values) == 0 {
-		return nil, nil
-	}
-
-	buf := 0
-	valueIndex := 0
-	for valueIndex < len(values) && values[valueIndex] < e.offsets[0].value {
-		// Discard values before the start.
-		valueIndex++
-	}
-
-	var newSameRngs []index.Range // The start, end offsets in the postings table in the original index file.
-	for valueIndex < len(values) {
-		wantedValue := values[valueIndex]
-
-		i := sort.Search(len(e.offsets), func(i int) bool { return e.offsets[i].value >= wantedValue })
-		if i == len(e.offsets) {
-			// We're past the end.
-			break
-		}
-		if i > 0 && e.offsets[i].value != wantedValue {
-			// Need to look from previous entry.
-			i--
-		}
-
-		// Don't Crc32 the entire postings offset table, this is very slow
-		// so hope any issues were caught at startup.
-		d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
-		d.Skip(e.offsets[i].tableOff)
-
-		// Iterate on the offset table.
-		newSameRngs = newSameRngs[:0]
-		for d.Err() == nil {
-			// Posting format entry is as follows:
-			// │ ┌────────────────────────────────────────┐ │
-			// │ │  n = 2 <1b>                            │ │
-			// │ ├──────────────────────┬─────────────────┤ │
-			// │ │ len(name) <uvarint>  │ name <bytes>    │ │
-			// │ ├──────────────────────┼─────────────────┤ │
-			// │ │ len(value) <uvarint> │ value <bytes>   │ │
-			// │ ├──────────────────────┴─────────────────┤ │
-			// │ │  offset <uvarint64>                    │ │
-			// │ └────────────────────────────────────────┘ │
-			// First, let's skip n and name.
-			skipNAndName(&d, &buf)
-			value := d.UvarintBytes() // Label value.
-			postingOffset := int64(d.Uvarint64())
-
-			if len(newSameRngs) > 0 {
-				// We added some ranges in previous iteration. Use next posting offset as end of all our new ranges.
-				for j := range newSameRngs {
-					newSameRngs[j].End = postingOffset - crc32.Size
-				}
-				rngs = append(rngs, newSameRngs...)
-				newSameRngs = newSameRngs[:0]
-			}
-
-			for string(value) >= wantedValue {
-				// If wantedValue is equals of greater than current value, loop over all given wanted values in the values until
-				// this is no longer true or there are no more values wanted.
-				// This ensures we cover case when someone asks for postingsOffset(name, value1, value1, value1).
-
-				// Record on the way if wanted value is equal to the current value.
-				if string(value) == wantedValue {
-					newSameRngs = append(newSameRngs, index.Range{Start: postingOffset + postingLengthFieldSize})
-				}
-				valueIndex++
-				if valueIndex == len(values) {
-					break
-				}
-				wantedValue = values[valueIndex]
-			}
-
-			if i+1 == len(e.offsets) {
-				// No more offsets for this name.
-				// Break this loop and record lastOffset on the way for ranges we just added if any.
-				for j := range newSameRngs {
-					newSameRngs[j].End = e.lastValOffset
-				}
-				rngs = append(rngs, newSameRngs...)
-				break
-			}
-
-			if valueIndex != len(values) && wantedValue <= e.offsets[i+1].value {
-				// wantedValue is smaller or same as the next offset we know about, let's iterate further to add those.
-				continue
-			}
-
-			// Nothing wanted or wantedValue is larger than next offset we know about.
-			// Let's exit and do binary search again / exit if nothing wanted.
-
-			if len(newSameRngs) > 0 {
-				// We added some ranges in this iteration. Use next posting offset as the end of our ranges.
-				// We know it exists as we never go further in this loop than e.offsets[i, i+1].
-
-				skipNAndName(&d, &buf)
-				d.UvarintBytes() // Label value.
-				postingOffset := int64(d.Uvarint64())
-
-				for j := range newSameRngs {
-					newSameRngs[j].End = postingOffset - crc32.Size
-				}
-				rngs = append(rngs, newSameRngs...)
-			}
-			break
-		}
-		if d.Err() != nil {
-			return nil, errors.Wrap(d.Err(), "get postings offset entry")
-		}
-	}
-
-	return rngs, nil
-}
-
-func (r *BinaryReader) LookupSymbol(o uint32) (string, error) {
-	cacheIndex := o % valueSymbolsCacheSize
-	r.valueSymbolsMx.Lock()
-	if cached := r.valueSymbols[cacheIndex]; cached.index == o && cached.symbol != "" {
-		v := cached.symbol
-		r.valueSymbolsMx.Unlock()
-		return v, nil
-	}
-	r.valueSymbolsMx.Unlock()
-
-	if s, ok := r.nameSymbols[o]; ok {
-		return s, nil
-	}
-
-	if r.indexVersion == index.FormatV1 {
-		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
-		// of the header length difference between two files.
-		o += headerLen - index.HeaderLen
-	}
-
-	s, err := r.symbols.Lookup(o)
-	if err != nil {
-		return s, err
-	}
-
-	r.valueSymbolsMx.Lock()
-	r.valueSymbols[cacheIndex].index = o
-	r.valueSymbols[cacheIndex].symbol = s
-	r.valueSymbolsMx.Unlock()
-
-	return s, nil
-}
-
-func (r *BinaryReader) LabelValues(name string, prefix string, filter func(string) bool) ([]string, error) {
-	if r.indexVersion == index.FormatV1 {
-		e, ok := r.postingsV1[name]
-		if !ok {
-			return nil, nil
-		}
-		values := make([]string, 0, len(e))
-		for k := range e {
-			if strings.HasPrefix(k, prefix) && (filter == nil || filter(k)) {
-				values = append(values, k)
-			}
-		}
-		slices.Sort(values)
-		return values, nil
-
-	}
-	e, ok := r.postings[name]
-	if !ok {
-		return nil, nil
-	}
-	if len(e.offsets) == 0 {
-		return nil, nil
-	}
-
-	offsetIdx := 0
-	if prefix != "" {
-		offsetIdx, ok = e.prefixOffset(prefix)
-		if !ok {
-			return nil, nil
-		}
-	}
-
-	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
-	d.Skip(e.offsets[offsetIdx].tableOff)
-	lastVal := e.offsets[len(e.offsets)-1].value
-
-	skip := 0
-	values := make([]string, 0, (len(e.offsets)-offsetIdx)*r.postingOffsetsInMemSampling)
-	for d.Err() == nil {
-		if skip == 0 {
-			// These are always the same number of bytes,
-			// and it's faster to skip than parse.
-			skip = d.Len()
-			d.Uvarint()      // Keycount.
-			d.UvarintBytes() // Label name.
-			skip -= d.Len()
-		} else {
-			d.Skip(skip)
-		}
-
-		unsafeValue := yoloString(d.UvarintBytes())
-		if prefix == "" {
-			// Quick path for no prefix matching.
-			if filter == nil || filter(unsafeValue) {
-				values = append(values, unsafeValue)
-			}
-		} else {
-			if strings.HasPrefix(unsafeValue, prefix) {
-				if filter == nil || filter(unsafeValue) {
-					values = append(values, unsafeValue)
-				}
-			} else if prefix < unsafeValue {
-				// There will be no more values with the prefix.
-				break
-			}
-		}
-		if unsafeValue == lastVal {
-			break
-		}
-
-		d.Uvarint64() // Offset.
-	}
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "get postings offset entry")
-	}
-	return values, nil
-}
-
-func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
-}
-
-func (r *BinaryReader) LabelNames() ([]string, error) {
-	allPostingsKeyName, _ := index.AllPostingsKey()
-	labelNames := make([]string, 0, len(r.postings))
-	for name := range r.postings {
-		if name == allPostingsKeyName {
-			// This is not from any metric.
-			continue
-		}
-		labelNames = append(labelNames, name)
-	}
-	slices.Sort(labelNames)
-	return labelNames, nil
-}
-
-func (r *BinaryReader) Close() error { return r.c.Close() }
 
 type realByteSlice []byte
 
@@ -984,62 +426,4 @@ func (b realByteSlice) Range(start, end int) []byte {
 
 func (b realByteSlice) Sub(start, end int) index.ByteSlice {
 	return b[start:end]
-}
-
-// ReadOffsetTable reads an offset table and at the given position calls f for each
-// found entry. If f returns an error it stops decoding and returns the received error.
-// TODO: use the upstreamed version from Prometheus tsdb/index package when available.
-// TODO: see https://github.com/prometheus/prometheus/pull/11535
-func readOffsetTable[T any](bs index.ByteSlice, off uint64, read func(d *encoding.Decbuf) (T, error), f func(T, uint64, int) error) error {
-	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
-	startLen := d.Len()
-	cnt := d.Be32()
-
-	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
-		offsetPos := startLen - d.Len()
-
-		item, err := read(&d)
-		if err != nil {
-			return err
-		}
-		o := d.Uvarint64()
-		if d.Err() != nil {
-			break
-		}
-		if err := f(item, o, offsetPos); err != nil {
-			return err
-		}
-		cnt--
-	}
-	return d.Err()
-}
-
-func postingsOffsetTableReader(d *encoding.Decbuf) (labels.Label, error) {
-	if keyCount := d.Uvarint(); keyCount != 2 {
-		return labels.Label{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
-	}
-	var lbl labels.Label
-	lbl.Name = d.UvarintStr()
-	lbl.Value = d.UvarintStr()
-	return lbl, nil
-}
-
-// bytesPostingsOffsetTableReader reads the postings table returning a label with []byte name and value which share the underlying buffer.
-// It can be used for comparison without allocating a new string (since in most of the cases, we just want to see if the label name has changed).
-func bytesPostingsOffsetTableReader(d *encoding.Decbuf) (bytesLabel, error) {
-	if keyCount := d.Uvarint(); keyCount != 2 {
-		return bytesLabel{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
-	}
-	var lbl bytesLabel
-	lbl.name = d.UvarintBytes()
-	lbl.value = d.UvarintBytes()
-	return lbl, nil
-}
-
-// bytesLabel is like a labels.Label but its fields are []byte that are portions of the underlying buffer.
-// you shouldn't store references to them as that would leak memory, but it's fine enough to compare & discard.
-// Note that checking map[string(bytesLabel.name)] is optimized by the compiler and does not allocate (see benchmarks before changing).
-type bytesLabel struct {
-	name  []byte
-	value []byte
 }

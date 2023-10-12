@@ -22,8 +22,10 @@ import (
 type SamplesComparatorFunc func(expected, actual json.RawMessage, opts SampleComparisonOptions) error
 
 type SamplesResponse struct {
-	Status string
-	Data   struct {
+	Status    string
+	ErrorType string
+	Error     string
+	Data      struct {
 		ResultType string
 		Result     json.RawMessage
 	}
@@ -56,33 +58,49 @@ func (s *SamplesComparator) RegisterSamplesType(samplesType string, comparator S
 	s.sampleTypesComparator[samplesType] = comparator
 }
 
-func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) error {
+func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) (ComparisonResult, error) {
 	var expected, actual SamplesResponse
 
 	err := json.Unmarshal(expectedResponse, &expected)
 	if err != nil {
-		return errors.Wrap(err, "unable to unmarshal expected response")
+		return ComparisonFailed, errors.Wrap(err, "unable to unmarshal expected response")
 	}
 
 	err = json.Unmarshal(actualResponse, &actual)
 	if err != nil {
-		return errors.Wrap(err, "unable to unmarshal actual response")
+		return ComparisonFailed, errors.Wrap(err, "unable to unmarshal actual response")
 	}
 
 	if expected.Status != actual.Status {
-		return fmt.Errorf("expected status %s but got %s", expected.Status, actual.Status)
+		return ComparisonFailed, fmt.Errorf("expected status %s but got %s", expected.Status, actual.Status)
+	}
+
+	if expected.ErrorType != actual.ErrorType {
+		return ComparisonFailed, fmt.Errorf("expected error type '%s' but got '%s'", expected.ErrorType, actual.ErrorType)
+	}
+
+	if expected.Error != actual.Error {
+		return ComparisonFailed, fmt.Errorf("expected error '%s' but got '%s'", expected.Error, actual.Error)
 	}
 
 	if expected.Data.ResultType != actual.Data.ResultType {
-		return fmt.Errorf("expected resultType %s but got %s", expected.Data.ResultType, actual.Data.ResultType)
+		return ComparisonFailed, fmt.Errorf("expected resultType %s but got %s", expected.Data.ResultType, actual.Data.ResultType)
+	}
+
+	if expected.Data.ResultType == "" && actual.Data.ResultType == "" && expected.Data.Result == nil && actual.Data.Result == nil {
+		return ComparisonSuccess, nil
 	}
 
 	comparator, ok := s.sampleTypesComparator[expected.Data.ResultType]
 	if !ok {
-		return fmt.Errorf("resultType %s not registered for comparison", expected.Data.ResultType)
+		return ComparisonFailed, fmt.Errorf("resultType %s not registered for comparison", expected.Data.ResultType)
 	}
 
-	return comparator(expected.Data.Result, actual.Data.Result, s.opts)
+	if err := comparator(expected.Data.Result, actual.Data.Result, s.opts); err != nil {
+		return ComparisonFailed, err
+	}
+
+	return ComparisonSuccess, nil
 }
 
 func compareMatrix(expectedRaw, actualRaw json.RawMessage, opts SampleComparisonOptions) error {

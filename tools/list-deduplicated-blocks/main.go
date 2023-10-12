@@ -18,6 +18,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,12 +27,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func main() {
+	// Clean up all flags registered via init() methods of 3rd-party libraries.
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
 	cfg := struct {
 		bucket           bucket.Config
 		userID           string
@@ -41,9 +45,13 @@ func main() {
 	}{}
 
 	logger := gokitlog.NewNopLogger()
-	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
+	cfg.bucket.RegisterFlags(flag.CommandLine)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
-	flag.Parse()
+
+	// Parse CLI arguments.
+	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
+		log.Fatalln(err.Error())
+	}
 
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")
@@ -80,7 +88,7 @@ func main() {
 		[]string{"state"}, []string{"duplicate"})
 
 	log.Println("Running filter")
-	err = df.Filter(ctx, metasMap, s, nil)
+	err = df.Filter(ctx, metasMap, s)
 	if err != nil {
 		log.Fatalln("deduplication failed:", err)
 	}
@@ -111,7 +119,7 @@ func listDebugMetas(ctx context.Context, bkt objstore.Bucket, user string) ([]st
 	return paths, err
 }
 
-func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (map[ulid.ULID]*metadata.Meta, error) {
+func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (map[ulid.ULID]*block.Meta, error) {
 	g, gctx := errgroup.WithContext(ctx)
 
 	ch := make(chan string, len(metaFiles))
@@ -121,7 +129,7 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 	close(ch)
 
 	metasSync := sync.Mutex{}
-	metas := map[ulid.ULID]*metadata.Meta{}
+	metas := map[ulid.ULID]*block.Meta{}
 
 	const concurrencyLimit = 32
 	for i := 0; i < concurrencyLimit; i++ {
@@ -132,7 +140,7 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 					return err
 				}
 
-				m, err := metadata.Read(r)
+				m, err := block.ReadMeta(r)
 				if err != nil {
 					if bkt.IsObjNotFoundErr(err) {
 						continue
@@ -155,8 +163,8 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 	return metas, g.Wait()
 }
 
-func printBlocks(metas map[ulid.ULID]*metadata.Meta) {
-	var blocks []*metadata.Meta
+func printBlocks(metas map[ulid.ULID]*block.Meta) {
+	var blocks []*block.Meta
 
 	for _, b := range metas {
 		blocks = append(blocks, b)

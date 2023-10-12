@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -30,7 +31,7 @@ type ProxyBackend struct {
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool) *ProxyBackend {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) *ProxyBackend {
 	return &ProxyBackend{
 		name:      name,
 		endpoint:  endpoint,
@@ -42,6 +43,9 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 			},
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: skipTLSVerify,
+				},
 				DialContext: (&net.Dialer{
 					Timeout:   30 * time.Second,
 					KeepAlive: 30 * time.Second,
@@ -55,10 +59,10 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	}
 }
 
-func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (int, []byte, error) {
+func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (int, []byte, *http.Response, error) {
 	req, err := b.createBackendRequest(orig, body)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 
 	return b.doBackendRequest(req)
@@ -102,7 +106,7 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	return req, nil
 }
 
-func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, error) {
+func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.Response, error) {
 	// Honor the read timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
 	defer cancel()
@@ -110,15 +114,15 @@ func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, error) 
 	// Execute the request.
 	res, err := b.client.Do(req.WithContext(ctx))
 	if err != nil {
-		return 0, nil, errors.Wrap(err, "executing backend request")
+		return 0, nil, nil, errors.Wrap(err, "executing backend request")
 	}
 
 	// Read the entire response body.
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return 0, nil, errors.Wrap(err, "reading backend response")
+		return 0, nil, nil, errors.Wrap(err, "reading backend response")
 	}
 
-	return res.StatusCode, body, nil
+	return res.StatusCode, body, res, nil
 }

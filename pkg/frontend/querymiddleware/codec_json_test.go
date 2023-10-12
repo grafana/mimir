@@ -9,8 +9,6 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -18,14 +16,12 @@ import (
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestPrometheusCodec_JSONResponse(t *testing.T) {
@@ -91,7 +87,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 			},
 		},
 		{
-			name: "successful instant response",
+			name: "successful vector response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -115,7 +111,7 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 			},
 		},
 		{
-			name: "successful range response",
+			name: "successful matrix response with float values",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
 				Data: prometheusResponseData{
@@ -189,14 +185,18 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
-			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
+			durationHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
 			require.Less(t, *durationHistogram.SampleSum, 0.1)
-			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
+			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
+
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
 
 			// Reset response, as the above call will have consumed the body reader.
 			httpResponse = &http.Response{
@@ -205,55 +205,178 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 				Body:          io.NopCloser(bytes.NewBuffer(body)),
 				ContentLength: int64(len(body)),
 			}
-			encoded, err := codec.EncodeResponse(context.Background(), decoded)
+			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, decoded)
 			require.NoError(t, err)
 
-			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+			expectedJSON, err := readResponseBody(httpResponse)
 			require.NoError(t, err)
-			durationHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
-			require.NoError(t, err)
-			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
-			require.Less(t, *durationHistogram.SampleSum, 0.1)
-			payloadSizeHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
-			require.NoError(t, err)
-			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
-			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
-
-			expectedJSON, err := bodyBuffer(httpResponse)
-			require.NoError(t, err)
-			encodedJSON, err := bodyBuffer(encoded)
+			encodedJSON, err := readResponseBody(encoded)
 			require.NoError(t, err)
 
 			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
 			require.Equal(t, httpResponse, encoded)
+
+			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err = dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err = dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
 		})
 	}
 }
 
-func findHistogramMatchingLabels(metrics dskit_metrics.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
-	metricFamily, ok := metrics[name]
-	if !ok {
-		return nil, fmt.Errorf("no metric with name %v found", name)
+func TestPrometheusCodec_JSONEncoding(t *testing.T) {
+	responseHistogram := mimirpb.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    1.23,
+		ZeroCount:        456,
+		Count:            9001,
+		Sum:              789.1,
+		PositiveSpans: []mimirpb.BucketSpan{
+			{Offset: 4, Length: 1},
+			{Offset: 3, Length: 2},
+		},
+		NegativeSpans: []mimirpb.BucketSpan{
+			{Offset: 7, Length: 3},
+			{Offset: 9, Length: 1},
+		},
+		PositiveBuckets: []float64{100, 200, 300},
+		NegativeBuckets: []float64{400, 500, 600, 700},
 	}
 
-	l := labels.FromStrings(labelValuePairs...)
-	var matchingMetrics []*dto.Metric
+	for _, tc := range []struct {
+		name            string
+		responseHeaders http.Header
+		expectedJSON    string
+		response        *PrometheusResponse
+		expectedErr     error
+	}{
+		{
+			name: "successful matrix response with histogram values",
+			response: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: &responseHistogram}}},
+					},
+				},
+			},
+			expectedJSON: `
+				{
+				  "status": "success",
+				  "data": {
+					"resultType": "matrix",
+					"result": [
+					  {
+					    "metric": {"foo": "bar"},
+					    "histograms": [
+					  	  [
+					  	    1.234,
+					  	    {
+					  	  	  "count": "9001",
+					  	  	  "sum": "789.1",
+					  	  	  "buckets": [
+					  	  	    [1, "-5.187358218604039", "-4.756828460010884", "700"],
+					  	  	    [1, "-2.1810154653305154", "-2", "600"],
+					  	  	    [1, "-2", "-1.8340080864093422", "500"],
+					  	  	    [1, "-1.8340080864093422", "-1.6817928305074288", "400"],
+					  	  	    [3, "-1.23", "1.23", "456"],
+					  	  	    [0, "1.2968395546510096", "1.414213562373095", "100"],
+					  	  	    [0, "1.8340080864093422", "2", "200"],
+					  	  	    [0, "2", "2.1810154653305154", "300"]
+					  	  	  ]
+					  	    }
+					  	  ]
+					    ]
+					  }
+				    ]
+				  }
+				}
+			`,
+		},
+		{
+			name: "successful matrix response with a single series with both float and histogram values",
+			response: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{
+							Labels:     []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Samples:    []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
+							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: &responseHistogram}}},
+					},
+				},
+			},
+			expectedJSON: `
+				{
+				  "status": "success",
+				  "data": {
+					"resultType": "matrix",
+					"result": [
+					  {
+						"metric": {"foo": "bar"},
+						"histograms": [
+						  [
+							3,
+							{
+							  "count": "9001",
+							  "sum": "789.1",
+							  "buckets": [
+								[1, "-5.187358218604039", "-4.756828460010884", "700"],
+								[1, "-2.1810154653305154", "-2", "600"],
+								[1, "-2", "-1.8340080864093422", "500"],
+								[1, "-1.8340080864093422", "-1.6817928305074288", "400"],
+								[3, "-1.23", "1.23", "456"],
+								[0, "1.2968395546510096", "1.414213562373095", "100"],
+								[0, "1.8340080864093422", "2", "200"],
+								[0, "2", "2.1810154653305154", "300"]
+							  ]
+							}
+						  ]
+						],
+						"values": [[1, "101"], [2, "201"]]
+					  }
+					]
+				  }
+				}
+			`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			codec := NewPrometheusCodec(reg, formatJSON)
+			httpRequest := &http.Request{
+				Header: http.Header{"Accept": []string{jsonMimeType}},
+			}
 
-	for _, metric := range metricFamily.Metric {
-		if util.MatchesSelectors(metric, l) {
-			matchingMetrics = append(matchingMetrics, metric)
-		}
+			encoded, err := codec.EncodeResponse(context.Background(), httpRequest, tc.response)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, encoded.StatusCode)
+			require.Equal(t, "application/json", encoded.Header.Get("Content-Type"))
+
+			encodedJSON, err := readResponseBody(encoded)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expectedJSON, string(encodedJSON))
+			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))
+
+			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
+			require.NoError(t, err)
+			durationHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
+			require.Less(t, *durationHistogram.SampleSum, 0.1)
+			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			require.NoError(t, err)
+			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
+			require.Equal(t, float64(encoded.ContentLength), *payloadSizeHistogram.SampleSum)
+		})
 	}
-
-	if len(matchingMetrics) != 1 {
-		return nil, fmt.Errorf("wanted exactly one matching metric, but found %v", len(matchingMetrics))
-	}
-
-	metric := matchingMetrics[0]
-
-	if metric.Histogram == nil {
-		return nil, errors.New("found a single matching metric, but it is not a histogram")
-	}
-
-	return metric.Histogram, nil
 }

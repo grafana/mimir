@@ -29,6 +29,10 @@ spec:
       relabelings:
         - replacement: kubelet # add so that e.g. up{} metric doesn't get clashes with the other endpoint
           targetLabel: source
+        {{- if kindIs "string" .clusterLabel }}
+        - targetLabel: cluster
+          replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $) }}"
+        {{- end }}
         {{- with .relabelings }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -59,6 +63,10 @@ spec:
         - targetLabel: instance # replace so that the metrics work with the default metrics mixin
           sourceLabels:
             - node
+        {{- if kindIs "string" .clusterLabel }}
+        - targetLabel: cluster
+          replacement: "{{ .clusterLabel | default (include "mimir.clusterName" $) }}"
+        {{- end }}
         {{- with .relabelings }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

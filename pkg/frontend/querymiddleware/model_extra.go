@@ -6,8 +6,12 @@
 package querymiddleware
 
 import (
+	"bytes"
 	stdjson "encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
@@ -40,52 +44,52 @@ func newEmptyPrometheusResponse() *PrometheusResponse {
 
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
-	new := *q
-	new.Id = id
-	return &new
+	newRequest := *q
+	newRequest.Id = id
+	return &newRequest
 }
 
 // WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
 func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
-	new := *q
-	new.Start = start
-	new.End = end
-	return &new
+	newRequest := *q
+	newRequest.Start = start
+	newRequest.End = end
+	return &newRequest
 }
 
 // WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
 func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
-	new := *q
-	new.Query = query
-	return &new
+	newRequest := *q
+	newRequest.Query = query
+	return &newRequest
 }
 
 // WithTotalQueriesHint clones the current `PrometheusRangeQueryRequest` with an
 // added Hint value for TotalQueries.
 func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
-	new := *q
-	if new.Hints == nil {
-		new.Hints = &Hints{TotalQueries: totalQueries}
+	newRequest := *q
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*new.Hints = *(q.Hints)
-		new.Hints.TotalQueries = totalQueries
+		*newRequest.Hints = *(q.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
 	}
-	return &new
+	return &newRequest
 }
 
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
 func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
-	new := *q
-	if new.Hints == nil {
-		new.Hints = &Hints{
+	newRequest := *q
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
 			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
 		}
 	} else {
-		*new.Hints = *(q.Hints)
-		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(q.Hints)
+		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
-	return &new
+	return &newRequest
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
@@ -111,45 +115,45 @@ func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
-	new := *r
-	new.Id = id
-	return &new
+	newRequest := *r
+	newRequest.Id = id
+	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, endTime int64) Request {
-	new := *r
-	new.Time = startTime
-	return &new
+func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) Request {
+	newRequest := *r
+	newRequest.Time = startTime
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
-	new := *r
-	new.Query = s
-	return &new
+	newRequest := *r
+	newRequest.Query = s
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithTotalQueriesHint(totalQueries int32) Request {
-	new := *r
-	if new.Hints == nil {
-		new.Hints = &Hints{TotalQueries: totalQueries}
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{TotalQueries: totalQueries}
 	} else {
-		*new.Hints = *(r.Hints)
-		new.Hints.TotalQueries = totalQueries
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.TotalQueries = totalQueries
 	}
-	return &new
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
-	new := *r
-	if new.Hints == nil {
-		new.Hints = &Hints{
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
 			CardinalityEstimate: &Hints_EstimatedSeriesCount{count},
 		}
 	} else {
-		*new.Hints = *(r.Hints)
-		new.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
+		*newRequest.Hints = *(r.Hints)
+		newRequest.Hints.CardinalityEstimate = &Hints_EstimatedSeriesCount{count}
 	}
-	return &new
+	return &newRequest
 }
 
 func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
@@ -323,6 +327,10 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
+	if s.Histogram != nil {
+		return errors.New("cannot unmarshal native histogram from JSON")
+	}
+
 	*vs = vectorSampleStream{
 		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
 		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
@@ -331,39 +339,70 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 }
 
 func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if len(vs.Samples) != 1 {
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
+	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
+		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
 	}
-	return json.Marshal(model.Sample{
-		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-		Timestamp: model.Time(vs.Samples[0].TimestampMs),
-		Value:     model.SampleValue(vs.Samples[0].Value),
-	})
+	var sample model.Sample
+	if len(vs.Samples) == 1 {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Samples[0].TimestampMs),
+			Value:     model.SampleValue(vs.Samples[0].Value),
+		}
+	} else {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
+			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
+		}
+	}
+	return json.Marshal(sample)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SampleStream) UnmarshalJSON(data []byte) error {
 	var stream struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}
 	if err := json.Unmarshal(data, &stream); err != nil {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	s.Samples = stream.Values
+	if len(stream.Values) > 0 {
+		s.Samples = stream.Values
+	}
+	if len(stream.Histograms) > 0 {
+		return fmt.Errorf("cannot unmarshal native histograms from JSON, but stream contains %d histograms", len(stream.Histograms))
+	}
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
-	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
+	var histograms []mimirpb.SampleHistogramPair
+	if len(s.Histograms) > 0 {
+		histograms = make([]mimirpb.SampleHistogramPair, len(s.Histograms))
 	}
+
+	for i, h := range s.Histograms {
+		histograms[i] = mimirpb.SampleHistogramPair{
+			Timestamp: h.TimestampMs,
+			Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+		}
+	}
+
+	stream := struct {
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values,omitempty"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms,omitempty"`
+	}{
+		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values:     s.Samples,
+		Histograms: histograms,
+	}
+
 	return json.Marshal(stream)
 }
 
@@ -382,4 +421,50 @@ func (resp *PrometheusResponse) minTime() int64 {
 		return -1
 	}
 	return result[0].Samples[0].TimestampMs
+}
+
+// EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.
+// The input res.Body is replaced in this function, so that it can be safely consumed again.
+func EncodeCachedHTTPResponse(cacheKey string, res *http.Response) (*CachedHTTPResponse, error) {
+	// Read the response.
+	body, err := readResponseBody(res)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since we've already consumed the response Body we have to replace it on the response,
+	// otherwise the caller will get a response with a closed Body.
+	res.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// When preallocating the slice we assume that header as 1 value (which is the most common case).
+	headers := make([]*CachedHTTPHeader, 0, len(res.Header))
+	for name, values := range res.Header {
+		for _, value := range values {
+			headers = append(headers, &CachedHTTPHeader{
+				Name:  name,
+				Value: value,
+			})
+		}
+	}
+
+	return &CachedHTTPResponse{
+		CacheKey:   cacheKey,
+		StatusCode: int32(res.StatusCode),
+		Body:       body,
+		Headers:    headers,
+	}, nil
+}
+
+func DecodeCachedHTTPResponse(res *CachedHTTPResponse) *http.Response {
+	headers := http.Header{}
+	for _, header := range res.Headers {
+		headers[header.Name] = append(headers[header.Name], header.Value)
+	}
+
+	return &http.Response{
+		StatusCode:    int(res.StatusCode),
+		Body:          io.NopCloser(bytes.NewReader(res.Body)),
+		Header:        headers,
+		ContentLength: int64(len(res.Body)),
+	}
 }

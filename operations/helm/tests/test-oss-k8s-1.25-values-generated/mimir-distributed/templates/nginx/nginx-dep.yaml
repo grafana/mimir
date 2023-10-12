@@ -14,6 +14,9 @@ metadata:
   namespace: "citestns"
 spec:
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   selector:
     matchLabels:
@@ -41,7 +44,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: nginx
-          image: docker.io/nginxinc/nginx-unprivileged:1.22-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
           imagePullPolicy: IfNotPresent
           ports:
             - name: http-metric
@@ -73,14 +76,14 @@ spec:
               cpu: 1
               memory: 512Mi
       topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: mimir
-              app.kubernetes.io/instance: test-oss-k8s-1.25-values
-              app.kubernetes.io/component: nginx
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: mimir
+            app.kubernetes.io/instance: test-oss-k8s-1.25-values
+            app.kubernetes.io/component: nginx
       volumes:
         - name: config
           configMap:

@@ -6,11 +6,11 @@ on:
     types: [labeled]
 jobs:
   main:
-    if: ${{ github.event.pull_request == false || github.event.pull_request.head.repo.full_name == github.repository }}
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event.pull_request == false || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Actions
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: "grafana/grafana-github-actions"
           path: ./actions

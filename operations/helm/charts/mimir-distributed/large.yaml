@@ -17,7 +17,7 @@
 # The rules ensure that the replicas of the same component are not scheduled on the same
 # Kubernetes Node. Zone-aware replication is enabled by default on new installation.
 # Refer to [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm) and
-# [Zone-Aware Replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/)
+# [Zone-Aware Replication](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/)
 # for more information.
 #
 # MinIO is no longer enabled, and you are encouraged to use your cloud providers
@@ -87,6 +87,10 @@ ingester:
 
   zoneAwareReplication:
     topologyKey: 'kubernetes.io/hostname'
+
+admin-cache:
+  enabled: true
+  replicas: 2
 
 chunks-cache:
   enabled: true

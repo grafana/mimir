@@ -90,7 +90,7 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 			// Try to push as many series with the same metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _, _ := generateSeries("test_limit_per_metric", now, prompb.Label{
+				series, _, _ := generateAlternatingSeries(i)("test_limit_per_metric", now, prompb.Label{
 					Name:  "cardinality",
 					Value: strconv.Itoa(rand.Int()),
 				})
@@ -101,21 +101,27 @@ func TestIngesterGlobalLimits(t *testing.T) {
 				if res.StatusCode == 200 {
 					numSeriesTotal++
 					numSeriesWithSameMetricName++
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
+				} else {
+					require.Equal(t, 400, res.StatusCode)
+					if errs++; errs >= maxErrorsBeforeStop {
+						break
+					}
 				}
 			}
 
 			// Try to push as many series with the different metric name as we can.
 			for i, errs := 0, 0; i < 10000; i++ {
-				series, _, _ := generateSeries(fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()), now)
+				series, _, _ := generateAlternatingSeries(i)(fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()), now)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 
 				if res.StatusCode == 200 {
 					numSeriesTotal++
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
+				} else {
+					require.Equal(t, 400, res.StatusCode)
+					if errs++; errs >= maxErrorsBeforeStop {
+						break
+					}
 				}
 			}
 
@@ -162,90 +168,102 @@ overrides:
 			MaxGlobalExemplarsPerUser: 100,
 		},
 	}
+	generators := map[string]generateNSeriesFunc{
+		"float series":     generateNFloatSeries,
+		"histogram series": generateNHistogramSeries,
+	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+		for fName, generator := range generators {
+			t.Run(fmt.Sprintf("%s/%s", testName, fName), func(t *testing.T) {
+				s, err := e2e.NewScenario(networkName)
+				require.NoError(t, err)
+				defer s.Close()
 
-			// Write blank overrides file, so we can check if they are updated later
-			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
+				// Write blank overrides file, so we can check if they are updated later
+				require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
 
-			// Start Cortex in single binary mode, reading the config from file.
-			require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
+				// Start Cortex in single binary mode, reading the config from file.
+				require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 
-			flags := map[string]string{
-				"-runtime-config.reload-period":                     "100ms",
-				"-blocks-storage.backend":                           "filesystem",
-				"-blocks-storage.filesystem.dir":                    "/tmp",
-				"-blocks-storage.storage-prefix":                    "blocks",
-				"-blocks-storage.bucket-store.bucket-index.enabled": "false",
-				"-ruler-storage.backend":                            "filesystem",
-				"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
-				"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
-			}
-			cortex1 := e2emimir.NewSingleBinary("cortex-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
-			require.NoError(t, s.StartAndWaitReady(cortex1))
+				flags := map[string]string{
+					"-runtime-config.reload-period":                     "100ms",
+					"-blocks-storage.backend":                           "filesystem",
+					"-blocks-storage.filesystem.dir":                    "/tmp",
+					"-blocks-storage.storage-prefix":                    "blocks",
+					"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+					"-ruler-storage.backend":                            "filesystem",
+					"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
+					"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
+				}
+				cortex1 := e2emimir.NewSingleBinary("cortex-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
+				require.NoError(t, s.StartAndWaitReady(cortex1))
 
-			// Populate the overrides we want, then wait long enough for it to be read.
-			// (max-exemplars will be taken from config on first sample received)
-			overrides := buildConfigFromTemplate(overridesTemplate, &testData)
-			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte(overrides)))
-			time.Sleep(500 * time.Millisecond)
+				// Populate the overrides we want, then wait long enough for it to be read.
+				// (max-exemplars will be taken from config on first sample received)
+				overrides := buildConfigFromTemplate(overridesTemplate, &testData)
+				require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte(overrides)))
+				time.Sleep(500 * time.Millisecond)
 
-			now := time.Now()
-			client, err := e2emimir.NewClient(cortex1.HTTPEndpoint(), "", "", "", userID)
-			require.NoError(t, err)
-
-			numSeriesWithSameMetricName := 0
-			numSeriesTotal := 0
-			maxErrorsBeforeStop := 1
-
-			// Try to push as many series with the same metric name as we can.
-			for i, errs := 0, 0; i < 10000; i++ {
-				series, _ := generateNSeries(10, 1, func() string { return "test_limit_per_metric" }, now, func() []prompb.Label {
-					return []prompb.Label{{
-						Name:  "cardinality",
-						Value: strconv.Itoa(rand.Int()),
-					}}
-				})
-
-				res, err := client.Push(series)
+				now := time.Now()
+				client, err := e2emimir.NewClient(cortex1.HTTPEndpoint(), "", "", "", userID)
 				require.NoError(t, err)
 
-				if res.StatusCode == 200 {
-					numSeriesTotal += 10
-					numSeriesWithSameMetricName += 10
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
-				}
-			}
+				numSeriesWithSameMetricName := 0
+				numSeriesTotal := 0
+				maxErrorsBeforeStop := 1
 
-			// Try to push as many series with the different metric name as we can.
-			for i, errs := 0, 0; i < 10000; i++ {
-				series, _ := generateNSeries(10, 1, func() string { return fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()) }, now, nil)
-				res, err := client.Push(series)
+				// Try to push as many series with the same metric name as we can.
+				for i, errs := 0, 0; i < 10000; i++ {
+					series, _ := generator(10, 1, func() string { return "test_limit_per_metric" }, now, func() []prompb.Label {
+						return []prompb.Label{{
+							Name:  "cardinality",
+							Value: strconv.Itoa(rand.Int()),
+						}}
+					})
+
+					res, err := client.Push(series)
+					require.NoError(t, err)
+
+					if res.StatusCode == 200 {
+						numSeriesTotal += 10
+						numSeriesWithSameMetricName += 10
+					} else {
+						require.Equal(t, 400, res.StatusCode)
+						if errs++; errs >= maxErrorsBeforeStop {
+							break
+						}
+					}
+				}
+
+				// Try to push as many series with the different metric name as we can.
+				for i, errs := 0, 0; i < 10000; i++ {
+					series, _ := generator(10, 1, func() string { return fmt.Sprintf("test_limit_per_tenant_%d", rand.Int()) }, now, nil)
+					res, err := client.Push(series)
+					require.NoError(t, err)
+
+					if res.StatusCode == 200 {
+						numSeriesTotal += 10
+					} else {
+						require.Equal(t, 400, res.StatusCode)
+						if errs++; errs >= maxErrorsBeforeStop {
+							break
+						}
+					}
+				}
+
+				// With just one ingester we expect to hit the limit exactly
+				assert.Equal(t, testData.MaxGlobalSeriesPerMetric, numSeriesWithSameMetricName)
+				assert.Equal(t, testData.MaxGlobalSeriesPerTenant, numSeriesTotal)
+
+				// Check metrics
+				metricNumSeries, err := cortex1.SumMetrics([]string{"cortex_ingester_memory_series"})
 				require.NoError(t, err)
-
-				if res.StatusCode == 200 {
-					numSeriesTotal += 10
-				} else if errs++; errs >= maxErrorsBeforeStop {
-					break
-				}
-			}
-
-			// With just one ingester we expect to hit the limit exactly
-			assert.Equal(t, testData.MaxGlobalSeriesPerMetric, numSeriesWithSameMetricName)
-			assert.Equal(t, testData.MaxGlobalSeriesPerTenant, numSeriesTotal)
-
-			// Check metrics
-			metricNumSeries, err := cortex1.SumMetrics([]string{"cortex_ingester_memory_series"})
-			require.NoError(t, err)
-			assert.Equal(t, testData.MaxGlobalSeriesPerTenant, int(e2e.SumValues(metricNumSeries)))
-			metricNumExemplars, err := cortex1.SumMetrics([]string{"cortex_ingester_tsdb_exemplar_exemplars_in_storage"})
-			require.NoError(t, err)
-			assert.Equal(t, testData.MaxGlobalExemplarsPerUser, int(e2e.SumValues(metricNumExemplars)))
-		})
+				assert.Equal(t, testData.MaxGlobalSeriesPerTenant, int(e2e.SumValues(metricNumSeries)))
+				metricNumExemplars, err := cortex1.SumMetrics([]string{"cortex_ingester_tsdb_exemplar_exemplars_in_storage"})
+				require.NoError(t, err)
+				assert.Equal(t, testData.MaxGlobalExemplarsPerUser, int(e2e.SumValues(metricNumExemplars)))
+			})
+		}
 	}
 }

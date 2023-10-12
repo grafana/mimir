@@ -25,7 +25,6 @@ ingester:
       store: consul
       consul:
         host: consul:8500
-    replication_factor: 1
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
@@ -42,25 +41,24 @@ blocks_storage:
     block_ranges_period: [ 2h ]
     retention_period: 3h
 
+    # Always use the PostingsForMatchers() cache in order to exercise it.
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_ttl: 1m
+
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    consistency_delay: 5s
     index_header_lazy_loading_enabled: true
+    sync_interval: 1m
 
     index_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
     chunks_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
     metadata_cache:
-      backend: memcached
-      memcached:
-        addresses: dns+memcached:11211
+      # Cache is configured via CLI flags. See docker-compose.jsonnet
 
   s3:
     endpoint:          minio:9000
@@ -82,6 +80,10 @@ ruler:
 
 ruler_storage:
   backend: s3
+
+  cache:
+    # Cache is configured via CLI flags. See docker-compose.jsonnet
+
   s3:
     bucket_name:       mimir-ruler
     endpoint:          minio:9000
@@ -112,7 +114,6 @@ alertmanager_storage:
 compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor
-  consistency_delay:   1m
   cleanup_interval:    1m
   tenant_cleanup_delay: 1m
   sharding_ring:
@@ -142,9 +143,7 @@ frontend:
   # scheduler_address: "query-scheduler:9011"
 
   results_cache:
-    backend: "memcached"
-    memcached:
-      addresses: "dns+memcached:11211"
+    # Cache is configured via CLI flags. See docker-compose.jsonnet
     compression: snappy
 
 frontend_worker:
@@ -160,11 +159,12 @@ query_scheduler:
 
 limits:
   # Limit max query time range to 31d
-  max_query_length: 744h
+  max_partial_query_length: 744h
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
+  native_histograms_ingestion_enabled: true
 
 runtime_config:
   file: ./config/runtime.yaml

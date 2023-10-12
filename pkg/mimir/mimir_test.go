@@ -26,12 +26,15 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	dslog "github.com/grafana/dskit/log"
+	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -52,10 +55,15 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
+		Server: server.Config{
+			HTTPListenAddress: "localhost",
+			GRPCListenAddress: "localhost",
+		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{
@@ -85,8 +93,6 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			BucketStore: tsdb.BucketStoreConfig{
-				ChunkPoolMinBucketSizeBytes: tsdb.ChunkPoolDefaultMinBucketSize,
-				ChunkPoolMaxBucketSizeBytes: tsdb.ChunkPoolDefaultMaxBucketSize,
 				IndexCache: tsdb.IndexCacheConfig{
 					BackendConfig: cache.BackendConfig{
 						Backend: tsdb.IndexCacheBackendInMemory,
@@ -156,6 +162,7 @@ func TestMimir(t *testing.T) {
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
 	}
+	require.NoError(t, cfg.Server.LogLevel.Set("info"))
 
 	tests := map[string]struct {
 		target                  []string
@@ -227,11 +234,9 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
 	cfg.Target = []string{Querier}
-	cfg.Server = getServerConfig(t)
-	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
-	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+	cfg.Server = getServerConfig(t, dslog.LogfmtFormat, "debug")
 
-	util_log.InitLogger(&cfg.Server)
+	cfg.Server.Log = util_log.InitLogger(cfg.Server.LogFormat, cfg.Server.LogLevel, false, util_log.RateLimitedLoggerCfg{})
 
 	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
@@ -417,7 +422,7 @@ func TestConfigValidation(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := tc.getTestConfig().Validate(nil)
+			err := tc.getTestConfig().Validate(log.NewNopLogger())
 			if tc.expectAnyError {
 				require.Error(t, err)
 			} else if tc.expectedError != nil {
@@ -427,6 +432,69 @@ func TestConfigValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfig_ValidateLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		testConfig   *Config
+		limitsConfig validation.Limits
+		hasError     bool
+	}{
+		{
+			name:         "default configs should pass validation",
+			testConfig:   newDefaultConfig(),
+			limitsConfig: newDefaultConfig().LimitsConfig,
+		},
+		{
+			name: "non overlapping query-store-after and query-ingesters-within should return error",
+			testConfig: func() *Config {
+				c := newDefaultConfig()
+				c.Querier.QueryStoreAfter = time.Hour
+				return c
+			}(),
+			limitsConfig: func() validation.Limits {
+				limits := newDefaultConfig().LimitsConfig
+				limits.QueryIngestersWithin = model.Duration(time.Minute)
+				return limits
+			}(),
+			hasError: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.testConfig.ValidateLimits(tc.limitsConfig)
+			if tc.hasError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// Temporary behavior to keep supporting global query-ingesters-within flag for two Mimir versions
+// TODO: Remove in Mimir 2.11.0
+func TestQueryIngestersWithinGlobalConfigIsUsedInsteadOfDefaultLimitConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	cfg.Querier.QueryIngestersWithin = 5 * time.Hour
+	cfg.Target = []string{Overrides}
+
+	cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	defer c.Server.Stop()
+
+	duration := c.Overrides.QueryIngestersWithin("test")
+
+	require.Equal(t, 5*time.Hour, duration)
 }
 
 func TestConfig_validateFilesystemPaths(t *testing.T) {
@@ -439,6 +507,14 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 	}{
 		"should succeed with the default configuration": {
 			setup: func(cfg *Config) {},
+		},
+		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Backend}
+				cfg.Alertmanager.DataDir = "/data"
+				cfg.BlocksStorage.BucketStore.SyncDir = "/data/tsdb"
+			},
+			expectedErr: `the configured bucket store sync directory "/data/tsdb" cannot overlap with the configured alertmanager data directory "/data"`,
 		},
 		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
 			setup: func(cfg *Config) {
@@ -658,7 +734,7 @@ func TestIsAbsPathOverlapping(t *testing.T) {
 func TestGrpcAuthMiddleware(t *testing.T) {
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
-		Server:              getServerConfig(t),
+		Server:              getServerConfig(t, dslog.LogfmtFormat, "debug"),
 		Target:              []string{API}, // Something innocent that doesn't require much config.
 	}
 
@@ -675,6 +751,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 		schedulerpb.RegisterSchedulerForQuerierServer(c.Server.GRPC, msch)
 		frontendv1pb.RegisterFrontendServer(c.Server.GRPC, msch)
+		ruler.RegisterRulerServer(c.Server.GRPC, msch)
 
 		require.NoError(t, services.StartAndAwaitRunning(ctx, serv))
 		defer func() {
@@ -704,6 +781,14 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		_, err = schedulerClient.NotifyQuerierShutdown(ctx, &schedulerpb.NotifyQuerierShutdownRequest{QuerierID: "random-querier-id"})
 		require.NoError(t, err)
 		require.True(t, msch.querierShutdownCalled.Load())
+	}
+	{
+		// Verify that we can call rulerClient.SyncRules without user in the context, and we don't get any error.
+		require.False(t, msch.rulerSyncRulesCalled.Load())
+		rulerClient := ruler.NewRulerClient(conn)
+		_, err = rulerClient.SyncRules(ctx, &ruler.SyncRulesRequest{UserIds: []string{"random-user-id"}})
+		require.NoError(t, err)
+		require.True(t, msch.rulerSyncRulesCalled.Load())
 	}
 }
 
@@ -753,12 +838,120 @@ func TestFlagDefaults(t *testing.T) {
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
 }
 
+func TestOnlyValidRuntimeConfigIsLoaded(t *testing.T) {
+	dir := t.TempDir()
+	loadPath := filepath.Join(dir, "test")
+
+	userID := "12345"
+
+	initialValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 15h
+`
+	err := os.WriteFile(loadPath, []byte(initialValidConfig), 0600)
+	require.NoError(t, err)
+
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+
+	cfg.Target = []string{Overrides}
+
+	cfg.RuntimeConfig.LoadPath = []string{loadPath}
+	cfg.RuntimeConfig.ReloadPeriod = 100 * time.Millisecond
+	cfg.Querier.QueryStoreAfter = 12 * time.Hour
+	cfg.LimitsConfig.QueryIngestersWithin = model.Duration(13 * time.Hour)
+
+	registry := prometheus.NewPedanticRegistry()
+	c, err := New(cfg, registry)
+	require.NoError(t, err)
+
+	// init services
+	sm, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	defer c.Server.Stop()
+
+	servs := []services.Service(nil)
+	for _, s := range sm {
+		servs = append(servs, s)
+	}
+	m, err := services.NewManager(servs...)
+	require.NoError(t, err)
+
+	// before the services start, all users have the default limits
+	duration := c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, cfg.LimitsConfig.QueryIngestersWithin, model.Duration(duration))
+
+	// start services
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	require.NoError(t, m.StartAsync(ctx))
+	require.NoError(t, m.AwaitHealthy(ctx))
+
+	// the runtime config is now loaded, so the content of initialValidConfig will be used
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric := metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
+
+	// write invalid config with query_ingesters_with < query_store_after
+	configYAML2 := `
+overrides:
+  '12345':
+    query_ingesters_within: 2h
+`
+	err = os.WriteFile(loadPath, []byte(configYAML2), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// invalid config is ignored, still using initialValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 15*time.Hour, duration)
+
+	// check load was unsuccessful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 0., metric.Gauge.GetValue())
+
+	// write a new valid config
+	anotherValidConfig := `
+overrides:
+  '12345':
+    query_ingesters_within: 20h
+`
+	err = os.WriteFile(loadPath, []byte(anotherValidConfig), 0600)
+	require.NoError(t, err)
+
+	// wait sufficient time for new runtime config to be loaded
+	time.Sleep(cfg.RuntimeConfig.ReloadPeriod * 2)
+
+	// check config has been updated to anotherValidConfig
+	duration = c.Overrides.QueryIngestersWithin(userID)
+	require.Equal(t, 20*time.Hour, duration)
+
+	// check load is successful via metric
+	metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(registry)
+	require.NoError(t, err)
+	metric = metrics["cortex_runtime_config_last_reload_successful"].Metric[0]
+	require.NotNil(t, metric.Gauge.Value)
+	require.Equal(t, 1., metric.Gauge.GetValue())
+}
+
 // Generates server config, with gRPC listening on random port.
-func getServerConfig(t *testing.T) server.Config {
+func getServerConfig(t *testing.T, logFormat, logLevel string) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
@@ -766,7 +959,11 @@ func getServerConfig(t *testing.T) server.Config {
 		GRPCListenPort:    grpcPortNum,
 
 		GPRCServerMaxRecvMsgSize: 1024,
+		LogFormat:                logFormat,
+		Registerer:               prometheus.NewPedanticRegistry(),
 	}
+	require.NoError(t, cfg.LogLevel.Set(logLevel))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {
@@ -785,6 +982,7 @@ func getHostnameAndRandomPort(t *testing.T) (string, int) {
 type mockGrpcServiceHandler struct {
 	clientShutdownCalled  atomic.Bool
 	querierShutdownCalled atomic.Bool
+	rulerSyncRulesCalled  atomic.Bool
 }
 
 func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
@@ -795,6 +993,15 @@ func (m *mockGrpcServiceHandler) NotifyClientShutdown(_ context.Context, _ *fron
 func (m *mockGrpcServiceHandler) NotifyQuerierShutdown(_ context.Context, _ *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
 	m.querierShutdownCalled.Store(true)
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
+}
+
+func (m *mockGrpcServiceHandler) SyncRules(_ context.Context, _ *ruler.SyncRulesRequest) (*ruler.SyncRulesResponse, error) {
+	m.rulerSyncRulesCalled.Store(true)
+	return &ruler.SyncRulesResponse{}, nil
+}
+
+func (m *mockGrpcServiceHandler) Rules(_ context.Context, _ *ruler.RulesRequest) (*ruler.RulesResponse, error) {
+	return &ruler.RulesResponse{}, nil
 }
 
 func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) error {

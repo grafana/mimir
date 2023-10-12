@@ -13,6 +13,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
   local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
 
+  local sortAscending = 1,
+
   _config:: error 'must provide _config',
 
   row(title)::
@@ -85,19 +87,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label)
+          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
           else d
-               .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label)
-               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label)
+               .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, sort=sortAscending)
+               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending)
         else
           if $._config.singleBinary
-          then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label)
+          then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label, sort=sortAscending)
           else d
-               .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
-               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label),
+               .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true, sort=sortAscending)
+               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label, sort=sortAscending),
 
       addActiveUserSelectorTemplates()::
-        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user'),
+        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user', sort=sortAscending),
 
       addCustomTemplate(name, values, defaultIndex=0):: self {
         templating+: {
@@ -145,7 +147,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobMatcher(job)::
     if $._config.singleBinary
     then '%s=~"$job"' % $._config.per_job_label
-    else '%s=~"$cluster", %s=~"%s(%s)"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, job],
+    else '%s=~"$cluster", %s=~"%s(%s)"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, formatJobForQuery(job)],
+
+  local formatJobForQuery(job) =
+    if std.isArray(job) then '(%s)' % std.join('|', job)
+    else if std.isString(job) then job
+    else error 'expected job "%s" to be a string or an array, but it is type "%s"' % [job, std.type(job)],
 
   namespaceMatcher()::
     if $._config.singleBinary
@@ -155,7 +162,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobSelector(job)::
     if $._config.singleBinary
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re($._config.per_job_label, '$job')]
-    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '($namespace)/(%s)' % job)],
+    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '($namespace)/(%s)' % formatJobForQuery(job))],
 
   recordingRulePrefix(selectors)::
     std.join('_', [matcher.label for matcher in selectors]),
@@ -489,6 +496,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   cpuAndMemoryBasedAutoScalingRow(componentTitle)::
     local component = std.asciiLower(componentTitle);
+    local field = std.strReplace(component, '-', '_');
     super.row('%s - autoscaling' % [componentTitle])
     .addPanel(
       local title = 'Replicas';
@@ -502,7 +510,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
           ||| % {
             namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
           |||
@@ -515,7 +523,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
           ||| % {
             namespace_matcher: $.namespaceMatcher(),
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
         ],
@@ -552,14 +560,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
-            /
-            on(metric) group_left label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                "metric", "$1", "metric_name", "(.+)"
+            sum by (scaledObject) (
+              keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
+              /
+              on(metric) group_left label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
             )
           ||| % {
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
@@ -580,14 +590,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
-            /
-            on(metric) group_left label_replace(
-                kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
-                "metric", "$1", "metric_name", "(.+)"
+            sum by (scaledObject) (
+              keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
+              /
+              on(metric) group_left label_replace(
+                  kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
+                  "metric", "$1", "metric_name", "(.+)"
+              )
             )
           ||| % {
-            hpa_name: $._config.autoscaling[component].hpa_name,
+            hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
@@ -606,7 +618,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       local title = 'Autoscaler failures rate';
       $.panel(title) +
       $.queryPanel(
-        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[component].hpa_name),
+        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[field].hpa_name),
         '{{metric}} failures'
       ) +
       $.panelDescription(
@@ -680,6 +692,74 @@ local utils = import 'mixin-utils/utils.libsonnet';
           calcs: ['lastNotNull'],
           fields: '',
           values: false,
+        },
+      },
+    },
+
+  barChart(queries, legends='', thresholds=[], unit='short', min=null, max=null)::
+    super.queryPanel(queries, legends) + {
+      type: 'barchart',
+      targets: [
+        target {
+          // Reset defaults from queryPanel().
+          format: null,
+          intervalFactor: null,
+          step: null,
+        }
+        for target in super.targets
+      ],
+      fieldConfig: {
+        defaults: {
+          color: { mode: 'thresholds' },
+          mappings: [],
+          max: max,
+          min: min,
+          thresholds: {
+            mode: 'absolute',
+            steps: thresholds,
+          },
+          unit: unit,
+          custom: {
+            lineWidth: 1,
+            fillOpacity: 80,
+            gradientMode: 'none',
+            axisPlacement: 'auto',
+            axisLabel: '',
+            axisColorMode: 'text',
+            scaleDistribution: {
+              type: 'linear',
+            },
+            axisCenteredZero: false,
+            hideFrom: {
+              tooltip: false,
+              viz: false,
+              legend: false,
+            },
+            thresholdsStyle: {
+              mode: 'off',
+            },
+          },
+        },
+      },
+      options: {
+        orientation: 'auto',
+        xTickLabelRotation: 0,
+        xTickLabelSpacing: 0,
+        showValue: 'auto',
+        stacking: 'none',
+        groupWidth: 0.7,
+        barWidth: 0.97,
+        barRadius: 0,
+        fullHighlight: false,
+        tooltip: {
+          mode: 'single',
+          sort: 'none',
+        },
+        legend: {
+          showLegend: true,
+          displayMode: 'list',
+          placement: 'bottom',
+          calcs: [],
         },
       },
     },
@@ -772,9 +852,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('reqps') },
     )
     .addPanel(
-      $.panel('Error rate') +
-      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
-      { yaxes: $.yaxes('percentunit') },
+      $.timeseriesPanel('Error rate') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval])) >= 0' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
+      { fieldConfig: { defaults: { noValue: '0', unit: 'percentunit', min: 0, max: 1 } } }
     )
     .addPanel(
       $.panel('Latency of op: Attributes') +
@@ -815,13 +895,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum by(operation) (
-            rate(
-              thanos_memcached_operations_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_memcached_operations_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or ignoring(backend)
+            rate(thanos_cache_operations_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
         ||| % config,
         '{{operation}}'
@@ -831,8 +916,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.panel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.backwardsCompatibleLatencyPanel(
         'thanos_memcached_operation_duration_seconds',
+        'thanos_cache_operation_duration_seconds',
         |||
           {
             %(jobMatcher)s,
@@ -848,29 +934,111 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         |||
           sum(
-            rate(
-              thanos_cache_memcached_hits_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_cache_memcached_hits_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or
+            rate(thanos_cache_hits_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
           /
           sum(
-            rate(
-              thanos_cache_memcached_requests_total{
-                %(jobMatcher)s,
-                component="%(component)s",
-                name="%(cacheName)s"
-              }[$__rate_interval]
-            )
+            # Backwards compatibility
+            rate(thanos_cache_memcached_requests_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
+            or
+            rate(thanos_cache_requests_total{
+              %(jobMatcher)s,
+              component="%(component)s",
+              name="%(cacheName)s"
+            }[$__rate_interval])
           )
         ||| % config,
         'items'
       ) +
       { yaxes: $.yaxes('percentunit') }
     ),
+
+  // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
+  // names for the same metric. When enough time has passed and we no longer care about the old
+  // metric name, this method can be removed and replaced with $.latencyPanel
+  backwardsCompatibleLatencyPanel(oldMetricName, newMetricName, selector, multiplier='1e3'):: {
+    nullPointMode: 'null as zero',
+    targets: [
+      {
+        expr: |||
+          histogram_quantile(0.99, sum(
+            # Backwards compatibility
+            rate(%s_bucket%s[$__rate_interval])
+            or
+            rate(%s_bucket%s[$__rate_interval])
+          ) by (le)) * %s
+        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: '99th Percentile',
+        refId: 'A',
+        step: 10,
+      },
+      {
+        expr: |||
+          histogram_quantile(0.50, sum(
+            # Backwards compatibility
+            rate(%s_bucket%s[$__rate_interval])
+            or
+            rate(%s_bucket%s[$__rate_interval])
+          ) by (le)) * %s
+        ||| % [oldMetricName, selector, newMetricName, selector, multiplier],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: '50th Percentile',
+        refId: 'B',
+        step: 10,
+      },
+      {
+        expr: |||
+          sum(
+            # Backwards compatibility
+            rate(%s_sum%s[$__rate_interval])
+            or
+            rate(%s_sum%s[$__rate_interval])
+          ) * %s
+          /
+          sum(
+            # Backwards compatibility
+            rate(%s_count%s[$__rate_interval])
+            or
+            rate(%s_count%s[$__rate_interval])
+          )
+        ||| % [
+          oldMetricName,
+          selector,
+          newMetricName,
+          selector,
+          multiplier,
+          oldMetricName,
+          selector,
+          newMetricName,
+          selector,
+        ],
+        format: 'time_series',
+        intervalFactor: 2,
+        legendFormat: 'Average',
+        refId: 'C',
+        step: 10,
+      },
+    ],
+    yaxes: $.yaxes('ms'),
+  },
 
   filterNodeDiskContainer(containerName)::
     |||

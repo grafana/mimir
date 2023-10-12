@@ -10,7 +10,9 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -18,21 +20,21 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Config for a Frontend.
@@ -43,7 +45,8 @@ type Config struct {
 	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the query-frontends and the query-schedulers."`
 
 	// Used to find local IP address, that is sent to scheduler and querier-worker.
-	InfNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
+	InfNames   []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
+	EnableIPv6 bool     `yaml:"instance_enable_ipv6" category:"advanced"`
 
 	// If set, address is not computed from interfaces.
 	Addr string `yaml:"address" category:"advanced"`
@@ -59,6 +62,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.WorkerConcurrency, "query-frontend.scheduler-worker-concurrency", 5, "Number of concurrent workers forwarding queries to single query-scheduler.")
 
 	cfg.InfNames = netutil.PrivateNetworkInterfacesWithFallback([]string{"eth0", "en0"}, logger)
+	f.BoolVar(&cfg.EnableIPv6, "query-frontend.instance-enable-ipv6", false, "Enable using a IPv6 instance address (default false).")
 	f.Var((*flagext.StringSlice)(&cfg.InfNames), "query-frontend.instance-interface-names", "List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend.")
 	f.StringVar(&cfg.Addr, "query-frontend.instance-addr", "", "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).")
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
@@ -66,12 +70,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
 
-func (cfg *Config) Validate(log log.Logger) error {
+func (cfg *Config) Validate() error {
 	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
 		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
 	}
 
-	return cfg.GRPCClientConfig.Validate(log)
+	return cfg.GRPCClientConfig.Validate()
 }
 
 // Frontend implements GrpcRoundTripper. It queues HTTP requests,
@@ -98,6 +102,7 @@ type frontendRequest struct {
 	userID       string
 	statsEnabled bool
 
+	ctx    context.Context
 	cancel context.CancelFunc
 
 	enqueue  chan enqueueResult
@@ -124,7 +129,7 @@ type enqueueResult struct {
 func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 
-	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port), requestsCh, log, reg)
+	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, log, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +205,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		}
 	}
 
+	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -209,6 +215,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
+		ctx:    ctx,
 		cancel: cancel,
 
 		// Buffer of 1 to ensure response or error can be written to the channel
@@ -223,9 +230,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 enqueueAgain:
+	level.Debug(spanLogger).Log("msg", "enqueuing request")
+
 	var cancelCh chan<- uint64
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
 		return nil, ctx.Err()
 
 	case f.requestsCh <- freq:
@@ -237,27 +247,36 @@ enqueueAgain:
 		} else if enqRes.status == failed {
 			retries--
 			if retries > 0 {
+				level.Debug(spanLogger).Log("msg", "enqueuing request failed, will retry")
 				goto enqueueAgain
 			}
 		}
 
+		level.Debug(spanLogger).Log("msg", "enqueuing request failed, retries are exhausted, aborting")
+
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
+	level.Debug(spanLogger).Log("msg", "request enqueued successfully, waiting for response")
+
 	select {
 	case <-ctx.Done():
+		level.Debug(spanLogger).Log("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
+
 		if cancelCh != nil {
 			select {
 			case cancelCh <- freq.queryID:
 				// cancellation sent.
 			default:
 				// failed to cancel, ignore.
-				level.Warn(f.log).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 			}
 		}
 		return nil, ctx.Err()
 
 	case resp := <-freq.response:
+		level.Debug(spanLogger).Log("msg", "received response")
+
 		if stats.ShouldTrackHTTPGRPCResponse(resp.HttpResponse) {
 			stats := stats.FromContext(ctx)
 			stats.Merge(resp.Stats) // Safe if stats is nil.

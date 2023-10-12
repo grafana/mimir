@@ -2,6 +2,7 @@
   _config+: {
     namespace: error 'must define namespace',
     cluster: error 'must define cluster',
+    cluster_domain:: 'cluster.local',
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
@@ -37,22 +38,17 @@
     querier_topology_spread_max_skew: 1,
     ruler_topology_spread_max_skew: 1,
 
+    // Controls how many concurrent queries are run in the querier.
+    querier_max_concurrency: 8,
+    ruler_querier_max_concurrency: $._config.querier_max_concurrency,
+
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
 
-    querier: {
-      replicas: 6,
-      concurrency: 8,
-    },
-
-    queryFrontend: {
-      replicas: 2,
-    },
-
     // storage_backend will be used for all components that use block storage.
     // Each component can override this by specific CLI flags.
-    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/about-configurations/#common-configurations
+    // See https://grafana.com/docs/mimir/latest/configure/about-configurations/#common-configurations
     storage_backend: error 'should specify storage backend',  // Available options are 'gcs', 's3', 'azure'.
 
     // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
@@ -73,6 +69,10 @@
     storage_azure_account_key: error 'must specify Azure account key',
 
     jaeger_agent_host: null,
+
+    // Allow to configure the alertmanager disk.
+    alertmanager_data_disk_size: '100Gi',
+    alertmanager_data_disk_class: null,
 
     // Allow to configure the ingester disk.
     ingester_data_disk_size: '100Gi',
@@ -96,14 +96,58 @@
 
     store_gateway_replication_factor: 3,
 
-    memcached_index_queries_enabled: true,
-    memcached_index_queries_max_item_size_mb: 5,
+    // When store_gateway_lazy_loading_enabled: true, block index-headers are pre-downloaded but lazy loaded at query time.
+    // Enabling lazy loading results in faster startup times at the cost of some latency during query time.
+    // store_gateway_lazy_loading_enabled: false will also reduce the concurrency of blocks syncing;
+    // this improves startup times when running on HDDs instead of SSDs as it reduces random reads.
+    store_gateway_lazy_loading_enabled: true,
 
-    memcached_chunks_enabled: true,
-    memcached_chunks_max_item_size_mb: 1,
+    // Number of memcached replicas for each memcached statefulset
+    memcached_replicas: 3,
 
-    memcached_metadata_enabled: true,
-    memcached_metadata_max_item_size_mb: 1,
+    cache_frontend_enabled: true,
+    cache_frontend_max_item_size_mb: 5,
+    cache_frontend_backend: 'memcached',
+    memcached_frontend_mtls_enabled: false,
+
+    cache_index_queries_enabled: true,
+    cache_index_queries_max_item_size_mb: 5,
+    cache_index_queries_backend: 'memcached',
+    memcached_index_queries_mtls_enabled: false,
+
+    cache_chunks_enabled: true,
+    cache_chunks_max_item_size_mb: 1,
+    cache_chunks_backend: 'memcached',
+    memcached_chunks_mtls_enabled: false,
+
+    cache_metadata_enabled: true,
+    cache_metadata_max_item_size_mb: 1,
+    cache_metadata_backend: 'memcached',
+    memcached_metadata_mtls_enabled: false,
+
+    // mTLS can be used for connections to each cache cluster. If enabled for each type of
+    // cache, the same CA, server, and client credentials are used. That is, you cannot use
+    // different credentials for the frontend, chunks, index, and metadata caches.
+    // NOTE: The certificates in the secrets must be under a key named "$SECRET.pem" where
+    // $SECRET is the name of the secret itself. For example, if the CA cert secret is
+    // named "memcached-ca", the cert must be under the key "memcached-ca.pem".
+    memcached_mtls_server_name: null,
+    memcached_mtls_ca_cert_secret: error 'CA cert secret must be set',
+    memcached_mtls_server_cert_secret: error 'server cert secret must be set',
+    memcached_mtls_server_key_secret: error 'server key secret must be set',
+    memcached_mtls_client_cert_secret: error 'client cert secret must be set',
+    memcached_mtls_client_key_secret: error 'client key secret must be set',
+
+    // Paths within containers that secrets are mounted at. It shouldn't be necessary to
+    // change these settings.
+    memcached_ca_cert_path: '/var/secrets/memcached-ca-cert/',
+    memcached_client_key_path: '/var/secrets/memcached-client-key/',
+    memcached_client_cert_path: '/var/secrets/memcached-client-cert/',
+    memcached_server_key_path: '/var/secrets/memcached-server-key/',
+    memcached_server_cert_path: '/var/secrets/memcached-server-cert/',
+
+    // Number of etcd replicas.
+    etcd_replicas: 3,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -113,9 +157,12 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
+    // Common configuration parameters
+    commonConfig:: {},
+
     // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
     // For more details about usage statistics, see:
-    // https://grafana.com/docs/mimir/latest/operators-guide/configure/about-anonymous-usage-statistics-reporting/
+    // https://grafana.com/docs/mimir/latest/configure/about-anonymous-usage-statistics-reporting/
     usage_stats_enabled: true,
     usageStatsConfig: if !$._config.usage_stats_enabled then {} else {
       'usage-stats.installation-mode': 'jsonnet',
@@ -169,7 +216,7 @@
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
 
       'store-gateway.sharding-ring.store': 'consul',
-      'store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'store-gateway.sharding-ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
     },
@@ -189,7 +236,7 @@
     // The ingester ring client config that should be shared across all Mimir services
     // using or watching the ingester ring.
     ingesterRingClientConfig: {
-      'ingester.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ingester.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'ingester.ring.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
       'ingester.ring.heartbeat-timeout': '10m',
@@ -199,7 +246,7 @@
 
     local querySchedulerRingConfig = {
       'query-scheduler.ring.store': 'consul',
-      'query-scheduler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'query-scheduler.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'query-scheduler.ring.prefix': '',
     },
 
@@ -225,7 +272,7 @@
         {
           'overrides-exporter.ring.enabled': true,
           'overrides-exporter.ring.store': 'consul',
-          'overrides-exporter.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+          'overrides-exporter.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
           'overrides-exporter.ring.prefix': '',
           'overrides-exporter.ring.wait-stability-min-duration': '1m',
         },
@@ -253,7 +300,7 @@
       replicas: 3,
       fallback_config: {},
       ring_store: 'consul',
-      ring_hostname: 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      ring_hostname: 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       ring_replication_factor: $._config.replication_factor,
     },
 
@@ -320,9 +367,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 700 rules
+        // 1400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 35,
+        ruler_max_rule_groups_per_tenant: 70,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -336,9 +383,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 1000 rules
+        // 2000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 50,
+        ruler_max_rule_groups_per_tenant: 100,
       },
 
       small_user:: {
@@ -349,9 +396,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 1400 rules
+        // 2800 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 70,
+        ruler_max_rule_groups_per_tenant: 140,
       },
 
       medium_user:: {
@@ -362,9 +409,9 @@
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
 
-        // 1800 rules
+        // 3600 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 90,
+        ruler_max_rule_groups_per_tenant: 180,
       },
 
       big_user:: {
@@ -375,9 +422,9 @@
         ingestion_rate: 700000,  // 700K
         ingestion_burst_size: 7000000,  // 7M
 
-        // 2200 rules
+        // 4400 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 110,
+        ruler_max_rule_groups_per_tenant: 220,
       },
 
       super_user:: {
@@ -388,9 +435,9 @@
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
 
-        // 2600 rules
+        // 5200 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 130,
+        ruler_max_rule_groups_per_tenant: 260,
 
         compactor_split_and_merge_shards: 2,
         compactor_tenant_shard_size: 2,
@@ -406,9 +453,9 @@
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
 
-        // 3000 rules
+        // 6000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 150,
+        ruler_max_rule_groups_per_tenant: 300,
 
         compactor_split_and_merge_shards: 2,
         compactor_tenant_shard_size: 2,
@@ -423,9 +470,9 @@
         ingestion_rate: 3500000,  // 3.5M
         ingestion_burst_size: 35000000,  // 35M
 
-        // 3500 rules
+        // 7000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 175,
+        ruler_max_rule_groups_per_tenant: 350,
 
         compactor_split_and_merge_shards: 4,
         compactor_tenant_shard_size: 4,
@@ -440,9 +487,9 @@
         ingestion_rate: 4500000,  // 4.5M
         ingestion_burst_size: 45000000,  // 45M
 
-        // 4000 rules
+        // 8000 rules
         ruler_max_rules_per_rule_group: 20,
-        ruler_max_rule_groups_per_tenant: 200,
+        ruler_max_rule_groups_per_tenant: 400,
 
         compactor_split_and_merge_shards: 4,
         compactor_tenant_shard_size: 4,
@@ -480,6 +527,27 @@
     //    },
     ingester_instance_limits: null,
 
+    // Distributor limits are put directly into runtime config, if not null. Available limits:
+    //    distributor_instance_limits: {
+    //      max_ingestion_rate: 0,  // Max ingestion rate (samples/second) per distributor. 0 = no limit.
+    //      max_inflight_push_requests: 0,  // Max inflight push requests per distributor. 0 = no limit.
+    //      max_inflight_push_requests_bytes: 0,  // Max sum of inflight push request sizes per distributor. 0 = no limit.
+    //    },
+    distributor_instance_limits: null,
+
+    // Controls whether the TSDB Head early compaction is enabled in the ingester.
+    ingester_tsdb_head_early_compaction_enabled: false,
+    ingester_tsdb_head_early_compaction_reduction_percentage: 15,
+
+    // The default threshold to triger the TSDB Head early compaction is once the ingester in-memory
+    // series reach the 66% of the configured hard limit on max in-memory series. If the limit is not
+    // configured, then we just use a constant default value.
+    ingester_tsdb_head_early_compaction_min_in_memory_series:
+      if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
+        std.ceil($._config.ingester_instance_limits.max_series / 1.5)
+      else
+        2000000,
+
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
@@ -500,7 +568,8 @@
         { overrides: $._config.overrides }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if !$._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: false } else {})
-        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {}),
+        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {})
+        + (if $._config.distributor_instance_limits != null then { distributor_limits: $._config.distributor_instance_limits } else {}),
       ),
     }),
 
@@ -518,30 +587,204 @@
     },
   },
 
-  blocks_chunks_caching_config::
+  query_frontend_enable_cardinality_estimation:: $._config.cache_frontend_enabled,
+
+  query_frontend_caching_config:: (
+    if $._config.cache_frontend_enabled then
+      if $._config.cache_frontend_backend == 'memcached' then (
+        {
+          // So that exporters like cloudwatch can still send in data and be un-cached.
+          'query-frontend.max-cache-freshness': '10m',
+
+          'query-frontend.cache-results': true,
+          'query-frontend.results-cache.backend': 'memcached',
+          'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+          'query-frontend.results-cache.memcached.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+          'query-frontend.results-cache.memcached.timeout': '500ms',
+        } + if $._config.memcached_frontend_mtls_enabled then {
+          'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+%(cache_frontend_backend)s-frontend.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
+          'query-frontend.results-cache.memcached.connect-timeout': '1s',
+          'query-frontend.results-cache.memcached.tls-enabled': true,
+          'query-frontend.results-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+          'query-frontend.results-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+        } else {}
+      ) else if $._config.cache_frontend_backend == 'redis' then {
+        'query-frontend.results-cache.backend': 'redis',
+        'query-frontend.results-cache.redis.endpoint': '%(cache_frontend_backend)s-frontend.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
+        'query-frontend.results-cache.redis.max-item-size': $._config.cache_frontend_max_item_size_mb * 1024 * 1024,
+      } else {}
+    else {}
+  ),
+
+  blocks_chunks_concurrency_connection_config::
     (
-      if $._config.memcached_index_queries_enabled then {
-        'blocks-storage.bucket-store.index-cache.backend': 'memcached',
-        'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-        'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
-      } else {}
-    ) + (
-      if $._config.memcached_chunks_enabled then {
-        'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
-        'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-        'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
-        'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
-      } else {}
+      // We expect user wouldn't mixing caches.
+      // First we will check if index, chunks and metadata cache backend config is equal to Redis
+      // then we will enable flag for Redis cache. Otherwise, we assume the cache is Memcached.
+      if $._config.cache_index_queries_backend == 'redis' && $._config.cache_chunks_backend == 'redis' && $._config.cache_metadata_backend == 'redis' then
+        // We use the similar config like memcached in the following else branch for memcached configuration.
+        // the small difference is in redis we set "get" concurrency to connection-poll-size instead of max-idle-connections.
+        (
+          if !$._config.cache_index_queries_enabled then {} else {
+            'blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.index-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.redis.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_chunks_enabled then {} else {
+            'blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_metadata_enabled then {} else {
+            'blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.metadata-cache.redis.connection-pool-size':
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency'],
+          }
+        )
+      else
+        // We should keep a number of idle connections equal to the max "get" concurrency,
+        // in order to avoid re-opening connections continuously (this would be slower
+        // and fill up the conntrack table too).
+        //
+        // The downside of this approach is that we'll end up with an higher number of
+        // active connections to memcached, so we have to make sure connections limit
+        // set in memcached is high enough.
+        (
+          if !$._config.cache_index_queries_enabled then {} else {
+            'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_chunks_enabled then {} else {
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency'],
+          }
+        ) + (
+          if !$._config.cache_metadata_enabled then {} else {
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections':
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'] +
+              $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency'],
+          }
+        )
     ),
 
-  blocks_metadata_caching_config:: if $._config.memcached_metadata_enabled then {
-    'blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
-    'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
-    'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
-    'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
-  } else {},
+  blocks_chunks_caching_config::
+    (
+      if $._config.cache_index_queries_enabled then
+        if $._config.cache_index_queries_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.index-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+            'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_index_queries_mtls_enabled then {
+            'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
+            'blocks-storage.bucket-store.index-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.index-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.index-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_index_queries_backend == 'redis' then {
+          'blocks-storage.bucket-store.index-cache.backend': 'redis',
+          'blocks-storage.bucket-store.index-cache.redis.endpoint': '%(cache_index_queries_backend)s-index-queries.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
+          'blocks-storage.bucket-store.index-cache.redis.max-item-size': $._config.cache_index_queries_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.index-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ) + (
+      if $._config.cache_chunks_enabled then
+        if $._config.cache_chunks_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': 50,
+            'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '450ms',
+          } + if $._config.memcached_chunks_mtls_enabled then {
+            'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
+            'blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_chunks_backend == 'redis' then {
+          'blocks-storage.bucket-store.chunks-cache.backend': 'redis',
+          'blocks-storage.bucket-store.chunks-cache.redis.endpoint': '%(cache_chunks_backend)s.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
+          'blocks-storage.bucket-store.chunks-cache.redis.max-item-size': $._config.cache_chunks_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.chunks-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
+
+  blocks_metadata_caching_config::
+    (
+      if $._config.cache_metadata_enabled then
+        if $._config.cache_metadata_backend == 'memcached' then (
+          {
+            'blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
+            'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+            'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_metadata_mtls_enabled then {
+            'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
+            'blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout': '1s',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-enabled': true,
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_metadata_backend == 'redis' then {
+          'blocks-storage.bucket-store.metadata-cache.backend': 'redis',
+          'blocks-storage.bucket-store.metadata-cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
+          'blocks-storage.bucket-store.metadata-cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+          'blocks-storage.bucket-store.metadata-cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
+
+  ruler_storage_caching_config::
+    (
+      if $._config.cache_metadata_enabled then
+        if $._config.cache_metadata_backend == 'memcached' then (
+          {
+            'ruler-storage.cache.backend': 'memcached',
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
+            'ruler-storage.cache.memcached.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+            'ruler-storage.cache.memcached.max-async-concurrency': 50,
+          } + if $._config.memcached_metadata_mtls_enabled then {
+            'ruler-storage.cache.memcached.addresses': 'dnssrvnoa+%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:11212' % $._config,
+            'ruler-storage.cache.memcached.connect-timeout': '1s',
+            'ruler-storage.cache.memcached.tls-enabled': true,
+            'ruler-storage.cache.memcached.tls-ca-path': $._config.memcached_ca_cert_path + $._config.memcached_mtls_ca_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-key-path': $._config.memcached_client_key_path + $._config.memcached_mtls_client_key_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-cert-path': $._config.memcached_client_cert_path + $._config.memcached_mtls_client_cert_secret + '.pem',
+            'ruler-storage.cache.memcached.tls-server-name': if $._config.memcached_mtls_server_name != null then $._config.memcached_mtls_server_name else null,
+          } else {}
+        ) else if $._config.cache_metadata_backend == 'redis' then {
+          'ruler-storage.cache.backend': 'redis',
+          'ruler-storage.cache.redis.endpoint': '%(cache_metadata_backend)s-metadata.%(namespace)s.svc.%(cluster_domain)s:6379' % $._config,
+          'ruler-storage.cache.redis.max-item-size': $._config.cache_metadata_max_item_size_mb * 1024 * 1024,
+          'ruler-storage.cache.redis.max-async-concurrency': 50,
+        } else {}
+      else {}
+    ),
 
   bucket_index_config:: if $._config.bucket_index_enabled then {
     // Bucket index is updated by compactor on each cleanup cycle.

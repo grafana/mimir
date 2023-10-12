@@ -1,0 +1,27 @@
+{{- $currentScope := .Values.metaMonitoring.dashboards }}
+{{- if $currentScope.enabled }}
+{{ range $path, $_ :=  $.Files.Glob  "mixins/dashboards/*.json" }}
+{{ $file := $path | base }}
+{{ $name := print ($file | trimSuffix ".json")  "-dashboard" }}
+{{- with $currentScope}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" $) | nindent 4 }}
+    {{- with .labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ $file }}: |-
+{{ $.Files.Get $path | indent 4 }}
+---
+{{- end }}
+{{ end }}
+{{- end }}

@@ -14,15 +14,18 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/user"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"golang.org/x/net/context/ctxhttp"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -52,6 +55,8 @@ type DefaultMultiTenantManager struct {
 	configUpdatesTotal            *prometheus.CounterVec
 	registry                      prometheus.Registerer
 	logger                        log.Logger
+
+	rulerIsRunning atomic.Bool
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
@@ -98,42 +103,92 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
-// SyncRuleGroups sync the input rulesGroups.
-// It's not safe to call this function concurrently.
-func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+// SyncFullRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncFullRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
-		RemoveFederatedRuleGroups(ruleGroups)
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
 	}
 
-	for userID, ruleGroup := range ruleGroups {
-		r.syncRulesToManager(ctx, userID, ruleGroup)
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+		// We don't log it because the only error we could get here is a context canceled.
+		return
 	}
 
+	// Check for deleted users and remove them.
+	r.removeUsersIf(func(userID string) bool {
+		_, exists := ruleGroupsByUser[userID]
+		return !exists
+	})
+}
+
+// SyncPartialRuleGroups implements MultiTenantManager.
+// It's not safe to call this function concurrently with SyncFullRuleGroups() or SyncPartialRuleGroups().
+func (r *DefaultMultiTenantManager) SyncPartialRuleGroups(ctx context.Context, ruleGroupsByUser map[string]rulespb.RuleGroupList) {
+	if !r.cfg.TenantFederation.Enabled {
+		removeFederatedRuleGroups(ruleGroupsByUser, r.logger)
+	}
+
+	// Filter out tenants with no rule groups.
+	ruleGroupsByUser, removedUsers := filterRuleGroupsByNotEmptyUsers(ruleGroupsByUser)
+
+	if err := r.syncRulesToManagerConcurrently(ctx, ruleGroupsByUser); err != nil {
+		// We don't log it because the only error we could get here is a context canceled.
+		return
+	}
+
+	// Check for deleted users and remove them.
+	r.removeUsersIf(func(userID string) bool {
+		_, removed := removedUsers[userID]
+		return removed
+	})
+}
+
+func (r *DefaultMultiTenantManager) Start() {
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
 
-	// Check for deleted users and remove them
-	for userID, mngr := range r.userManagers {
-		if _, exists := ruleGroups[userID]; !exists {
-			go mngr.Stop()
-			delete(r.userManagers, userID)
-
-			r.mapper.cleanupUser(userID)
-			r.lastReloadSuccessful.DeleteLabelValues(userID)
-			r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
-			r.configUpdatesTotal.DeleteLabelValues(userID)
-			r.userManagerMetrics.RemoveUserRegistry(userID)
-			level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
-		}
+	// Skip starting the user managers if the ruler is already running.
+	if r.rulerIsRunning.Load() {
+		return
 	}
 
+	for _, mngr := range r.userManagers {
+		go mngr.Run()
+	}
+	// set rulerIsRunning to true once user managers are started.
+	r.rulerIsRunning.Store(true)
+}
+
+// syncRulesToManagerConcurrently calls syncRulesToManager() concurrently for each user in the input
+// ruleGroups. The max concurrency is limited. This function is expected to return an error only if
+// the input ctx is canceled.
+func (r *DefaultMultiTenantManager) syncRulesToManagerConcurrently(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) error {
+	// Sync the rules to disk and then update the user's Prometheus Rules Manager.
+	// Since users are different, we can sync rules in parallel.
+	users := make([]string, 0, len(ruleGroups))
+	for userID := range ruleGroups {
+		users = append(users, userID)
+	}
+
+	err := concurrency.ForEachJob(ctx, len(users), 10, func(_ context.Context, idx int) error {
+		userID := users[idx]
+		r.syncRulesToManager(userID, ruleGroups[userID])
+		return nil
+	})
+
+	// Update the metric even in case of error.
+	r.userManagerMtx.RLock()
 	r.managersTotal.Set(float64(len(r.userManagers)))
+	r.userManagerMtx.RUnlock()
+
+	return err
 }
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
 // concurrently for the same user.
-func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
+func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
 	update, files, err := r.mapper.MapRules(user, groups.Formatted())
@@ -143,7 +198,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
-	manager, created, err := r.getOrCreateManager(ctx, user)
+	manager, created, err := r.getOrCreateManager(user)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
@@ -159,7 +214,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
 
-	err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
+	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
@@ -171,7 +226,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 }
 
 // getOrCreateManager retrieves the user manager. If it doesn't exist, it will create and start it first.
-func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, bool, error) {
+func (r *DefaultMultiTenantManager) getOrCreateManager(user string) (RulesManager, bool, error) {
 	// Check if it already exists. Since rules are synched frequently, we expect to already exist
 	// most of the times.
 	r.userManagerMtx.RLock()
@@ -193,21 +248,25 @@ func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user
 	}
 
 	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
-	manager, err := r.newManager(ctx, user)
+	manager, err := r.newManager(user)
 	if err != nil {
 		return nil, false, err
 	}
 
 	// manager.Run() starts running the manager and blocks until Stop() is called.
 	// Hence run it as another goroutine.
-	go manager.Run()
+	// We only start the rule manager if the ruler is in running state.
+	if r.rulerIsRunning.Load() {
+		go manager.Run()
+	}
+
 	r.userManagers[user] = manager
 	return manager, true, nil
 }
 
 // newManager creates a prometheus rule manager wrapped with a user id
 // configured storage, appendable, notifier, and instrumentation
-func (r *DefaultMultiTenantManager) newManager(ctx context.Context, userID string) (RulesManager, error) {
+func (r *DefaultMultiTenantManager) newManager(userID string) (RulesManager, error) {
 	notifier, err := r.getOrCreateNotifier(userID)
 	if err != nil {
 		return nil, err
@@ -218,7 +277,10 @@ func (r *DefaultMultiTenantManager) newManager(ctx context.Context, userID strin
 	reg := prometheus.NewRegistry()
 	r.userManagerMetrics.AddUserRegistry(userID, reg)
 
-	return r.managerFactory(ctx, userID, notifier, r.logger, reg), nil
+	// We pass context.Background() to the managerFactory because the manager is shut down via Stop()
+	// instead of context cancellations. Cancelling the context might cause inflight evaluations to be immediately
+	// aborted. We want a graceful shutdown of evaluations.
+	return r.managerFactory(context.Background(), userID, notifier, r.logger, reg), nil
 }
 
 func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifier.Manager, error) {
@@ -263,6 +325,32 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	return n.notifier, nil
 }
 
+// removeUsersIf stops the manager and cleanup the resources for each user for which
+// the input shouldRemove() function returns true.
+func (r *DefaultMultiTenantManager) removeUsersIf(shouldRemove func(userID string) bool) {
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
+
+	// Check for deleted users and remove them
+	for userID, mngr := range r.userManagers {
+		if !shouldRemove(userID) {
+			continue
+		}
+
+		go mngr.Stop()
+		delete(r.userManagers, userID)
+
+		r.mapper.cleanupUser(userID)
+		r.lastReloadSuccessful.DeleteLabelValues(userID)
+		r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
+		r.configUpdatesTotal.DeleteLabelValues(userID)
+		r.userManagerMetrics.RemoveUserRegistry(userID)
+		level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
+	}
+
+	r.managersTotal.Set(float64(len(r.userManagers)))
+}
+
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 	r.userManagerMtx.RLock()
 	mngr, exists := r.userManagers[userID]
@@ -284,14 +372,15 @@ func (r *DefaultMultiTenantManager) Stop() {
 	level.Info(r.logger).Log("msg", "stopping user managers")
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
-	for user, manager := range r.userManagers {
-		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", user)
+	for userID, manager := range r.userManagers {
+		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", userID)
 		wg.Add(1)
 		go func(manager RulesManager, user string) {
 			manager.Stop()
 			wg.Done()
 			level.Debug(r.logger).Log("msg", "user manager shut down", "user", user)
-		}(manager, user)
+		}(manager, userID)
+		delete(r.userManagers, userID)
 	}
 	wg.Wait()
 	r.userManagerMtx.Unlock()
@@ -301,17 +390,22 @@ func (r *DefaultMultiTenantManager) Stop() {
 	r.mapper.cleanup()
 }
 
-func (*DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func (r *DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error {
 	var errs []error
 
 	if g.Name == "" {
-		errs = append(errs, errors.New("invalid rules config: rule group name must not be empty"))
+		errs = append(errs, errors.New("invalid rules configuration: rule group name must not be empty"))
 		return errs
 	}
 
 	if len(g.Rules) == 0 {
-		errs = append(errs, fmt.Errorf("invalid rules config: rule group '%s' has no rules", g.Name))
+		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' has no rules", g.Name))
 		return errs
+	}
+
+	if !r.cfg.TenantFederation.Enabled && len(g.SourceTenants) > 0 {
+		errs = append(errs, fmt.Errorf("invalid rules configuration: rule group '%s' is a federated rule group, "+
+			"but rules federation is disabled; please contact your service administrator to have it enabled", g.Name))
 	}
 
 	for i, r := range g.Rules {
@@ -332,4 +426,40 @@ func (*DefaultMultiTenantManager) ValidateRuleGroup(g rulefmt.RuleGroup) []error
 	}
 
 	return errs
+}
+
+// filterRuleGroupsByNotEmptyUsers filters out all the tenants that have no rule groups.
+// The returned removed map may be nil if no user was removed from the input configs.
+//
+// This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
+// future bugs, in case the rule groups will be cached in memory.
+func filterRuleGroupsByNotEmptyUsers(configs map[string]rulespb.RuleGroupList) (filtered map[string]rulespb.RuleGroupList, removed map[string]struct{}) {
+	// Find tenants to remove.
+	for userID, ruleGroups := range configs {
+		if len(ruleGroups) > 0 {
+			continue
+		}
+
+		// Ensure the map is initialised.
+		if removed == nil {
+			removed = make(map[string]struct{})
+		}
+
+		removed[userID] = struct{}{}
+	}
+
+	// Nothing to do if there are no users to remove.
+	if len(removed) == 0 {
+		return configs, removed
+	}
+
+	// Filter out tenants to remove.
+	filtered = make(map[string]rulespb.RuleGroupList, len(configs)-len(removed))
+	for userID, ruleGroups := range configs {
+		if _, isRemoved := removed[userID]; !isRemoved {
+			filtered[userID] = ruleGroups
+		}
+	}
+
+	return filtered, removed
 }

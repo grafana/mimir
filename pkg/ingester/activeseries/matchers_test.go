@@ -7,11 +7,10 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMatcher_MatchesSeries(t *testing.T) {
@@ -99,14 +98,15 @@ func BenchmarkMatchesSeries(b *testing.B) {
 		if total < matching {
 			b.Fatal("wrong test setup, total < matching")
 		}
-		lbs := make(labels.Labels, 0, total)
+		builder := labels.NewScratchBuilder(total)
 		for i := 0; i < matching; i++ {
-			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("this_will_match_%d", i), Value: "true"})
+			builder.Add(fmt.Sprintf("this_will_match_%d", i), "true")
 		}
 		for i := matching; i < total; i++ {
-			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("something_else_%d", i), Value: "true"})
+			builder.Add(fmt.Sprintf("something_else_%d", i), "true")
 		}
-		return lbs
+		builder.Sort()
+		return builder.Labels()
 	}
 
 	for i, trackerCount := range trackerCounts {
@@ -157,7 +157,7 @@ func TestAmlabelMatchersToProm_HappyCase(t *testing.T) {
 	require.NoError(t, err)
 
 	expected := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")
-	assert.Equal(t, expected, amlabelMatcherToProm(amMatcher))
+	assert.Equal(t, expected.String(), amlabelMatcherToProm(amMatcher).String())
 }
 
 func TestAmlabelMatchersToProm_MatchTypeValues(t *testing.T) {

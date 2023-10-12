@@ -1,49 +1,74 @@
-SHELL = /usr/bin/env bash
+# The source of this file is https://raw.githubusercontent.com/grafana/writers-toolkit/main/docs/docs.mk.
+# 3.0.0 (2023-05-18)
+include variables.mk
+-include variables.mk.local
 
-DOCS_IMAGE   = grafana/docs-base:latest
-DOCS_CONTAINER = mimir-docs
+.ONESHELL:
+.DELETE_ON_ERROR:
+export SHELL     := bash
+export SHELLOPTS := pipefail:errexit
+MAKEFLAGS += --warn-undefined-variables
+MAKEFLAGS += --no-builtin-rule
 
-# This allows ports and base URL to be overridden, so services like ngrok.io can
-# be used to share a local running docs instances.
-DOCS_HOST_PORT    = 3002
-DOCS_LISTEN_PORT  = 3002
-DOCS_BASE_URL    ?= "localhost:$(DOCS_HOST_PORT)"
+.DEFAULT_GOAL: help
 
-MIMIR_VERSION       = next
-HELM_CHARTS_VERSION = next
+# Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
+.PHONY: help
+help: ## Display this help.
+help:
+	@awk 'BEGIN { \
+		FS = ": ##"; \
+		printf "Usage:\n  make <target>\n\nTargets:\n" \
+	} \
+	/^[a-zA-Z0-9_\.\-\/%]+: ##/ { printf "  %-15s %s\n", $$1, $$2 }' \
+	$(MAKEFILE_LIST)
 
-HUGO_REFLINKSERRORLEVEL ?= WARNING
+GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
-GIT_ROOT = $(shell git rev-parse --show-toplevel)
+PODMAN := $(shell if command -v podman >/dev/null 2>&1; then echo podman; else echo docker; fi)
 
-# Support podman over Docker if it is available.
-PODMAN := $(shell if command -v podman &>/dev/null; then echo podman; else echo docker; fi)
+ifeq ($(PROJECTS),)
+$(error "PROJECTS variable must be defined in variables.mk")
+endif
 
-MIMIR_CONTENT_PATH="/hugo/content/docs/mimir"
-MIMIR_REDIRECT_TEMPLATE="'---\\nredirectURL: /docs/mimir/$(MIMIR_VERSION)\\ntype: redirect\\n---\\n'"
-HELM_CONTENT_PATH="/hugo/content/docs/helm-charts/mimir-distributed"
-HELM_REDIRECT_TEMPLATE="'---\\nredirectURL: /docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION)\\ntype: redirect\\n---\\n'"
+# First project is considered the primary one used for doc-validator.
+PRIMARY_PROJECT := $(subst /,-,$(firstword $(subst :, ,$(firstword $(PROJECTS)))))
 
-# This wrapper will serve documentation on a local webserver.
-define docs_podman_run
-	@echo "Documentation will be served at:"
-	@echo "http://$(DOCS_BASE_URL)/docs/mimir/$(MIMIR_VERSION)/"
-	@echo "http://$(DOCS_BASE_URL)/docs/helm-charts/mimir-distributed/$(HELM_CHARTS_VERSION)/"
-	@echo ""
-	@if [[ -z $${NON_INTERACTIVE} ]]; then \
-		read -p "Press a key to continue"; \
-	fi
-	@$(PODMAN) run -ti \
-		--init \
-		-v $(GIT_ROOT)/docs/sources/mimir:$(MIMIR_CONTENT_PATH)/$(MIMIR_VERSION):ro,z \
-		-v $(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed:$(HELM_CONTENT_PATH)/$(HELM_CHARTS_VERSION):ro,z \
-		-e HUGO_REFLINKSERRORLEVEL=$(HUGO_REFLINKSERRORLEVEL) \
-		-p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) \
-		--name $(DOCS_CONTAINER) \
-		--rm \
-		$(DOCS_IMAGE) \
-			/bin/bash -c "echo -e $(MIMIR_REDIRECT_TEMPLATE) > $(MIMIR_CONTENT_PATH)/_index.md && echo -e $(HELM_REDIRECT_TEMPLATE) > $(HELM_CONTENT_PATH)/_index.md && exec $(1)"
-endef
+# Name for the container.
+ifeq ($(origin DOCS_CONTAINER), undefined)
+export DOCS_CONTAINER := $(PRIMARY_PROJECT)-docs
+endif
+
+# Host port to publish container port to.
+ifeq ($(origin DOCS_HOST_PORT), undefined)
+export DOCS_HOST_PORT := 3002
+endif
+
+# Container image used to perform Hugo build.
+ifeq ($(origin DOCS_IMAGE), undefined)
+export DOCS_IMAGE := grafana/docs-base:latest
+endif
+
+# Container image used for doc-validator linting.
+ifeq ($(origin DOC_VALIDATOR_IMAGE), undefined)
+export DOC_VALIDATOR_IMAGE := grafana/doc-validator:latest
+endif
+
+# Container image used for vale linting.
+ifeq ($(origin VALE_IMAGE), undefined)
+export VALE_IMAGE := grafana/vale:latest
+endif
+
+# PATH-like list of directories within which to find projects.
+# If all projects are checked out into the same directory, ~/repos/ for example, then the default should work.
+ifeq ($(origin REPOS_PATH), undefined)
+export REPOS_PATH := $(realpath $(GIT_ROOT)/..)
+endif
+
+# How to treat Hugo relref errors.
+ifeq ($(origin HUGO_REFLINKSERRORLEVEL), undefined)
+export HUGO_REFLINKSERRORLEVEL := WARNING
+endif
 
 .PHONY: docs-rm
 docs-rm: ## Remove the docs container.
@@ -53,7 +78,45 @@ docs-rm: ## Remove the docs container.
 docs-pull: ## Pull documentation base image.
 	$(PODMAN) pull $(DOCS_IMAGE)
 
+make-docs: ## Fetch the latest make-docs script.
+make-docs:
+	if [[ ! -f "$(PWD)/make-docs" ]]; then
+		echo 'WARN: No make-docs script found in the working directory. Run `make update` to download it.' >&2
+		exit 1
+	fi
+
 .PHONY: docs
-docs: ## Serve documentation locally.
-docs: docs-pull
-	$(call docs_podman_run,make server HUGO_PORT=$(DOCS_LISTEN_PORT))
+docs: ## Serve documentation locally, which includes pulling the latest `DOCS_IMAGE` (default: `grafana/docs-base:latest`) container image. See also `docs-no-pull`.
+docs: docs-pull make-docs
+	$(PWD)/make-docs $(PROJECTS)
+
+.PHONY: docs-no-pull
+docs-no-pull: ## Serve documentation locally without pulling the `DOCS_IMAGE` (default: `grafana/docs-base:latest`) container image.
+docs-no-pull: make-docs
+	$(PWD)/make-docs $(PROJECTS)
+
+.PHONY: docs-debug
+docs-debug: ## Run Hugo web server with debugging enabled. TODO: support all SERVER_FLAGS defined in website Makefile.
+docs-debug: make-docs
+	WEBSITE_EXEC='hugo server --bind 0.0.0.0 --port 3002 --debug' $(PWD)/make-docs $(PROJECTS)
+
+.PHONY: doc-validator
+doc-validator: ## Run doc-validator on the entire docs folder.
+doc-validator: make-docs
+	DOCS_IMAGE=$(DOC_VALIDATOR_IMAGE) $(PWD)/make-docs $(PROJECTS)
+
+.PHONY: doc-validator/%
+doc-validator/%: ## Run doc-validator on a specific path. To lint the path /docs/sources/administration, run 'make doc-validator/administration'.
+doc-validator/%: make-docs
+	DOCS_IMAGE=$(DOC_VALIDATOR_IMAGE) DOC_VALIDATOR_INCLUDE=$(subst doc-validator/,,$@) $(PWD)/make-docs $(PROJECTS)
+
+.PHONY: vale
+vale: ## Run vale on the entire docs folder.
+vale: make-docs
+	DOCS_IMAGE=$(VALE_IMAGE) $(PWD)/make-docs $(PROJECTS)
+
+.PHONY: update
+update: ## Fetch the latest version of this Makefile and the `make-docs` script from Writers' Toolkit.
+	curl -s -LO https://raw.githubusercontent.com/grafana/writers-toolkit/main/docs/docs.mk
+	curl -s -LO https://raw.githubusercontent.com/grafana/writers-toolkit/main/docs/make-docs
+	chmod +x make-docs
