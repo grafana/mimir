@@ -334,6 +334,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-querier.cardinality-analysis-enabled": "true",
 				"-ingester.ring.replication-factor":     "3",
+				"-distributor.remote-timeout":           "4s",
 			})
 
 			// Start dependencies.
