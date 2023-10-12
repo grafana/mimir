@@ -33,10 +33,10 @@
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
     } +
     (if $._config.store_gateway_lazy_loading_enabled then {
-       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
-       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
+       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'true',
+       'blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout': '60m',
      } else {
-       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'false',
+       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'false',
        // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
        'blocks-storage.bucket-store.block-sync-concurrency': 4,
        'blocks-storage.bucket-store.tenant-sync-concurrency': 1,

@@ -467,7 +467,7 @@ github.com/google/gnostic-models/compiler
 github.com/google/gnostic-models/extensions
 github.com/google/gnostic-models/jsonschema
 github.com/google/gnostic-models/openapiv2
-# github.com/google/go-cmp v0.5.9
+# github.com/google/go-cmp v0.6.0
 ## explicit; go 1.13
 github.com/google/go-cmp/cmp
 github.com/google/go-cmp/cmp/internal/diff
@@ -540,7 +540,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20231009143556-6a6d7e8a6f05
+# github.com/grafana/dskit v0.0.0-20231010092604-9b82fbd87ce1
 ## explicit; go 1.19
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache
@@ -600,7 +600,7 @@ github.com/grafana/gomemcache/memcache
 ## explicit; go 1.17
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
-# github.com/hashicorp/consul/api v1.22.0
+# github.com/hashicorp/consul/api v1.25.1
 ## explicit; go 1.19
 github.com/hashicorp/consul/api
 # github.com/hashicorp/errwrap v1.1.0
@@ -768,7 +768,7 @@ github.com/modern-go/reflect2
 # github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
 ## explicit
 github.com/monochromegane/go-gitignore
-# github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
+# github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 => github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae
 ## explicit; go 1.18
 github.com/munnerz/goautoneg
 # github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -890,7 +890,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20231002103016-8c43257d393c
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20231010120800-56e19def277f
 ## explicit; go 1.20
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1178,14 +1178,14 @@ golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-# golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
+# golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 ## explicit; go 1.20
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
-# golang.org/x/mod v0.12.0
-## explicit; go 1.17
+# golang.org/x/mod v0.13.0
+## explicit; go 1.18
 golang.org/x/mod/semver
-# golang.org/x/net v0.16.0
+# golang.org/x/net v0.17.0
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context
@@ -1239,11 +1239,12 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.3.0
 ## explicit
 golang.org/x/time/rate
-# golang.org/x/tools v0.11.0
+# golang.org/x/tools v0.14.0
 ## explicit; go 1.18
 golang.org/x/tools/go/gcexportdata
 golang.org/x/tools/go/internal/packagesdriver
 golang.org/x/tools/go/packages
+golang.org/x/tools/go/types/objectpath
 golang.org/x/tools/internal/event
 golang.org/x/tools/internal/event/core
 golang.org/x/tools/internal/event/keys
@@ -1304,7 +1305,7 @@ google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.58.2
+# google.golang.org/grpc v1.58.3
 ## explicit; go 1.19
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -1469,9 +1470,9 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231002103016-8c43257d393c
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231010120800-56e19def277f
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
-# github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-20230303030534-7248a2f4c9cc
+# github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20231010094147-47ce5e72a9ae
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
