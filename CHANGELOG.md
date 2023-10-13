@@ -9,6 +9,7 @@
 ## 2.9.1
 
 ### Grafana Mimir
+
 * [ENHANCEMENT] Update alpine base image to 3.18.3. #6021
 
 ## 2.9.0
