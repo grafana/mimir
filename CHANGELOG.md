@@ -43,6 +43,7 @@
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
 * [BUGFIX] Ensure correct nesting of children of the `querier.Select` tracing span. #6085
+* [BUGFIX] Packaging: fix preremove script preventing upgrades on RHEL based OS. #6067
 * [BUGFIX] Querier: return actual error rather than `attempted to read series at index XXX from stream, but the stream has already been exhausted` (or even no error at all) when streaming chunks from ingesters or store-gateways is enabled and an error occurs while streaming chunks. #6346
 
 ### Mixin
