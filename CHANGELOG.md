@@ -2,7 +2,7 @@
 
 ## 2.9.2
 
-* [BUGFIX] grpc-go: Update grpc-go library to 1.56.3, which includes fix for CVE-2023-44487. #6353
+* [BUGFIX] Update grpc-go library to 1.56.3 and `golang.org/x/net` to `0.17`, which include fix for CVE-2023-44487. #6353 #6364
 
 ## 2.9.1
 
