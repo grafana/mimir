@@ -69,8 +69,9 @@
 
 ### Tools
 
+* [CHANGE] tsdb-index: Rename tool to tsdb-series. #6317
+* [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
-* [ENHANCEMENT] tsdb-index: print label values via `-show-label-values`. #6317
 
 ## 2.10.0
 
