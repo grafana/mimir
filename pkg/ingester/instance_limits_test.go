@@ -47,11 +47,11 @@ func TestInstanceLimitErr(t *testing.T) {
 		var instanceLimitErr instanceLimitReachedError
 		require.Error(t, instanceLimitErr)
 		require.ErrorAs(t, limitError, &instanceLimitErr)
-		checkIngesterError(t, limitError, instanceLimitReached)
+		checkIngesterError(t, limitError, instanceLimitReached, false)
 
 		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
 		require.Error(t, wrappedWithUserErr)
 		require.ErrorIs(t, wrappedWithUserErr, limitError)
-		checkIngesterError(t, wrappedWithUserErr, instanceLimitReached)
+		checkIngesterError(t, wrappedWithUserErr, instanceLimitReached, false)
 	}
 }
