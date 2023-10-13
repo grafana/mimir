@@ -212,3 +212,22 @@ Shard 3: Found 814 unique symbols from series in the shard (85.41 %), length of 
 
 Analysis complete in 82.33225ms
 ```
+
+## tsdb-labels
+
+`tsdb-labels` prints the label names, number of label values, and label values for each label in a TSDB block.
+
+Example:
+
+```bash
+tsdb-labels ./01HA705M6Y8VNNR7W4C8116P2T
+```
+
+```console
+AlertRules 2 [false true]
+ClusterName 1 [etcd]
+Domain 2 [API Controller]
+Event 4 [CREATE LIST READ UPDATE]
+access_mode 1 [ReadWriteOnce]
+acl_operation 1 [OBJECT_ACCESS_REQUIRED_OBJECT_ACL]
+```
