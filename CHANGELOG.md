@@ -84,6 +84,12 @@
 
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
 
+## 2.10.2
+
+### Grafana Mimir
+
+* [BUGFIX] Update grpc-go library to 1.57.1 and `golang.org/x/net` to `0.17`, which include fix for CVE-2023-44487. #6349
+
 ## 2.10.1
 
 ### Grafana Mimir
