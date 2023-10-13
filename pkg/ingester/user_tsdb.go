@@ -76,10 +76,10 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 var (
-	errTSDBForcedCompaction = errors.New("TSDB Head forced compaction in progress and no write request is currently allowed")
-	errTSDBEarlyCompaction  = errors.New("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
-	errTSDBClosing          = errors.New("TSDB is closing")
-	errTSDBNotActive        = errors.New("TSDB is not active")
+	errTSDBForcedCompaction = newTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = newTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
+	errTSDBClosing          = newTSDBUnavailableError("TSDB is closing")
+	errTSDBNotActive        = newTSDBUnavailableError("TSDB is not active")
 )
 
 type userTSDB struct {

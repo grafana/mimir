@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package push
+package distributor
 
 import (
 	"compress/gzip"
@@ -47,7 +47,7 @@ func OTLPHandler(
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
 	reg prometheus.Registerer,
-	push Func,
+	push PushFunc,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 

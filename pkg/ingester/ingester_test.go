@@ -67,8 +67,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -432,7 +432,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
@@ -490,7 +490,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -549,7 +549,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -668,7 +668,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
 			},
@@ -727,7 +727,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{
 					{Value: 1, Timestamp: model.Time(now.UnixMilli())},
@@ -783,7 +783,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Timestamp: model.Time(now.UnixMilli()), Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestGaugeHistogram(0))},
@@ -847,7 +847,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -921,7 +921,7 @@ func TestIngester_Push(t *testing.T) {
 					mimirpb.API,
 				),
 			},
-			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
+			expectedErr: newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), userID), http.StatusBadRequest),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
@@ -980,7 +980,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
+			expectedErr:              newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), http.StatusBadRequest),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -1215,17 +1215,18 @@ func TestIngester_Push(t *testing.T) {
 			// Push timeseries
 			for idx, req := range testData.reqs {
 				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
-				err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
+				err := i.PushWithCleanup(ctx, req, func() {})
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
 				if idx < len(testData.reqs)-1 {
 					assert.NoError(t, err)
 				} else {
-					assert.Equal(t, testData.expectedErr, err)
-					if err != nil {
-						var safe safeToWrap
-						assert.ErrorAs(t, err, &safe)
+					if testData.expectedErr == nil {
+						assert.NoError(t, err)
+					} else {
+						handledErr := handlePushError(err)
+						assert.Equal(t, testData.expectedErr, handledErr)
 					}
 				}
 			}
@@ -1923,7 +1924,10 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -1984,7 +1988,10 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2182,7 +2189,10 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2299,7 +2309,10 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -2828,7 +2841,10 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3223,7 +3239,10 @@ func TestIngester_QueryStream(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err = i.QueryStream(&client.QueryRequest{}, nil)
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -3679,7 +3698,10 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -4991,7 +5013,10 @@ func Test_Ingester_UserStats(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
-		require.EqualError(t, err, tooBusyError.Error())
+		stat, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
@@ -5875,8 +5900,6 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							assert.ErrorIs(t, err, testData.expectedErr)
 							var optional middleware.OptionalLogging
 							assert.ErrorAs(t, err, &optional)
-							var safe safeToWrap
-							assert.ErrorAs(t, err, &safe)
 							s, ok := status.FromError(err)
 							require.True(t, ok, "expected to be able to convert to gRPC status")
 							assert.Equal(t, codes.Unavailable, s.Code())
@@ -6212,8 +6235,6 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsReached)
-		var safe safeToWrap
-		require.ErrorAs(t, err, &safe)
 
 		var optional middleware.OptionalLogging
 		require.ErrorAs(t, err, &optional)
@@ -6605,7 +6626,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
 		assert.Equal(t, http.StatusBadRequest, int(stat.Code()))
-		assert.Equal(t, wrapOrAnnotateWithUser(formatMaxSeriesPerUserError(ing.limiter.limits, userID), userID).Error(), stat.Message())
+		assert.Equal(t, wrapOrAnnotateWithUser(newPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID)), userID).Error(), stat.Message())
 
 		// Append two metadata, expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
@@ -6710,7 +6731,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
 		assert.Equal(t, http.StatusBadRequest, int(stat.Code()))
-		assert.Equal(t, wrapOrAnnotateWithUser(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(labels3), userID), userID).Error(), stat.Message())
+		assert.Equal(t, wrapOrAnnotateWithUser(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabels(labels3)), userID).Error(), stat.Message())
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
@@ -8298,8 +8319,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleOutOfOrder(model.Time(9), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleOutOfOrderError(model.Time(9), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8331,8 +8352,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8365,8 +8386,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86800*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8402,8 +8423,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooOld(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooOldError(model.Time(1575043969-(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8436,8 +8457,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8464,8 +8485,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8495,8 +8516,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarTimestampTooFarInFuture(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: false,
 		},
@@ -8518,8 +8539,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				),
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrSampleDuplicateTimestamp(model.Time(1575043969), metricLabelAdapters), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newSampleDuplicateTimestampError(model.Time(1575043969), metricLabelAdapters), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: true,
 			expectedMetrics: `
@@ -8552,8 +8573,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []errorWithStatus{
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), http.StatusBadRequest),
-				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newIngestErrExemplarMissingSeries(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), http.StatusBadRequest),
+				newErrorWithHTTPStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), http.StatusBadRequest),
 			},
 			expectedSampling: false,
 		},
@@ -8733,7 +8754,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerUserError(ing.limiter.limits, userID)), userID)
+	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID))), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-user limit, i.e., 10 series in total.
@@ -8837,7 +8858,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(formatMaxSeriesPerMetricError(ing.limiter.limits, mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2), userID)), userID)
+	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2))), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-metric, i.e., 10 series in total.
@@ -8970,4 +8991,152 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 
 	// Verify that maxTime of TSDB is actually our future sample.
 	require.Equal(t, futureTS, db.db.Head().MaxTime())
+}
+
+func TestIngester_HandlePushError(t *testing.T) {
+	originalMsg := "this is an error"
+	originalErr := errors.New(originalMsg)
+	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
+
+	timestamp := model.Time(1)
+	testCases := []struct {
+		name                string
+		err                 error
+		doNotLogExpected    bool
+		expectedTranslation error
+	}{
+		{
+			name:                "a generic error is not translated",
+			err:                 originalErr,
+			expectedTranslation: originalErr,
+		},
+		{
+			name:                "a DoNotLog error of a generic error is not translated",
+			err:                 utillog.DoNotLogError{Err: originalErr},
+			expectedTranslation: utillog.DoNotLogError{Err: originalErr},
+			doNotLogExpected:    true,
+		},
+		{
+			name:                "an unavailableError gets translated into an errorWithStatus Unavailable error",
+			err:                 newUnavailableError(services.Stopping),
+			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
+		},
+		{
+			name: "a wrapped unavailableError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+			expectedTranslation: newErrorWithStatus(
+				fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+				codes.Unavailable,
+			),
+		},
+		{
+			name: "an instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  newInstanceLimitReachedError("instance limit reached"),
+			expectedTranslation: newErrorWithStatus(
+				utillog.DoNotLogError{Err: newInstanceLimitReachedError("instance limit reached")},
+				codes.Unavailable,
+			),
+			doNotLogExpected: true,
+		},
+		{
+			name: "a wrapped instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
+			expectedTranslation: newErrorWithStatus(
+				utillog.DoNotLogError{Err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached"))},
+				codes.Unavailable,
+			),
+			doNotLogExpected: true,
+		},
+		{
+			name: "a tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error",
+			err:  newTSDBUnavailableError("tsdb stopping"),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newTSDBUnavailableError("tsdb stopping"),
+				http.StatusServiceUnavailable,
+			),
+		},
+		{
+			name: "a wrapped tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error",
+			err:  fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+				http.StatusServiceUnavailable,
+			),
+		},
+		{
+			name: "a sampleError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newSampleError("id", "sample error", timestamp, labelAdapters),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newSampleError("id", "sample error", timestamp, labelAdapters),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newPerUserSeriesLimitReachedError(10),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerUserSeriesLimitReachedError(10),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newPerMetricSeriesLimitReachedError(10, labels),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerMetricSeriesLimitReachedError(10, labels),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+				http.StatusBadRequest,
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		handledErr := handlePushError(tc.err)
+		require.Equal(t, tc.expectedTranslation, handledErr)
+		if tc.doNotLogExpected {
+			var doNotLogError utillog.DoNotLogError
+			require.ErrorAs(t, handledErr, &doNotLogError)
+			require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
+		}
+	}
 }

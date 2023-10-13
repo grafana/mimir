@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -424,7 +423,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 			// Sample received is from non-elected replica: record details and reject.
 			entry.nonElectedLastSeenReplica = replica
 			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
-			err = distributorerror.NewReplicasDidNotMatch(replica, entry.elected.Replica)
+			err = newReplicasDidNotMatchError(replica, entry.elected.Replica)
 		}
 		h.electedLock.Unlock()
 		return err
@@ -435,7 +434,7 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	h.electedLock.Unlock()
 	// If we have reached the limit for number of clusters, error out now.
 	if limit := h.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
-		return distributorerror.NewTooManyClusters(limit)
+		return newTooManyClustersError(limit)
 	}
 
 	err := h.updateKVStore(ctx, userID, cluster, replica, now)

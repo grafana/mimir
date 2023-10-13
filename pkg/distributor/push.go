@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package push
+package distributor
 
 import (
 	"context"
@@ -17,7 +17,6 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 
-	"github.com/grafana/mimir/pkg/distributor/distributorerror"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -25,8 +24,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// Func defines the type of the push. It is similar to http.HandlerFunc.
-type Func func(ctx context.Context, req *Request) error
+// PushFunc defines the type of the push. It is similar to http.HandlerFunc.
+type PushFunc func(ctx context.Context, req *Request) error
 
 // parserFunc defines how to read the body the request from an HTTP request
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
@@ -51,7 +50,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	push Func,
+	push PushFunc,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
@@ -79,7 +78,7 @@ func handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	push Func,
+	push PushFunc,
 	parser parserFunc,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,8 +151,38 @@ func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *
 	if err == nil {
 		serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	if httpStatus, ok := distributorerror.ToHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
+	if httpStatus, ok := toHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
 		return httpStatus
 	}
 	return http.StatusInternalServerError
+}
+
+// toHTTPStatus converts the given error into an appropriate HTTP status corresponding
+// to that error, if the error is one of the errors from this package. In that case,
+// the resulting HTTP status is returned with status true. Otherwise, -1 and the status
+// false are returned.
+func toHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
+	switch {
+	case errors.As(pushErr, &replicasDidNotMatchError{}):
+		return http.StatusAccepted, true
+	case errors.As(pushErr, &tooManyClustersError{}):
+		return http.StatusBadRequest, true
+	case errors.As(pushErr, &validationError{}):
+		return http.StatusBadRequest, true
+	case errors.As(pushErr, &ingestionRateLimitedError{}):
+		// Return a 429 here to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		return http.StatusTooManyRequests, true
+	case errors.As(pushErr, &requestRateLimitedError{}):
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if serviceOverloadErrorEnabled {
+			return StatusServiceOverloaded, true
+		}
+		return http.StatusTooManyRequests, true
+	default:
+		return -1, false
+	}
 }

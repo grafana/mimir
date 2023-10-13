@@ -48,18 +48,18 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		return false
 	}
 
-	currLabels := mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.nextSeriesIndex].Labels)
+	currLabels := bqss.series[bqss.nextSeriesIndex].Labels
 	seriesIdxStart := bqss.nextSeriesIndex // First series in this group. We might merge with more below.
 	bqss.nextSeriesIndex++
 
 	// Chunks may come in multiple responses, but as soon as the response has chunks for a new series,
 	// we can stop searching. Series are sorted. See documentation for StoreClient.Series call for details.
 	// The actually merging of chunks happens in the Iterator() call where chunks are fetched.
-	for bqss.nextSeriesIndex < len(bqss.series) && labels.Compare(currLabels, mimirpb.FromLabelAdaptersToLabels(bqss.series[bqss.nextSeriesIndex].Labels)) == 0 {
+	for bqss.nextSeriesIndex < len(bqss.series) && mimirpb.CompareLabelAdapters(currLabels, bqss.series[bqss.nextSeriesIndex].Labels) == 0 {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
 	return true
 }
 
