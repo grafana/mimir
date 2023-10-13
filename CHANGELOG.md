@@ -12,6 +12,10 @@
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
+* [CHANGE] General: `/util/push` package has been removed, and its content has been placed under `distributor` package. That brings the following important changes: #6356 #6358
+  * `push.SkipLabelNameValidationHeader` has been replaced with `distributor.SkipLabelNameValidationHeader`.
+  * `push.Func` has been replaced with `distributor.PushFunc`.
+  * `push.Request` has been replaced with `distributor.Request`.
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
