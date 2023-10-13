@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -96,7 +95,7 @@ func readLabelsOffsets(b index.ByteSlice, offset int) ([]labelIndexOffset, error
 	offsets := make([]labelIndexOffset, numEntries)
 	for i := range offsets {
 		if b := d.Byte(); b != 1 {
-			return nil, errors.New(fmt.Sprintf("parsing labels offsets for label #%d, expecting n = 1, got n = %d", i+1, b))
+			return nil, fmt.Errorf("parsing labels offsets for label #%d, expecting n = 1, got n = %d", i+1, b)
 		}
 		offsets[i].labelName = d.UvarintStr()
 		offsets[i].valuesOffset = d.Uvarint64()
@@ -108,7 +107,7 @@ func readLabelsOffsets(b index.ByteSlice, offset int) ([]labelIndexOffset, error
 func readLabelValuesRefs(b realByteSlice, labelIndexOffset int) ([]uint32, error) {
 	d := encoding.NewDecbufAt(b, labelIndexOffset, nil)
 	if numLNames := d.Be32int(); numLNames != 1 {
-		return nil, errors.New(fmt.Sprintf("got unexpected number of label values; expected 1, got %d", numLNames))
+		return nil, fmt.Errorf("got unexpected number of label values; expected 1, got %d", numLNames)
 	}
 	numEntries := d.Be32int()
 	refs := make([]uint32, numEntries)
