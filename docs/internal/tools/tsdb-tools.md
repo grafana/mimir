@@ -2,14 +2,14 @@
 
 Grafana Mimir has multiple tools useful for inspecting or debugging TSDB blocks.
 
-## tsdb-index
+## tsdb-series
 
-`tsdb-index` lists all series found in the TSDB index of the block. It can optionally only list series matching a PromQL selector (`-select` option), and also show chunk metadata for each series (`-show-chunks` option).
+`tsdb-series` lists all series found in the TSDB index of the block. It can optionally only list series matching a PromQL selector (`-select` option), and also show chunk metadata for each series (`-show-chunks` option).
 
 Example with `-select`:
 
 ```
-tsdb-index -select 'up{instance="compactor:8006"}' ./01FTT67BBYH23T8870BBF77YZX
+tsdb-series -select 'up{instance="compactor:8006"}' ./01FTT67BBYH23T8870BBF77YZX
 level=error msg="using matchers" matcher="instance=\"compactor:8006\"" matcher="__name__=\"up\""
 series {__name__="up", cluster="docker-compose", instance="compactor:8006", job="tsdb-blocks-storage-s3/compactor", namespace="tsdb-blocks-storage-s3", scraped_by="grafana-agent"}
 series {__name__="up", cluster="docker-compose", instance="compactor:8006", job="tsdb-blocks-storage-s3/compactor", namespace="tsdb-blocks-storage-s3", scraped_by="prometheus"}
@@ -18,7 +18,7 @@ series {__name__="up", cluster="docker-compose", instance="compactor:8006", job=
 Example with the same `-select` and also `-show-chunks`:
 
 ```
-tsdb-index -select 'up{instance="compactor:8006"}' -show-chunks ./01FTT67BBYH23T8870BBF77YZX
+tsdb-series -select 'up{instance="compactor:8006"}' -show-chunks ./01FTT67BBYH23T8870BBF77YZX
 level=error msg="using matchers" matcher="instance=\"compactor:8006\"" matcher="__name__=\"up\""
 series {__name__="up", cluster="docker-compose", instance="compactor:8006", job="tsdb-blocks-storage-s3/compactor", namespace="tsdb-blocks-storage-s3", scraped_by="grafana-agent"}
 chunk 29163268 min time: 1640166760891 max time: 1640167195891
