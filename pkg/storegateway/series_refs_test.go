@@ -1048,8 +1048,8 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			iterator := newLimitingSeriesChunkRefsSetIterator(
 				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
-				&staticLimiter{limit: testCase.chunksLimit},
-				&staticLimiter{limit: testCase.seriesLimit},
+				&staticLimiter{limit: testCase.chunksLimit, msg: "exceeded chunks limit"},
+				&staticLimiter{limit: testCase.seriesLimit, msg: "exceeded series limit"},
 			)
 
 			sets := readAllSeriesChunkRefsSet(iterator)
@@ -2362,12 +2362,13 @@ func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 
 type staticLimiter struct {
 	limit   int
+	msg     string
 	current atomic.Uint64
 }
 
 func (l *staticLimiter) Reserve(num uint64) error {
 	if l.current.Add(num) > uint64(l.limit) {
-		return errors.New("test limit exceeded")
+		return errors.New(l.msg)
 	}
 	return nil
 }

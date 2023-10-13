@@ -18,7 +18,7 @@ import (
 
 func TestLimiter(t *testing.T) {
 	c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-	l := NewLimiter(10, c)
+	l := NewLimiter(10, c, "limit of %v exceeded")
 
 	assert.NoError(t, l.Reserve(5))
 	assert.Equal(t, float64(0), prom_testutil.ToFloat64(c))
@@ -27,12 +27,12 @@ func TestLimiter(t *testing.T) {
 	assert.Equal(t, float64(0), prom_testutil.ToFloat64(c))
 
 	err := l.Reserve(1)
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, "limit of 10 exceeded")
 	assert.Equal(t, float64(1), prom_testutil.ToFloat64(c))
 	checkErrorStatusCode(t, err)
 
 	err = l.Reserve(2)
-	assert.Error(t, err)
+	assert.ErrorContains(t, err, "limit of 10 exceeded")
 	assert.Equal(t, float64(1), prom_testutil.ToFloat64(c))
 	checkErrorStatusCode(t, err)
 }
@@ -45,14 +45,14 @@ func checkErrorStatusCode(t *testing.T, err error) {
 
 // newStaticChunksLimiterFactory makes a new ChunksLimiterFactory with a static limit.
 func newStaticChunksLimiterFactory(limit uint64) ChunksLimiterFactory {
-	return func(failedCounter prometheus.Counter) ChunksLimiter {
-		return NewLimiter(limit, failedCounter)
-	}
+	return NewChunksLimiterFactory(func() uint64 {
+		return limit
+	})
 }
 
 // newStaticSeriesLimiterFactory makes a new ChunksLimiterFactory with a static limit.
 func newStaticSeriesLimiterFactory(limit uint64) SeriesLimiterFactory {
-	return func(failedCounter prometheus.Counter) SeriesLimiter {
-		return NewLimiter(limit, failedCounter)
-	}
+	return NewSeriesLimiterFactory(func() uint64 {
+		return limit
+	})
 }
