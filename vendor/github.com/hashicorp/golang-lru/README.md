@@ -7,7 +7,7 @@ thread safe LRU cache. It is based on the cache in Groupcache.
 Documentation
 =============
 
-Full docs are available on [Go Packages](https://pkg.go.dev/github.com/hashicorp/golang-lru/v2)
+Full docs are available on [Godoc](https://pkg.go.dev/github.com/hashicorp/golang-lru)
 
 Example
 =======
@@ -15,7 +15,7 @@ Example
 Using the LRU is very simple:
 
 ```go
-l, _ := New[int, interface{}](128)
+l, _ := New(128)
 for i := 0; i < 256; i++ {
     l.Add(i, nil)
 }
