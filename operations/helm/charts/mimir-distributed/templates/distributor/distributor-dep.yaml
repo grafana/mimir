@@ -8,7 +8,9 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if .Values.distributor.replicas }}
   replicas: {{ .Values.distributor.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 6 }}
