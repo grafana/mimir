@@ -463,7 +463,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -558,7 +558,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -634,7 +634,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -705,7 +705,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -782,7 +782,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -887,7 +887,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1225,7 +1225,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:2.10.1
+        image: grafana/mimir:2.10.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
