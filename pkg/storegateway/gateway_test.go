@@ -52,6 +52,7 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1424,7 +1425,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 		},
 		"should return error if the actual number of queried chunks is > limit": {
 			limit:       chunksQueried - 1,
-			expectedErr: status.Error(http.StatusUnprocessableEntity, fmt.Sprintf("exceeded chunks limit: rpc error: code = Code(422) desc = limit %d exceeded", chunksQueried-1)),
+			expectedErr: status.Error(http.StatusUnprocessableEntity, "rpc error: code = Code(422) desc = "+fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, chunksQueried-1)),
 		},
 	}
 
@@ -1488,7 +1489,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 						assert.True(t, ok)
 						s2, ok := status.FromError(errors.Cause(testData.expectedErr))
 						assert.True(t, ok)
-						assert.True(t, strings.Contains(s1.Message(), s2.Message()))
+						assert.Contains(t, s1.Message(), s2.Message())
 						assert.Equal(t, s1.Code(), s2.Code())
 					} else {
 						require.NoError(t, err)

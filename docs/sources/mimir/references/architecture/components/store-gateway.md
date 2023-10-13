@@ -119,9 +119,9 @@ Keeping the index-header on the local disk makes query execution faster.
 ### Index-header lazy loading
 
 By default, a store-gateway downloads the index-headers to disk and doesn't load them to memory until required.
-When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` has passed.
+When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
 
-Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=false` to disable index-header lazy loading.
+Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=false` to disable index-header lazy loading.
 When disabled, the store-gateway memory-maps all index-headers, which provides faster access to the data in the index-header.
 However, in a cluster with a large number of blocks, each store-gateway might have a large amount of memory-mapped index-headers, regardless of how frequently they are used at query time.
 

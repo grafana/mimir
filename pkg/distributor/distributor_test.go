@@ -56,7 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/push"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -189,7 +188,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters: 3,
 			samples:        samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:       5,
-			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(20, 20).Error()),
+			expectedError:  httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(20, 20).Error()),
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -487,7 +486,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newRequestRateLimitedError(4, 2).Error())},
 			},
 		},
 		"request limit is disabled when set to 0": {
@@ -508,7 +507,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 				{expectedError: nil},
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(2, 3).Error())},
+				{expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newRequestRateLimitedError(2, 3).Error())},
 			},
 		},
 		"request limit is reached return 529 when enable service overload error set to true": {
@@ -519,7 +518,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{expectedError: nil},
 				{expectedError: nil},
-				{expectedError: httpgrpc.Errorf(statusServiceOverload, validation.NewRequestRateLimitedError(4, 2).Error())},
+				{expectedError: httpgrpc.Errorf(StatusServiceOverloaded, newRequestRateLimitedError(4, 2).Error())},
 			},
 		},
 	}
@@ -580,10 +579,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
-				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 2, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 5).Error())},
 				{samples: 2, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 5).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 5).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 5).Error())},
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
@@ -593,10 +592,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
-				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 5, metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 20).Error())},
 				{samples: 5, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(10, 20).Error())},
+				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 20).Error())},
+				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, newIngestionRateLimitedError(10, 20).Error())},
 			},
 		},
 	}
@@ -1607,7 +1606,16 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 	for i := 0; i < len(extra); i += 2 {
 		ret[i+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
-	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) bool { return a.Name < b.Name })
+	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		default:
+			return 0
+		}
+	})
 	return ret
 }
 
@@ -2694,7 +2702,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) error {
+			next := func(ctx context.Context, pushReq *Request) error {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
@@ -2718,10 +2726,11 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			var gotErrs []error
 			for _, req := range tc.reqs {
-				pushReq := push.NewParsedRequest(req)
+				pushReq := NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
-				gotErrs = append(gotErrs, err)
+				handledErr := ds[0].handlePushError(tc.ctx, err)
+				gotErrs = append(gotErrs, handledErr)
 			}
 
 			assert.Equal(t, tc.expectedReqs, gotReqs)
@@ -2761,7 +2770,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(ctx context.Context, pushReq *push.Request) error {
+	mockPush := func(ctx context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
 		writeReq, err := pushReq.WriteRequest()
 		require.NoError(t, err)
@@ -2789,7 +2798,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
+	err := wrappedMockPush(ctx, NewParsedRequest(writeReqReplica1))
 	require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 	// Simulate no other inflight request.
@@ -2798,7 +2807,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
+	err = wrappedMockPush(ctx, NewParsedRequest(writeReqReplica2))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -2920,7 +2929,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, pushReq *push.Request) error {
+			next := func(ctx context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
@@ -2940,7 +2949,7 @@ func TestRelabelMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				pushReq := push.NewParsedRequest(req)
+				pushReq := NewParsedRequest(req)
 				pushReq.AddCleanup(cleanup)
 				err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
@@ -3589,8 +3598,8 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		series = append(series, ts)
 	}
 
-	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) bool {
-		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels)) < 0
+	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) int {
+		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels))
 	})
 
 	for seriesIndex, ts := range series {
@@ -4721,7 +4730,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userName)
 	// skip all the middlewares, just do the push
 	distrib := d[0]
-	err := distrib.push(ctx, push.NewParsedRequest(req))
+	err := distrib.push(ctx, NewParsedRequest(req))
 	require.NoError(t, err)
 
 	// Verify that each ingester only received series and metadata that it should receive.

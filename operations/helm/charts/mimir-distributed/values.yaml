@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r258-aee3889
+  tag: r259-80ee3c1
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -365,7 +365,6 @@ mimir:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
 
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
@@ -1660,7 +1659,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.19-alpine
+    tag: 1.6.21-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -1683,7 +1682,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.11.2
+    tag: v0.13.0
     pullPolicy: IfNotPresent
 
   resources:
@@ -2157,7 +2156,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.24-alpine
+    tag: 1.25-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -2622,7 +2621,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.24-alpine
+      tag: 1.25-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -3062,7 +3061,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r258-96a21986
+    tag: r259-87dd7101
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3547,7 +3546,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r258-aee3889
+    tag: r259-80ee3c1
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3567,7 +3566,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r258-aee3889
+    tag: r259-80ee3c1
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

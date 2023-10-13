@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: imjasonh/setup-crane@v0.1
+      - uses: imjasonh/setup-crane@v0.3
 
       - name: Update/regenerate files
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
           title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}

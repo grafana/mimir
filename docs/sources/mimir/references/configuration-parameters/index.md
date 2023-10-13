@@ -653,6 +653,11 @@ grpc_tls_config:
 # CLI flag: -server.grpc.keepalive.ping-without-stream-allowed
 [grpc_server_ping_without_stream_allowed: <boolean> | default = true]
 
+# (experimental) If non-zero, configures the amount of GRPC server workers used
+# to serve the requests.
+# CLI flag: -server.grpc.num-workers
+[grpc_server_num_workers: <int> | default = 0]
+
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
 [log_format: <string> | default = "logfmt"]
@@ -1343,6 +1348,10 @@ The `frontend` block configures the query-frontend.
 # which uses it to send the query response back to query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
 [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+# (advanced) Enable using a IPv6 instance address (default false).
+# CLI flag: -query-frontend.instance-enable-ipv6
+[instance_enable_ipv6: <boolean> | default = false]
 
 # (advanced) IP address to advertise to the querier (via scheduler) (default is
 # auto-detected from network interfaces).

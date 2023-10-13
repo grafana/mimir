@@ -188,10 +188,9 @@ func newChunksPreloadingIterator(
 	refsIterator seriesChunkRefsSetIterator,
 	refsIteratorBatchSize int,
 	stats *safeQueryStats,
-	minT, maxT int64,
 ) seriesChunksSetIterator {
 	var iterator seriesChunksSetIterator
-	iterator = newLoadingSeriesChunksSetIterator(ctx, logger, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats, minT, maxT)
+	iterator = newLoadingSeriesChunksSetIterator(ctx, logger, userID, chunkReaders, refsIterator, refsIteratorBatchSize, stats)
 	iterator = newPreloadingAndStatsTrackingSetIterator[seriesChunksSet](ctx, 1, iterator, stats)
 	return iterator
 }
@@ -327,6 +326,7 @@ func newPreloadingAndStatsTrackingSetIterator[Set any](ctx context.Context, prel
 	})
 }
 
+// loadingSeriesChunksSetIterator loads the chunks of many series from many TSDB blocks.
 type loadingSeriesChunksSetIterator struct {
 	ctx           context.Context
 	logger        log.Logger
@@ -336,9 +336,8 @@ type loadingSeriesChunksSetIterator struct {
 	fromBatchSize int
 	stats         *safeQueryStats
 
-	current          seriesChunksSet
-	err              error
-	minTime, maxTime int64
+	current seriesChunksSet
+	err     error
 }
 
 func newLoadingSeriesChunksSetIterator(
@@ -349,8 +348,6 @@ func newLoadingSeriesChunksSetIterator(
 	from seriesChunkRefsSetIterator,
 	fromBatchSize int,
 	stats *safeQueryStats,
-	minT int64,
-	maxT int64,
 ) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		ctx:           ctx,
@@ -360,8 +357,6 @@ func newLoadingSeriesChunksSetIterator(
 		from:          from,
 		fromBatchSize: fromBatchSize,
 		stats:         stats,
-		minTime:       minT,
-		maxTime:       maxT,
 	}
 }
 
@@ -411,25 +406,14 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	c.chunkReaders.reset()
 	for sIdx, s := range nextUnloaded.series {
 		nextSet.series[sIdx].lset = s.lset
-		nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(s.numChunks())
-		seriesChunkIdx := 0
+		nextSet.series[sIdx].chks = nextSet.newSeriesAggrChunkSlice(len(s.refs))
+		initializeChunks(s.refs, nextSet.series[sIdx].chks)
 
-		for _, chunksRange := range s.chunksRanges {
-			rangeChunks := nextSet.series[sIdx].chks[seriesChunkIdx : seriesChunkIdx+len(chunksRange.refs)]
-			initializeChunks(chunksRange, rangeChunks)
-
-			for _, chunk := range chunksRange.refs {
-				if chunk.minTime > c.maxTime || chunk.maxTime < c.minTime {
-					// We don't need to overfetch chunks that we know are outside minT/maxT.
-					seriesChunkIdx++
-					continue
-				}
-				err := c.chunkReaders.addLoad(chunksRange.blockID, chunkRef(chunksRange.segmentFile, chunk.segFileOffset), sIdx, seriesChunkIdx, chunk.length)
-				if err != nil {
-					c.err = errors.Wrap(err, "preloading chunks")
-					return false
-				}
-				seriesChunkIdx++
+		for cIdx, chunk := range s.refs {
+			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref(), sIdx, cIdx, chunk.length)
+			if err != nil {
+				c.err = errors.Wrap(err, "preloading chunks")
+				return false
 			}
 		}
 	}
@@ -440,13 +424,6 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 		return false
 	}
 	c.recordProcessedChunks(nextSet.series)
-
-	// We might have over-fetched some chunks that were outside minT/maxT because we fetch a whole
-	// range of chunks. After storing the chunks in the cache, we should throw away the chunks that are outside
-	// the requested time range.
-	for sIdx := range nextSet.series {
-		nextSet.series[sIdx].chks = removeChunksOutsideRange(nextSet.series[sIdx].chks, c.minTime, c.maxTime)
-	}
 	c.recordReturnedChunks(nextSet.series)
 
 	nextSet.chunksReleaser = chunksPool
@@ -454,29 +431,14 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	return true
 }
 
-func initializeChunks(chunksRange seriesChunkRefsRange, chunks []storepb.AggrChunk) {
+func initializeChunks(refs []seriesChunkRef, chunks []storepb.AggrChunk) {
 	for cIdx := range chunks {
-		chunks[cIdx].MinTime = chunksRange.refs[cIdx].minTime
-		chunks[cIdx].MaxTime = chunksRange.refs[cIdx].maxTime
+		chunks[cIdx].MinTime = refs[cIdx].minTime
+		chunks[cIdx].MaxTime = refs[cIdx].maxTime
 		if chunks[cIdx].Raw == nil {
 			chunks[cIdx].Raw = &storepb.Chunk{}
 		}
 	}
-}
-
-func removeChunksOutsideRange(chks []storepb.AggrChunk, minT, maxT int64) []storepb.AggrChunk {
-	writeIdx := 0
-	for i, chk := range chks {
-		if chk.MaxTime < minT || chk.MinTime > maxT {
-			continue
-		}
-		if writeIdx != i {
-			chks[writeIdx] = chks[i]
-		}
-		writeIdx++
-	}
-
-	return chks[:writeIdx]
 }
 
 func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {

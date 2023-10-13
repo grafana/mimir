@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -41,6 +42,7 @@ type SeriesChunksStreamReader struct {
 
 	seriesBatchChan chan []QueryStreamSeriesChunks
 	errorChan       chan error
+	err             error
 	seriesBatch     []QueryStreamSeriesChunks
 }
 
@@ -89,7 +91,8 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 		onError := func(err error) {
 			s.errorChan <- err
-			log.Error(err)
+			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
+			ext.Error.Set(log.Span, true)
 		}
 
 		totalSeries := 0
@@ -158,6 +161,14 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
 func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error) {
+	if s.err != nil {
+		// Why not just return s.err?
+		// GetChunks should not be called once it has previously returned an error.
+		// However, if this does not hold true, this may indicate a bug somewhere else (see https://github.com/grafana/mimir-prometheus/pull/540 for an example).
+		// So it's valuable to return a slightly different error to indicate that something's not quite right if GetChunks is called after it's previously returned an error.
+		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream previously failed and returned an error: %w", seriesIndex, s.err)
+	}
+
 	if len(s.seriesBatch) == 0 {
 		batch, channelOpen := <-s.seriesBatchChan
 
@@ -166,15 +177,16 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 			select {
 			case err, haveError := <-s.errorChan:
 				if haveError {
+					s.err = err
 					if _, ok := err.(validation.LimitError); ok {
 						return nil, err
 					}
-					return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has failed: %w", seriesIndex, err)
+					return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
 				}
 			default:
 			}
 
-			return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has already been exhausted", seriesIndex)
+			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
 		}
 
 		s.seriesBatch = batch
@@ -190,7 +202,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 	}
 
 	if series.SeriesIndex != seriesIndex {
-		return nil, fmt.Errorf("attempted to read series at index %v from stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
+		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
 	return series.Chunks, nil

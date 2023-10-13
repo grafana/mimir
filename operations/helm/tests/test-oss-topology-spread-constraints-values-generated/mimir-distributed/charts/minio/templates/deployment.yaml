@@ -4,10 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-oss-topology-spread-constraints-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
 spec:
@@ -28,19 +27,19 @@ spec:
         app: minio
         release: test-oss-topology-spread-constraints-values
       annotations:
-        checksum/secrets: 358bf551c2d599a84892f2fd762fdacf5dde85def2bb1dee07a2762273d88398
-        checksum/config: ff0034260e5d3d82fb8f1f22f70079b30ab53a7aecc9eec43151ac52ee7ffd59
+        checksum/secrets: 08ff5e5a53040c4cf9200dff17541f4cdc3e80e1728953afa758878956ea151c
+        checksum/config: 42cacda08d76f6cbb4c80157776a3b88672edbdd9c79829980ad7d43e1fecfa8
     spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-
+      
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-02-10T18-48-39Z"
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

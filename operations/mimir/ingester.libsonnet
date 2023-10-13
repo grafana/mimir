@@ -16,13 +16,11 @@
       target: 'ingester',
 
       'server.http-listen-port': $._config.server_http_port,
+      'server.grpc-max-concurrent-streams': 500,
 
       // Ring config.
       'ingester.ring.num-tokens': 512,
       'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
-
-      // Limits config.
-      'server.grpc-max-concurrent-streams': 10000,
 
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',

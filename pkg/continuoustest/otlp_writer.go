@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 
-	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/distributor"
 )
 
 type otlpHTTPWriter struct {
@@ -26,7 +26,7 @@ type otlpHTTPWriter struct {
 }
 
 func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
-	metricRequest := push.TimeseriesToOTLPRequest(req.Timeseries, nil)
+	metricRequest := distributor.TimeseriesToOTLPRequest(req.Timeseries, nil)
 	rawBytes, err := metricRequest.MarshalProto()
 	if err != nil {
 		return 0, err

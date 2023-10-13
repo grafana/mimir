@@ -561,6 +561,17 @@
         },
         {
           "kind": "field",
+          "name": "grpc_server_num_workers",
+          "required": false,
+          "desc": "If non-zero, configures the amount of GRPC server workers used to serve the requests.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "server.grpc.num-workers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "log_format",
           "required": false,
           "desc": "Output log messages in the given format. Valid formats: [logfmt, json]",
@@ -4504,6 +4515,17 @@
           "fieldDefaultValue": [],
           "fieldFlag": "query-frontend.instance-interface-names",
           "fieldType": "list of strings",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "instance_enable_ipv6",
+          "required": false,
+          "desc": "Enable using a IPv6 instance address (default false).",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.instance-enable-ipv6",
+          "fieldType": "boolean",
           "fieldCategory": "advanced"
         },
         {
