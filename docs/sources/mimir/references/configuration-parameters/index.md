@@ -4445,7 +4445,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 [insecure: <boolean> | default = false]
 
 # (advanced) The signature version to use for authenticating against S3.
-# Supported values are: v4, v2.
+# Supported values are: v4.
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
 
