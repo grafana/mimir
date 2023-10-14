@@ -135,7 +135,7 @@ func handler(
 			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
 				code, msg = int(resp.Code), string(resp.Body)
 			} else {
-				code, msg = distributorPushErrorHTTPStatus(ctx, err, limits), err.Error()
+				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
 			}
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
@@ -145,44 +145,40 @@ func handler(
 	})
 }
 
-func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
-	serviceOverloadErrorEnabled := false
-	userID, err := tenant.TenantID(ctx)
-	if err == nil {
-		serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
-	}
-	if httpStatus, ok := toHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
-		return httpStatus
-	}
-	return http.StatusInternalServerError
-}
-
 // toHTTPStatus converts the given error into an appropriate HTTP status corresponding
-// to that error, if the error is one of the errors from this package. In that case,
-// the resulting HTTP status is returned with status true. Otherwise, -1 and the status
-// false are returned.
-func toHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
+// to that error, if the error is one of the errors from this package. Otherwise, an
+// http.StatusInternalServerError is returned.
+func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrides) int {
+	if errors.Is(pushErr, context.DeadlineExceeded) {
+		return http.StatusInternalServerError
+	}
+
 	switch {
-	case errors.As(pushErr, &replicasDidNotMatchError{}):
-		return http.StatusAccepted, true
-	case errors.As(pushErr, &tooManyClustersError{}):
-		return http.StatusBadRequest, true
 	case errors.As(pushErr, &validationError{}):
-		return http.StatusBadRequest, true
+		return http.StatusBadRequest
 	case errors.As(pushErr, &ingestionRateLimitedError{}):
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return http.StatusTooManyRequests, true
+		return http.StatusTooManyRequests
 	case errors.As(pushErr, &requestRateLimitedError{}):
+		serviceOverloadErrorEnabled := false
+		userID, err := tenant.TenantID(ctx)
+		if err == nil {
+			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+		}
 		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded, true
+			return StatusServiceOverloaded
 		}
-		return http.StatusTooManyRequests, true
+		return http.StatusTooManyRequests
+	case errors.As(pushErr, &replicasDidNotMatchError{}):
+		return http.StatusAccepted
+	case errors.As(pushErr, &tooManyClustersError{}):
+		return http.StatusBadRequest
 	default:
-		return -1, false
+		return http.StatusInternalServerError
 	}
 }

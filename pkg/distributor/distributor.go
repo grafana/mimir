@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
@@ -38,6 +39,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1089,15 +1091,24 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
+	if errors.Is(pushErr, context.DeadlineExceeded) {
+		return status.Error(codes.DeadlineExceeded, pushErr.Error())
+	}
+
+	// TODO This code is needed for backwards compatibility, since ingesters may still return
+	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
+	// it. This code should be removed once that creation is removed from the ingesters.
+	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
+	if ok {
+		return pushErr
+	}
+
 	serviceOverloadErrorEnabled := false
 	userID, err := tenant.TenantID(ctx)
 	if err == nil {
 		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	if httpStatus, ok := toHTTPStatus(pushErr, serviceOverloadErrorEnabled); ok {
-		return httpgrpc.Errorf(httpStatus, pushErr.Error())
-	}
-	return pushErr
+	return toGRPCError(pushErr, serviceOverloadErrorEnabled)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
@@ -1191,7 +1202,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
+			return errors.Wrap(err, deadlineExceededWrapMessage)
 		}
 		return err
 	}, func() { pushReq.CleanUp(); cancel() })

@@ -3,15 +3,21 @@
 package distributor
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/gogo/status"
+	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded = 529
+	StatusServiceOverloaded     = 529
+	deadlineExceededWrapMessage = "exceeded configured distributor remote timeout"
 )
 
 var (
@@ -110,4 +116,42 @@ func newRequestRateLimitedError(limit float64, burst int) requestRateLimitedErro
 
 func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
+}
+
+// toGRPCError converts the given error into an appropriate gRPC error.
+func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
+	var (
+		errDetails *mimirpb.WriteErrorDetails
+		errCode    = codes.Internal
+	)
+
+	switch {
+	case errors.As(pushErr, &validationError{}):
+		errCode = codes.FailedPrecondition
+		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION}
+	case errors.As(pushErr, &ingestionRateLimitedError{}):
+		errCode = codes.ResourceExhausted
+		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
+	case errors.As(pushErr, &requestRateLimitedError{}):
+		if serviceOverloadErrorEnabled {
+			errCode = codes.Unavailable
+		} else {
+			errCode = codes.ResourceExhausted
+		}
+		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
+	case errors.As(pushErr, &replicasDidNotMatchError{}):
+		errCode = codes.AlreadyExists
+		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
+	case errors.As(pushErr, &tooManyClustersError{}):
+		errCode = codes.FailedPrecondition
+		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
+	}
+	stat := status.New(errCode, pushErr.Error())
+	if errDetails != nil {
+		statWithDetails, err := stat.WithDetails(errDetails)
+		if err == nil {
+			return statWithDetails.Err()
+		}
+	}
+	return stat.Err()
 }
