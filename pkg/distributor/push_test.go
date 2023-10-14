@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +21,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -802,6 +802,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
+	wrappedDeadlineExceeded := errors.Wrap(context.DeadlineExceeded, originalMsg)
 	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
 	tooManyClustersErr := newTooManyClustersError(10)
 	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
@@ -817,6 +818,12 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			name:               "a generic error gets translated into a HTTP 500",
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusInternalServerError,
+		},
+		{
+			name:               "a context deadline exceeded error gets translated into a HTTP 500",
+			err:                wrappedDeadlineExceeded,
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   wrappedDeadlineExceeded.Error(),
 		},
 		{
 			name:               "a DoNotLog error gets translated into a HTTP 500",

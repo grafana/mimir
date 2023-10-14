@@ -162,6 +162,9 @@ func distributorPushErrorHTTPStatus(ctx context.Context, pushErr error, limits *
 // the resulting HTTP status is returned with status true. Otherwise, -1 and the status
 // false are returned.
 func toHTTPStatus(pushErr error, serviceOverloadErrorEnabled bool) (int, bool) {
+	if errors.Is(pushErr, context.DeadlineExceeded) {
+		return http.StatusInternalServerError, true
+	}
 	switch {
 	case errors.As(pushErr, &replicasDidNotMatchError{}):
 		return http.StatusAccepted, true

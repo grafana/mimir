@@ -11,7 +11,8 @@ import (
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded = 529
+	StatusServiceOverloaded     = 529
+	deadlineExceededWrapMessage = "exceeded configured distributor remote timeout"
 )
 
 var (

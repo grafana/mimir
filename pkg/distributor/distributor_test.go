@@ -3504,7 +3504,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	}
 
 	if i.timeOut {
-		return nil, context.DeadlineExceeded
+		return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 	}
 
 	if len(req.Timeseries) > 0 && i.timeseries == nil {
@@ -4798,8 +4798,12 @@ func TestHandleIngesterPushError(t *testing.T) {
 			expectedOutputError: errors.Wrap(unavailableErr, outputErrorMsgPrefix),
 		},
 		"a context cancel error gives the same wrapped error": {
-			ingesterPushError:   context.Canceled,
+			ingesterPushError:   status.Error(codes.Canceled, context.Canceled.Error()),
 			expectedOutputError: errors.Wrap(context.Canceled, outputErrorMsgPrefix),
+		},
+		"a context deadline exceeded error gives the same wrapped error": {
+			ingesterPushError:   status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedOutputError: errors.Wrap(context.DeadlineExceeded, outputErrorMsgPrefix),
 		},
 	}
 

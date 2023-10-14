@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
@@ -38,6 +39,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1191,7 +1193,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
+			return errors.Wrap(err, deadlineExceededWrapMessage)
 		}
 		return err
 	}, func() { pushReq.CleanUp(); cancel() })
@@ -1260,6 +1262,18 @@ func handleIngesterPushError(err error) error {
 	if ok {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	// Since err is a gRPC error, in order to check whether it corresponds to
+	// context.Canceled or context.Deadline, we need to check its gRPC code,
+	// which is in those cases codes.Canceled or codes.DeadlineExceeded.
+	stat, ok := status.FromError(err)
+	if ok {
+		if stat.Code() == codes.Canceled {
+			err = context.Canceled
+		}
+		if stat.Code() == codes.DeadlineExceeded {
+			err = context.DeadlineExceeded
+		}
 	}
 	return errors.Wrap(err, "failed pushing to ingester")
 }
