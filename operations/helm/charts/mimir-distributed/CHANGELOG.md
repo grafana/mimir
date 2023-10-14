@@ -28,6 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.1.1
+
+* [BUGFIX] Update Mimir image to 2.10.2 and GEM image to v2.10.2. #6371
+
 ## 5.1.0
 
 * [ENHANCEMENT] Update Mimir image to 2.10.0 and GEM image to v2.10.1. #6077
