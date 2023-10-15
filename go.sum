@@ -559,8 +559,8 @@ github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1 h1:MLYY2R60/74h
 github.com/grafana/gomemcache v0.0.0-20230914135007-70d78eaabfe1/go.mod h1:PGk3RjYHpxMM8HFPhKKo+vve3DdlPUELZLSDEFehPuU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20231012014731-f477e1b21cfd h1:LYjf99LSJ1Tr1FsypHbBoTDyx67Rs8pepN0VSSs9Enw=
-github.com/grafana/mimir-prometheus v0.0.0-20231012014731-f477e1b21cfd/go.mod h1:GikKWT3QqA+R3uYRd/RILJNNFxu0HejZYRLtXEF27tQ=
+github.com/grafana/mimir-prometheus v0.0.0-20231015230334-e224fcb16275 h1:vGjpGAZJHRNnbUW9PjXn/ZnQW+MXbsHYv+liz96Km9s=
+github.com/grafana/mimir-prometheus v0.0.0-20231015230334-e224fcb16275/go.mod h1:GikKWT3QqA+R3uYRd/RILJNNFxu0HejZYRLtXEF27tQ=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6 h1:A3dhViTeFDSQcGOXuUi6ukCQSMyDtDISBp2z6OOo2YM=
