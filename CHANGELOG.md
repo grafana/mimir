@@ -57,6 +57,7 @@
 ### Jsonnet
 
 * [CHANGE] Ingester: reduce `-server.grpc-max-concurrent-streams` to 500. #5666
+* [CHANGE] Changed default `_config.cluster_domain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 * [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
   * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)

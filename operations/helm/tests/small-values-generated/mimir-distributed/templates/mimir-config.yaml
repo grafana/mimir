@@ -90,13 +90,13 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+small-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+      - dns+small-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
     querier:
       max_concurrent: 16
     query_scheduler:
       max_outstanding_requests_per_tenant: 800
     ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.small-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.small-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
     ruler_storage:

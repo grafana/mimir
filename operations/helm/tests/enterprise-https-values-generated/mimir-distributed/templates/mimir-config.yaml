@@ -208,7 +208,7 @@ data:
         tls_server_name: gem.grafana.com
     instrumentation:
       distributor_client:
-        address: dns:///enterprise-https-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+        address: dns:///enterprise-https-values-mimir-distributor-headless.citestns.svc.cluster.local.:9095
         tls_cert_path: /certs/tls.crt
         tls_enabled: true
         tls_insecure_skip_verify: false
@@ -225,7 +225,7 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+enterprise-https-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+      - dns+enterprise-https-values-mimir-gossip-ring.citestns.svc.cluster.local.:7946
       tls_cert_path: /certs/tls.crt
       tls_enabled: true
       tls_insecure_skip_verify: false
@@ -254,7 +254,7 @@ data:
         tls_insecure_skip_verify: false
         tls_key_path: /certs/tls.key
         tls_server_name: gem.grafana.com
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.enterprise-https-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.enterprise-https-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
       rule_path: /data
       ruler_client:
