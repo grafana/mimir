@@ -40,6 +40,7 @@ func main() {
 		fmt.Println("No block directory specified.")
 		return
 	}
+	ctx := context.Background()
 
 	var matchers []*labels.Matcher
 	if *metricSelector != "" {
@@ -59,7 +60,6 @@ func main() {
 		level.Error(logger).Log(matchersStr...)
 	}
 
-	ctx := context.Background()
 	for _, blockDir := range args {
 		printBlockIndex(ctx, blockDir, *printChunks, matchers)
 	}
