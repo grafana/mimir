@@ -3,9 +3,6 @@
 
 set -e
 
-# Use GNU sed on MacOS falling back to `sed` everywhere else
-SED=$(which gsed || which sed)
-
 # Load common lib.
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
