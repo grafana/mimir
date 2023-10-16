@@ -2,7 +2,7 @@
   _config+: {
     namespace: error 'must define namespace',
     cluster: error 'must define cluster',
-    cluster_domain:: 'cluster.local',
+    cluster_domain:: 'cluster.local.',
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
