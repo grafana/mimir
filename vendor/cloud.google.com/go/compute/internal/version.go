@@ -15,8 +15,4 @@
 package internal
 
 // Version is the current tagged release of the library.
-<<<<<<< HEAD
 const Version = "1.23.0"
-=======
-const Version = "1.19.1"
->>>>>>> origin/release-2.9

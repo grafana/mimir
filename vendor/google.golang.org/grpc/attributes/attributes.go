@@ -111,30 +111,15 @@ func (a *Attributes) String() string {
 	sb.WriteString("{")
 	first := true
 	for k, v := range a.m {
-<<<<<<< HEAD
 		if !first {
 			sb.WriteString(", ")
 		}
 		sb.WriteString(fmt.Sprintf("%q: %q ", str(k), str(v)))
-=======
-		var key, val string
-		if str, ok := k.(interface{ String() string }); ok {
-			key = str.String()
-		}
-		if str, ok := v.(interface{ String() string }); ok {
-			val = str.String()
-		}
-		if !first {
-			sb.WriteString(", ")
-		}
-		sb.WriteString(fmt.Sprintf("%q: %q, ", key, val))
->>>>>>> origin/release-2.9
 		first = false
 	}
 	sb.WriteString("}")
 	return sb.String()
 }
-<<<<<<< HEAD
 
 func str(x any) string {
 	if v, ok := x.(fmt.Stringer); ok {
@@ -154,5 +139,3 @@ func str(x any) string {
 func (a *Attributes) MarshalJSON() ([]byte, error) {
 	return []byte(a.String()), nil
 }
-=======
->>>>>>> origin/release-2.9

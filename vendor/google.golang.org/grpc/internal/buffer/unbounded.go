@@ -34,11 +34,7 @@ import "sync"
 // new type specific implementation of this buffer is preferred. See
 // internal/transport/transport.go for an example of this.
 type Unbounded struct {
-<<<<<<< HEAD
 	c       chan any
-=======
-	c       chan interface{}
->>>>>>> origin/release-2.9
 	closed  bool
 	mu      sync.Mutex
 	backlog []any
@@ -93,11 +89,7 @@ func (b *Unbounded) Load() {
 //
 // If the unbounded buffer is closed, the read channel returned by this method
 // is closed.
-<<<<<<< HEAD
 func (b *Unbounded) Get() <-chan any {
-=======
-func (b *Unbounded) Get() <-chan interface{} {
->>>>>>> origin/release-2.9
 	return b.c
 }
 

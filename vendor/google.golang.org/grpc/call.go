@@ -26,16 +26,7 @@ import (
 // received.  This is typically called by generated code.
 //
 // All errors returned by Invoke are compatible with the status package.
-<<<<<<< HEAD
 func (cc *ClientConn) Invoke(ctx context.Context, method string, args, reply any, opts ...CallOption) error {
-=======
-func (cc *ClientConn) Invoke(ctx context.Context, method string, args, reply interface{}, opts ...CallOption) error {
-	if err := cc.idlenessMgr.onCallBegin(); err != nil {
-		return err
-	}
-	defer cc.idlenessMgr.onCallEnd()
-
->>>>>>> origin/release-2.9
 	// allow interceptor to see all applicable call options, which means those
 	// configured as defaults from dial option as well as per-call options
 	opts = combine(cc.dopts.callOptions, opts)

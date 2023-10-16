@@ -1,6 +1,5 @@
 # Changes
 
-<<<<<<< HEAD
 
 ## [1.1.2](https://github.com/googleapis/google-cloud-go/compare/iam/v1.1.1...iam/v1.1.2) (2023-08-08)
 
@@ -37,8 +36,6 @@
 
 * **iam:** Promote to GA ([#7627](https://github.com/googleapis/google-cloud-go/issues/7627)) ([b351906](https://github.com/googleapis/google-cloud-go/commit/b351906a10e17a02d7f7e2551bc1585fd9dc3742))
 
-=======
->>>>>>> origin/release-2.9
 ## [0.13.0](https://github.com/googleapis/google-cloud-go/compare/iam/v0.12.0...iam/v0.13.0) (2023-03-15)
 
 

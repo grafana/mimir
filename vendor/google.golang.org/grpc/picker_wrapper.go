@@ -35,20 +35,12 @@ import (
 // pickerWrapper is a wrapper of balancer.Picker. It blocks on certain pick
 // actions and unblock when there's a picker update.
 type pickerWrapper struct {
-<<<<<<< HEAD
 	mu            sync.Mutex
 	done          bool
 	idle          bool
 	blockingCh    chan struct{}
 	picker        balancer.Picker
 	statsHandlers []stats.Handler // to record blocking picker calls
-=======
-	mu         sync.Mutex
-	done       bool
-	idle       bool
-	blockingCh chan struct{}
-	picker     balancer.Picker
->>>>>>> origin/release-2.9
 }
 
 func newPickerWrapper(statsHandlers []stats.Handler) *pickerWrapper {

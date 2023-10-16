@@ -108,13 +108,6 @@ func DefaultServerHandshakerOptions() *ServerHandshakerOptions {
 	return &ServerHandshakerOptions{}
 }
 
-<<<<<<< HEAD
-=======
-// TODO: add support for future local and remote endpoint in both client options
-//       and server options (server options struct does not exist now. When
-//       caller can provide endpoints, it should be created.
-
->>>>>>> origin/release-2.9
 // altsHandshaker is used to complete an ALTS handshake between client and
 // server. This handshaker talks to the ALTS handshaker service in the metadata
 // server.
@@ -365,7 +358,6 @@ func (h *altsHandshaker) Close() {
 	if h.stream != nil {
 		h.stream.CloseSend()
 	}
-<<<<<<< HEAD
 }
 
 // ResetConcurrentHandshakeSemaphoreForTesting resets the handshake semaphores
@@ -373,6 +365,4 @@ func (h *altsHandshaker) Close() {
 func ResetConcurrentHandshakeSemaphoreForTesting(numberOfAllowedHandshakes int64) {
 	clientHandshakes = semaphore.NewWeighted(numberOfAllowedHandshakes)
 	serverHandshakes = semaphore.NewWeighted(numberOfAllowedHandshakes)
-=======
->>>>>>> origin/release-2.9
 }

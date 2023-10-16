@@ -37,7 +37,6 @@ var (
 	// checking which NACKs configs specifying ring sizes > 8*1024*1024 (~8M).
 	RingHashCap = uint64FromEnv("GRPC_RING_HASH_CAP", 4096, 1, 8*1024*1024)
 	// PickFirstLBConfig is set if we should support configuration of the
-<<<<<<< HEAD
 	// pick_first LB policy.
 	PickFirstLBConfig = boolFromEnv("GRPC_EXPERIMENTAL_PICKFIRST_LB_CONFIG", true)
 	// LeastRequestLB is set if we should support the least_request_experimental
@@ -47,11 +46,6 @@ var (
 	// ALTSMaxConcurrentHandshakes is the maximum number of concurrent ALTS
 	// handshakes that can be performed.
 	ALTSMaxConcurrentHandshakes = uint64FromEnv("GRPC_ALTS_MAX_CONCURRENT_HANDSHAKES", 100, 1, 100)
-=======
-	// pick_first LB policy, which can be enabled by setting the environment
-	// variable "GRPC_EXPERIMENTAL_PICKFIRST_LB_CONFIG" to "true".
-	PickFirstLBConfig = boolFromEnv("GRPC_EXPERIMENTAL_PICKFIRST_LB_CONFIG", false)
->>>>>>> origin/release-2.9
 )
 
 func boolFromEnv(envVar string, def bool) bool {

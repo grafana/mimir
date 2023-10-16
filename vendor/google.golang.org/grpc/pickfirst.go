@@ -26,14 +26,10 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/internal/envconfig"
-<<<<<<< HEAD
 	internalgrpclog "google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/grpcrand"
 	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/resolver"
-=======
-	"google.golang.org/grpc/internal/grpcrand"
->>>>>>> origin/release-2.9
 	"google.golang.org/grpc/serviceconfig"
 )
 
@@ -69,7 +65,6 @@ type pfConfig struct {
 }
 
 func (*pickfirstBuilder) ParseConfig(js json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
-<<<<<<< HEAD
 	if !envconfig.PickFirstLBConfig {
 		// Prior to supporting loadbalancing configuration, the pick_first LB
 		// policy did not implement the balancer.ConfigParser interface. This
@@ -85,10 +80,6 @@ func (*pickfirstBuilder) ParseConfig(js json.RawMessage) (serviceconfig.LoadBala
 
 	var cfg pfConfig
 	if err := json.Unmarshal(js, &cfg); err != nil {
-=======
-	cfg := &pfConfig{}
-	if err := json.Unmarshal(js, cfg); err != nil {
->>>>>>> origin/release-2.9
 		return nil, fmt.Errorf("pickfirst: unable to unmarshal LB policy config: %s, error: %v", string(js), err)
 	}
 	return cfg, nil
@@ -99,7 +90,6 @@ type pickfirstBalancer struct {
 	state   connectivity.State
 	cc      balancer.ClientConn
 	subConn balancer.SubConn
-	cfg     *pfConfig
 }
 
 func (b *pickfirstBalancer) ResolverError(err error) {
@@ -136,7 +126,6 @@ func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState
 		return balancer.ErrBadResolverState
 	}
 
-<<<<<<< HEAD
 	// We don't have to guard this block with the env var because ParseConfig
 	// already does so.
 	cfg, ok := state.BalancerConfig.(pfConfig)
@@ -152,34 +141,17 @@ func (b *pickfirstBalancer) UpdateClientConnState(state balancer.ClientConnState
 		b.logger.Infof("Received new config %s, resolver state %s", pretty.ToJSON(cfg), pretty.ToJSON(state.ResolverState))
 	}
 
-=======
-	if state.BalancerConfig != nil {
-		cfg, ok := state.BalancerConfig.(*pfConfig)
-		if !ok {
-			return fmt.Errorf("pickfirstBalancer: received nil or illegal BalancerConfig (type %T): %v", state.BalancerConfig, state.BalancerConfig)
-		}
-		b.cfg = cfg
-	}
-
-	if envconfig.PickFirstLBConfig && b.cfg != nil && b.cfg.ShuffleAddressList {
-		grpcrand.Shuffle(len(addrs), func(i, j int) { addrs[i], addrs[j] = addrs[j], addrs[i] })
-	}
->>>>>>> origin/release-2.9
 	if b.subConn != nil {
 		b.cc.UpdateAddresses(b.subConn, addrs)
 		return nil
 	}
 
-<<<<<<< HEAD
 	var subConn balancer.SubConn
 	subConn, err := b.cc.NewSubConn(addrs, balancer.NewSubConnOptions{
 		StateListener: func(state balancer.SubConnState) {
 			b.updateSubConnState(subConn, state)
 		},
 	})
-=======
-	subConn, err := b.cc.NewSubConn(addrs, balancer.NewSubConnOptions{})
->>>>>>> origin/release-2.9
 	if err != nil {
 		if b.logger.V(2) {
 			b.logger.Infof("Failed to create new SubConn: %v", err)

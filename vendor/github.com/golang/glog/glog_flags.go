@@ -133,14 +133,11 @@ func (l *Level) Set(value string) error {
 type vModuleFlag struct{ *verboseFlags }
 
 func (f vModuleFlag) String() string {
-<<<<<<< HEAD
 	// Do not panic on the zero value.
 	// https://groups.google.com/g/golang-nuts/c/Atlr8uAjn6U/m/iId17Td5BQAJ.
 	if f.verboseFlags == nil {
 		return ""
 	}
-=======
->>>>>>> origin/release-2.9
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -200,13 +197,7 @@ func (f *verboseFlags) levelForPC(pc uintptr) Level {
 	file, _ := fn.FileLine(pc)
 	// The file is something like /a/b/c/d.go. We want just the d for
 	// regular matches, /a/b/c/d for full matches.
-<<<<<<< HEAD
 	file = strings.TrimSuffix(file, ".go")
-=======
-	if strings.HasSuffix(file, ".go") {
-		file = file[:len(file)-3]
-	}
->>>>>>> origin/release-2.9
 	full := file
 	if slash := strings.LastIndex(file, "/"); slash >= 0 {
 		file = file[slash+1:]
