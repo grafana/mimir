@@ -39,6 +39,11 @@ var (
 	)
 )
 
+// distributorError is a marker interface for the errors returned by distributor.
+type distributorError interface {
+	errorCause() mimirpb.ErrorCause
+}
+
 // replicasDidNotMatchError is an error stating that replicas do not match.
 type replicasDidNotMatchError struct {
 	replica, elected string
@@ -54,6 +59,11 @@ func newReplicasDidNotMatchError(replica, elected string) replicasDidNotMatchErr
 
 func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
+}
+
+// replicasDidNotMatchError implements the distributorError interface.
+func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.REPLICAS_DID_NOT_MATCH
 }
 
 // tooManyClustersError is an error stating that there are too many HA clusters.
@@ -72,6 +82,11 @@ func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
+// tooManyClustersError implements the distributorError interface.
+func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.TOO_MANY_CLUSTERS
+}
+
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
 	error
@@ -80,6 +95,11 @@ type validationError struct {
 // newValidationError wraps the given error into a validationError error.
 func newValidationError(err error) validationError {
 	return validationError{error: err}
+}
+
+// validationError implements the distributorError interface.
+func (e validationError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.VALIDATION
 }
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
@@ -100,6 +120,11 @@ func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
+// ingestionRateLimitedError implements the distributorError interface.
+func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.INGESTION_RATE_LIMITED
+}
+
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
 	limit float64
@@ -118,33 +143,36 @@ func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
 }
 
+// requestRateLimitedError implements the distributorError interface.
+func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.REQUEST_RATE_LIMITED
+}
+
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
-		errDetails *mimirpb.WriteErrorDetails
-		errCode    = codes.Internal
+		distributorErr distributorError
+		errDetails     *mimirpb.WriteErrorDetails
+		errCode        = codes.Internal
 	)
-
-	switch {
-	case errors.As(pushErr, &validationError{}):
-		errCode = codes.FailedPrecondition
-		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION}
-	case errors.As(pushErr, &ingestionRateLimitedError{}):
-		errCode = codes.ResourceExhausted
-		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
-	case errors.As(pushErr, &requestRateLimitedError{}):
-		if serviceOverloadErrorEnabled {
-			errCode = codes.Unavailable
-		} else {
+	if errors.As(pushErr, &distributorErr) {
+		errDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+		switch distributorErr.errorCause() {
+		case mimirpb.VALIDATION:
+			errCode = codes.FailedPrecondition
+		case mimirpb.INGESTION_RATE_LIMITED:
 			errCode = codes.ResourceExhausted
+		case mimirpb.REQUEST_RATE_LIMITED:
+			if serviceOverloadErrorEnabled {
+				errCode = codes.Unavailable
+			} else {
+				errCode = codes.ResourceExhausted
+			}
+		case mimirpb.REPLICAS_DID_NOT_MATCH:
+			errCode = codes.AlreadyExists
+		case mimirpb.TOO_MANY_CLUSTERS:
+			errCode = codes.FailedPrecondition
 		}
-		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
-	case errors.As(pushErr, &replicasDidNotMatchError{}):
-		errCode = codes.AlreadyExists
-		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
-	case errors.As(pushErr, &tooManyClustersError{}):
-		errCode = codes.FailedPrecondition
-		errDetails = &mimirpb.WriteErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
 	}
 	stat := status.New(errCode, pushErr.Error())
 	if errDetails != nil {

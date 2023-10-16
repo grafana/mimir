@@ -153,32 +153,35 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		return http.StatusInternalServerError
 	}
 
-	switch {
-	case errors.As(pushErr, &validationError{}):
-		return http.StatusBadRequest
-	case errors.As(pushErr, &ingestionRateLimitedError{}):
-		// Return a 429 here to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return http.StatusTooManyRequests
-	case errors.As(pushErr, &requestRateLimitedError{}):
-		serviceOverloadErrorEnabled := false
-		userID, err := tenant.TenantID(ctx)
-		if err == nil {
-			serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+	var distributorErr distributorError
+	if errors.As(pushErr, &distributorErr) {
+		switch distributorErr.errorCause() {
+		case mimirpb.VALIDATION:
+			return http.StatusBadRequest
+		case mimirpb.INGESTION_RATE_LIMITED:
+			// Return a 429 here to tell the client it is going too fast.
+			// Client may discard the data or slow down and re-send.
+			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			return http.StatusTooManyRequests
+		case mimirpb.REQUEST_RATE_LIMITED:
+			serviceOverloadErrorEnabled := false
+			userID, err := tenant.TenantID(ctx)
+			if err == nil {
+				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
+			}
+			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+			// Client may discard the data or slow down and re-send.
+			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			if serviceOverloadErrorEnabled {
+				return StatusServiceOverloaded
+			}
+			return http.StatusTooManyRequests
+		case mimirpb.REPLICAS_DID_NOT_MATCH:
+			return http.StatusAccepted
+		case mimirpb.TOO_MANY_CLUSTERS:
+			return http.StatusBadRequest
 		}
-		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		if serviceOverloadErrorEnabled {
-			return StatusServiceOverloaded
-		}
-		return http.StatusTooManyRequests
-	case errors.As(pushErr, &replicasDidNotMatchError{}):
-		return http.StatusAccepted
-	case errors.As(pushErr, &tooManyClustersError{}):
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
 	}
+
+	return http.StatusInternalServerError
 }

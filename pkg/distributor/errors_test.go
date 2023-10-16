@@ -23,6 +23,7 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 	assert.Error(t, err)
 	expectedMsg := fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", replica, elected)
 	assert.EqualError(t, err, expectedMsg)
+	checkDistributorError(t, err, mimirpb.REPLICAS_DID_NOT_MATCH)
 
 	anotherErr := newReplicasDidNotMatchError("c", "d")
 	assert.NotErrorIs(t, err, anotherErr)
@@ -33,6 +34,7 @@ func TestNewReplicasNotMatchError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &replicasDidNotMatchError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.REPLICAS_DID_NOT_MATCH)
 }
 
 func TestNewTooManyClustersError(t *testing.T) {
@@ -41,6 +43,7 @@ func TestNewTooManyClustersError(t *testing.T) {
 	expectedErrorMsg := fmt.Sprintf(tooManyClustersMsgFormat, limit)
 	assert.Error(t, err)
 	assert.EqualError(t, err, expectedErrorMsg)
+	checkDistributorError(t, err, mimirpb.TOO_MANY_CLUSTERS)
 
 	anotherErr := newTooManyClustersError(20)
 	assert.NotErrorIs(t, err, anotherErr)
@@ -51,6 +54,7 @@ func TestNewTooManyClustersError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &tooManyClustersError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.TOO_MANY_CLUSTERS)
 }
 
 func TestNewValidationError(t *testing.T) {
@@ -60,6 +64,7 @@ func TestNewValidationError(t *testing.T) {
 	err := newValidationError(firstErr)
 	assert.Error(t, err)
 	assert.EqualError(t, err, validationMsg)
+	checkDistributorError(t, err, mimirpb.VALIDATION)
 
 	anotherErr := newValidationError(errors.New("this is another validation error"))
 	assert.NotErrorIs(t, err, anotherErr)
@@ -70,6 +75,7 @@ func TestNewValidationError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &validationError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.VALIDATION)
 }
 
 func TestNewIngestionRateError(t *testing.T) {
@@ -79,6 +85,7 @@ func TestNewIngestionRateError(t *testing.T) {
 	expectedErrorMsg := fmt.Sprintf(ingestionRateLimitedMsgFormat, limit, burst)
 	assert.Error(t, err)
 	assert.EqualError(t, err, expectedErrorMsg)
+	checkDistributorError(t, err, mimirpb.INGESTION_RATE_LIMITED)
 
 	anotherErr := newIngestionRateLimitedError(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)
@@ -89,6 +96,7 @@ func TestNewIngestionRateError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &ingestionRateLimitedError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.INGESTION_RATE_LIMITED)
 }
 
 func TestNewRequestRateError(t *testing.T) {
@@ -98,6 +106,7 @@ func TestNewRequestRateError(t *testing.T) {
 	expectedErrorMsg := fmt.Sprintf(requestRateLimitedMsgFormat, limit, burst)
 	assert.Error(t, err)
 	assert.EqualError(t, err, expectedErrorMsg)
+	checkDistributorError(t, err, mimirpb.REQUEST_RATE_LIMITED)
 
 	anotherErr := newRequestRateLimitedError(20, 20)
 	assert.NotErrorIs(t, err, anotherErr)
@@ -108,6 +117,7 @@ func TestNewRequestRateError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &requestRateLimitedError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.REQUEST_RATE_LIMITED)
 }
 
 func TestToGRPCError(t *testing.T) {
@@ -242,4 +252,10 @@ func TestToGRPCError(t *testing.T) {
 			require.Equal(t, tc.expectedErrorDetails, errDetails)
 		}
 	}
+}
+
+func checkDistributorError(t *testing.T, err error, expectedCause mimirpb.ErrorCause) {
+	var distributorErr distributorError
+	require.ErrorAs(t, err, &distributorErr)
+	require.Equal(t, expectedCause, distributorErr.errorCause())
 }
