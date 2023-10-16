@@ -352,7 +352,15 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)
 	distributor.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Distributor.DefaultLimits)
 
-	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
+	registerer := prometheus.WrapRegistererWith(
+		prometheus.Labels{"config": "mimir-runtime-config"},
+		prometheus.WrapRegistererWithPrefix(
+			"cortex_",
+			t.Registerer,
+		),
+	)
+
+	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, registerer, util_log.Logger)
 	if err == nil {
 		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
 		// anything in the start/stopping phase. Thus we can create it as part of runtime config
