@@ -4,9 +4,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
-package exported
+package generated
 
-const (
-	ModuleName    = "azblob"
-	ModuleVersion = "v1.2.0"
-)
+const ServiceVersion = "2023-08-03"
