@@ -84,6 +84,7 @@ services:
       - JAEGER_TAGS=app=mimir-1
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
+      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8001:8001
     volumes:
@@ -105,6 +106,7 @@ services:
       - JAEGER_TAGS=app=mimir-2
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
+      - JAEGER_REPORTER_MAX_QUEUE_SIZE=1000
     ports:
       - 8002:8002
     volumes:
