@@ -61,10 +61,11 @@ func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// replicasDidNotMatchError implements the distributorError interface.
 func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.REPLICAS_DID_NOT_MATCH
 }
+
+var _ distributorError = replicasDidNotMatchError{}
 
 // tooManyClustersError is an error stating that there are too many HA clusters.
 type tooManyClustersError struct {
@@ -82,10 +83,11 @@ func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
-// tooManyClustersError implements the distributorError interface.
 func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.TOO_MANY_CLUSTERS
 }
+
+var _ distributorError = tooManyClustersError{}
 
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
@@ -97,10 +99,11 @@ func newValidationError(err error) validationError {
 	return validationError{error: err}
 }
 
-// validationError implements the distributorError interface.
 func (e validationError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.VALIDATION
 }
+
+var _ distributorError = validationError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -120,10 +123,11 @@ func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-// ingestionRateLimitedError implements the distributorError interface.
 func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.INGESTION_RATE_LIMITED
 }
+
+var _ distributorError = ingestionRateLimitedError{}
 
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
@@ -143,10 +147,11 @@ func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-// requestRateLimitedError implements the distributorError interface.
 func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.REQUEST_RATE_LIMITED
 }
+
+var _ distributorError = requestRateLimitedError{}
 
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {

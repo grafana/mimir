@@ -35,11 +35,12 @@ message WriteRequest {
 message WriteResponse {}
 
 enum ErrorCause {
-  REPLICAS_DID_NOT_MATCH = 0;
-  TOO_MANY_CLUSTERS = 1;
-  VALIDATION = 2;
-  INGESTION_RATE_LIMITED = 3;
-  REQUEST_RATE_LIMITED = 4;
+  INVALID = 0;
+  REPLICAS_DID_NOT_MATCH = 1;
+  TOO_MANY_CLUSTERS = 2;
+  VALIDATION = 3;
+  INGESTION_RATE_LIMITED = 4;
+  REQUEST_RATE_LIMITED = 5;
 }
 
 message WriteErrorDetails {
