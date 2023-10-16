@@ -129,7 +129,11 @@ type ClientStream interface {
 	//
 	// It is not safe to modify the message after calling SendMsg. Tracing
 	// libraries and stats handlers may use the message lazily.
+<<<<<<< HEAD
 	SendMsg(m any) error
+=======
+	SendMsg(m interface{}) error
+>>>>>>> origin/release-2.9
 	// RecvMsg blocks until it receives a message into m or the stream is
 	// done. It returns io.EOF when the stream completes successfully. On
 	// any other error, the stream is aborted and the error contains the RPC
@@ -158,6 +162,11 @@ type ClientStream interface {
 // If none of the above happen, a goroutine and a context will be leaked, and grpc
 // will not call the optionally-configured stats handler with a stats.End message.
 func (cc *ClientConn) NewStream(ctx context.Context, desc *StreamDesc, method string, opts ...CallOption) (ClientStream, error) {
+	if err := cc.idlenessMgr.onCallBegin(); err != nil {
+		return nil, err
+	}
+	defer cc.idlenessMgr.onCallEnd()
+
 	// allow interceptor to see all applicable call options, which means those
 	// configured as defaults from dial option as well as per-call options
 	opts = combine(cc.dopts.callOptions, opts)
@@ -174,6 +183,7 @@ func NewClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 }
 
 func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, method string, opts ...CallOption) (_ ClientStream, err error) {
+<<<<<<< HEAD
 	// Start tracking the RPC for idleness purposes. This is where a stream is
 	// created for both streaming and unary RPCs, and hence is a good place to
 	// track active RPC count.
@@ -184,6 +194,8 @@ func newClientStream(ctx context.Context, desc *StreamDesc, cc *ClientConn, meth
 	// when the RPC completes.
 	opts = append([]CallOption{OnFinish(func(error) { cc.idlenessMgr.OnCallEnd() })}, opts...)
 
+=======
+>>>>>>> origin/release-2.9
 	if md, added, ok := metadata.FromOutgoingContextRaw(ctx); ok {
 		// validate md
 		if err := imetadata.Validate(md); err != nil {
@@ -938,6 +950,27 @@ func (cs *clientStream) RecvMsg(m any) error {
 	if err != nil || !cs.desc.ServerStreams {
 		// err != nil or non-server-streaming indicates end of stream.
 		cs.finish(err)
+<<<<<<< HEAD
+=======
+
+		if len(cs.binlogs) != 0 {
+			// finish will not log Trailer. Log Trailer here.
+			logEntry := &binarylog.ServerTrailer{
+				OnClientSide: true,
+				Trailer:      cs.Trailer(),
+				Err:          err,
+			}
+			if logEntry.Err == io.EOF {
+				logEntry.Err = nil
+			}
+			if peer, ok := peer.FromContext(cs.Context()); ok {
+				logEntry.PeerAddr = peer.Addr
+			}
+			for _, binlog := range cs.binlogs {
+				binlog.Log(cs.ctx, logEntry)
+			}
+		}
+>>>>>>> origin/release-2.9
 	}
 	return err
 }
@@ -995,6 +1028,7 @@ func (cs *clientStream) finish(err error) {
 	}
 
 	cs.mu.Unlock()
+<<<<<<< HEAD
 	// Only one of cancel or trailer needs to be logged.
 	if len(cs.binlogs) != 0 {
 		switch err {
@@ -1017,6 +1051,19 @@ func (cs *clientStream) finish(err error) {
 			for _, binlog := range cs.binlogs {
 				binlog.Log(cs.ctx, logEntry)
 			}
+=======
+	// For binary logging. only log cancel in finish (could be caused by RPC ctx
+	// canceled or ClientConn closed). Trailer will be logged in RecvMsg.
+	//
+	// Only one of cancel or trailer needs to be logged. In the cases where
+	// users don't call RecvMsg, users must have already canceled the RPC.
+	if len(cs.binlogs) != 0 && status.Code(err) == codes.Canceled {
+		c := &binarylog.Cancel{
+			OnClientSide: true,
+		}
+		for _, binlog := range cs.binlogs {
+			binlog.Log(cs.ctx, c)
+>>>>>>> origin/release-2.9
 		}
 	}
 	if err == nil {

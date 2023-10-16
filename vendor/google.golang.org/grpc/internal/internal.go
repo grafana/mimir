@@ -61,13 +61,21 @@ var (
 	// GetServerCredentials returns the transport credentials configured on a
 	// gRPC server. An xDS-enabled server needs to know what type of credentials
 	// is configured on the underlying gRPC server. This is set by server.go.
+<<<<<<< HEAD
 	GetServerCredentials any // func (*grpc.Server) credentials.TransportCredentials
+=======
+	GetServerCredentials interface{} // func (*grpc.Server) credentials.TransportCredentials
+>>>>>>> origin/release-2.9
 	// CanonicalString returns the canonical string of the code defined here:
 	// https://github.com/grpc/grpc/blob/master/doc/statuscodes.md.
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	CanonicalString any // func (codes.Code) string
+=======
+	CanonicalString interface{} // func (codes.Code) string
+>>>>>>> origin/release-2.9
 	// DrainServerTransports initiates a graceful close of existing connections
 	// on a gRPC server accepted on the provided listener address. An
 	// xDS-enabled server invokes this method on a grpc.Server when a particular
@@ -79,7 +87,11 @@ var (
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	AddGlobalServerOptions any // func(opt ...ServerOption)
+=======
+	AddGlobalServerOptions interface{} // func(opt ...ServerOption)
+>>>>>>> origin/release-2.9
 	// ClearGlobalServerOptions clears the array of extra ServerOption. This
 	// method is useful in testing and benchmarking.
 	//
@@ -92,14 +104,22 @@ var (
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	AddGlobalDialOptions any // func(opt ...DialOption)
+=======
+	AddGlobalDialOptions interface{} // func(opt ...DialOption)
+>>>>>>> origin/release-2.9
 	// DisableGlobalDialOptions returns a DialOption that prevents the
 	// ClientConn from applying the global DialOptions (set via
 	// AddGlobalDialOptions).
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	DisableGlobalDialOptions any // func() grpc.DialOption
+=======
+	DisableGlobalDialOptions interface{} // func() grpc.DialOption
+>>>>>>> origin/release-2.9
 	// ClearGlobalDialOptions clears the array of extra DialOption. This
 	// method is useful in testing and benchmarking.
 	//
@@ -118,16 +138,24 @@ var (
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	WithBinaryLogger any // func(binarylog.Logger) grpc.DialOption
+=======
+	WithBinaryLogger interface{} // func(binarylog.Logger) grpc.DialOption
+>>>>>>> origin/release-2.9
 	// BinaryLogger returns a ServerOption that can set the binary logger for a
 	// server.
 	//
 	// This is used in the 1.0 release of gcp/observability, and thus must not be
 	// deleted or changed.
+<<<<<<< HEAD
 	BinaryLogger any // func(binarylog.Logger) grpc.ServerOption
 
 	// SubscribeToConnectivityStateChanges adds a grpcsync.Subscriber to a provided grpc.ClientConn
 	SubscribeToConnectivityStateChanges any // func(*grpc.ClientConn, grpcsync.Subscriber)
+=======
+	BinaryLogger interface{} // func(binarylog.Logger) grpc.ServerOption
+>>>>>>> origin/release-2.9
 
 	// NewXDSResolverWithConfigForTesting creates a new xds resolver builder using
 	// the provided xds bootstrap config instead of the global configuration from
@@ -170,11 +198,15 @@ var (
 	UnregisterRBACHTTPFilterForTesting func()
 
 	// ORCAAllowAnyMinReportingInterval is for examples/orca use ONLY.
+<<<<<<< HEAD
 	ORCAAllowAnyMinReportingInterval any // func(so *orca.ServiceOptions)
 
 	// GRPCResolverSchemeExtraMetadata determines when gRPC will add extra
 	// metadata to RPCs.
 	GRPCResolverSchemeExtraMetadata string = "xds"
+=======
+	ORCAAllowAnyMinReportingInterval interface{} // func(so *orca.ServiceOptions)
+>>>>>>> origin/release-2.9
 )
 
 // HealthChecker defines the signature of the client-side LB channel health checking function.

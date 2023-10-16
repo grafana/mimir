@@ -78,7 +78,10 @@ type dialOptions struct {
 	defaultServiceConfigRawJSON *string
 	resolvers                   []resolver.Builder
 	idleTimeout                 time.Duration
+<<<<<<< HEAD
 	recvBufferPool              SharedBufferPool
+=======
+>>>>>>> origin/release-2.9
 }
 
 // DialOption configures how we set up the connection.
@@ -692,6 +695,7 @@ func WithIdleTimeout(d time.Duration) DialOption {
 		o.idleTimeout = d
 	})
 }
+<<<<<<< HEAD
 
 // WithRecvBufferPool returns a DialOption that configures the ClientConn
 // to use the provided shared buffer pool for parsing incoming messages. Depending
@@ -713,3 +717,5 @@ func WithRecvBufferPool(bufferPool SharedBufferPool) DialOption {
 		o.recvBufferPool = bufferPool
 	})
 }
+=======
+>>>>>>> origin/release-2.9

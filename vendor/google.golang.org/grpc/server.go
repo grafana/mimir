@@ -112,7 +112,11 @@ type serviceInfo struct {
 	serviceImpl any
 	methods     map[string]*MethodDesc
 	streams     map[string]*StreamDesc
+<<<<<<< HEAD
 	mdata       any
+=======
+	mdata       interface{}
+>>>>>>> origin/release-2.9
 }
 
 // Server is a gRPC server to serve RPC requests.
@@ -2093,12 +2097,20 @@ func validateSendCompressor(name, clientCompressors string) error {
 // atomicSemaphore implements a blocking, counting semaphore. acquire should be
 // called synchronously; release may be called asynchronously.
 type atomicSemaphore struct {
+<<<<<<< HEAD
 	n    atomic.Int64
+=======
+	n    int64
+>>>>>>> origin/release-2.9
 	wait chan struct{}
 }
 
 func (q *atomicSemaphore) acquire() {
+<<<<<<< HEAD
 	if q.n.Add(-1) < 0 {
+=======
+	if atomic.AddInt64(&q.n, -1) < 0 {
+>>>>>>> origin/release-2.9
 		// We ran out of quota.  Block until a release happens.
 		<-q.wait
 	}
@@ -2109,14 +2121,22 @@ func (q *atomicSemaphore) release() {
 	// concurrent calls to acquire, but also note that with synchronous calls to
 	// acquire, as our system does, n will never be less than -1.  There are
 	// fairness issues (queuing) to consider if this was to be generalized.
+<<<<<<< HEAD
 	if q.n.Add(1) <= 0 {
+=======
+	if atomic.AddInt64(&q.n, 1) <= 0 {
+>>>>>>> origin/release-2.9
 		// An acquire was waiting on us.  Unblock it.
 		q.wait <- struct{}{}
 	}
 }
 
 func newHandlerQuota(n uint32) *atomicSemaphore {
+<<<<<<< HEAD
 	a := &atomicSemaphore{wait: make(chan struct{}, 1)}
 	a.n.Store(int64(n))
 	return a
+=======
+	return &atomicSemaphore{n: int64(n), wait: make(chan struct{}, 1)}
+>>>>>>> origin/release-2.9
 }

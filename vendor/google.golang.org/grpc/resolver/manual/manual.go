@@ -99,9 +99,14 @@ func (r *Resolver) Close() {
 // UpdateState calls CC.UpdateState.
 func (r *Resolver) UpdateState(s resolver.State) {
 	r.mu.Lock()
+<<<<<<< HEAD
 	err := r.CC.UpdateState(s)
 	r.mu.Unlock()
 	r.UpdateStateCallback(err)
+=======
+	r.CC.UpdateState(s)
+	r.mu.Unlock()
+>>>>>>> origin/release-2.9
 }
 
 // ReportError calls CC.ReportError.

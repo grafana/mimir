@@ -732,7 +732,11 @@ func recvAndDecompress(p *parser, s *transport.Stream, dc Decompressor, maxRecei
 		return nil, err
 	}
 	if payInfo != nil {
+<<<<<<< HEAD
 		payInfo.compressedLength = len(buf)
+=======
+		payInfo.compressedLength = len(d)
+>>>>>>> origin/release-2.9
 	}
 
 	if st := checkRecvPayload(pf, s.RecvCompress(), compressor != nil || dc != nil); st != nil {

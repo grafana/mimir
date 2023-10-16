@@ -830,7 +830,11 @@ func (l *loopyWriter) goAwayHandler(g *goAway) error {
 	return nil
 }
 
+<<<<<<< HEAD
 func (l *loopyWriter) handle(i any) error {
+=======
+func (l *loopyWriter) handle(i interface{}) error {
+>>>>>>> origin/release-2.9
 	switch i := i.(type) {
 	case *incomingWindowUpdate:
 		l.incomingWindowUpdateHandler(i)

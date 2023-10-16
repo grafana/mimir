@@ -138,6 +138,10 @@ func (dcs *defaultConfigSelector) SelectConfig(rpcInfo iresolver.RPCInfo) (*ires
 func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *ClientConn, err error) {
 	cc := &ClientConn{
 		target: target,
+<<<<<<< HEAD
+=======
+		csMgr:  &connectivityStateManager{},
+>>>>>>> origin/release-2.9
 		conns:  make(map[*addrConn]struct{}),
 		dopts:  defaultDialOptions(),
 		czData: new(channelzData),
@@ -190,8 +194,11 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	// Register ClientConn with channelz.
 	cc.channelzRegistration(target)
 
+<<<<<<< HEAD
 	cc.csMgr = newConnectivityStateManager(cc.ctx, cc.channelzID)
 
+=======
+>>>>>>> origin/release-2.9
 	if err := cc.validateTransportCredentials(); err != nil {
 		return nil, err
 	}
@@ -267,7 +274,11 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	// Configure idleness support with configured idle timeout or default idle
 	// timeout duration. Idleness can be explicitly disabled by the user, by
 	// setting the dial option to 0.
+<<<<<<< HEAD
 	cc.idlenessMgr = idle.NewManager(idle.ManagerOptions{Enforcer: (*idler)(cc), Timeout: cc.dopts.idleTimeout, Logger: logger})
+=======
+	cc.idlenessMgr = newIdlenessManager(cc, cc.dopts.idleTimeout)
+>>>>>>> origin/release-2.9
 
 	// Return early for non-blocking dials.
 	if !cc.dopts.block {
@@ -318,6 +329,7 @@ func (cc *ClientConn) addTraceEvent(msg string) {
 	channelz.AddTraceEvent(logger, cc.channelzID, 0, ted)
 }
 
+<<<<<<< HEAD
 type idler ClientConn
 
 func (i *idler) EnterIdleMode() error {
@@ -328,6 +340,8 @@ func (i *idler) ExitIdleMode() error {
 	return (*ClientConn)(i).exitIdleMode()
 }
 
+=======
+>>>>>>> origin/release-2.9
 // exitIdleMode moves the channel out of idle mode by recreating the name
 // resolver and load balancer.
 func (cc *ClientConn) exitIdleMode() error {
@@ -338,7 +352,11 @@ func (cc *ClientConn) exitIdleMode() error {
 	}
 	if cc.idlenessState != ccIdlenessStateIdle {
 		cc.mu.Unlock()
+<<<<<<< HEAD
 		channelz.Infof(logger, cc.channelzID, "ClientConn asked to exit idle mode, current mode is %v", cc.idlenessState)
+=======
+		logger.Info("ClientConn asked to exit idle mode when not in idle mode")
+>>>>>>> origin/release-2.9
 		return nil
 	}
 
@@ -361,7 +379,11 @@ func (cc *ClientConn) exitIdleMode() error {
 	cc.idlenessState = ccIdlenessStateExitingIdle
 	exitedIdle := false
 	if cc.blockingpicker == nil {
+<<<<<<< HEAD
 		cc.blockingpicker = newPickerWrapper(cc.dopts.copts.StatsHandlers)
+=======
+		cc.blockingpicker = newPickerWrapper()
+>>>>>>> origin/release-2.9
 	} else {
 		cc.blockingpicker.exitIdleMode()
 		exitedIdle = true
@@ -409,8 +431,12 @@ func (cc *ClientConn) enterIdleMode() error {
 		return ErrClientConnClosing
 	}
 	if cc.idlenessState != ccIdlenessStateActive {
+<<<<<<< HEAD
 		channelz.Errorf(logger, cc.channelzID, "ClientConn asked to enter idle mode, current mode is %v", cc.idlenessState)
 		cc.mu.Unlock()
+=======
+		logger.Error("ClientConn asked to enter idle mode when not active")
+>>>>>>> origin/release-2.9
 		return nil
 	}
 
@@ -487,6 +513,10 @@ func (cc *ClientConn) validateTransportCredentials() error {
 func (cc *ClientConn) channelzRegistration(target string) {
 	cc.channelzID = channelz.RegisterChannel(&channelzChannel{cc}, cc.dopts.channelzParentID, target)
 	cc.addTraceEvent("created")
+<<<<<<< HEAD
+=======
+	cc.csMgr.channelzID = cc.channelzID
+>>>>>>> origin/release-2.9
 }
 
 // chainUnaryClientInterceptors chains all unary client interceptors into one.
@@ -650,7 +680,11 @@ type ClientConn struct {
 	channelzID      *channelz.Identifier // Channelz identifier for the channel.
 	resolverBuilder resolver.Builder     // See parseTargetAndFindResolver().
 	balancerWrapper *ccBalancerWrapper   // Uses gracefulswitch.balancer underneath.
+<<<<<<< HEAD
 	idlenessMgr     idle.Manager
+=======
+	idlenessMgr     idlenessManager
+>>>>>>> origin/release-2.9
 
 	// The following provide their own synchronization, and therefore don't
 	// require cc.mu to be held to access them.
@@ -696,6 +730,7 @@ const (
 	ccIdlenessStateExitingIdle
 )
 
+<<<<<<< HEAD
 func (s ccIdlenessState) String() string {
 	switch s {
 	case ccIdlenessStateActive:
@@ -709,6 +744,8 @@ func (s ccIdlenessState) String() string {
 	}
 }
 
+=======
+>>>>>>> origin/release-2.9
 // WaitForStateChange waits until the connectivity.State of ClientConn changes from sourceState or
 // ctx expires. A true value is returned in former case and false in latter.
 //
@@ -1054,9 +1091,14 @@ func equalAddresses(a, b []resolver.Address) bool {
 // connections or connection attempts.
 func (ac *addrConn) updateAddrs(addrs []resolver.Address) {
 	ac.mu.Lock()
+<<<<<<< HEAD
 	channelz.Infof(logger, ac.channelzID, "addrConn: updateAddrs curAddr: %v, addrs: %v", pretty.ToJSON(ac.curAddr), pretty.ToJSON(addrs))
 
 	addrs = copyAddressesWithoutBalancerAttributes(addrs)
+=======
+	channelz.Infof(logger, ac.channelzID, "addrConn: updateAddrs curAddr: %v, addrs: %v", ac.curAddr, addrs)
+
+>>>>>>> origin/release-2.9
 	if equalAddresses(ac.addrs, addrs) {
 		ac.mu.Unlock()
 		return
@@ -1091,8 +1133,13 @@ func (ac *addrConn) updateAddrs(addrs []resolver.Address) {
 	ac.cancel()
 	ac.ctx, ac.cancel = context.WithCancel(ac.cc.ctx)
 
+<<<<<<< HEAD
 	// We have to defer here because GracefulClose => onClose, which requires
 	// locking ac.mu.
+=======
+	// We have to defer here because GracefulClose => Close => onClose, which
+	// requires locking ac.mu.
+>>>>>>> origin/release-2.9
 	if ac.transport != nil {
 		defer ac.transport.GracefulClose()
 		ac.transport = nil
@@ -1279,7 +1326,11 @@ func (cc *ClientConn) Close() error {
 		rWrapper.close()
 	}
 	if idlenessMgr != nil {
+<<<<<<< HEAD
 		idlenessMgr.Close()
+=======
+		idlenessMgr.close()
+>>>>>>> origin/release-2.9
 	}
 
 	for ac := range conns {
@@ -1389,6 +1440,7 @@ func (ac *addrConn) resetTransport() {
 
 	if err := ac.tryAllAddrs(acCtx, addrs, connectDeadline); err != nil {
 		ac.cc.resolveNow(resolver.ResolveNowOptions{})
+<<<<<<< HEAD
 		ac.mu.Lock()
 		if acCtx.Err() != nil {
 			// addrConn was torn down.
@@ -1397,6 +1449,14 @@ func (ac *addrConn) resetTransport() {
 		}
 		// After exhausting all addresses, the addrConn enters
 		// TRANSIENT_FAILURE.
+=======
+		// After exhausting all addresses, the addrConn enters
+		// TRANSIENT_FAILURE.
+		if acCtx.Err() != nil {
+			return
+		}
+		ac.mu.Lock()
+>>>>>>> origin/release-2.9
 		ac.updateConnectivityState(connectivity.TransientFailure, err)
 
 		// Backoff.
@@ -1992,11 +2052,15 @@ func (cc *ClientConn) determineAuthority() error {
 		// the channel authority given the user's dial target. For resolvers
 		// which don't implement this interface, we will use the endpoint from
 		// "scheme://authority/endpoint" as the default authority.
+<<<<<<< HEAD
 		// Escape the endpoint to handle use cases where the endpoint
 		// might not be a valid authority by default.
 		// For example an endpoint which has multiple paths like
 		// 'a/b/c', which is not a valid authority by default.
 		cc.authority = encodeAuthority(endpoint)
+=======
+		cc.authority = endpoint
+>>>>>>> origin/release-2.9
 	}
 	channelz.Infof(logger, cc.channelzID, "Channel authority set to %q", cc.authority)
 	return nil

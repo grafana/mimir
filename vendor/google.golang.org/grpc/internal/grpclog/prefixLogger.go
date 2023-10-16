@@ -62,7 +62,11 @@ func (pl *PrefixLogger) Errorf(format string, args ...any) {
 }
 
 // Debugf does info logging at verbose level 2.
+<<<<<<< HEAD
 func (pl *PrefixLogger) Debugf(format string, args ...any) {
+=======
+func (pl *PrefixLogger) Debugf(format string, args ...interface{}) {
+>>>>>>> origin/release-2.9
 	// TODO(6044): Refactor interfaces LoggerV2 and DepthLogger, and maybe
 	// rewrite PrefixLogger a little to ensure that we don't use the global
 	// `Logger` here, and instead use the `logger` field.
