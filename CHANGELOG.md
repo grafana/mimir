@@ -40,12 +40,14 @@
 * [ENHANCEMENT] Store-gateway: return same detailed error messages as queriers when chunks or series limits are reached. #6347
 * [ENHANCEMENT] Querier: reduce memory consumed for queries that hit store-gateways. #6348
 * [ENHANCEMENT] Ruler: include corresponding trace ID with log messages associated with rule evaluation. #6379
+* [ENHANCEMENT] Querier: clarify log messages and span events emitted while querying ingesters, and include both ingester name and address when relevant. #6381
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
 * [BUGFIX] Ensure correct nesting of children of the `querier.Select` tracing span. #6085
 * [BUGFIX] Packaging: fix preremove script preventing upgrades on RHEL based OS. #6067
 * [BUGFIX] Querier: return actual error rather than `attempted to read series at index XXX from stream, but the stream has already been exhausted` (or even no error at all) when streaming chunks from ingesters or store-gateways is enabled and an error occurs while streaming chunks. #6346
+* [BUGFIX] Querier: reduce log volume when querying ingesters with zone-awareness enabled and one or more instances in a single zone unavailable. #6381
 
 ### Mixin
 
