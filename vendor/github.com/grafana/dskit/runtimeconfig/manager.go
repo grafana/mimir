@@ -68,7 +68,7 @@ func New(cfg Config, configName string, registerer prometheus.Registerer, logger
 		return nil, errors.New("LoadPath is empty")
 	}
 
-	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"config_name": configName}, registerer)
+	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"config": configName}, registerer)
 
 	mgr := Manager{
 		cfg: cfg,
