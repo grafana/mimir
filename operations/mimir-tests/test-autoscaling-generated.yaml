@@ -2075,7 +2075,7 @@ spec:
           )[15m:]
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "2000"
+      threshold: "1500"
     type: prometheus
   - metadata:
       metricName: query_frontend_memory_hpa_default
