@@ -278,12 +278,12 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A timed out push should fail": {
-			numIngesters:      3,
-			happyIngesters:    3,
-			samples:           samplesIn{num: 10, startTimestampMs: 123456789000},
-			timeOut:           true,
-			expectedGRPCError: status.New(codes.DeadlineExceeded, "exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
-			metricNames:       []string{lastSeenTimestamp},
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
+			timeOut:        true,
+			expectedError:  errors.New("exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
+			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -315,9 +315,6 @@ func TestDistributor_Push(t *testing.T) {
 				assert.Nil(t, response)
 
 				if tc.expectedGRPCError == nil {
-					// Assert that downstream gRPC statuses are passed back upstream
-					_, ok := httpgrpc.HTTPResponseFromError(err)
-					assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 					assert.EqualError(t, err, tc.expectedError.Error())
 				} else {
 					checkGRPCError(t, tc.expectedGRPCError, tc.expectedErrorDetails, err)
@@ -4840,13 +4837,13 @@ func TestHandlePushError(t *testing.T) {
 		expectedGRPCError  *status.Status
 		expectedOtherError error
 	}{
-		"a context.Canceled error gives a gRPC Canceled error": {
+		"a context.Canceled error gives context.Canceled": {
 			pushError:          context.Canceled,
 			expectedOtherError: context.Canceled,
 		},
-		"a context.DeadlineExceeded error gives a gRPC DeadlineExceeded error": {
-			pushError:         context.DeadlineExceeded,
-			expectedGRPCError: status.New(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+		"a context.DeadlineExceeded error gives context.DeadlineExceeded": {
+			pushError:          context.DeadlineExceeded,
+			expectedOtherError: context.DeadlineExceeded,
 		},
 		"a 4xx HTTP gRPC error gives the same 4xx HTTP gRPC error": {
 			pushError:          httpGrpc4xxErr,
@@ -4859,6 +4856,10 @@ func TestHandlePushError(t *testing.T) {
 		"a random ingester error without status gives an Internal gRPC error": {
 			pushError:         errWithUserID,
 			expectedGRPCError: status.New(codes.Internal, errWithUserID.Error()),
+		},
+		"a random ingester gRPC error gives the same gRPC errpr": {
+			pushError:         status.Error(codes.Unavailable, testErrorMsg),
+			expectedGRPCError: status.New(codes.Unavailable, testErrorMsg),
 		},
 	}
 
