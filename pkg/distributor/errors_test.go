@@ -64,7 +64,7 @@ func TestNewValidationError(t *testing.T) {
 	err := newValidationError(firstErr)
 	assert.Error(t, err)
 	assert.EqualError(t, err, validationMsg)
-	checkDistributorError(t, err, mimirpb.VALIDATION)
+	checkDistributorError(t, err, mimirpb.BAD_DATA)
 
 	anotherErr := newValidationError(errors.New("this is another validation error"))
 	assert.NotErrorIs(t, err, anotherErr)
@@ -75,7 +75,7 @@ func TestNewValidationError(t *testing.T) {
 	wrappedErr := fmt.Errorf("wrapped %w", err)
 	assert.ErrorIs(t, wrappedErr, err)
 	assert.True(t, errors.As(wrappedErr, &validationError{}))
-	checkDistributorError(t, wrappedErr, mimirpb.VALIDATION)
+	checkDistributorError(t, wrappedErr, mimirpb.BAD_DATA)
 }
 
 func TestNewIngestionRateError(t *testing.T) {
@@ -180,14 +180,14 @@ func TestToGRPCError(t *testing.T) {
 			err:                  newValidationError(originalErr),
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     originalMsg,
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION},
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		{
 			name:                 "a DoNotLogError of a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause",
 			err:                  log.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     originalMsg,
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION},
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		{
 			name:                 "an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause",

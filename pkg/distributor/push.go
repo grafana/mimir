@@ -156,7 +156,7 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	var distributorErr distributorError
 	if errors.As(pushErr, &distributorErr) {
 		switch distributorErr.errorCause() {
-		case mimirpb.VALIDATION:
+		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
 		case mimirpb.INGESTION_RATE_LIMITED:
 			// Return a 429 here to tell the client it is going too fast.

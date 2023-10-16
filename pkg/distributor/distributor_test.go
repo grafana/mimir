@@ -879,7 +879,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "instance1234567890123456789012345678901234567890", formatLabelSet(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION},
+			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1386,7 +1386,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION}
+	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -4069,7 +4069,7 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
-	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.VALIDATION}
+	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA}
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata

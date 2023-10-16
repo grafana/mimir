@@ -100,7 +100,7 @@ func newValidationError(err error) validationError {
 }
 
 func (e validationError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.VALIDATION
+	return mimirpb.BAD_DATA
 }
 
 var _ distributorError = validationError{}
@@ -163,7 +163,7 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	if errors.As(pushErr, &distributorErr) {
 		errDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
 		switch distributorErr.errorCause() {
-		case mimirpb.VALIDATION:
+		case mimirpb.BAD_DATA:
 			errCode = codes.FailedPrecondition
 		case mimirpb.INGESTION_RATE_LIMITED:
 			errCode = codes.ResourceExhausted
