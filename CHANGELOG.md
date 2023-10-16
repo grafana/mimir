@@ -39,6 +39,7 @@
 * [ENHANCEMENT] Query-frontend: add `instance_enable_ipv6` to support IPv6. #6111
 * [ENHANCEMENT] Store-gateway: return same detailed error messages as queriers when chunks or series limits are reached. #6347
 * [ENHANCEMENT] Querier: reduce memory consumed for queries that hit store-gateways. #6348
+* [ENHANCEMENT] Ruler: include corresponding trace ID with log messages associated with rule evaluation. #6379
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085

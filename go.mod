@@ -251,7 +251,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231012014731-f477e1b21cfd
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231015230334-e224fcb16275
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
