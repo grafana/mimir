@@ -107,7 +107,7 @@ func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, by
 		bypassWithSingleID: bypassWithSingleID,
 		maxConcurrency:     maxConcurrency,
 		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_querier_federation_sample_tenants_queried",
+			Name:    "cortex_querier_federation_tenants_queried",
 			Help:    "Number of tenants queried for a single standard query.",
 			Buckets: []float64{1, 2, 4, 8, 16, 32},
 		}),

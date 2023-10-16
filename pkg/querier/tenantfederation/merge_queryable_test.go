@@ -409,31 +409,31 @@ var (
 	}
 
 	expectSingleTenantsMetrics = `
-# HELP cortex_querier_federation_sample_tenants_queried Number of tenants queried for a single standard query.
-# TYPE cortex_querier_federation_sample_tenants_queried histogram
-cortex_querier_federation_sample_tenants_queried_bucket{le="1"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="2"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="4"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="8"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="16"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="32"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="+Inf"} 1
-cortex_querier_federation_sample_tenants_queried_sum 1
-cortex_querier_federation_sample_tenants_queried_count 1
+# HELP cortex_querier_federation_tenants_queried Number of tenants queried for a single standard query.
+# TYPE cortex_querier_federation_tenants_queried histogram
+cortex_querier_federation_tenants_queried_bucket{le="1"} 1
+cortex_querier_federation_tenants_queried_bucket{le="2"} 1
+cortex_querier_federation_tenants_queried_bucket{le="4"} 1
+cortex_querier_federation_tenants_queried_bucket{le="8"} 1
+cortex_querier_federation_tenants_queried_bucket{le="16"} 1
+cortex_querier_federation_tenants_queried_bucket{le="32"} 1
+cortex_querier_federation_tenants_queried_bucket{le="+Inf"} 1
+cortex_querier_federation_tenants_queried_sum 1
+cortex_querier_federation_tenants_queried_count 1
 `
 
 	expectThreeTenantsMetrics = `
-# HELP cortex_querier_federation_sample_tenants_queried Number of tenants queried for a single standard query.
-# TYPE cortex_querier_federation_sample_tenants_queried histogram
-cortex_querier_federation_sample_tenants_queried_bucket{le="1"} 0
-cortex_querier_federation_sample_tenants_queried_bucket{le="2"} 0
-cortex_querier_federation_sample_tenants_queried_bucket{le="4"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="8"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="16"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="32"} 1
-cortex_querier_federation_sample_tenants_queried_bucket{le="+Inf"} 1
-cortex_querier_federation_sample_tenants_queried_sum 3
-cortex_querier_federation_sample_tenants_queried_count 1
+# HELP cortex_querier_federation_tenants_queried Number of tenants queried for a single standard query.
+# TYPE cortex_querier_federation_tenants_queried histogram
+cortex_querier_federation_tenants_queried_bucket{le="1"} 0
+cortex_querier_federation_tenants_queried_bucket{le="2"} 0
+cortex_querier_federation_tenants_queried_bucket{le="4"} 1
+cortex_querier_federation_tenants_queried_bucket{le="8"} 1
+cortex_querier_federation_tenants_queried_bucket{le="16"} 1
+cortex_querier_federation_tenants_queried_bucket{le="32"} 1
+cortex_querier_federation_tenants_queried_bucket{le="+Inf"} 1
+cortex_querier_federation_tenants_queried_sum 3
+cortex_querier_federation_tenants_queried_count 1
 `
 )
 
