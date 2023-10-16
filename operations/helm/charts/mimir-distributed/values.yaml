@@ -47,7 +47,7 @@ global:
   # -- Definitions to set up nginx resolver
   dnsService: kube-dns
   dnsNamespace: kube-system
-  clusterDomain: cluster.local
+  clusterDomain: cluster.local.
 
   # -- Common environment variables to add to all pods directly managed by this chart.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
