@@ -360,7 +360,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		),
 	)
 
-	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, registerer, util_log.Logger)
+	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, "mimir_runtime-config", registerer, util_log.Logger)
 	if err == nil {
 		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
 		// anything in the start/stopping phase. Thus we can create it as part of runtime config
