@@ -118,6 +118,10 @@ func (q *TreeQueue) dequeue() ([]string, any) {
 	return append(QueuePath{q.name}, childPath...), v
 }
 
+func (q *TreeQueue) isEmpty() bool {
+	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
+}
+
 func (q *TreeQueue) wrapIndex(increment bool) {
 	if increment {
 		q.index++
