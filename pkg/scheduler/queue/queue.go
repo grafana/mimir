@@ -23,6 +23,7 @@ const (
 )
 
 var (
+	ErrInvalidTenantID     = errors.New("invalid tenant id")
 	ErrTooManyRequests     = errors.New("too many outstanding requests")
 	ErrStopped             = errors.New("queue is stopped")
 	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
@@ -211,18 +212,13 @@ func (q *RequestQueue) dispatcherLoop() {
 }
 
 func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqueue) error {
-	queue := broker.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
-	if queue == nil {
-		// This can only happen if tenantID is "".
-		return errors.New("no queue found")
-	}
-
-	if queue.Len()+1 > broker.maxUserQueueSize {
+	var err error
+	err = broker.enqueueRequest(r)
+	if errors.Is(err, ErrTooManyRequests) {
 		q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
-		return ErrTooManyRequests
+		return err
 	}
 
-	queue.PushBack(r.req)
 	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
 
 	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
@@ -230,7 +226,7 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqu
 		r.successFn()
 	}
 
-	return nil
+	return err
 }
 
 // tryDispatchRequest finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
