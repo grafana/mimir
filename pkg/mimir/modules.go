@@ -471,8 +471,8 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
 		const bypassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger))
-		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger)
 		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 	}
 	return nil, nil
@@ -783,7 +783,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			// This makes this label more consistent and hopefully less confusing to users.
 			const bypassForSingleQuerier = false
 
-			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
+			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger)
 
 			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
