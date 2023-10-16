@@ -25,7 +25,7 @@ check_required_setup() {
   fi
 }
 
-# Last release is the version we want to release now
+# Last release is the version we want to release now.
 find_last_release() {
   LAST_RELEASE_TAG=$(git describe --abbrev=0 --match 'mimir-[0-9]*')
 
@@ -43,8 +43,8 @@ find_last_release() {
 }
 
 # Previous release is one version before last release.
-# If last release is an rc we will find any previous release.
-# If last release is a stable (non-rc) release, previous release also must be a non-rc release.
+# If last release is an rc, previous release can be any rc or non-rc.
+# If last release is a stable (non-rc) release, previous release must be a non-rc release.
 find_prev_release() {
   find_last_release
 
