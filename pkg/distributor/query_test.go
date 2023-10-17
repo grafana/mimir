@@ -96,7 +96,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 								require.Len(t, queryRes.Chunkseries, initialSeries)
 							}
 
-							firstRequestIngesterQueryCount := callCount(ingesters, "QueryStream")
+							firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
 
 							if minimizeIngesterRequests {
 								require.Equal(t, 2, firstRequestIngesterQueryCount, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
@@ -124,7 +124,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 							require.ErrorContains(t, err, testCase.expectedError)
 
 							if minimizeIngesterRequests {
-								secondRequestIngesterQueryCallCount := callCount(ingesters, "QueryStream") - firstRequestIngesterQueryCount
+								secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
 								require.Equal(t, 2, secondRequestIngesterQueryCallCount, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
 							}
 						})
@@ -173,7 +173,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			require.NoError(t, err)
 			assert.Len(t, queryRes.Chunkseries, initialSeries)
 
-			firstRequestIngesterQueryCount := callCount(ingesters, "QueryStream")
+			firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
 
 			if minimizeIngesterRequests {
 				require.Equal(t, 2, firstRequestIngesterQueryCount, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
@@ -199,7 +199,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			assert.ErrorContains(t, err, "the query exceeded the maximum number of series")
 
 			if minimizeIngesterRequests {
-				secondRequestIngesterQueryCallCount := callCount(ingesters, "QueryStream") - firstRequestIngesterQueryCount
+				secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
 				require.Equal(t, 2, secondRequestIngesterQueryCallCount, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
 			}
 		})
