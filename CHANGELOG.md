@@ -12,7 +12,7 @@
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
-* [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes:
+* [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
 * * `replicasDidNotMatchError` is mapped to `codes.AlreadyExists` instead of `http.StatusAccepted` (202).
 * * `tooManyClustersError` and `validationError` are mapped to `codes.FailedPrecondition` instead of `http.BadRequest` (400).
 * * `ingestionRateLimitedError` is mapped to `codes.ResourceExhausted` instead of `http.StatusTooManyRequests` (429).
