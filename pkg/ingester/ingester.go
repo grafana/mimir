@@ -383,6 +383,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		i.lifecycler,
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled,
+		NewLimiterMetrics(registerer),
 	)
 
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
@@ -2948,6 +2949,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
+	i.limiter.deletePerUserMetrics(userID)
 
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {
