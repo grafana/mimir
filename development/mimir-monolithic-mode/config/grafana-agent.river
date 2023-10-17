@@ -12,6 +12,8 @@ prometheus.scrape "mimir" {
 
   scrape_interval = "5s"
   scrape_timeout = "4s"
+  enable_protobuf_negotiation = true
+  scrape_classic_histograms = true
 }
 
 prometheus.relabel "mimir" {
