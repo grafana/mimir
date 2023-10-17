@@ -4930,8 +4930,8 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 func callCount(ingesters []mockIngester, call string) int {
 	count := 0
 
-	for _, ingester := range ingesters {
-		count += ingester.calls[call]
+	for i := range ingesters {
+		count += ingesters[i].calls[call]
 	}
 
 	return count
