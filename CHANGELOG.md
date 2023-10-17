@@ -49,6 +49,7 @@
 * [BUGFIX] Packaging: fix preremove script preventing upgrades on RHEL based OS. #6067
 * [BUGFIX] Querier: return actual error rather than `attempted to read series at index XXX from stream, but the stream has already been exhausted` (or even no error at all) when streaming chunks from ingesters or store-gateways is enabled and an error occurs while streaming chunks. #6346
 * [BUGFIX] Querier: reduce log volume when querying ingesters with zone-awareness enabled and one or more instances in a single zone unavailable. #6381
+* [BUGFIX] Querier: don't try to query further ingesters if ingester query request minimization is enabled and a query limit is reached as a result of the responses from the initial set of ingesters. #6402
 
 ### Mixin
 
