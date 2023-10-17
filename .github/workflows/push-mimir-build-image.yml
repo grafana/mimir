@@ -15,7 +15,8 @@ jobs:
   build_and_push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # Allow pushing to the GitHub repo for collaborators, forks should remain read-only
+      contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
     steps:
@@ -107,7 +108,7 @@ jobs:
             git config --global user.name "${{ github.event.pull_request.user.login }}"
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
-            git push
+            git push origin HEAD
           fi 
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
