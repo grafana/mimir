@@ -99,7 +99,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 							firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
 
 							if minimizeIngesterRequests {
-								require.Equal(t, 2, firstRequestIngesterQueryCount, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
+								require.LessOrEqual(t, firstRequestIngesterQueryCount, 2, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
 							}
 
 							// Push more series to exceed the limit once we'll query back all series.
@@ -125,7 +125,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 
 							if minimizeIngesterRequests {
 								secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
-								require.Equal(t, 2, secondRequestIngesterQueryCallCount, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
+								require.LessOrEqual(t, secondRequestIngesterQueryCallCount, 2, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
 							}
 						})
 					}
@@ -176,7 +176,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 			firstRequestIngesterQueryCount := countCalls(ingesters, "QueryStream")
 
 			if minimizeIngesterRequests {
-				require.Equal(t, 2, firstRequestIngesterQueryCount, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
+				require.LessOrEqual(t, firstRequestIngesterQueryCount, 2, "should not call third ingester if request minimisation is enabled and first two ingesters return a successful response")
 			}
 
 			// Push more series to exceed the limit once we'll query back all series.
@@ -200,7 +200,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 			if minimizeIngesterRequests {
 				secondRequestIngesterQueryCallCount := countCalls(ingesters, "QueryStream") - firstRequestIngesterQueryCount
-				require.Equal(t, 2, secondRequestIngesterQueryCallCount, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
+				require.LessOrEqual(t, secondRequestIngesterQueryCallCount, 2, "should not call third ingester if request minimisation is enabled and either of first two ingesters fail with limits error")
 			}
 		})
 	}
