@@ -65,6 +65,7 @@ func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.REPLICAS_DID_NOT_MATCH
 }
 
+// Ensure that replicasDidNotMatchError implements distributorError.
 var _ distributorError = replicasDidNotMatchError{}
 
 // tooManyClustersError is an error stating that there are too many HA clusters.
@@ -87,6 +88,7 @@ func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.TOO_MANY_CLUSTERS
 }
 
+// Ensure that tooManyClustersError implements distributorError.
 var _ distributorError = tooManyClustersError{}
 
 // validationError is an error, used to represent all validation errors from the validation package.
@@ -103,6 +105,7 @@ func (e validationError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
+// Ensure that validationError implements distributorError.
 var _ distributorError = validationError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
@@ -127,6 +130,7 @@ func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.INGESTION_RATE_LIMITED
 }
 
+// Ensure that ingestionRateLimitedError implements distributorError.
 var _ distributorError = ingestionRateLimitedError{}
 
 // requestRateLimitedError is an error used to represent the request rate limited error.
@@ -151,6 +155,7 @@ func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.REQUEST_RATE_LIMITED
 }
 
+// Ensure that requestRateLimitedError implements distributorError.
 var _ distributorError = requestRateLimitedError{}
 
 // toGRPCError converts the given error into an appropriate gRPC error.
