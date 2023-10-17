@@ -102,6 +102,13 @@ const (
 	Backend string = "backend"
 )
 
+var (
+	// Both queriers and rulers create their own instances of Queryables and federated Queryables,
+	// so we need to make sure the series registered by the individual queryables are unique.
+	querierEngine = prometheus.Labels{"engine": "querier"}
+	rulerEngine   = prometheus.Labels{"engine": "ruler"}
+)
+
 func newDefaultConfig() *Config {
 	defaultConfig := &Config{}
 	defaultFS := flag.NewFlagSet("", flag.PanicOnError)
@@ -448,11 +455,11 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 // initQueryable instantiates the queryable and promQL engine used to service queries to
 // Mimir. It also registers the API endpoints associated with those two services.
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
-	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
+	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, querierRegisterer, util_log.Logger, t.ActivityTracker,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, registerer, util_log.Logger, t.ActivityTracker,
 	)
 
 	// Use the distributor to return metric metadata by default
@@ -471,8 +478,14 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
 		const bypassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger))
-		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger)
+
+		// Make sure we use the "engine" label for queryables we create here just
+		// like the non-federated queryables above. This differentiates between querier
+		// and ruler metrics and prevents duplicate registration.
+		registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
+
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, registerer, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, registerer, util_log.Logger)
 		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, t.Cfg.TenantFederation.MaxConcurrent, util_log.Logger)
 	}
 	return nil, nil
@@ -769,7 +782,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		var queryable, federatedQueryable prom_storage.Queryable
 
 		// TODO: Consider wrapping logger to differentiate from querier module logger
-		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, t.Registerer)
+		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
 		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryable, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
@@ -783,7 +796,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 			// This makes this label more consistent and hopefully less confusing to users.
 			const bypassForSingleQuerier = false
 
-			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, t.Registerer, util_log.Logger)
+			federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, t.Cfg.TenantFederation.MaxConcurrent, rulerRegisterer, util_log.Logger)
 
 			regularQueryFunc := rules.EngineQueryFunc(eng, queryable)
 			federatedQueryFunc := rules.EngineQueryFunc(eng, federatedQueryable)
