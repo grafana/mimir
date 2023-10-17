@@ -199,9 +199,11 @@
   local memoryHPAQuery = |||
     max_over_time(
       sum(
-        sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
-        and
-        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+        (
+          sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+          and
+          max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+        ) or vector(0)
       )[15m:]
     )
     +
