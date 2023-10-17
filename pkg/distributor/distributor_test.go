@@ -3021,6 +3021,7 @@ type prepConfig struct {
 	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	preferStreamingChunks              bool
+	minimizeIngesterRequests           bool
 
 	timeOut bool
 }
@@ -3133,6 +3134,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 		distributorCfg.PreferStreamingChunksFromIngesters = cfg.preferStreamingChunks
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
+		distributorCfg.MinimizeIngesterRequests = cfg.minimizeIngesterRequests
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
 
@@ -4923,4 +4925,14 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 		require.True(t, ok)
 		require.Equal(t, expectedDetails, errorDetails)
 	}
+}
+
+func callCount(ingesters []mockIngester, call string) int {
+	count := 0
+
+	for _, ingester := range ingesters {
+		count += ingester.calls[call]
+	}
+
+	return count
 }
