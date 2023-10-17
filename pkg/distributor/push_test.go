@@ -798,7 +798,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 }
 
-func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
+func TestHandler_ToHTTPStatus(t *testing.T) {
 	userID := "user"
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
@@ -819,13 +819,25 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
-			name:               "a DoNotLog error gets translated into a HTTP 500",
+			name:               "a DoNotLog of a generic error gets translated into a HTTP 500",
 			err:                log.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
 		{
+			name:               "a context.DeadlineExceeded gets translated into a HTTP 500",
+			err:                context.DeadlineExceeded,
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   context.DeadlineExceeded.Error(),
+		},
+		{
 			name:               "a replicasDidNotMatchError gets translated into an HTTP 202",
 			err:                replicasNotMatchErr,
+			expectedHTTPStatus: http.StatusAccepted,
+			expectedErrorMsg:   replicasNotMatchErr.Error(),
+		},
+		{
+			name:               "a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202",
+			err:                log.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
@@ -836,13 +848,30 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		{
+			name:               "a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400",
+			err:                log.DoNotLogError{Err: tooManyClustersErr},
+			expectedHTTPStatus: http.StatusBadRequest,
+			expectedErrorMsg:   tooManyClustersErr.Error(),
+		},
+		{
 			name:               "a validationError gets translated into an HTTP 400",
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
 		{
+			name:               "a DoNotLogError of a validationError gets translated into an HTTP 400",
+			err:                log.DoNotLogError{Err: newValidationError(originalErr)},
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		{
 			name:               "an ingestionRateLimitedError gets translated into an HTTP 429",
 			err:                ingestionRateLimitedErr,
+			expectedHTTPStatus: http.StatusTooManyRequests,
+			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
+		},
+		{
+			name:               "a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429",
+			err:                log.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
@@ -854,8 +883,22 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		{
+			name:                        "a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
+			serviceOverloadErrorEnabled: true,
+			expectedHTTPStatus:          StatusServiceOverloaded,
+			expectedErrorMsg:            requestRateLimitedErr.Error(),
+		},
+		{
 			name:                        "a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
 			err:                         requestRateLimitedErr,
+			serviceOverloadErrorEnabled: false,
+			expectedHTTPStatus:          http.StatusTooManyRequests,
+			expectedErrorMsg:            requestRateLimitedErr.Error(),
+		},
+		{
+			name:                        "a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
@@ -876,7 +919,7 @@ func TestHandler_DistributorPushErrorHTTPStatus(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		status := distributorPushErrorHTTPStatus(ctx, tc.err, limits)
+		status := toHTTPStatus(ctx, tc.err, limits)
 		msg := tc.err.Error()
 		assert.Equal(t, tc.expectedHTTPStatus, status)
 		expectedErrMsg := tc.expectedErrorMsg

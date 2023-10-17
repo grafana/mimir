@@ -34,6 +34,19 @@ message WriteRequest {
 
 message WriteResponse {}
 
+enum ErrorCause {
+  INVALID = 0;
+  REPLICAS_DID_NOT_MATCH = 1;
+  TOO_MANY_CLUSTERS = 2;
+  BAD_DATA = 3;
+  INGESTION_RATE_LIMITED = 4;
+  REQUEST_RATE_LIMITED = 5;
+}
+
+message WriteErrorDetails {
+  ErrorCause Cause = 1;
+}
+
 message TimeSeries {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   // Sorted by time, oldest sample first.

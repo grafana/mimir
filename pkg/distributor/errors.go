@@ -3,15 +3,21 @@
 package distributor
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/gogo/status"
+	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded = 529
+	StatusServiceOverloaded     = 529
+	deadlineExceededWrapMessage = "exceeded configured distributor remote timeout"
 )
 
 var (
@@ -33,6 +39,11 @@ var (
 	)
 )
 
+// distributorError is a marker interface for the errors returned by distributor.
+type distributorError interface {
+	errorCause() mimirpb.ErrorCause
+}
+
 // replicasDidNotMatchError is an error stating that replicas do not match.
 type replicasDidNotMatchError struct {
 	replica, elected string
@@ -50,6 +61,13 @@ func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
+func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.REPLICAS_DID_NOT_MATCH
+}
+
+// Ensure that replicasDidNotMatchError implements distributorError.
+var _ distributorError = replicasDidNotMatchError{}
+
 // tooManyClustersError is an error stating that there are too many HA clusters.
 type tooManyClustersError struct {
 	limit int
@@ -66,6 +84,13 @@ func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
+func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.TOO_MANY_CLUSTERS
+}
+
+// Ensure that tooManyClustersError implements distributorError.
+var _ distributorError = tooManyClustersError{}
+
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
 	error
@@ -75,6 +100,13 @@ type validationError struct {
 func newValidationError(err error) validationError {
 	return validationError{error: err}
 }
+
+func (e validationError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
+}
+
+// Ensure that validationError implements distributorError.
+var _ distributorError = validationError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -94,6 +126,13 @@ func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
+func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.INGESTION_RATE_LIMITED
+}
+
+// Ensure that ingestionRateLimitedError implements distributorError.
+var _ distributorError = ingestionRateLimitedError{}
+
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
 	limit float64
@@ -110,4 +149,47 @@ func newRequestRateLimitedError(limit float64, burst int) requestRateLimitedErro
 
 func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
+}
+
+func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.REQUEST_RATE_LIMITED
+}
+
+// Ensure that requestRateLimitedError implements distributorError.
+var _ distributorError = requestRateLimitedError{}
+
+// toGRPCError converts the given error into an appropriate gRPC error.
+func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
+	var (
+		distributorErr distributorError
+		errDetails     *mimirpb.WriteErrorDetails
+		errCode        = codes.Internal
+	)
+	if errors.As(pushErr, &distributorErr) {
+		errDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+		switch distributorErr.errorCause() {
+		case mimirpb.BAD_DATA:
+			errCode = codes.FailedPrecondition
+		case mimirpb.INGESTION_RATE_LIMITED:
+			errCode = codes.ResourceExhausted
+		case mimirpb.REQUEST_RATE_LIMITED:
+			if serviceOverloadErrorEnabled {
+				errCode = codes.Unavailable
+			} else {
+				errCode = codes.ResourceExhausted
+			}
+		case mimirpb.REPLICAS_DID_NOT_MATCH:
+			errCode = codes.AlreadyExists
+		case mimirpb.TOO_MANY_CLUSTERS:
+			errCode = codes.FailedPrecondition
+		}
+	}
+	stat := status.New(errCode, pushErr.Error())
+	if errDetails != nil {
+		statWithDetails, err := stat.WithDetails(errDetails)
+		if err == nil {
+			return statWithDetails.Err()
+		}
+	}
+	return stat.Err()
 }
