@@ -93,8 +93,20 @@ jobs:
           echo "Building and Pushing Docker Image"
           make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
       
+      - name: Compare built tag with Makefile
+        id: compare_tag
+        run: |
+          echo "Comparing built tag with Makefile"
+          if [ ${{ steps.compute_hash.outputs.tag }} == "$(make print-build-image)" ]; then
+            echo "Built tag is the same as the one in Makefile"
+            echo "isDifferent=false" >> $GITHUB_OUTPUT
+          else
+            echo "Built tag is different from the one in Makefile"
+            echo "isDifferent=true" >> $GITHUB_OUTPUT
+          fi
+      
       - name: Add commit to PR in order to update Build Image version
-        if: steps.check_build.outputs.build == 'true'
+        if: steps.compare_tag.outputs.isDifferent == 'true'
         run: |
           echo "Get current Build Image Version"
           echo "Current Build Image Version is $MAIN_TAG"
