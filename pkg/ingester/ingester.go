@@ -1674,19 +1674,20 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		if req.StreamingChunksBatchSize > 0 {
-			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
-		} else {
-			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
-		}
-		// For the time being, ignore context cancellation, while we investigate a problem with queries
+		// For the time being, pass an independent context, while we investigate a problem with queries
 		// getting canceled in ingesters. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
 		// queriers actually ignored context, so we are emulating that behavior.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		chunksCtx := context.Background()
+		if req.StreamingChunksBatchSize > 0 {
+			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
+			numSeries, numSamples, err = i.executeStreamingQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+		} else {
+			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
+			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
+		}
+
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			dumpContextError(ctx, err, start, deadline, deadlineSet, spanlog)
-			err = nil
 		}
 	} else {
 		level.Debug(spanlog).Log("msg", "using executeSamplesQuery")
