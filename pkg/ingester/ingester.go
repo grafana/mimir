@@ -1627,8 +1627,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
 
-	deadline, deadlineSet := ctx.Deadline()
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return err
@@ -1687,7 +1685,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		}
 
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			dumpContextError(ctx, err, start, deadline, deadlineSet, spanlog)
+			dumpContextError(ctx, err, start, spanlog)
 		}
 	} else {
 		level.Debug(spanlog).Log("msg", "using executeSamplesQuery")
@@ -1704,7 +1702,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 }
 
 // Dump context error for diagnosis.
-func dumpContextError(ctx context.Context, err error, start, deadline time.Time, deadlineSet bool, spanlog *spanlogger.SpanLogger) {
+func dumpContextError(ctx context.Context, err error, start time.Time, spanlog *spanlogger.SpanLogger) {
+	deadline, deadlineSet := ctx.Deadline()
 	var timeout string
 	if deadlineSet {
 		timeout = fmt.Sprintf("%.2f seconds", deadline.Sub(start).Seconds())
