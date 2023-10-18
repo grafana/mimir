@@ -3154,23 +3154,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	return nil, handledErr
 }
 
-func handlePushError(err error) error {
-	var ingesterErr ingesterError
-	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorType() {
-		case badData:
-			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
-		case unavailable:
-			return newErrorWithStatus(err, codes.Unavailable)
-		case instanceLimitReached:
-			return newErrorWithStatus(util_log.DoNotLogError{Err: err}, codes.Unavailable)
-		case tsdbUnavailable:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
-		}
-	}
-	return err
-}
-
 // pushMetadata returns number of ingested metadata.
 func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*mimirpb.MetricMetadata) int {
 	ingestedMetadata := 0

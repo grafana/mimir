@@ -8,6 +8,7 @@ package ingester
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gogo/status"
@@ -439,4 +440,21 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 	}
+}
+
+func handlePushError(err error) error {
+	var ingesterErr ingesterError
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorType() {
+		case badData:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case unavailable:
+			return newErrorWithStatus(err, codes.Unavailable)
+		case instanceLimitReached:
+			return newErrorWithStatus(log.DoNotLogError{Err: err}, codes.Unavailable)
+		case tsdbUnavailable:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
+	}
+	return err
 }
