@@ -255,7 +255,7 @@ func TestErrorWithStatus(t *testing.T) {
 	require.Equal(t, codes.Unavailable, st.Code())
 	require.Errorf(t, err, st.Message())
 
-	// Ensure httpgrpc's HTTPResponseFromError does not recognize errWithStatuserrWithStatus.
+	// Ensure httpgrpc's HTTPResponseFromError does not recognize errWithStatus.
 	resp, ok := httpgrpc.HTTPResponseFromError(errWithStatus)
 	require.False(t, ok)
 	require.Nil(t, resp)
@@ -266,7 +266,7 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
 	require.Error(t, errWithHTTPStatus)
-	// Ensure gogo's status.FromError recognizes errWithStatuserrWithHTTPStatus.
+	// Ensure gogo's status.FromError recognizes errWithHTTPStatus.
 	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
@@ -279,7 +279,7 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, int(st.Code()))
 	require.Errorf(t, err, st.Message())
 
-	// Ensure httpgrpc's HTTPResponseFromError recognizes errWithStatuserrWithHTTPStatus.
+	// Ensure httpgrpc's HTTPResponseFromError recognizes errWithHTTPStatus.
 	resp, ok := httpgrpc.HTTPResponseFromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, int32(http.StatusBadRequest), resp.Code)
