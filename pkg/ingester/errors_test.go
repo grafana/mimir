@@ -12,6 +12,7 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,12 +36,12 @@ func TestUnavailableError(t *testing.T) {
 	require.Error(t, err)
 	expectedMsg := fmt.Sprintf(integerUnavailableMsgFormat, state)
 	require.EqualError(t, err, expectedMsg)
-	checkIngesterError(t, err, unavailable, false)
+	checkIngesterError(t, err, mimirpb.SERVICE_UNAVAILABLE, false)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &unavailableError{})
-	checkIngesterError(t, wrappedErr, unavailable, false)
+	checkIngesterError(t, wrappedErr, mimirpb.SERVICE_UNAVAILABLE, false)
 }
 
 func TestInstanceLimitReachedError(t *testing.T) {
@@ -48,12 +49,12 @@ func TestInstanceLimitReachedError(t *testing.T) {
 	err := newInstanceLimitReachedError(limitErrorMessage)
 	require.Error(t, err)
 	require.EqualError(t, err, limitErrorMessage)
-	checkIngesterError(t, err, instanceLimitReached, false)
+	checkIngesterError(t, err, mimirpb.INSTANCE_LIMIT, false)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &instanceLimitReachedError{})
-	checkIngesterError(t, wrappedErr, instanceLimitReached, false)
+	checkIngesterError(t, wrappedErr, mimirpb.INSTANCE_LIMIT, false)
 }
 
 func TestNewTSDBUnavailableError(t *testing.T) {
@@ -61,7 +62,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	err := newTSDBUnavailableError(tsdbErrMsg)
 	require.Error(t, err)
 	require.EqualError(t, err, tsdbErrMsg)
-	checkIngesterError(t, err, tsdbUnavailable, false)
+	checkIngesterError(t, err, mimirpb.TSDB_UNAVAILABLE, false)
 
 	wrappedErr := fmt.Errorf("wrapped: %w", err)
 	require.ErrorIs(t, wrappedErr, err)
@@ -70,7 +71,7 @@ func TestNewTSDBUnavailableError(t *testing.T) {
 	wrappedWithUserErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedWithUserErr, err)
 	require.ErrorAs(t, wrappedWithUserErr, &tsdbUnavailableError{})
-	checkIngesterError(t, wrappedErr, tsdbUnavailable, false)
+	checkIngesterError(t, wrappedErr, mimirpb.TSDB_UNAVAILABLE, false)
 }
 
 func TestNewPerUserSeriesLimitError(t *testing.T) {
@@ -81,12 +82,12 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 		validation.MaxSeriesPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, badData, true)
+	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserSeriesLimitReachedError{})
-	checkIngesterError(t, wrappedErr, badData, true)
+	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestNewPerUserMetadataLimitError(t *testing.T) {
@@ -97,12 +98,12 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 		validation.MaxMetadataPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, badData, true)
+	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserMetadataLimitReachedError{})
-	checkIngesterError(t, wrappedErr, badData, true)
+	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
@@ -119,12 +120,12 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, badData, true)
+	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricSeriesLimitReachedError{})
-	checkIngesterError(t, wrappedErr, badData, true)
+	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
@@ -141,12 +142,12 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, badData, true)
+	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricMetadataLimitReachedError{})
-	checkIngesterError(t, wrappedErr, badData, true)
+	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestNewSampleError(t *testing.T) {
@@ -180,13 +181,13 @@ func TestNewSampleError(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, tc.expectedMsg, tc.err.Error())
-			checkIngesterError(t, tc.err, badData, true)
+			checkIngesterError(t, tc.err, mimirpb.BAD_DATA, true)
 
 			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
 			var sampleErr sampleError
 			require.ErrorAs(t, wrappedErr, &sampleErr)
-			checkIngesterError(t, wrappedErr, badData, true)
+			checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 		})
 	}
 }
@@ -211,13 +212,13 @@ func TestNewExemplarError(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, tc.expectedMsg, tc.err.Error())
-			checkIngesterError(t, tc.err, badData, true)
+			checkIngesterError(t, tc.err, mimirpb.BAD_DATA, true)
 
 			wrappedErr := wrapOrAnnotateWithUser(tc.err, userID)
 			require.ErrorIs(t, wrappedErr, tc.err)
 			var exemplarErr exemplarError
 			require.ErrorAs(t, wrappedErr, &exemplarErr)
-			checkIngesterError(t, wrappedErr, badData, true)
+			checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 		})
 	}
 }
@@ -229,36 +230,77 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
 	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series={__name__=\"test\"}, exemplar={traceID=\"123\"}", anotherErr)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, badData, true)
+	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &tsdbIngestExemplarErr{})
-	checkIngesterError(t, wrappedErr, badData, true)
+	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
 }
 
 func TestErrorWithStatus(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
-	errWithStatus := newErrorWithStatus(err, codes.Unavailable)
-	require.Error(t, errWithStatus)
-	// Ensure gogo's status.FromError recognizes errWithStatus.
-	stat, ok := status.FromError(errWithStatus)
-	require.True(t, ok)
-	require.Equal(t, codes.Unavailable, stat.Code())
-	require.Errorf(t, err, stat.Message())
-	require.Empty(t, stat.Details())
+	errMsg := "this is an error"
+	ingesterErr := mockIngesterErr(errMsg)
+	nonIngesterErr := errors.New(errMsg)
+	tests := map[string]struct {
+		originErr            error
+		statusCode           codes.Code
+		doNotLog             bool
+		expectedErrorMessage string
+		expectedErrorDetails *mimirpb.WriteErrorDetails
+	}{
+		"new errorWithStatus backed by an ingesterError contains WriteErrorDetails": {
+			originErr:            ingesterErr,
+			statusCode:           codes.Unimplemented,
+			expectedErrorMessage: errMsg,
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()},
+		},
+		"new errorWithStatus backed by a DoNotLog error of ingesterError contains WriteErrorDetails": {
+			originErr:            log.DoNotLogError{Err: ingesterErr},
+			statusCode:           codes.Unimplemented,
+			doNotLog:             true,
+			expectedErrorMessage: errMsg,
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()},
+		},
+		"new errorWithStatus backed by a non-ingesterError doesn't contain WriteErrorDetails": {
+			originErr:            nonIngesterErr,
+			statusCode:           codes.Unimplemented,
+			expectedErrorMessage: errMsg,
+			expectedErrorDetails: nil,
+		},
+	}
 
-	// Ensure grpc's status.FromError recognizes errWithStatus.
-	st, ok := grpcstatus.FromError(errWithStatus)
-	require.True(t, ok)
-	require.Equal(t, codes.Unavailable, st.Code())
-	require.Errorf(t, err, st.Message())
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			errWithStatus := newErrorWithStatus(data.originErr, data.statusCode)
+			require.Error(t, errWithStatus)
+			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
 
-	// Ensure httpgrpc's HTTPResponseFromError does not recognize errWithStatus.
-	resp, ok := httpgrpc.HTTPResponseFromError(errWithStatus)
-	require.False(t, ok)
-	require.Nil(t, resp)
+			// Ensure gogo's status.FromError recognizes errWithStatus.
+			stat, ok := status.FromError(errWithStatus)
+			require.True(t, ok)
+			require.Equal(t, codes.Unimplemented, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
+			// Ensure grpc's status.FromError recognizes errWithStatus.
+			st, ok := grpcstatus.FromError(errWithStatus)
+			require.True(t, ok)
+			require.Equal(t, codes.Unimplemented, st.Code())
+			require.Equal(t, st.Message(), data.expectedErrorMessage)
+
+			// Ensure httpgrpc's HTTPResponseFromError recognizes errWithStatus.
+			resp, ok := httpgrpc.HTTPResponseFromError(errWithStatus)
+			require.False(t, ok)
+			require.Nil(t, resp)
+
+			if data.doNotLog {
+				var optional middleware.OptionalLogging
+				require.ErrorAs(t, errWithStatus, &optional)
+				require.False(t, optional.ShouldLog(context.Background(), 0))
+			}
+		})
+	}
 }
 
 func TestErrorWithHTTPStatus(t *testing.T) {
@@ -304,17 +346,6 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.EqualError(t, wrappedSafeErr, expectedWrappedErrMsg)
 	require.ErrorIs(t, wrappedSafeErr, wrappingErr)
 	require.Equal(t, wrappingErr, errors.Unwrap(wrappedSafeErr))
-}
-
-func checkIngesterError(t *testing.T, err error, expectedType ingesterErrorType, isSoft bool) {
-	var ingesterErr ingesterError
-	require.ErrorAs(t, err, &ingesterErr)
-	require.Equal(t, expectedType, ingesterErr.errorType())
-
-	if isSoft {
-		var softErr softError
-		require.ErrorAs(t, err, &softErr)
-	}
 }
 
 func TestHandlePushError(t *testing.T) {
@@ -462,5 +493,37 @@ func TestHandlePushError(t *testing.T) {
 			require.ErrorAs(t, handledErr, &doNotLogError)
 			require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
 		}
+	}
+}
+
+type mockIngesterErr string
+
+func (e mockIngesterErr) Error() string {
+	return string(e)
+}
+
+func (e mockIngesterErr) errorCause() mimirpb.ErrorCause {
+	return mimirpb.INVALID
+}
+
+func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, isSoft bool) {
+	var ingesterErr ingesterError
+	require.ErrorAs(t, err, &ingesterErr)
+	require.Equal(t, expectedCause, ingesterErr.errorCause())
+
+	if isSoft {
+		var softErr softError
+		require.ErrorAs(t, err, &softErr)
+	}
+}
+
+func checkErrorWithStatusDetails(t *testing.T, details []any, expectedDetails *mimirpb.WriteErrorDetails) {
+	if expectedDetails == nil {
+		require.Empty(t, details)
+	} else {
+		require.Len(t, details, 1)
+		errDetails, ok := details[0].(*mimirpb.WriteErrorDetails)
+		require.True(t, ok)
+		require.Equal(t, expectedDetails, errDetails)
 	}
 }
