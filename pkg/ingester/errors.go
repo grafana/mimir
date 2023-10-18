@@ -30,6 +30,14 @@ const (
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
+// Errors returned by ingester should be gRPC errors, but the errors
+// produced by both gogo/status and grpc/status packages do not keep
+// the semantics of the underlying error, which is sometimes needed.
+// For example, the logging middleware needs to know whether an error
+// should be logged, sampled or ignored. Errors of type errorWithStatus
+// are valid gRPC errors that could be parsed by both gogo/status
+// and grpc/status packages, but which preserve the original error
+// semantics.
 type errorWithStatus struct {
 	err    error // underlying error
 	status *status.Status
@@ -84,6 +92,8 @@ func (e errorWithStatus) Unwrap() error {
 	return e.err
 }
 
+// GRPCStatus with a *grpcstatus.Status as output is needed
+// for a correct execution of grpc/status.FromError().
 func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 	if stat, ok := e.status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
 		return stat.GRPCStatus()
@@ -283,7 +293,7 @@ func (e perUserSeriesLimitReachedError) Error() string {
 }
 
 func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserSeriesLimitReachedError) soft() {}
@@ -314,7 +324,7 @@ func (e perUserMetadataLimitReachedError) Error() string {
 }
 
 func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perUserMetadataLimitReachedError) soft() {}
@@ -350,7 +360,7 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 }
 
 func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricSeriesLimitReachedError) soft() {}
@@ -386,7 +396,7 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 }
 
 func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.BAD_DATA
+	return mimirpb.TENANT_LIMIT
 }
 
 func (e perMetricMetadataLimitReachedError) soft() {}
@@ -487,6 +497,8 @@ func handlePushError(err error) error {
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
 		case mimirpb.BAD_DATA:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case mimirpb.TENANT_LIMIT:
 			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)

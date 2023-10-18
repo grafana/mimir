@@ -82,12 +82,12 @@ func TestNewPerUserSeriesLimitError(t *testing.T) {
 		validation.MaxSeriesPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, err, mimirpb.TENANT_LIMIT, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserSeriesLimitReachedError{})
-	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, wrappedErr, mimirpb.TENANT_LIMIT, true)
 }
 
 func TestNewPerUserMetadataLimitError(t *testing.T) {
@@ -98,12 +98,12 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 		validation.MaxMetadataPerUserFlag,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, err, mimirpb.TENANT_LIMIT, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perUserMetadataLimitReachedError{})
-	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, wrappedErr, mimirpb.TENANT_LIMIT, true)
 }
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
@@ -120,12 +120,12 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, err, mimirpb.TENANT_LIMIT, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricSeriesLimitReachedError{})
-	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, wrappedErr, mimirpb.TENANT_LIMIT, true)
 }
 
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
@@ -142,12 +142,12 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 		labels.String(),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
-	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, err, mimirpb.TENANT_LIMIT, true)
 
 	wrappedErr := wrapOrAnnotateWithUser(err, userID)
 	require.ErrorIs(t, wrappedErr, err)
 	require.ErrorAs(t, wrappedErr, &perMetricMetadataLimitReachedError{})
-	checkIngesterError(t, wrappedErr, mimirpb.BAD_DATA, true)
+	checkIngesterError(t, wrappedErr, mimirpb.TENANT_LIMIT, true)
 }
 
 func TestNewSampleError(t *testing.T) {
