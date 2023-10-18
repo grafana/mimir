@@ -267,3 +267,6 @@ replace github.com/munnerz/goautoneg => github.com/charleskorn/goautoneg v0.0.0-
 
 // Replace opentracing-contrib/go-stdlib with a fork until https://github.com/opentracing-contrib/go-stdlib/pull/68 is merged.
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
+
+// Replace grpc 1.57.1 with fix from https://github.com/grpc/grpc-go/pull/6737
+replace google.golang.org/grpc => github.com/bboreham/grpc-go v1.2.1-0.20231018103311-f160e1270255
