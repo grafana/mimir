@@ -1822,7 +1822,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
 	ss := q.Select(ctx, false, hints, matchers...)
 	if ss.Err() != nil {
-		return 0, 0, errors.Wrap(ss.Err(), "iterating ChunkSeriesSet")
+		return 0, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
 	}
 
 	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
@@ -1969,7 +1969,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	// Series must be sorted so that they can be read by the querier in the order the PromQL engine expects.
 	ss := q.Select(ctx, true, hints, matchers...)
 	if ss.Err() != nil {
-		return nil, 0, errors.Wrap(ss.Err(), "iterating ChunkSeriesSet")
+		return nil, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
 	}
 
 	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
