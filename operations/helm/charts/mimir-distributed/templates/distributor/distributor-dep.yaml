@@ -8,7 +8,7 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if .Values.distributor.replicas }}
+  {{- if kindIs "float64" .Values.distributor.replicas }}
   replicas: {{ .Values.distributor.replicas }}
   {{- end }}
   selector:
