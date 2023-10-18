@@ -1277,6 +1277,12 @@ func handleIngesterPushError(err error) error {
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
 	}
+	stat, ok := status.FromError(err)
+	if ok {
+		st := stat.Proto()
+		st.Message = fmt.Sprintf("failed pushing to ingester: %s", st.Message)
+		return status.ErrorProto(st)
+	}
 	return errors.Wrap(err, "failed pushing to ingester")
 }
 
