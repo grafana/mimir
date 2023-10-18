@@ -3,22 +3,25 @@
 package ingester
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -239,11 +242,23 @@ func TestErrorWithStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithStatus := newErrorWithStatus(err, codes.Unavailable)
 	require.Error(t, errWithStatus)
+	// Ensure gogo's status.FromError recognizes errWithStatus.
 	stat, ok := status.FromError(errWithStatus)
 	require.True(t, ok)
 	require.Equal(t, codes.Unavailable, stat.Code())
 	require.Errorf(t, err, stat.Message())
 	require.Empty(t, stat.Details())
+
+	// Ensure grpc's status.FromError recognizes errWithStatus.
+	st, ok := grpcstatus.FromError(errWithStatus)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Errorf(t, err, st.Message())
+
+	// Ensure httpgrpc's HTTPResponseFromError does not recognize errWithStatus.
+	resp, ok := httpgrpc.HTTPResponseFromError(errWithStatus)
+	require.False(t, ok)
+	require.Nil(t, resp)
 }
 
 func TestErrorWithHTTPStatus(t *testing.T) {
@@ -251,11 +266,20 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
 	require.Error(t, errWithHTTPStatus)
+	// Ensure gogo's status.FromError recognizes errWithHTTPStatus.
 	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
 	require.Errorf(t, err, stat.Message())
 	require.NotEmpty(t, stat.Details())
+
+	// Ensure grpc's status.FromError recognizes errWithHTTPStatus.
+	st, ok := grpcstatus.FromError(errWithHTTPStatus)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, int(st.Code()))
+	require.Errorf(t, err, st.Message())
+
+	// Ensure httpgrpc's HTTPResponseFromError recognizes errWithHTTPStatus.
 	resp, ok := httpgrpc.HTTPResponseFromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, int32(http.StatusBadRequest), resp.Code)
@@ -290,5 +314,153 @@ func checkIngesterError(t *testing.T, err error, expectedType ingesterErrorType,
 	if isSoft {
 		var softErr softError
 		require.ErrorAs(t, err, &softErr)
+	}
+}
+
+func TestHandlePushError(t *testing.T) {
+	originalMsg := "this is an error"
+	originalErr := errors.New(originalMsg)
+	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
+
+	timestamp := model.Time(1)
+	testCases := []struct {
+		name                string
+		err                 error
+		doNotLogExpected    bool
+		expectedTranslation error
+	}{
+		{
+			name:                "a generic error is not translated",
+			err:                 originalErr,
+			expectedTranslation: originalErr,
+		},
+		{
+			name:                "a DoNotLog error of a generic error is not translated",
+			err:                 log.DoNotLogError{Err: originalErr},
+			expectedTranslation: log.DoNotLogError{Err: originalErr},
+			doNotLogExpected:    true,
+		},
+		{
+			name:                "an unavailableError gets translated into an errorWithStatus Unavailable error",
+			err:                 newUnavailableError(services.Stopping),
+			expectedTranslation: newErrorWithStatus(newUnavailableError(services.Stopping), codes.Unavailable),
+		},
+		{
+			name: "a wrapped unavailableError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+			expectedTranslation: newErrorWithStatus(
+				fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
+				codes.Unavailable,
+			),
+		},
+		{
+			name: "an instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  newInstanceLimitReachedError("instance limit reached"),
+			expectedTranslation: newErrorWithStatus(
+				log.DoNotLogError{Err: newInstanceLimitReachedError("instance limit reached")},
+				codes.Unavailable,
+			),
+			doNotLogExpected: true,
+		},
+		{
+			name: "a wrapped instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error",
+			err:  fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
+			expectedTranslation: newErrorWithStatus(
+				log.DoNotLogError{Err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached"))},
+				codes.Unavailable,
+			),
+			doNotLogExpected: true,
+		},
+		{
+			name: "a tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error",
+			err:  newTSDBUnavailableError("tsdb stopping"),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newTSDBUnavailableError("tsdb stopping"),
+				http.StatusServiceUnavailable,
+			),
+		},
+		{
+			name: "a wrapped tsdbUnavailableError gets translated into an errorWithHTTPStatus 503 error",
+			err:  fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
+				http.StatusServiceUnavailable,
+			),
+		},
+		{
+			name: "a sampleError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newSampleError("id", "sample error", timestamp, labelAdapters),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newSampleError("id", "sample error", timestamp, labelAdapters),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped exemplarError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newPerUserSeriesLimitReachedError(10),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerUserSeriesLimitReachedError(10),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  newPerMetricSeriesLimitReachedError(10, labels),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerMetricSeriesLimitReachedError(10, labels),
+				http.StatusBadRequest,
+			),
+		},
+		{
+			name: "a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error",
+			err:  fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+				http.StatusBadRequest,
+			),
+		},
+	}
+
+	for _, tc := range testCases {
+		handledErr := handlePushError(tc.err)
+		require.Equal(t, tc.expectedTranslation, handledErr)
+		if tc.doNotLogExpected {
+			var doNotLogError log.DoNotLogError
+			require.ErrorAs(t, handledErr, &doNotLogError)
+			require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
+		}
 	}
 }
