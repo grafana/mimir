@@ -1232,9 +1232,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 
 					// Error adding exemplar
 					updateFirstPartial(nil, func() softError {
-						if err == nil {
-							return nil
-						}
 						return newTSDBIngestExemplarErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
 					stats.failedExemplarsCount++
