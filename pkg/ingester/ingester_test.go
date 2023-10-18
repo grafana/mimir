@@ -31,6 +31,7 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/status"
 	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
@@ -56,7 +57,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"

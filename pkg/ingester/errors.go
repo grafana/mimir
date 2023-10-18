@@ -10,12 +10,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -33,6 +34,8 @@ type errorWithStatus struct {
 	status *status.Status
 }
 
+// newErrorWithStatus creates a new errorWithStatus backed by the given error,
+// and containing the given gRPC code.
 func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 	return errorWithStatus{
 		err:    err,
@@ -40,6 +43,10 @@ func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
 	}
 }
 
+// newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
+// and containing the given HTTP status code.
+// TODO this is needed for backwards compatibility only and should be removed
+// once httpgrpc.Errorf() usages in ingester are removed.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -50,15 +57,18 @@ func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 }
 
 func (e errorWithStatus) Error() string {
-	return e.status.String()
+	return e.status.Message()
 }
 
 func (e errorWithStatus) Unwrap() error {
 	return e.err
 }
 
-func (e errorWithStatus) GRPCStatus() *status.Status {
-	return e.status
+func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
+	if stat, ok := e.status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
+		return stat.GRPCStatus()
+	}
+	return nil
 }
 
 // TODO move this type into ingester.proto once httpgrpc is removed from ingester.go.

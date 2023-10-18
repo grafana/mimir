@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -239,11 +240,23 @@ func TestErrorWithStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithStatus := newErrorWithStatus(err, codes.Unavailable)
 	require.Error(t, errWithStatus)
+	// Ensure gogo's status.FromError recognizes errWithStatus.
 	stat, ok := status.FromError(errWithStatus)
 	require.True(t, ok)
 	require.Equal(t, codes.Unavailable, stat.Code())
 	require.Errorf(t, err, stat.Message())
 	require.Empty(t, stat.Details())
+
+	// Ensure grpc's status.FromError recognizes errWithStatus.
+	st, ok := grpcstatus.FromError(errWithStatus)
+	require.True(t, ok)
+	require.Equal(t, codes.Unavailable, st.Code())
+	require.Errorf(t, err, st.Message())
+
+	// Ensure httpgrpc's HTTPResponseFromError does not recognize errWithStatuserrWithStatus.
+	resp, ok := httpgrpc.HTTPResponseFromError(errWithStatus)
+	require.False(t, ok)
+	require.Nil(t, resp)
 }
 
 func TestErrorWithHTTPStatus(t *testing.T) {
@@ -251,11 +264,20 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
 	require.Error(t, errWithHTTPStatus)
+	// Ensure gogo's status.FromError recognizes errWithStatuserrWithHTTPStatus.
 	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
 	require.Errorf(t, err, stat.Message())
 	require.NotEmpty(t, stat.Details())
+
+	// Ensure grpc's status.FromError recognizes errWithHTTPStatus.
+	st, ok := grpcstatus.FromError(errWithHTTPStatus)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, int(st.Code()))
+	require.Errorf(t, err, st.Message())
+
+	// Ensure httpgrpc's HTTPResponseFromError recognizes errWithStatuserrWithHTTPStatus.
 	resp, ok := httpgrpc.HTTPResponseFromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, int32(http.StatusBadRequest), resp.Code)
