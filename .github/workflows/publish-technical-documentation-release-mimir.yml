@@ -73,5 +73,5 @@ jobs:
         source_folder: "docs/sources/mimir"
         # Append ".x" to target to produce a v<major>.<minor>.x directory.
         target_folder: "content/docs/mimir/${{ steps.target.outputs.target }}.x"
-        # Patch releases may not have any new tehcnical documentation.
+        # Patch releases may not have any new technical documentation.
         allow_no_changes: true
