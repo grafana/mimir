@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.10.3
+
+### Grafana Mimir
+
 ## 2.10.2
 
 ### Grafana Mimir
