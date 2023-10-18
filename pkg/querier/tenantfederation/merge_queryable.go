@@ -50,7 +50,7 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 			}, nil
 		},
 	}
-	return NewMergeQueryable(defaultTenantLabel, callbacks, bypassWithSingleID, maxConcurrency, reg, logger)
+	return NewMergeQueryable(defaultTenantLabel, callbacks, tenant.NewMultiResolver(), bypassWithSingleID, maxConcurrency, reg, logger)
 }
 
 // MergeQueryableCallbacks contains callbacks to NewMergeQueryable, for customizing its behaviour.
@@ -90,20 +90,24 @@ func (q *tenantQuerier) Close() error {
 }
 
 // NewMergeQueryable returns a queryable that merges results for all involved federation IDs.
-// The underlying querier and its IDs are returned by respective callbacks in MergeQueryableCallbacks.
+// The underlying querier is returned by a callback in MergeQueryableCallbacks. The IDs are returned
+// by a tenant.Resolver implementation.
+//
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed,
 // and results for requests with a single ID will not contain the ID label.
 // This allows for a smoother transition, when enabling tenant federation in a
 // cluster.
+//
 // Each result contains a label `idLabelName` to identify the federation ID it originally resulted from.
 // If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
+func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
 		logger:             logger,
 		idLabelName:        idLabelName,
 		callbacks:          callbacks,
+		resolver:           resolver,
 		bypassWithSingleID: bypassWithSingleID,
 		maxConcurrency:     maxConcurrency,
 		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
@@ -119,6 +123,7 @@ type mergeQueryable struct {
 	idLabelName        string
 	bypassWithSingleID bool
 	callbacks          MergeQueryableCallbacks
+	resolver           tenant.Resolver
 	maxConcurrency     int
 	tenantsQueried     prometheus.Histogram
 }
@@ -135,7 +140,7 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 		idLabelName:        m.idLabelName,
 		callbacks:          m.callbacks,
 		upstream:           upstream,
-		resolver:           tenant.NewMultiResolver(),
+		resolver:           m.resolver,
 		maxConcurrency:     m.maxConcurrency,
 		bypassWithSingleID: m.bypassWithSingleID,
 		tenantsQueried:     m.tenantsQueried,

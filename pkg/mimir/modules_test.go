@@ -345,6 +345,7 @@ func TestInitVault(t *testing.T) {
 	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.Notifier.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader)
 

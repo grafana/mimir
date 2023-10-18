@@ -556,7 +556,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -990,7 +990,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1175,7 +1175,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1360,7 +1360,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1491,7 +1491,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1622,7 +1622,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1753,7 +1753,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.2
+        image: grafana/mimir:2.10.3
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

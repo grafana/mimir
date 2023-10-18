@@ -8,14 +8,16 @@ package ingester
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -33,13 +35,38 @@ type errorWithStatus struct {
 	status *status.Status
 }
 
-func newErrorWithStatus(err error, code codes.Code) errorWithStatus {
+// newErrorWithStatus creates a new errorWithStatus backed by the given error,
+// and containing the given gRPC code. If the given error is an ingesterError,
+// the resulting errorWithStatus will be enriched by the details backed by
+// ingesterError.errorCause. These details are of type mimirpb.WriteErrorDetails.
+func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
+	var (
+		ingesterErr  ingesterError
+		errorDetails *mimirpb.WriteErrorDetails
+	)
+	if errors.As(originalErr, &ingesterErr) {
+		errorDetails = &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()}
+	}
+	stat := status.New(code, originalErr.Error())
+
+	if errorDetails != nil {
+		if statWithDetails, err := stat.WithDetails(errorDetails); err == nil {
+			return errorWithStatus{
+				err:    originalErr,
+				status: statWithDetails,
+			}
+		}
+	}
 	return errorWithStatus{
-		err:    err,
-		status: status.New(code, err.Error()),
+		err:    originalErr,
+		status: stat,
 	}
 }
 
+// newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
+// and containing the given HTTP status code.
+// TODO this is needed for backwards compatibility only and should be removed
+// once httpgrpc.Errorf() usages in ingester are removed.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -50,32 +77,23 @@ func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 }
 
 func (e errorWithStatus) Error() string {
-	return e.status.String()
+	return e.status.Message()
 }
 
 func (e errorWithStatus) Unwrap() error {
 	return e.err
 }
 
-func (e errorWithStatus) GRPCStatus() *status.Status {
-	return e.status
+func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
+	if stat, ok := e.status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
+		return stat.GRPCStatus()
+	}
+	return nil
 }
-
-// TODO move this type into ingester.proto once httpgrpc is removed from ingester.go.
-// ingesterErrorType will be used to pass additional details to the returned gRPC errors,
-// so that the distributor will be able to distinguish between different ingester errors.
-type ingesterErrorType int
-
-const (
-	unavailable ingesterErrorType = iota
-	tsdbUnavailable
-	instanceLimitReached
-	badData
-)
 
 // ingesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
 type ingesterError interface {
-	errorType() ingesterErrorType
+	errorCause() mimirpb.ErrorCause
 }
 
 // softError is a marker interface for the errors on which ingester.Push should not stop immediately.
@@ -117,13 +135,17 @@ func (e sampleError) Error() string {
 	)
 }
 
-// sampleError implements the ingesterError interface.
-func (e sampleError) errorType() ingesterErrorType {
-	return badData
+func (e sampleError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// sampleError implements the softError interface.
 func (e sampleError) soft() {}
+
+// Ensure that sampleError is an ingesterError.
+var _ ingesterError = sampleError{}
+
+// Ensure that sampleError is a softError.
+var _ softError = sampleError{}
 
 func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
 	return sampleError{
@@ -173,13 +195,17 @@ func (e exemplarError) Error() string {
 	)
 }
 
-// exemplarError implements the ingesterError interface.
-func (e exemplarError) errorType() ingesterErrorType {
-	return badData
+func (e exemplarError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// exemplarError implements the softError interface.
 func (e exemplarError) soft() {}
+
+// Ensure that exemplarError is an ingesterError.
+var _ ingesterError = exemplarError{}
+
+// Ensure that exemplarError is an softError.
+var _ softError = exemplarError{}
 
 func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
 	return exemplarError{
@@ -216,13 +242,17 @@ func (e tsdbIngestExemplarErr) Error() string {
 	)
 }
 
-// exemplarError implements the ingesterError interface.
-func (e tsdbIngestExemplarErr) errorType() ingesterErrorType {
-	return badData
+func (e tsdbIngestExemplarErr) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// tsdbIngestExemplarErr implements the softError interface.
 func (e tsdbIngestExemplarErr) soft() {}
+
+// Ensure that tsdbIngestExemplarErr is an ingesterError.
+var _ ingesterError = tsdbIngestExemplarErr{}
+
+// Ensure that tsdbIngestExemplarErr is an softError.
+var _ softError = tsdbIngestExemplarErr{}
 
 func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) tsdbIngestExemplarErr {
 	return tsdbIngestExemplarErr{
@@ -252,13 +282,17 @@ func (e perUserSeriesLimitReachedError) Error() string {
 	)
 }
 
-// perUserSeriesLimitReachedError implements the ingesterError interface.
-func (e perUserSeriesLimitReachedError) errorType() ingesterErrorType {
-	return badData
+func (e perUserSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// perUserSeriesLimitReachedError implements the softError interface.
 func (e perUserSeriesLimitReachedError) soft() {}
+
+// Ensure that perUserSeriesLimitReachedError is an ingesterError.
+var _ ingesterError = perUserSeriesLimitReachedError{}
+
+// Ensure that perUserSeriesLimitReachedError is an softError.
+var _ softError = perUserSeriesLimitReachedError{}
 
 // perUserMetadataLimitReachedError is an ingesterError indicating that a per-user metadata limit has been reached.
 type perUserMetadataLimitReachedError struct {
@@ -279,13 +313,17 @@ func (e perUserMetadataLimitReachedError) Error() string {
 	)
 }
 
-// perUserMetadataLimitReachedError implements the ingesterError interface.
-func (e perUserMetadataLimitReachedError) errorType() ingesterErrorType {
-	return badData
+func (e perUserMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// perUserMetadataLimitReachedError implements the softError interface.
 func (e perUserMetadataLimitReachedError) soft() {}
+
+// Ensure that perUserMetadataLimitReachedError is an ingesterError.
+var _ ingesterError = perUserMetadataLimitReachedError{}
+
+// Ensure that perUserMetadataLimitReachedError is an softError.
+var _ softError = perUserMetadataLimitReachedError{}
 
 // perMetricSeriesLimitReachedError is an ingesterError indicating that a per-metric series limit has been reached.
 type perMetricSeriesLimitReachedError struct {
@@ -311,13 +349,17 @@ func (e perMetricSeriesLimitReachedError) Error() string {
 	)
 }
 
-// perMetricSeriesLimitReachedError implements the ingesterError interface.
-func (e perMetricSeriesLimitReachedError) errorType() ingesterErrorType {
-	return badData
+func (e perMetricSeriesLimitReachedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// perMetricSeriesLimitReachedError implements the softError interface.
 func (e perMetricSeriesLimitReachedError) soft() {}
+
+// Ensure that perMetricSeriesLimitReachedError is an ingesterError.
+var _ ingesterError = perMetricSeriesLimitReachedError{}
+
+// Ensure that perMetricSeriesLimitReachedError is an softError.
+var _ softError = perMetricSeriesLimitReachedError{}
 
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
@@ -343,33 +385,38 @@ func (e perMetricMetadataLimitReachedError) Error() string {
 	)
 }
 
-// perMetricMetadataLimitReachedError implements the ingesterError interface.
-func (e perMetricMetadataLimitReachedError) errorType() ingesterErrorType {
-	return badData
+func (e perMetricMetadataLimitReachedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.BAD_DATA
 }
 
-// perMetricMetadataLimitReachedError implements the softError interface.
 func (e perMetricMetadataLimitReachedError) soft() {}
+
+// Ensure that perMetricMetadataLimitReachedError is an ingesterError.
+var _ ingesterError = perMetricMetadataLimitReachedError{}
+
+// Ensure that perMetricMetadataLimitReachedError is an softError.
+var _ softError = perMetricMetadataLimitReachedError{}
 
 // unavailableError is an ingesterError indicating that the ingester is unavailable.
 type unavailableError struct {
 	state services.State
 }
 
-func newUnavailableError(state services.State) unavailableError {
-	return unavailableError{state: state}
-}
-
 func (e unavailableError) Error() string {
 	return fmt.Sprintf(integerUnavailableMsgFormat, e.state.String())
 }
 
-// unavailableError implements the ingesterError interface.
-func (e unavailableError) errorType() ingesterErrorType {
-	return unavailable
+func (e unavailableError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.SERVICE_UNAVAILABLE
 }
 
-// instanceLimitReachedError is an ingesterError indicating that an instance limit has been reached.
+// Ensure that unavailableError is an ingesterError.
+var _ ingesterError = unavailableError{}
+
+func newUnavailableError(state services.State) unavailableError {
+	return unavailableError{state: state}
+}
+
 type instanceLimitReachedError struct {
 	message string
 }
@@ -382,10 +429,12 @@ func (e instanceLimitReachedError) Error() string {
 	return e.message
 }
 
-// instanceLimitReachedError implements the ingesterError interface.
-func (e instanceLimitReachedError) errorType() ingesterErrorType {
-	return instanceLimitReached
+func (e instanceLimitReachedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.INSTANCE_LIMIT
 }
+
+// Ensure that instanceLimitReachedError is an ingesterError.
+var _ ingesterError = instanceLimitReachedError{}
 
 // tsdbUnavailableError is an ingesterError indicating that the TSDB is unavailable.
 type tsdbUnavailableError struct {
@@ -400,10 +449,12 @@ func (e tsdbUnavailableError) Error() string {
 	return e.message
 }
 
-// tsdbUnavailableError implements the ingesterError interface.
-func (e tsdbUnavailableError) errorType() ingesterErrorType {
-	return tsdbUnavailable
+func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.TSDB_UNAVAILABLE
 }
+
+// Ensure that tsdbUnavailableError is an ingesterError.
+var _ ingesterError = tsdbUnavailableError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
@@ -429,4 +480,21 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 	}
+}
+
+func handlePushError(err error) error {
+	var ingesterErr ingesterError
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.BAD_DATA:
+			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
+		case mimirpb.SERVICE_UNAVAILABLE:
+			return newErrorWithStatus(err, codes.Unavailable)
+		case mimirpb.INSTANCE_LIMIT:
+			return newErrorWithStatus(log.DoNotLogError{Err: err}, codes.Unavailable)
+		case mimirpb.TSDB_UNAVAILABLE:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
+	}
+	return err
 }

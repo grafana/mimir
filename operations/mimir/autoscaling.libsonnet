@@ -199,9 +199,11 @@
   local memoryHPAQuery = |||
     max_over_time(
       sum(
-        sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
-        and
-        max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+        (
+          sum by (pod) (container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"})
+          and
+          max by (pod) (up{container="%(container)s",namespace="%(namespace)s"}) > 0
+        ) or vector(0)
       )[15m:]
     )
     +
@@ -215,8 +217,7 @@
     )
   |||,
 
-
-  newQueryFrontendScaledObject(
+  newResourceScaledObject(
     name,
     cpu_requests,
     memory_requests,
@@ -224,24 +225,32 @@
     max_replicas,
     cpu_target_utilization,
     memory_target_utilization,
+    with_cortex_prefix=false,
+    weight=1,
+    scaledownPeriod=null,
   ):: self.newScaledObject(
     name, $._config.namespace, {
-      min_replica_count: min_replicas,
-      max_replica_count: max_replicas,
+      min_replica_count: replicasWithWeight(min_replicas, weight),
+      max_replica_count: replicasWithWeight(max_replicas, weight),
+
+      [if scaledownPeriod != null then 'scaledownPeriod']: scaledownPeriod,
+
       triggers: [
         {
-          metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+          metric_name: '%s%s_cpu_hpa_%s' %
+                       ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: cpuHPAQuery % {
+          query: metricWithWeight(cpuHPAQuery % {
             container: name,
             namespace: $._config.namespace,
-          },
+          }, weight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
         },
         {
-          metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+          metric_name: '%s%s_memory_hpa_%s' %
+                       ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
           query: memoryHPAQuery % {
             container: name,
@@ -310,7 +319,7 @@
   ),
 
   query_frontend_scaled_object: if !$._config.autoscaling_query_frontend_enabled then null else
-    $.newQueryFrontendScaledObject(
+    $.newResourceScaledObject(
       name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
@@ -319,6 +328,7 @@
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
     ),
+
   query_frontend_deployment: overrideSuperIfExists(
     'query_frontend_deployment',
     if $._config.autoscaling_query_frontend_enabled then $.removeReplicasFromSpec else
@@ -387,7 +397,7 @@
   ),
 
   ruler_query_frontend_scaled_object: if !$._config.autoscaling_ruler_query_frontend_enabled || !$._config.ruler_remote_evaluation_enabled then null else
-    $.newQueryFrontendScaledObject(
+    $.newResourceScaledObject(
       name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
@@ -396,6 +406,7 @@
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
     ),
+
   ruler_query_frontend_deployment: overrideSuperIfExists(
     'ruler_query_frontend_deployment',
     if $._config.autoscaling_ruler_query_frontend_enabled then $.removeReplicasFromSpec else
@@ -404,57 +415,16 @@
         {}
   ),
 
-  //
-  // Distributors
-  //
-
-  newDistributorScaledObject(
-    name,
-    distributor_cpu_requests,
-    distributor_memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-  ):: self.newScaledObject(name, $._config.namespace, {
-    min_replica_count: min_replicas,
-    max_replica_count: max_replicas,
-
-    triggers: [
-      {
-        metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: cpuHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // threshold is expected to be a string.
-        threshold: std.toString(std.floor(cpuToMilliCPUInt(distributor_cpu_requests) * cpu_target_utilization)),
-      },
-      {
-        metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: memoryHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // threshold is expected to be a string
-        threshold: std.toString(std.floor($.util.siToBytes(distributor_memory_requests) * memory_target_utilization)),
-      },
-    ],
-  }),
-
   distributor_scaled_object: if !$._config.autoscaling_distributor_enabled then null else
-    $.newDistributorScaledObject(
+    $.newResourceScaledObject(
       name='distributor',
-      distributor_cpu_requests=$.distributor_container.resources.requests.cpu,
-      distributor_memory_requests=$.distributor_container.resources.requests.memory,
+      cpu_requests=$.distributor_container.resources.requests.cpu,
+      memory_requests=$.distributor_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_distributor_min_replicas,
       max_replicas=$._config.autoscaling_distributor_max_replicas,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
+      with_cortex_prefix=true,
     ),
 
   distributor_deployment: overrideSuperIfExists(
@@ -462,46 +432,17 @@
     if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  // Ruler
-
-  local newRulerScaledObject(name) = self.newScaledObject(
-    name, $._config.namespace, {
-      min_replica_count: $._config.autoscaling_ruler_min_replicas,
-      max_replica_count: $._config.autoscaling_ruler_max_replicas,
-
-      // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler.
-      // As a result, we have made the decision to set the scale down periodSeconds to 600.
-      scaledownPeriod: 600,
-
-      triggers: [
-        {
-          metric_name: '%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-          query: cpuHPAQuery % {
-            container: name,
-            namespace: $._config.namespace,
-          },
-
-          // Threshold is expected to be a string
-          threshold: std.toString(std.floor(cpuToMilliCPUInt($.ruler_container.resources.requests.cpu) * $._config.autoscaling_ruler_cpu_target_utilization)),
-        },
-        {
-          metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-          query: memoryHPAQuery % {
-            container: name,
-            namespace: $._config.namespace,
-          },
-
-          // Threshold is expected to be a string
-          threshold: std.toString(std.floor($.util.siToBytes($.ruler_container.resources.requests.memory) * $._config.autoscaling_ruler_memory_target_utilization)),
-        },
-      ],
-    },
-  ),
-
-  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else newRulerScaledObject(
+  ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newResourceScaledObject(
     name='ruler',
+    cpu_requests=$.ruler_container.resources.requests.cpu,
+    memory_requests=$.ruler_container.resources.requests.memory,
+    min_replicas=$._config.autoscaling_ruler_min_replicas,
+    max_replicas=$._config.autoscaling_ruler_max_replicas,
+    cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
+    memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
+    // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler.
+    // As a result, we have made the decision to set the scale down periodSeconds to 600.
+    scaledownPeriod=600,
   ),
 
   ruler_deployment: overrideSuperIfExists(
@@ -513,57 +454,16 @@
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     super[name] + override,
 
-  // Alertmanager
-
-  newAlertmanagerScaledObject(
-    name,
-    alertmanager_cpu_requests,
-    alertmanager_memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-  ):: self.newScaledObject(name, $._config.namespace, {
-    min_replica_count: min_replicas,
-    max_replica_count: max_replicas,
-
-    triggers: [
-      {
-        metric_name: 'cortex_%s_cpu_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: cpuHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // Threshold is expected to be a string.
-        // Since alertmanager is very memory-intensive as opposed to cpu-intensive, we don't bother
-        // with the any target utilization calculation for cpu, to keep things simpler and cheaper.
-        threshold: std.toString(std.floor(cpuToMilliCPUInt(alertmanager_cpu_requests) * cpu_target_utilization)),
-      },
-      {
-        metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: memoryHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // Threshold is expected to be a string.
-        threshold: std.toString(std.floor($.util.siToBytes(alertmanager_memory_requests) * memory_target_utilization)),
-      },
-    ],
-  }),
-
   alertmanager_scaled_object: if !$._config.autoscaling_alertmanager_enabled then null else
-    $.newAlertmanagerScaledObject(
+    $.newResourceScaledObject(
       name='alertmanager',
-      alertmanager_cpu_requests=$.alertmanager_container.resources.requests.cpu,
-      alertmanager_memory_requests=$.alertmanager_container.resources.requests.memory,
+      cpu_requests=$.alertmanager_container.resources.requests.cpu,
+      memory_requests=$.alertmanager_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_alertmanager_min_replicas,
       max_replicas=$._config.autoscaling_alertmanager_max_replicas,
       cpu_target_utilization=$._config.autoscaling_alertmanager_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_alertmanager_memory_target_utilization,
+      with_cortex_prefix=true,
     ) + {
       spec+: {
         scaleTargetRef+: {

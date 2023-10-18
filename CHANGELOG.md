@@ -12,6 +12,11 @@
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
+* [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
+* * `replicasDidNotMatchError` is mapped to `codes.AlreadyExists` instead of `http.StatusAccepted` (202).
+* * `tooManyClustersError` and `validationError` are mapped to `codes.FailedPrecondition` instead of `http.BadRequest` (400).
+* * `ingestionRateLimitedError` is mapped to `codes.ResourceExhausted` instead of `http.StatusTooManyRequests` (429).
+* * `requestRateLimitedError` is mapped to `codes.Unavailable` or `codes.ResourceExhausted` instead of the non-standard `529` (The service is overloaded) or `http.StatusTooManyRequests` (429).
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
@@ -33,7 +38,7 @@
 * [ENHANCEMENT] Ingester / store-gateway: optimized regex matchers. #6168 #6250
 * [ENHANCEMENT] Distributor: Include ingester IDs in circuit breaker related metrics and logs. #6206
 * [ENHANCEMENT] Querier: improve errors and logging when streaming chunks from ingesters and store-gateways. #6194 #6309
-* [ENHANCEMENT] Querier: Add `cortex_querier_federation_exemplar_tenants_queried` and `cortex_querier_federation_tenants_queried` metrics to track the number of tenants queried by multi-tenant queries. #6374
+* [ENHANCEMENT] Querier: Add `cortex_querier_federation_exemplar_tenants_queried` and `cortex_querier_federation_tenants_queried` metrics to track the number of tenants queried by multi-tenant queries. #6374 #6409
 * [ENHANCEMENT] All: added an experimental `-server.grpc.num-workers` flag that configures the number of long-living workers used to process gRPC requests. This could decrease the CPU usage by reducing the number of stack allocations. #6311
 * [ENHANCEMENT] All: improved IPv6 support by using the proper host:port formatting. #6311
 * [ENHANCEMENT] Querier: always return error encountered during chunks streaming, rather than `the stream has already been exhausted`. #6345
@@ -55,6 +60,7 @@
 
 * [ENHANCEMENT] Dashboards: Optionally show rejected requests on Mimir Writes dashboard. Useful when used together with "early request rejection". #6132
 * [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
+* [ENHANCEMENT] Alerts: added a critical alert for `CompactorSkippedBlocksWithOutOfOrderChunks` when multiple blocks are affected. #6410
 
 ### Jsonnet
 
@@ -93,6 +99,12 @@
 * [CHANGE] tsdb-index: Rename tool to tsdb-series. #6317
 * [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
+
+## 2.10.3
+
+### Grafana Mimir
+
+* [BUGFIX] Update grpc-go library to 1.57.2-dev that includes a fix for a bug introduced in 1.57.1. #6419
 
 ## 2.10.2
 
@@ -295,8 +307,10 @@
 * [ENHANCEMENT] Update rollout-operator to `v0.7.0`. #5718
 * [ENHANCEMENT] Increase the default rollout speed for store-gateway when lazy loading is disabled. #5823
 * [ENHANCEMENT] Add autoscaling on memory for ruler-queriers. #5739
+* [ENHANCEMENT] Deduplicate scaled object creation for most objects that scale on CPU and memory. #6411
 * [BUGFIX] Fix compilation when index, chunks or metadata caches are disabled. #5710
 * [BUGFIX] Autoscaling: treat OOMing containers as though they are using their full memory request. #5739
+* [BUGFIX] Autoscaling: if no containers are up, report 0 memory usage instead of no data. #6411
 
 ### Mimirtool
 

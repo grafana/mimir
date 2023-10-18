@@ -52,7 +52,7 @@ github.com/Azure/azure-sdk-for-go/sdk/internal/log
 github.com/Azure/azure-sdk-for-go/sdk/internal/poller
 github.com/Azure/azure-sdk-for-go/sdk/internal/temporal
 github.com/Azure/azure-sdk-for-go/sdk/internal/uuid
-# github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.1.0
+# github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.2.0
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/appendblob
@@ -1092,7 +1092,7 @@ go.opencensus.io/trace/tracestate
 # go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014
 ## explicit; go 1.19
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.0.0-rcv0015
+# go.opentelemetry.io/collector/pdata v1.0.0-rcv0016
 ## explicit; go 1.20
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
