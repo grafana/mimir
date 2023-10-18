@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Update grpc-go library to 1.57.2-dev that includes a fix for a bug introduced in 1.57.1. #6419
+
 ## 2.10.2
 
 ### Grafana Mimir
