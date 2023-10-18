@@ -1707,7 +1707,7 @@ func dumpContextError(ctx context.Context, err error, start time.Time, spanlog *
 	} else {
 		timeout = "not set"
 	}
-	level.Warn(spanlog).Log("msg", "query context error", "cause", context.Cause(ctx), "timeout", timeout,
+	level.Debug(spanlog).Log("msg", "query context error", "cause", context.Cause(ctx), "timeout", timeout,
 		"err", err)
 }
 
