@@ -408,15 +408,26 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 	return nil
 }
 
-func (r *Ruler) starting(ctx context.Context) error {
-	var err error
-
+func (r *Ruler) starting(ctx context.Context) (err error) {
 	if r.subservices, err = services.NewManager(r.lifecycler, r.ring, r.clientsPool, r.outboundSyncQueue, r.outboundSyncQueueProcessor, r.inboundSyncQueue); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
 	}
 
 	r.subservicesWatcher = services.NewFailureWatcher()
 	r.subservicesWatcher.WatchManager(r.subservices)
+
+	defer func() {
+		if err != nil {
+			// The startup can fail when waiting for some subservices to complete starting.
+			// If this happens or the startup fails for any other reason after all subservices are healthy,
+			// then we need to stop the subservices. For example, the lifecycler needs to deregister the
+			// instance from the ring instead of leaving it there to be autoforgotten.
+			//
+			// We use a context.Background() because ctx may already be cancelled,
+			// and we want to make sure the subservices have the chance of a graceful stop.
+			_ = services.StopManagerAndAwaitStopped(context.Background(), r.subservices)
+		}
+	}()
 
 	if err = services.StartManagerAndAwaitHealthy(ctx, r.subservices); err != nil {
 		return errors.Wrap(err, "unable to start ruler subservices")
@@ -444,10 +455,13 @@ func (r *Ruler) starting(ctx context.Context) error {
 	}
 	level.Info(r.logger).Log("msg", "ruler is ACTIVE in the ring")
 
+	// TODO: ideally, ruler would wait until its queryable is finished starting.
+
 	r.manager.Start()
 	level.Info(r.logger).Log("msg", "ruler is only now starting to evaluate rules")
 
-	// TODO: ideally, ruler would wait until its queryable is finished starting.
+	// After the manager has been started we should return a nil error. This ensures that the stopping function is called
+	// and the manager is gracefully stopped when the process need to shut down.
 	return nil
 }
 
