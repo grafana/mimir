@@ -1943,9 +1943,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="alertmanager",namespace="default"})
-            and
-            max by (pod) (up{container="alertmanager",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="alertmanager",namespace="default"})
+              and
+              max by (pod) (up{container="alertmanager",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -1999,9 +2001,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
-            and
-            max by (pod) (up{container="distributor",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
+              and
+              max by (pod) (up{container="distributor",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2082,9 +2086,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="query-frontend",namespace="default"})
-            and
-            max by (pod) (up{container="query-frontend",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="query-frontend",namespace="default"})
+              and
+              max by (pod) (up{container="query-frontend",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2138,9 +2144,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default"})
-            and
-            max by (pod) (up{container="ruler",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="default"})
+              and
+              max by (pod) (up{container="ruler",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2194,9 +2202,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="ruler-querier",namespace="default"})
-            and
-            max by (pod) (up{container="ruler-querier",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="ruler-querier",namespace="default"})
+              and
+              max by (pod) (up{container="ruler-querier",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
@@ -2250,9 +2260,11 @@ spec:
       query: |
         max_over_time(
           sum(
-            sum by (pod) (container_memory_working_set_bytes{container="ruler-query-frontend",namespace="default"})
-            and
-            max by (pod) (up{container="ruler-query-frontend",namespace="default"}) > 0
+            (
+              sum by (pod) (container_memory_working_set_bytes{container="ruler-query-frontend",namespace="default"})
+              and
+              max by (pod) (up{container="ruler-query-frontend",namespace="default"}) > 0
+            ) or vector(0)
           )[15m:]
         )
         +
