@@ -2914,6 +2914,17 @@
           "fieldFlag": "ingester.error-sample-rate",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "chunks_query_ignore_cancellation",
+          "required": false,
+          "desc": "Ignore cancellation when querying chunks.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.chunks-query-ignore-cancellation",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
