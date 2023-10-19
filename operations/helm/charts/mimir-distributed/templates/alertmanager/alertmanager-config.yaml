@@ -1,3 +1,4 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.fallbackConfig -}}
 apiVersion: v1
@@ -14,3 +15,4 @@ data:
     {{- .Values.alertmanager.fallbackConfig | nindent 4 }}
 {{- end -}}
 {{- end -}}
+{{- end }}

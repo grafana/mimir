@@ -32,6 +32,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Changed default `clusterDomain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.1`. #6022 #6110
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
+* [FEATURE] Support monolithic deployment with the helm chart. #4832
 
 ## 5.1.2
 
@@ -45,7 +46,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Update Mimir image to 2.10.0 and GEM image to v2.10.1. #6077
 * [ENHANCEMENT] Make compactor podManagementPolicy configurable. #5902
-* [ENHANCEMENT] Distributor: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce distributor CPU utilization, assuming the CPU request is set to a value close to the actual utilization. #5588
 * [ENHANCEMENT] Querier: dynamically set `GOMAXPROCS` based on the CPU request. This should reduce noisy neighbour issues created by the querier, whose CPU utilization could eventually saturate the Kubernetes node if unbounded. #5646
 * [ENHANCEMENT] Sets the `appProtocol` value to `tcp` for the `gossip-ring-svc` service template. This allows memberlist to work with istio protocol selection. #5673
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.8.0`. #5718

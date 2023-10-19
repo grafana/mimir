@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -124,3 +125,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+{{- end }}

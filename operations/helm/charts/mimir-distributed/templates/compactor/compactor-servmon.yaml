@@ -1,1 +1,3 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "compactor" "memberlist" true) }}
+{{- end }}
