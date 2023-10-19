@@ -1224,7 +1224,7 @@ func TestIngester_Push(t *testing.T) {
 					if testData.expectedErr == nil {
 						assert.NoError(t, err)
 					} else {
-						handledErr := handlePushError(err)
+						handledErr := i.handlePushError(err)
 						assert.Equal(t, testData.expectedErr, handledErr)
 					}
 				}

@@ -2936,6 +2936,17 @@
           "fieldFlag": "ingester.chunks-query-ignore-cancellation",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "grpc_errors_enabled",
+          "required": false,
+          "desc": "When enabled only gRPC errors will be returned by the ingester.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.grpc-errors-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

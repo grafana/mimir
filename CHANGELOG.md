@@ -17,7 +17,10 @@
   * `tooManyClustersError` and `validationError` are mapped to `codes.FailedPrecondition` instead of `http.BadRequest` (400).
   * `ingestionRateLimitedError` is mapped to `codes.ResourceExhausted` instead of `http.StatusTooManyRequests` (429).
   * `requestRateLimitedError` is mapped to `codes.Unavailable` or `codes.ResourceExhausted` instead of the non-standard `529` (The service is overloaded) or `http.StatusTooManyRequests` (429).
-* [CHANGE] Store-gateway: experimental "eager loading on startup" feature is now enabled by default. The feature is used only when store-gateway blocks lazy-loading is enabled. #6463
+* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.grpc-errors-enabled` to true, `Push()` will return only gRPC errors. This feature changes the status codes of the following errors: #6443
+  * `sampleError`, `exemplarError`, `tsdbIngestExemplarErr`, `perUserSeriesLimitReachedError`, `perUserMetadataLimitReachedError`, `perMetricSeriesLimitReachedError`, `perMetricMetadataLimitReachedError` are mapped to `codes.FailedPrecondition` instead of `http.StatusBadRequest` (400).
+  * `tsdbUnavailableError` is mapped to `codes.Internal` instead of `http.StatusServiceUnavailable` (503).
+  *  all other errors which are not  `ingestionError`s are mapped to `codes.Internal` instead of `codes.Unknown`.
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [FEATURE] Ingester: Experimental support for ignoring context cancellation when querying chunks, useful in ruling out the query engine's potential role in unexpected query cancellations. Enable with `-ingester.chunks-query-ignore-cancellation`. #6408

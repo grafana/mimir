@@ -1275,6 +1275,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -ingester.error-sample-rate int
     	[experimental] Each error will be logged once in this many times. Use 0 to log all of them.
+  -ingester.grpc-errors-enabled
+    	[experimental] When enabled only gRPC errors will be returned by the ingester.
   -ingester.ignore-series-limit-for-metric-names string
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int

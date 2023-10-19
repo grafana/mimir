@@ -30,6 +30,14 @@ const (
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
+// Errors returned by ingester should be gRPC errors, but the errors
+// produced by both gogo/status and grpc/status packages do not keep
+// the semantics of the underlying error, which is sometimes needed.
+// For example, the logging middleware needs to know whether an error
+// should be logged, sampled or ignored. Errors of type errorWithStatus
+// are valid gRPC errors that could be parsed by both gogo/status
+// and grpc/status packages, but which preserve the original error
+// semantics.
 type errorWithStatus struct {
 	err    error // underlying error
 	status *status.Status
@@ -84,6 +92,8 @@ func (e errorWithStatus) Unwrap() error {
 	return e.err
 }
 
+// GRPCStatus with a *grpcstatus.Status as output is needed
+// for a correct execution of grpc/status.FromError().
 func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 	if stat, ok := e.status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
 		return stat.GRPCStatus()
@@ -482,7 +492,32 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-func handlePushError(err error) error {
+func handlePushErrorWithGRPC(err error) error {
+	var (
+		ingesterErr ingesterError
+		errCode     = codes.Internal
+		wrappedErr  = err
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.BAD_DATA:
+			errCode = codes.FailedPrecondition
+		case mimirpb.SERVICE_UNAVAILABLE:
+			errCode = codes.Unavailable
+		case mimirpb.INSTANCE_LIMIT:
+			errCode = codes.Unavailable
+			wrappedErr = log.DoNotLogError{Err: err}
+		case mimirpb.TSDB_UNAVAILABLE:
+			errCode = codes.Internal
+		}
+	}
+	return newErrorWithStatus(wrappedErr, errCode)
+}
+
+// TODO this method is needed only for the backwards compatibility.
+// It will be removed once httpgrpc has been completely removed
+// from both distributor and ingester.
+func handlePushErrorWithHTTPGRPC(err error) error {
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
