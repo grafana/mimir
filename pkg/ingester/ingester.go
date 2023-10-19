@@ -199,7 +199,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
-	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Experimental setting to ignore cancellation when querying chunks.")
+	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Ignore cancellation when querying chunks.")
 }
 
 func (cfg *Config) Validate() error {

@@ -2930,7 +2930,7 @@
           "kind": "field",
           "name": "chunks_query_ignore_cancellation",
           "required": false,
-          "desc": "Experimental setting to ignore cancellation when querying chunks.",
+          "desc": "Ignore cancellation when querying chunks.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.chunks-query-ignore-cancellation",
