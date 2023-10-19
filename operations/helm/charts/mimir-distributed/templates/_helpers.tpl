@@ -293,7 +293,7 @@ Params:
 */}}
 {{- define "mimir.podAnnotations" -}}
 {{- if .ctx.Values.useExternalConfig }}
-checksum/config: {{ .ctx.Values.externalConfigVersion }}
+checksum/config: {{ .ctx.Values.externalConfigVersion | quote }}
 {{- else -}}
 checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
 {{- end }}
