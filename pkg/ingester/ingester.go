@@ -1677,7 +1677,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 			// Pass an independent context, to help investigating a problem with ingester queries
 			// getting canceled. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
 			// queriers actually ignored context, so we are emulating that behavior.
-			chunksCtx = context.Background()
+			chunksCtx = context.WithoutCancel(ctx)
 		}
 		if req.StreamingChunksBatchSize > 0 {
 			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
