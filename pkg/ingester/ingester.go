@@ -1778,7 +1778,7 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+		q, err = db.UnorderedChunkQuerier(from, through)
 	} else {
 		q, err = db.ChunkQuerier(from, through)
 	}
@@ -1872,7 +1872,7 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+		q, err = db.UnorderedChunkQuerier(from, through)
 	} else {
 		q, err = db.ChunkQuerier(from, through)
 	}
