@@ -127,7 +127,7 @@ func (qb *queueBroker) len() int {
 	return len(qb.tenantQueues)
 }
 
-func (qb *queueBroker) enqueueRequest(r requestToEnqueue) error {
+func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
 	queue, err := qb.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
 	if err != nil {
 		return err
@@ -138,6 +138,16 @@ func (qb *queueBroker) enqueueRequest(r requestToEnqueue) error {
 	}
 
 	queue.PushBack(r.req)
+	return nil
+}
+
+func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
+	queue, err := qb.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
+	if err != nil {
+		return err
+	}
+
+	queue.PushFront(r.req)
 	return nil
 }
 
@@ -160,6 +170,28 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 	}
 
 	return queue.requests, nil
+}
+
+func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID QuerierID) (Request, TenantID, int, error) {
+	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
+	if err != nil {
+		return nil, tenantID, tenantIndex, err
+	}
+
+	tenantQueue := qb.tenantQueues[tenantID]
+	if tenantQueue == nil {
+		return nil, tenantID, tenantIndex, nil
+	}
+
+	// queue will be nonempty as empty queues are deleted
+	queueElement := tenantQueue.requests.Front()
+	tenantQueue.requests.Remove(queueElement)
+
+	if tenantQueue.requests.Len() == 0 {
+		qb.deleteQueue(tenantID)
+	}
+	return queueElement.Value, tenantID, tenantIndex, nil
+
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected

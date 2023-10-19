@@ -213,7 +213,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqueue) error {
 	var err error
-	err = broker.enqueueRequest(r)
+	err = broker.enqueueRequestBack(r)
 	if errors.Is(err, ErrTooManyRequests) {
 		q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
 		return err
@@ -232,7 +232,7 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqu
 // tryDispatchRequest finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
 // Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequestForQuerierCall) bool {
-	queue, tenantID, idx, err := broker.getNextQueueForQuerier(call.lastUserIndex.last, call.querierID)
+	req, tenantID, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		call.sendError(err)
@@ -241,30 +241,24 @@ func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequest
 	}
 
 	call.lastUserIndex.last = idx
-	if queue == nil {
+	if req == nil {
 		// Nothing available for this querier, try again next time.
 		return false
 	}
 
-	// Pick next request from the queue. The queue is guaranteed not to be empty because we remove empty broker.
-	queueElement := queue.Front()
-
-	requestSent := call.send(nextRequestForQuerier{
-		req:           queueElement.Value,
+	reqForQuerier := nextRequestForQuerier{
+		req:           req,
 		lastUserIndex: call.lastUserIndex,
 		err:           nil,
-	})
+	}
+	requestSent := call.send(reqForQuerier)
 
 	if requestSent {
-		// If GetNextRequestForQuerier received the request, remove it from the queue.
-		// (GetNextRequestForQuerier might have already returned if its context was cancelled.)
-		queue.Remove(queueElement)
-
-		if queue.Len() == 0 {
-			broker.deleteQueue(tenantID)
-		}
-
 		q.queueLength.WithLabelValues(string(tenantID)).Dec()
+	} else {
+		if reqToEnqueue, ok := req.(requestToEnqueue); ok {
+			broker.enqueueRequestFront(reqToEnqueue)
+		}
 	}
 
 	return true

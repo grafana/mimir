@@ -61,7 +61,7 @@ func (q *TreeQueue) isEmpty() bool {
 	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
 }
 
-func (q *TreeQueue) EnqueuePath(path QueuePath, v any) error {
+func (q *TreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
 	if path[0] != q.name {
 		return errors.New("path must begin with root node name")
 	}
@@ -129,7 +129,7 @@ func (q *TreeQueue) getNode(path QueuePath) *TreeQueue {
 	}
 }
 
-func (q *TreeQueue) DequeuePath(path QueuePath) (QueuePath, any) {
+func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
 	childQueue := q.getNode(path)
 	if childQueue == nil {
 		return nil, nil

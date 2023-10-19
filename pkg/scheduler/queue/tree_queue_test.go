@@ -103,17 +103,17 @@ func TestTreeQueue(t *testing.T) {
 	assert.Nil(t, child)
 
 	// enqueue in order
-	root.EnqueuePath([]string{"root", "0"}, "root:0:val0")
-	root.EnqueuePath([]string{"root", "1"}, "root:1:val0")
-	root.EnqueuePath([]string{"root", "1"}, "root:1:val1")
-	root.EnqueuePath([]string{"root", "2"}, "root:2:val0")
-	root.EnqueuePath([]string{"root", "1", "0"}, "root:1:0:val0")
-	root.EnqueuePath([]string{"root", "1", "0"}, "root:1:0:val1")
-	root.EnqueuePath([]string{"root", "2", "0"}, "root:2:0:val0")
-	root.EnqueuePath([]string{"root", "2", "0"}, "root:2:0:val1")
-	root.EnqueuePath([]string{"root", "2", "1"}, "root:2:1:val0")
-	root.EnqueuePath([]string{"root", "2", "1"}, "root:2:1:val1")
-	root.EnqueuePath([]string{"root", "2", "1"}, "root:2:1:val2")
+	root.EnqueueBackByPath([]string{"root", "0"}, "root:0:val0")
+	root.EnqueueBackByPath([]string{"root", "1"}, "root:1:val0")
+	root.EnqueueBackByPath([]string{"root", "1"}, "root:1:val1")
+	root.EnqueueBackByPath([]string{"root", "2"}, "root:2:val0")
+	root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val0")
+	root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val1")
+	root.EnqueueBackByPath([]string{"root", "2", "0"}, "root:2:0:val0")
+	root.EnqueueBackByPath([]string{"root", "2", "0"}, "root:2:0:val1")
+	root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val0")
+	root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val1")
+	root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val2")
 
 	// note no queue at a given level is dequeued from twice in a row
 	// unless all others at the same level are empty down to the leaf node
@@ -164,7 +164,7 @@ func TestTreeQueue(t *testing.T) {
 			// here we insert something new into root:1 to test that:
 			//  - the new root:1 insert does not jump the line in front of root:2
 			//  - root:2 will not be dequeued from twice in a row now that there is a value in root:1 again
-			root.EnqueuePath([]string{"root", "1", "0"}, "root:1:0:val2")
+			root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val2")
 		}
 	}
 	assert.Equal(t, expectedQueueOutput, queueOutput)
@@ -179,45 +179,45 @@ func TestTreeQueue(t *testing.T) {
 
 func TestDequeuePath(t *testing.T) {
 	root := NewTreeQueue("root")
-	root.EnqueuePath(QueuePath{"root", "0"}, "root:0:val0")
-	root.EnqueuePath(QueuePath{"root", "1"}, "root:1:val0")
-	root.EnqueuePath(QueuePath{"root", "1"}, "root:1:val1")
-	root.EnqueuePath(QueuePath{"root", "2"}, "root:2:val0")
-	root.EnqueuePath(QueuePath{"root", "1", "0"}, "root:1:0:val0")
-	root.EnqueuePath(QueuePath{"root", "1", "0"}, "root:1:0:val1")
-	root.EnqueuePath(QueuePath{"root", "2", "0"}, "root:2:0:val0")
-	root.EnqueuePath(QueuePath{"root", "2", "0"}, "root:2:0:val1")
-	root.EnqueuePath(QueuePath{"root", "2", "1"}, "root:2:1:val0")
-	root.EnqueuePath(QueuePath{"root", "2", "1"}, "root:2:1:val1")
-	root.EnqueuePath(QueuePath{"root", "2", "1"}, "root:2:1:val2")
+	root.EnqueueBackByPath(QueuePath{"root", "0"}, "root:0:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val1")
+	root.EnqueueBackByPath(QueuePath{"root", "2"}, "root:2:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "1", "0"}, "root:1:0:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "1", "0"}, "root:1:0:val1")
+	root.EnqueueBackByPath(QueuePath{"root", "2", "0"}, "root:2:0:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "2", "0"}, "root:2:0:val1")
+	root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val0")
+	root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val1")
+	root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val2")
 
 	path := QueuePath{"root", "2"}
-	dequeuedPath, v := root.DequeuePath(path)
+	dequeuedPath, v := root.DequeueByPath(path)
 	assert.Equal(t, "root:2:val0", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:0:val0", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val0", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:0:val1", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val1", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val2", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
 	// root:2 is exhausted
-	dequeuedPath, v = root.DequeuePath(path)
+	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Nil(t, v)
 	assert.Nil(t, dequeuedPath)
 
