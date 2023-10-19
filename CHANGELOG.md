@@ -42,7 +42,7 @@
 * [ENHANCEMENT] Querier: Add `cortex_querier_federation_exemplar_tenants_queried` and `cortex_querier_federation_tenants_queried` metrics to track the number of tenants queried by multi-tenant queries. #6374 #6409
 * [ENHANCEMENT] All: added an experimental `-server.grpc.num-workers` flag that configures the number of long-living workers used to process gRPC requests. This could decrease the CPU usage by reducing the number of stack allocations. #6311
 * [ENHANCEMENT] All: improved IPv6 support by using the proper host:port formatting. #6311
-* [ENHANCEMENT] Querier: always return error encountered during chunks streaming, rather than `the stream has already been exhausted`. #6345
+* [ENHANCEMENT] Querier: always return error encountered during chunks streaming, rather than `the stream has already been exhausted`. #6345 #6433
 * [ENHANCEMENT] Query-frontend: add `instance_enable_ipv6` to support IPv6. #6111
 * [ENHANCEMENT] Store-gateway: return same detailed error messages as queriers when chunks or series limits are reached. #6347
 * [ENHANCEMENT] Querier: reduce memory consumed for queries that hit store-gateways. #6348
