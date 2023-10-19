@@ -51,7 +51,7 @@ find_prev_release() {
   ALL_RELEASE_TAGS=$(git tag --list 'mimir-[0-9]*')
 
   # To sort rc version correctly we use sed to append non-rc version with a temporary suffix
-  SORTED_RELEASE_TAGS=$(echo "$ALL_RELEASE_TAGS" | $SED '/rc/b; s/\(.*\)/\1-xx.x/' | sort --version-sort | gsed 's/-xx.x//')
+  SORTED_RELEASE_TAGS=$(echo "$ALL_RELEASE_TAGS" | $SED '/rc/b; s/\(.*\)/\1-xx.x/' | sort --version-sort | $SED 's/-xx.x//')
 
   if [[ $LAST_RELEASE_VERSION =~ "-rc" ]]; then
     PREV_RELEASE_TAG=$(echo "$SORTED_RELEASE_TAGS" | grep $(echo $LAST_RELEASE_VERSION) -B1 | head -1)
