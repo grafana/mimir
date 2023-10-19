@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -326,7 +327,13 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, d.queryQuorumConfig(ctx), queryIngester, cleanup)
+	quorumConfig := d.queryQuorumConfig(ctx)
+	quorumConfig.IsTerminalError = func(err error) bool {
+		_, isLimitError := err.(validation.LimitError)
+		return isLimitError
+	}
+
+	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}

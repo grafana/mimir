@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -47,11 +49,11 @@ func TestInstanceLimitErr(t *testing.T) {
 		var instanceLimitErr instanceLimitReachedError
 		require.Error(t, instanceLimitErr)
 		require.ErrorAs(t, limitError, &instanceLimitErr)
-		checkIngesterError(t, limitError, instanceLimitReached, false)
+		checkIngesterError(t, limitError, mimirpb.INSTANCE_LIMIT, false)
 
 		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
 		require.Error(t, wrappedWithUserErr)
 		require.ErrorIs(t, wrappedWithUserErr, limitError)
-		checkIngesterError(t, wrappedWithUserErr, instanceLimitReached, false)
+		checkIngesterError(t, wrappedWithUserErr, mimirpb.INSTANCE_LIMIT, false)
 	}
 }
