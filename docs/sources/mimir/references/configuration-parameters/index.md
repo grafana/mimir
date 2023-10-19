@@ -1113,6 +1113,11 @@ instance_limits:
 # all of them.
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
+
+# (experimental) Experimental setting to ignore cancellation when querying
+# chunks.
+# CLI flag: -ingester.chunks-query-ignore-cancellation
+[chunks_query_ignore_cancellation: <boolean> | default = false]
 ```
 
 ### querier

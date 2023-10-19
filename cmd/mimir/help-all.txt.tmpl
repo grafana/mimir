@@ -1217,6 +1217,8 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
+  -ingester.chunks-query-ignore-cancellation
+    	[experimental] Experimental setting to ignore cancellation when querying chunks.
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration

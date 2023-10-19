@@ -179,6 +179,8 @@ type Config struct {
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
+
+	ChunksQueryIgnoreCancellation bool `yaml:"chunks_query_ignore_cancellation" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -197,6 +199,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
+	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Experimental setting to ignore cancellation when querying chunks.")
 }
 
 func (cfg *Config) Validate() error {
@@ -1669,10 +1672,13 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		// For the time being, pass an independent context, while we investigate a problem with queries
-		// getting canceled in ingesters. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
-		// queriers actually ignored context, so we are emulating that behavior.
-		chunksCtx := context.Background()
+		chunksCtx := ctx
+		if i.cfg.ChunksQueryIgnoreCancellation {
+			// Pass an independent context, to help investigating a problem with ingester queries
+			// getting canceled. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
+			// queriers actually ignored context, so we are emulating that behavior.
+			chunksCtx = context.Background()
+		}
 		if req.StreamingChunksBatchSize > 0 {
 			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
 			numSeries, numSamples, err = i.executeStreamingQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
@@ -1681,7 +1687,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 
-		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if i.cfg.ChunksQueryIgnoreCancellation && ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			dumpContextError(ctx, err, start, spanlog)
 		}
 	} else {
