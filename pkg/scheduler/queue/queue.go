@@ -274,7 +274,7 @@ func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequest
 	return true
 }
 
-// EnqueueRequest puts the request into the queue. maxQueries is user-specific value that specifies how many queriers can
+// EnqueueRequest puts the request into the queue. maxQueriers is user-specific value that specifies how many queriers can
 // this user use (zero or negative = all queriers). It is passed to each EnqueueRequest, because it can change
 // between calls.
 //
