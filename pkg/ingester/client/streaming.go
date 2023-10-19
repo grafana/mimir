@@ -160,7 +160,7 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 // GetChunks returns the chunks for the series with index seriesIndex.
 // This method must be called with monotonically increasing values of seriesIndex.
-func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error) {
+func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err error) {
 	if s.err != nil {
 		// Why not just return s.err?
 		// GetChunks should not be called once it has previously returned an error.
@@ -168,6 +168,10 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 		// So it's valuable to return a slightly different error to indicate that something's not quite right if GetChunks is called after it's previously returned an error.
 		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream previously failed and returned an error: %w", seriesIndex, s.err)
 	}
+
+	defer func() {
+		s.err = err
+	}()
 
 	if len(s.seriesBatch) == 0 {
 		batch, channelOpen := <-s.seriesBatchChan
@@ -177,7 +181,6 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) ([]Chunk, error
 			select {
 			case err, haveError := <-s.errorChan:
 				if haveError {
-					s.err = err
 					if _, ok := err.(validation.LimitError); ok {
 						return nil, err
 					}

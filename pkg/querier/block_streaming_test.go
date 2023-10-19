@@ -426,7 +426,14 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream has already been exhausted (was expecting 1 series)")
+	expectedError := "attempted to read series at index 1 from store-gateway chunks stream, but the stream has already been exhausted (was expecting 1 series)"
+	require.EqualError(t, err, expectedError)
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(3)
+	require.EqualError(t, err, "attempted to read series at index 3 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) {
@@ -445,9 +452,16 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
+	expectedError := "attempted to read series at index 1 from store-gateway chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series"
+	require.EqualError(t, err, expectedError)
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(3)
+	require.EqualError(t, err, "attempted to read series at index 3 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
@@ -466,9 +480,16 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 
 	s, err := reader.GetChunks(0)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
+	expectedError := "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
+	require.EqualError(t, err, expectedError)
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(1)
+	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
