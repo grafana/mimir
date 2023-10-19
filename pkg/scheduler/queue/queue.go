@@ -166,14 +166,14 @@ func (q *RequestQueue) dispatcherLoop() {
 				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
 			}
 		case r := <-q.requestsToEnqueue:
-			err := q.handleEnqueueRequest(queueBroker, r)
+			err := q.enqueueRequestToBroker(queueBroker, r)
 			r.processed <- err
 
 			if err == nil {
 				needToDispatchQueries = true
 			}
 		case call := <-q.nextRequestForQuerierCalls:
-			if !q.tryDispatchRequest(queueBroker, call) {
+			if !q.tryDispatchRequestToQuerier(queueBroker, call) {
 				// No requests available for this querier connection right now. Add it to the list to try later.
 				waitingGetNextRequestForQuerierCalls.PushBack(call)
 			}
@@ -186,7 +186,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
-				if q.tryDispatchRequest(queueBroker, call) {
+				if q.tryDispatchRequestToQuerier(queueBroker, call) {
 					waitingGetNextRequestForQuerierCalls.Remove(currentElement)
 				}
 
@@ -211,7 +211,13 @@ func (q *RequestQueue) dispatcherLoop() {
 	}
 }
 
-func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqueue) error {
+// enqueueRequestToBroker handles a request from the dispatcher's queue and submits it to the scheduler's queue broker.
+//
+// The scheduler's queue broker manages the relationship between queriers and tenant query queues,
+// enforcing queueing fairness and limits on tenant query queue depth.
+//
+// If request is successfully enqueued, successFn is called before any querier can receive the request.
+func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
 	var err error
 	err = broker.enqueueRequestBack(r)
 	if errors.Is(err, ErrTooManyRequests) {
@@ -229,9 +235,9 @@ func (q *RequestQueue) handleEnqueueRequest(broker *queueBroker, r requestToEnqu
 	return err
 }
 
-// tryDispatchRequest finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
+// tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
 // Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
-func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequestForQuerierCall) bool {
+func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *nextRequestForQuerierCall) bool {
 	req, tenantID, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
@@ -264,12 +270,15 @@ func (q *RequestQueue) tryDispatchRequest(broker *queueBroker, call *nextRequest
 	return true
 }
 
-// EnqueueRequest puts the request into the queue. maxQueries is user-specific value that specifies how many queriers can
-// this user use (zero or negative = all queriers). It is passed to each EnqueueRequest, because it can change
-// between calls.
+// EnqueueRequestToDispatcher handles a request from the query frontend and submits it to the initial dispatcher queue
+//
+// maxQueries is tenant-specific value to compute which queriers should handle requests for this tenant.
+// If maxQueriers is <= 0, all queriers can handle this user's requests.
+// If maxQueriers has changed since the last call, queriers for this are recomputed.
+// It is passed to each EnqueueRequestToDispatcher, because it can change between calls.
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
-func (q *RequestQueue) EnqueueRequest(tenantID string, req Request, maxQueriers int, successFn func()) error {
+func (q *RequestQueue) EnqueueRequestToDispatcher(tenantID string, req Request, maxQueriers int, successFn func()) error {
 	start := time.Now()
 	defer func() {
 		q.enqueueDuration.Observe(time.Since(start).Seconds())

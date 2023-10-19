@@ -356,7 +356,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	maxQueriers := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limits.MaxQueriersPerUser)
 
 	s.activeUsers.UpdateUserTimestamp(userID, now)
-	return s.requestQueue.EnqueueRequest(userID, req, maxQueriers, func() {
+	return s.requestQueue.EnqueueRequestToDispatcher(userID, req, maxQueriers, func() {
 		shouldCancel = false
 
 		s.pendingRequestsMu.Lock()

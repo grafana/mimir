@@ -100,14 +100,14 @@ type queueBroker struct {
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
-	maxUserQueueSize int
+	maxTenantQueueSize int
 }
 
 type userQueue struct {
 	requests *list.List
 }
 
-func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroker {
+func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
 		tenantQueues:     map[TenantID]*userQueue{},
 		tenantQueuesTree: NewTreeQueue("root"),
@@ -119,7 +119,7 @@ func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroke
 			tenantsByID:        map[TenantID]*queueTenant{},
 			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		},
-		maxUserQueueSize: maxUserQueueSize,
+		maxTenantQueueSize: maxTenantQueueSize,
 	}
 }
 
@@ -133,7 +133,7 @@ func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
 		return err
 	}
 
-	if queue.Len()+1 > qb.maxUserQueueSize {
+	if queue.Len()+1 > qb.maxTenantQueueSize {
 		return ErrTooManyRequests
 	}
 
@@ -152,7 +152,7 @@ func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
 }
 
 // Returns existing or new queue for user.
-// MaxQueriers is used to compute which queriers should handle requests for this user.
+// maxQueriers is used to compute which queriers should handle requests for this tenant.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
 func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*list.List, error) {

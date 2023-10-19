@@ -75,7 +75,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 
 								for i := 0; i < requestCount; i++ {
 									for {
-										err := queue.EnqueueRequest(strconv.Itoa(tenantID), req, maxQueriers, func() {})
+										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriers, func() {})
 										if err == nil {
 											break
 										}
@@ -174,7 +174,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" hash falls in the querier-1 shard.
-	require.NoError(t, queue.EnqueueRequest("user-1", "request", 1, nil))
+	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", "request", 1, nil))
 
 	startTime := time.Now()
 	querier2wg.Wait()
