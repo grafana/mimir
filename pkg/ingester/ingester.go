@@ -1687,7 +1687,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 
-		if i.cfg.ChunksQueryIgnoreCancellation && ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if i.cfg.ChunksQueryIgnoreCancellation && (ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 			dumpContextError(ctx, err, start, spanlog)
 		}
 	} else {
