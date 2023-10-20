@@ -33,7 +33,7 @@ func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *f
 	return &frontendProcessor{
 		log:            log,
 		handler:        handler,
-		maxMessageSize: cfg.GRPCClientConfig.MaxSendMsgSize,
+		maxMessageSize: cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:      cfg.QuerierID,
 
 		frontendClientFactory: func(conn *grpc.ClientConn) frontendv1pb.FrontendClient {
