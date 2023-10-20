@@ -203,7 +203,9 @@ func TestQueuesConsistency(t *testing.T) {
 			for i := 0; i < 10000; i++ {
 				switch r.Int() % 6 {
 				case 0:
-					assert.NotNil(t, uq.getOrAddTenantQueue(generateTenant(r), 3))
+					queue, err := uq.getOrAddTenantQueue(generateTenant(r), 3)
+					assert.Nil(t, err)
+					assert.NotNil(t, queue)
 				case 1:
 					qid := generateQuerier(r)
 					_, _, luid, _ := uq.getNextQueueForQuerier(lastUserIndexes[qid], qid)
@@ -405,11 +407,14 @@ func generateQuerier(r *rand.Rand) QuerierID {
 }
 
 func getOrAdd(t *testing.T, qb *queueBroker, tenantID TenantID, maxQueriers int) *list.List {
-	q := qb.getOrAddTenantQueue(tenantID, maxQueriers)
-	assert.NotNil(t, q)
+	addedQueue, err := qb.getOrAddTenantQueue(tenantID, maxQueriers)
+	assert.Nil(t, err)
+	assert.NotNil(t, addedQueue)
 	assert.NoError(t, isConsistent(qb))
-	assert.Equal(t, q, qb.getOrAddTenantQueue(tenantID, maxQueriers))
-	return q
+	reAddedQueue, err := qb.getOrAddTenantQueue(tenantID, maxQueriers)
+	assert.Nil(t, err)
+	assert.Equal(t, addedQueue, reAddedQueue)
+	return addedQueue
 }
 
 func confirmOrderForQuerier(t *testing.T, qb *queueBroker, querier QuerierID, lastUserIndex int, qs ...*list.List) int {

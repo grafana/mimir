@@ -334,7 +334,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequest(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}

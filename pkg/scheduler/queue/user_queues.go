@@ -99,14 +99,14 @@ type queueBroker struct {
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
-	maxUserQueueSize int
+	maxTenantQueueSize int
 }
 
 type userQueue struct {
 	requests *list.List
 }
 
-func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroker {
+func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
 		tenantQueues: map[TenantID]*userQueue{},
 		tenantQuerierAssignments: tenantQuerierAssignments{
@@ -117,7 +117,7 @@ func newQueueBroker(maxUserQueueSize int, forgetDelay time.Duration) *queueBroke
 			tenantsByID:        map[TenantID]*queueTenant{},
 			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		},
-		maxUserQueueSize: maxUserQueueSize,
+		maxTenantQueueSize: maxTenantQueueSize,
 	}
 }
 
@@ -125,14 +125,38 @@ func (qb *queueBroker) len() int {
 	return len(qb.tenantQueues)
 }
 
+func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
+	queue, err := qb.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
+	if err != nil {
+		return err
+	}
+
+	if queue.Len()+1 > qb.maxTenantQueueSize {
+		return ErrTooManyRequests
+	}
+
+	queue.PushBack(r.req)
+	return nil
+}
+
+func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
+	queue, err := qb.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
+	if err != nil {
+		return err
+	}
+
+	queue.PushFront(r.req)
+	return nil
+}
+
 // Returns existing or new queue for user.
-// MaxQueriers is used to compute which queriers should handle requests for this user.
+// maxQueriers is used to compute which queriers should handle requests for this tenant.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) *list.List {
-	tenant := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
-	if tenant == nil {
-		return nil
+func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*list.List, error) {
+	_, err := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
+	if err != nil {
+		return nil, err
 	}
 	queue := qb.tenantQueues[tenantID]
 
@@ -143,7 +167,29 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) *
 		qb.tenantQueues[tenantID] = queue
 	}
 
-	return queue.requests
+	return queue.requests, nil
+}
+
+func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID QuerierID) (Request, TenantID, int, error) {
+	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
+	if err != nil {
+		return nil, tenantID, tenantIndex, err
+	}
+
+	tenantQueue := qb.tenantQueues[tenantID]
+	if tenantQueue == nil {
+		return nil, tenantID, tenantIndex, nil
+	}
+
+	// queue will be nonempty as empty queues are deleted
+	queueElement := tenantQueue.requests.Front()
+	tenantQueue.requests.Remove(queueElement)
+
+	if tenantQueue.requests.Len() == 0 {
+		qb.deleteQueue(tenantID)
+	}
+	return queueElement.Value, tenantID, tenantIndex, nil
+
 }
 
 // Finds next queue for the querier. To support fair scheduling between users, client is expected
@@ -177,13 +223,17 @@ func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
-func (qb *queueBroker) deleteQueue(tenantID TenantID) {
+func (qb *queueBroker) deleteQueue(tenantID TenantID) error {
+	if tenantID == emptyTenantID {
+		return ErrInvalidTenantID
+	}
 	tenantQueue := qb.tenantQueues[tenantID]
 	if tenantQueue == nil {
-		return
+		return nil
 	}
 	delete(qb.tenantQueues, tenantID)
-	qb.tenantQuerierAssignments.removeTenant(tenantID)
+	err := qb.tenantQuerierAssignments.removeTenant(tenantID)
+	return err
 }
 
 func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (TenantID, int, error) {
@@ -218,10 +268,10 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 	return emptyTenantID, lastTenantIndex, nil
 }
 
-func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) *queueTenant {
+func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
 	// empty tenantID is not allowed; "" is used for free spot
 	if tenantID == emptyTenantID {
-		return nil
+		return nil, ErrInvalidTenantID
 	}
 
 	if maxQueriers < 0 {
@@ -261,7 +311,7 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 		tenant.maxQueriers = maxQueriers
 		tqa.shuffleTenantQueriers(tenantID, nil)
 	}
-	return tenant
+	return tenant, nil
 }
 
 func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
@@ -284,7 +334,10 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
 	tqa.recomputeTenantQueriers()
 }
 
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
+func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) error {
+	if tenantID == emptyTenantID {
+		return ErrInvalidTenantID
+	}
 	tenant := tqa.tenantsByID[tenantID]
 	delete(tqa.tenantsByID, tenantID)
 	tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
@@ -297,6 +350,7 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	for i := len(tqa.tenantIDOrder) - 1; i >= 0 && tqa.tenantIDOrder[i] == emptyTenantID; i-- {
 		tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
 	}
+	return nil
 }
 
 func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) {
