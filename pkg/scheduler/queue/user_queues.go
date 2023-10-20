@@ -186,7 +186,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID Que
 	tenantQueue.requests.Remove(queueElement)
 
 	if tenantQueue.requests.Len() == 0 {
-		_ = qb.deleteQueue(tenantID)
+		qb.deleteQueue(tenantID)
 	}
 	return queueElement.Value, tenantID, tenantIndex, nil
 
@@ -223,17 +223,13 @@ func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
-func (qb *queueBroker) deleteQueue(tenantID TenantID) error {
-	if tenantID == emptyTenantID {
-		return ErrInvalidTenantID
-	}
+func (qb *queueBroker) deleteQueue(tenantID TenantID) {
 	tenantQueue := qb.tenantQueues[tenantID]
 	if tenantQueue == nil {
-		return nil
+		return
 	}
 	delete(qb.tenantQueues, tenantID)
-	err := qb.tenantQuerierAssignments.removeTenant(tenantID)
-	return err
+	qb.tenantQuerierAssignments.removeTenant(tenantID)
 }
 
 func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (TenantID, int, error) {
@@ -337,11 +333,11 @@ func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
 	tqa.recomputeTenantQueriers()
 }
 
-func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) error {
-	if tenantID == emptyTenantID {
-		return ErrInvalidTenantID
-	}
+func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) {
 	tenant := tqa.tenantsByID[tenantID]
+	if tenant == nil {
+		return
+	}
 	delete(tqa.tenantsByID, tenantID)
 	tqa.tenantIDOrder[tenant.orderIndex] = emptyTenantID
 
@@ -353,7 +349,6 @@ func (tqa *tenantQuerierAssignments) removeTenant(tenantID TenantID) error {
 	for i := len(tqa.tenantIDOrder) - 1; i >= 0 && tqa.tenantIDOrder[i] == emptyTenantID; i-- {
 		tqa.tenantIDOrder = tqa.tenantIDOrder[:i]
 	}
-	return nil
 }
 
 func (tqa *tenantQuerierAssignments) removeQuerierConnection(querierID QuerierID, now time.Time) {

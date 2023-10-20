@@ -49,7 +49,7 @@ func TestQueues(t *testing.T) {
 	lastUserIndex = confirmOrderForQuerier(t, uq, "querier-1", lastUserIndex, qTwo, qThree, qOne)
 
 	// Remove one: ["" two three]
-	_ = uq.deleteQueue("one")
+	uq.deleteQueue("one")
 	assert.NoError(t, isConsistent(uq))
 
 	lastUserIndex = confirmOrderForQuerier(t, uq, "querier-1", lastUserIndex, qTwo, qThree, qTwo)
@@ -60,17 +60,17 @@ func TestQueues(t *testing.T) {
 	lastUserIndex = confirmOrderForQuerier(t, uq, "querier-1", lastUserIndex, qThree, qFour, qTwo, qThree)
 
 	// Remove two: [four "" three]
-	_ = uq.deleteQueue("two")
+	uq.deleteQueue("two")
 	assert.NoError(t, isConsistent(uq))
 
 	lastUserIndex = confirmOrderForQuerier(t, uq, "querier-1", lastUserIndex, qFour, qThree, qFour)
 
 	// Remove three: [four]
-	_ = uq.deleteQueue("three")
+	uq.deleteQueue("three")
 	assert.NoError(t, isConsistent(uq))
 
 	// Remove four: []
-	_ = uq.deleteQueue("four")
+	uq.deleteQueue("four")
 	assert.NoError(t, isConsistent(uq))
 
 	q, _, _, err = uq.getNextQueueForQuerier(lastUserIndex, "querier-1")
@@ -211,7 +211,7 @@ func TestQueuesConsistency(t *testing.T) {
 					_, _, luid, _ := uq.getNextQueueForQuerier(lastUserIndexes[qid], qid)
 					lastUserIndexes[qid] = luid
 				case 2:
-					_ = uq.deleteQueue(generateTenant(r))
+					uq.deleteQueue(generateTenant(r))
 				case 3:
 					q := generateQuerier(r)
 					uq.addQuerierConnection(q)

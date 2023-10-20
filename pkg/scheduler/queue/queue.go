@@ -264,8 +264,7 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 		q.queueLength.WithLabelValues(string(tenantID)).Dec()
 	} else {
 		if reqToEnqueue, ok := req.(requestToEnqueue); ok {
-			// should never error; only error case is providing an empty tenant ID ""
-			// any request that was in the queue already passed this validation
+			// should never error; any item previously in the queue already passed validation
 			_ = broker.enqueueRequestFront(reqToEnqueue)
 		}
 	}
