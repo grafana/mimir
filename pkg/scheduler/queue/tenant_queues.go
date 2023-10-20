@@ -86,29 +86,29 @@ type queueTenant struct {
 	// and is therefore consistent between different frontends.
 	shuffleShardSeed int64
 
-	// points up to user order to enable efficient removal
+	// points up to tenant order to enable efficient removal
 	orderIndex int
 
 	maxQueriers int
 }
 
-// This struct holds user queues for pending requests. It also keeps track of connected queriers,
-// and mapping between users and queriers.
+// queueBroker encapsulates access to tenant queues for pending requests
+// and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueues map[TenantID]*userQueue
+	tenantQueues map[TenantID]*tenantQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
 	maxTenantQueueSize int
 }
 
-type userQueue struct {
+type tenantQueue struct {
 	requests *list.List
 }
 
 func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueues: map[TenantID]*userQueue{},
+		tenantQueues: map[TenantID]*tenantQueue{},
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
@@ -149,9 +149,9 @@ func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
 	return nil
 }
 
-// getOrAddTenantQueue returns existing or new queue for user.
+// getOrAddTenantQueue returns existing or new queue for tenant.
 // maxQueriers is used to compute which queriers should handle requests for this tenant.
-// If maxQueriers is <= 0, all queriers can handle this user's requests.
+// If maxQueriers is <= 0, all queriers can handle this tenant's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
 func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*list.List, error) {
 	_, err := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
@@ -161,7 +161,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 	queue := qb.tenantQueues[tenantID]
 
 	if queue == nil {
-		queue = &userQueue{
+		queue = &tenantQueue{
 			requests: list.New(),
 		}
 		qb.tenantQueues[tenantID] = queue
@@ -170,8 +170,8 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 	return queue.requests, nil
 }
 
-func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID QuerierID) (Request, TenantID, int, error) {
-	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
+func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (Request, TenantID, int, error) {
+	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querierID)
 	if err != nil {
 		return nil, tenantID, tenantIndex, err
 	}
@@ -192,13 +192,13 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID Que
 
 }
 
-// Finds next queue for the querier. To support fair scheduling between users, client is expected
-// to pass last user index returned by this function as argument. If there was no previous
-// last user index, use -1.
+// Finds next queue for the querier. To support fair scheduling between tenants, client is expected
+// to pass last tenant index returned by this function as argument. If there was no previous
+// last tenant index, use -1.
 //
 // getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
-func (qb *queueBroker) getNextQueueForQuerier(lastUserIndex int, querierID QuerierID) (*list.List, TenantID, int, error) {
-	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastUserIndex, querierID)
+func (qb *queueBroker) getNextQueueForQuerier(lastTenantIndex int, querierID QuerierID) (*list.List, TenantID, int, error) {
+	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querierID)
 	if err != nil || nextTenantID == emptyTenantID {
 		return nil, nextTenantID, nextTenantIndex, err
 	}
