@@ -68,7 +68,9 @@ data:
           timeout: 500ms
       scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
-      grpc_client_config:
+      query_frontend_grpc_client_config:
+        max_send_msg_size: 419430400
+      query_scheduler_grpc_client_config:
         max_send_msg_size: 419430400
       scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
