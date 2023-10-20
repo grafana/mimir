@@ -186,7 +186,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastUserIndex int, querierID Que
 	tenantQueue.requests.Remove(queueElement)
 
 	if tenantQueue.requests.Len() == 0 {
-		qb.deleteQueue(tenantID)
+		_ = qb.deleteQueue(tenantID)
 	}
 	return queueElement.Value, tenantID, tenantIndex, nil
 

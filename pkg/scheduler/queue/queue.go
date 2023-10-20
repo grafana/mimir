@@ -218,8 +218,7 @@ func (q *RequestQueue) dispatcherLoop() {
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
-	var err error
-	err = broker.enqueueRequestBack(r)
+	err := broker.enqueueRequestBack(r)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
@@ -234,7 +233,7 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 		r.successFn()
 	}
 
-	return err
+	return nil
 }
 
 // tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
