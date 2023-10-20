@@ -149,7 +149,7 @@ func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
 	return nil
 }
 
-// Returns existing or new queue for user.
+// getOrAddTenantQueue returns existing or new queue for user.
 // maxQueriers is used to compute which queriers should handle requests for this tenant.
 // If maxQueriers is <= 0, all queriers can handle this user's requests.
 // If maxQueriers has changed since the last call, queriers for this are recomputed.
@@ -269,8 +269,8 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 }
 
 func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
-	// empty tenantID is not allowed; "" is used for free spot
 	if tenantID == emptyTenantID {
+		// empty tenantID is not allowed; "" is used for free spot
 		return nil, ErrInvalidTenantID
 	}
 
@@ -283,8 +283,11 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 	if tenant == nil {
 		tenant = &queueTenant{
 			shuffleShardSeed: util.ShuffleShardSeed(string(tenantID), ""),
-			orderIndex:       -1,
-			maxQueriers:      0,
+			// orderIndex set to sentinel value to indicate it is not inserted yet
+			orderIndex: -1,
+			// maxQueriers 0 enables a later check to trigger tenant-querier assignment
+			// for new queue tenants with shuffle sharding enabled
+			maxQueriers: 0,
 		}
 		for i, id := range tqa.tenantIDOrder {
 			if id == emptyTenantID {
@@ -297,7 +300,7 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 		}
 
 		if tenant.orderIndex < 0 {
-			// no empty spaces in tenant order; append
+			// there were no empty spaces in tenant order; append
 			tenant.orderIndex = len(tqa.tenantIDOrder)
 			tqa.tenantIDOrder = append(tqa.tenantIDOrder, tenantID)
 			tqa.tenantsByID[tenantID] = tenant

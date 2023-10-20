@@ -220,8 +220,10 @@ func (q *RequestQueue) dispatcherLoop() {
 func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
 	var err error
 	err = broker.enqueueRequestBack(r)
-	if errors.Is(err, ErrTooManyRequests) {
-		q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
+	if err != nil {
+		if errors.Is(err, ErrTooManyRequests) {
+			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
+		}
 		return err
 	}
 
@@ -263,7 +265,9 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 		q.queueLength.WithLabelValues(string(tenantID)).Dec()
 	} else {
 		if reqToEnqueue, ok := req.(requestToEnqueue); ok {
-			broker.enqueueRequestFront(reqToEnqueue)
+			// should never error; only error case is providing an empty tenant ID ""
+			// any request that was in the queue already passed this validation
+			_ = broker.enqueueRequestFront(reqToEnqueue)
 		}
 	}
 
@@ -273,8 +277,6 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 // EnqueueRequestToDispatcher handles a request from the query frontend and submits it to the initial dispatcher queue
 //
 // maxQueries is tenant-specific value to compute which queriers should handle requests for this tenant.
-// If maxQueriers is <= 0, all queriers can handle this user's requests.
-// If maxQueriers has changed since the last call, queriers for this are recomputed.
 // It is passed to each EnqueueRequestToDispatcher, because it can change between calls.
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
