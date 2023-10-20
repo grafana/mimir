@@ -139,6 +139,11 @@ func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
 	return nil
 }
 
+// enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
+// to the front of the queue when there was a failure in forwarding the querier.
+//
+// max tenant queue size checks are skipped even though queue size violations
+// are not expected to occur when re-enqueuing a previously dequeued request.
 func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
 	queue, err := qb.getOrAddTenantQueue(r.tenantID, r.maxQueriers)
 	if err != nil {
