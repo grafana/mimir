@@ -120,6 +120,45 @@ func TestNewRequestRateError(t *testing.T) {
 	checkDistributorError(t, wrappedErr, mimirpb.REQUEST_RATE_LIMITED)
 }
 
+func TestNewIngesterPushError(t *testing.T) {
+	testMsg := "this is an error"
+	anotherTestMsg := "this is another error"
+	tests := map[string]struct {
+		originalStatus *status.Status
+		expectedCause  mimirpb.ErrorCause
+	}{
+		"a gRPC error with details give an ingesterPushError with the same details": {
+			originalStatus: createGRPCErrorWithDetails(t, codes.Internal, testMsg, mimirpb.SERVICE_UNAVAILABLE),
+			expectedCause:  mimirpb.SERVICE_UNAVAILABLE,
+		},
+		"a gRPC error without details give an ingesterPushError with INVALID cause": {
+			originalStatus: status.New(codes.Internal, testMsg),
+			expectedCause:  mimirpb.INVALID,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := newIngesterPushError(testData.originalStatus)
+			expectedErrorMsg := fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, testMsg)
+			assert.Error(t, err)
+			assert.EqualError(t, err, expectedErrorMsg)
+			checkDistributorError(t, err, testData.expectedCause)
+
+			anotherErr := newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, anotherTestMsg, testData.expectedCause))
+			assert.NotErrorIs(t, err, anotherErr)
+
+			assert.True(t, errors.As(err, &ingesterPushError{}))
+			assert.False(t, errors.As(err, &replicasDidNotMatchError{}))
+
+			wrappedErr := fmt.Errorf("wrapped %w", err)
+			assert.ErrorIs(t, wrappedErr, err)
+			assert.True(t, errors.As(wrappedErr, &ingesterPushError{}))
+			checkDistributorError(t, wrappedErr, testData.expectedCause)
+		})
+	}
+}
+
 func TestToGRPCError(t *testing.T) {
 	originalMsg := "this is an error"
 	originalErr := errors.New(originalMsg)
@@ -127,107 +166,93 @@ func TestToGRPCError(t *testing.T) {
 	tooManyClustersErr := newTooManyClustersError(10)
 	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
 	requestRateLimitedErr := newRequestRateLimitedError(10, 10)
-	testCases := []struct {
-		name                        string
+	type testStruct struct {
 		err                         error
 		serviceOverloadErrorEnabled bool
 		expectedGRPCCode            codes.Code
 		expectedErrorMsg            string
 		expectedErrorDetails        *mimirpb.WriteErrorDetails
-	}{
-		{
-			name:             "a generic error gets translated into an Internal error with no details",
+	}
+	testCases := map[string]testStruct{
+		"a generic error gets translated into an Internal error with no details": {
 			err:              originalErr,
 			expectedGRPCCode: codes.Internal,
 			expectedErrorMsg: originalMsg,
 		},
-		{
-			name:             "a DoNotLog error of a generic error gets translated into an Internal error with no details",
+		"a DoNotLog error of a generic error gets translated into an Internal error with no details": {
 			err:              log.DoNotLogError{Err: originalErr},
 			expectedGRPCCode: codes.Internal,
 			expectedErrorMsg: originalMsg,
 		},
-		{
-			name:                 "a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause",
+		"a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause": {
 			err:                  replicasDidNotMatchErr,
 			expectedGRPCCode:     codes.AlreadyExists,
 			expectedErrorMsg:     replicasDidNotMatchErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
 		},
-		{
-			name:                 "a DoNotLotError of a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause",
+		"a DoNotLotError of a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause": {
 			err:                  log.DoNotLogError{Err: replicasDidNotMatchErr},
 			expectedGRPCCode:     codes.AlreadyExists,
 			expectedErrorMsg:     replicasDidNotMatchErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
 		},
-		{
-			name:                 "a tooManyClustersError gets translated into a FailedPrecondition error with TOO_MANY_CLUSTERS cause",
+		"a tooManyClustersError gets translated into a FailedPrecondition error with TOO_MANY_CLUSTERS cause": {
 			err:                  tooManyClustersErr,
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     tooManyClustersErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS},
 		},
-		{
-			name:                 "a DoNotLogError of a tooManyClustersError gets translated into a FailedPrecondition error with TOO_MANY_CLUSTERS cause",
+		"a DoNotLogError of a tooManyClustersError gets translated into a FailedPrecondition error with TOO_MANY_CLUSTERS cause": {
 			err:                  log.DoNotLogError{Err: tooManyClustersErr},
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     tooManyClustersErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS},
 		},
-		{
-			name:                 "a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause",
+		"a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause": {
 			err:                  newValidationError(originalErr),
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     originalMsg,
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		{
-			name:                 "a DoNotLogError of a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause",
+		"a DoNotLogError of a validationError gets translated into gets translated into a FailedPrecondition error with VALIDATION cause": {
 			err:                  log.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     originalMsg,
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
-		{
-			name:                 "an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause",
+		"an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  ingestionRateLimitedErr,
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 		},
-		{
-			name:                 "a DoNotLogError of an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause",
+		"a DoNotLogError of an ingestionRateLimitedError gets translated into gets translated into a ResourceExhausted error with INGESTION_RATE_LIMITED cause": {
 			err:                  log.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     ingestionRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 		},
-		{
-			name:                        "a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause",
+		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedGRPCCode:            codes.Unavailable,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 			expectedErrorDetails:        &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
-		{
-			name:                        "a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause",
+		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an Unavailable error with REQUEST_RATE_LIMITED cause": {
 			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: true,
 			expectedGRPCCode:            codes.Unavailable,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 			expectedErrorDetails:        &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
-		{
-			name:                 "a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause",
+		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
 			err:                  requestRateLimitedErr,
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
-		{
-			name:                 "a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause",
+		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an ResourceExhausted error with REQUEST_RATE_LIMITED cause": {
 			err:                  log.DoNotLogError{Err: requestRateLimitedErr},
 			expectedGRPCCode:     codes.ResourceExhausted,
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
@@ -235,22 +260,61 @@ func TestToGRPCError(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		err := toGRPCError(tc.err, tc.serviceOverloadErrorEnabled)
+	// We enrich testCases with the cases corresponding to ingesterPushErrors
+	// with all possible error causes, and ensure that all those errors, except
+	// the ones with mimirpb.BAD_DATA causes will be translated into an Internal
+	// gRPC error with the same cause, while the former will be translated into
+	// a FailedPrecondition error with mimirpb.BAD_DATA cause.
+	// Additionally, we enrich testCases with the same ingeseterPushError, but
+	// wrapped with log.DoNotLogError.
+	ingesterPushErrorCauses := map[string]mimirpb.ErrorCause{
+		"INVALID":             mimirpb.INVALID,
+		"BAD_DATA":            mimirpb.BAD_DATA,
+		"INSTANCE_LIMIT":      mimirpb.INSTANCE_LIMIT,
+		"SERVICE_UNAVAILABLE": mimirpb.SERVICE_UNAVAILABLE,
+		"TSDB_UNAVAILABLE":    mimirpb.TSDB_UNAVAILABLE,
+	}
 
-		stat, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, tc.expectedGRPCCode, stat.Code())
-		require.Equal(t, tc.expectedErrorMsg, stat.Message())
-		if tc.expectedErrorDetails == nil {
-			require.Len(t, stat.Details(), 0)
-		} else {
-			details := stat.Details()
-			require.Len(t, details, 1)
-			errDetails, ok := details[0].(*mimirpb.WriteErrorDetails)
-			require.True(t, ok)
-			require.Equal(t, tc.expectedErrorDetails, errDetails)
+	for causeName, causeValue := range ingesterPushErrorCauses {
+		expectedCode := codes.Internal
+		if causeValue == mimirpb.BAD_DATA {
+			expectedCode = codes.FailedPrecondition
 		}
+		name := fmt.Sprintf("an ingesterPushError with %s gets translated into a %s error with %s cause", causeName, expectedCode.String(), causeName)
+		testCases[name] = testStruct{
+			err:                  newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue)),
+			expectedGRPCCode:     expectedCode,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: causeValue},
+		}
+
+		name = fmt.Sprintf("a DoNotLogError of %s", name)
+		testCases[name] = testStruct{
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue))},
+			expectedGRPCCode:     expectedCode,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: causeValue},
+		}
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			err := toGRPCError(tc.err, tc.serviceOverloadErrorEnabled)
+
+			stat, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, tc.expectedGRPCCode, stat.Code())
+			require.Equal(t, tc.expectedErrorMsg, stat.Message())
+			if tc.expectedErrorDetails == nil {
+				require.Len(t, stat.Details(), 0)
+			} else {
+				details := stat.Details()
+				require.Len(t, details, 1)
+				errDetails, ok := details[0].(*mimirpb.WriteErrorDetails)
+				require.True(t, ok)
+				require.Equal(t, tc.expectedErrorDetails, errDetails)
+			}
+		})
 	}
 }
 
@@ -258,4 +322,14 @@ func checkDistributorError(t *testing.T, err error, expectedCause mimirpb.ErrorC
 	var distributorErr distributorError
 	require.ErrorAs(t, err, &distributorErr)
 	require.Equal(t, expectedCause, distributorErr.errorCause())
+}
+
+type mockDistributorErr string
+
+func (e mockDistributorErr) Error() string {
+	return string(e)
+}
+
+func (e mockDistributorErr) errorCause() mimirpb.ErrorCause {
+	return mimirpb.INVALID
 }

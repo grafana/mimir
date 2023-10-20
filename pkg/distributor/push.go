@@ -180,6 +180,8 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 			return http.StatusAccepted
 		case mimirpb.TOO_MANY_CLUSTERS:
 			return http.StatusBadRequest
+		case mimirpb.TSDB_UNAVAILABLE:
+			return http.StatusServiceUnavailable
 		}
 	}
 

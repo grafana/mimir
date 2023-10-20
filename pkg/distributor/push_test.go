@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/log"
@@ -806,103 +807,126 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 	tooManyClustersErr := newTooManyClustersError(10)
 	ingestionRateLimitedErr := newIngestionRateLimitedError(10, 10)
 	requestRateLimitedErr := newRequestRateLimitedError(10, 10)
-	testCases := []struct {
-		name                        string
+
+	type testStruct struct {
 		err                         error
 		serviceOverloadErrorEnabled bool
 		expectedHTTPStatus          int
 		expectedErrorMsg            string
-	}{
-		{
-			name:               "a generic error gets translated into a HTTP 500",
+	}
+	testCases := map[string]testStruct{
+		"a generic error gets translated into a HTTP 500": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		{
-			name:               "a DoNotLog of a generic error gets translated into a HTTP 500",
+		"a DoNotLog of a generic error gets translated into a HTTP 500": {
 			err:                log.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
 		},
-		{
-			name:               "a context.DeadlineExceeded gets translated into a HTTP 500",
+		"a context.DeadlineExceeded gets translated into a HTTP 500": {
 			err:                context.DeadlineExceeded,
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   context.DeadlineExceeded.Error(),
 		},
-		{
-			name:               "a replicasDidNotMatchError gets translated into an HTTP 202",
+		"a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                replicasNotMatchErr,
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
-		{
-			name:               "a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202",
+		"a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
 			err:                log.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
-		{
-			name:               "a tooManyClustersError gets translated into an HTTP 400",
+		"a tooManyClustersError gets translated into an HTTP 400": {
 			err:                tooManyClustersErr,
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
-		{
-			name:               "a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400",
+		"a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
 			err:                log.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
-		{
-			name:               "a validationError gets translated into an HTTP 400",
+		"a validationError gets translated into an HTTP 400": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
-		{
-			name:               "a DoNotLogError of a validationError gets translated into an HTTP 400",
+		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
 			err:                log.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
 		},
-		{
-			name:               "an ingestionRateLimitedError gets translated into an HTTP 429",
+		"an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                ingestionRateLimitedErr,
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
-		{
-			name:               "a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429",
+		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                log.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
-		{
-			name:                        "a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+		"a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		{
-			name:                        "a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529",
+		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
 			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		{
-			name:                        "a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+		"a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         requestRateLimitedErr,
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-		{
-			name:                        "a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429",
+		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
 			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
+	}
+
+	// We enrich testCases with the cases corresponding to ingesterPushErrors
+	// with all possible error causes, and ensure that all those errors, except
+	// the ones with mimirpb.BAD_DATA and mimirpb.TSDB_UNAVAILABLE causes will
+	// be translated into an HTTP status 500, while the former will be translated
+	// an HTTP 400 and an HTTP 503 respectively.
+	// Additionally, we enrich testCases with the same ingeseterPushError, but
+	// wrapped with log.DoNotLogError.
+	ingesterPushErrorCauses := map[string]mimirpb.ErrorCause{
+		"INVALID":             mimirpb.INVALID,
+		"BAD_DATA":            mimirpb.BAD_DATA,
+		"INSTANCE_LIMIT":      mimirpb.INSTANCE_LIMIT,
+		"SERVICE_UNAVAILABLE": mimirpb.SERVICE_UNAVAILABLE,
+		"TSDB_UNAVAILABLE":    mimirpb.TSDB_UNAVAILABLE,
+	}
+
+	for causeName, causeValue := range ingesterPushErrorCauses {
+		expectedHTTPStatus := http.StatusInternalServerError
+		if causeValue == mimirpb.BAD_DATA {
+			expectedHTTPStatus = http.StatusBadRequest
+		} else if causeValue == mimirpb.TSDB_UNAVAILABLE {
+			expectedHTTPStatus = http.StatusServiceUnavailable
+		}
+		name := fmt.Sprintf("an ingesterPushError with %s gets translated into an HTTP %d cause", causeName, expectedHTTPStatus)
+		testCases[name] = testStruct{
+			err:                newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue)),
+			expectedHTTPStatus: expectedHTTPStatus,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		}
+
+		name = fmt.Sprintf("a DoNotLogError of %s", name)
+		testCases[name] = testStruct{
+			err:                log.DoNotLogError{Err: newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue))},
+			expectedHTTPStatus: expectedHTTPStatus,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		}
 	}
 
 	for _, tc := range testCases {

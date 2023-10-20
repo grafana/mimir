@@ -4788,9 +4788,9 @@ func TestHandleIngesterPushError(t *testing.T) {
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
 	test := map[string]struct {
-		ingesterPushError   error
-		expectedOutputError error
-		checkDetails        bool
+		ingesterPushError         error
+		expectedOutputError       error
+		expectedIngesterPushError bool
 	}{
 		"no error gives no error": {
 			ingesterPushError:   nil,
@@ -4799,25 +4799,42 @@ func TestHandleIngesterPushError(t *testing.T) {
 		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
 			ingesterPushError:   httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
 			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
-			checkDetails:        true,
 		},
 		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
 			ingesterPushError:   httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
 			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
-			checkDetails:        true,
 		},
 		"a random ingester error without status gives the same wrapped error": {
 			ingesterPushError:   errWithUserID,
 			expectedOutputError: errors.Wrap(errWithUserID, outputErrorMsgPrefix),
 		},
-		"a gRPC unavailable error gives a gRPC unavailable error with a wrapped message": {
-			ingesterPushError:   createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID),
-			expectedOutputError: createGRPCErrorWithDetails(t, codes.Unavailable, fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg), mimirpb.INVALID),
-			checkDetails:        true,
+		"a gRPC error with details gives an ingesterPushError with the same details": {
+			ingesterPushError:         createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
+			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: true,
+		},
+		"an Unavailable gRPC error without details gives an ingesterPushError with INVALID cause": {
+			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
+			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: true,
+		},
+		"an Internal gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
+			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: true,
+		},
+		"an Unknown gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
+			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: true,
 		},
 		"a context cancel error gives the same wrapped error": {
 			ingesterPushError:   context.Canceled,
 			expectedOutputError: errors.Wrap(context.Canceled, outputErrorMsgPrefix),
+		},
+		"a context deadline exceeded error gives the same wrapped error": {
+			ingesterPushError:   context.DeadlineExceeded,
+			expectedOutputError: errors.Wrap(context.DeadlineExceeded, outputErrorMsgPrefix),
 		},
 	}
 
@@ -4827,16 +4844,15 @@ func TestHandleIngesterPushError(t *testing.T) {
 			if testData.expectedOutputError == nil {
 				require.NoError(t, err)
 			} else {
-				if testData.checkDetails {
-					expectedStat, ok := status.FromError(testData.expectedOutputError)
+				if testData.expectedIngesterPushError {
+					expectedIngesterPushErr, ok := testData.expectedOutputError.(ingesterPushError)
 					require.True(t, ok)
 
-					stat, ok := status.FromError(err)
+					ingesterPushErr, ok := err.(ingesterPushError)
 					require.True(t, ok)
 
-					require.Equal(t, expectedStat.Code(), stat.Code())
-					require.Equal(t, expectedStat.Message(), stat.Message())
-					require.Equal(t, expectedStat.Details(), stat.Details())
+					require.Equal(t, expectedIngesterPushErr.Error(), ingesterPushErr.Error())
+					require.Equal(t, expectedIngesterPushErr.cause, ingesterPushErr.cause)
 				} else {
 					require.Errorf(t, err, testData.expectedOutputError.Error())
 				}
@@ -4872,13 +4888,13 @@ func TestHandlePushError(t *testing.T) {
 			pushError:          httpGrpc5xxErr,
 			expectedOtherError: httpGrpc5xxErr,
 		},
-		"a random ingester error without status gives an Internal gRPC error": {
+		"a distributorError gives the error returned by toGRPCError()": {
+			pushError:         mockDistributorErr(testErrorMsg),
+			expectedGRPCError: status.Convert(toGRPCError(mockDistributorErr(testErrorMsg), false)),
+		},
+		"a random error without status gives an Internal gRPC error": {
 			pushError:         errWithUserID,
 			expectedGRPCError: status.New(codes.Internal, errWithUserID.Error()),
-		},
-		"a random ingester gRPC error gives the same gRPC errpr": {
-			pushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedGRPCError: status.New(codes.Unavailable, testErrorMsg),
 		},
 	}
 
@@ -4891,13 +4907,19 @@ func TestHandlePushError(t *testing.T) {
 	d, _, _ := prepare(t, config)
 	ctx := context.Background()
 
-	for _, testData := range test {
-		err := d[0].handlePushError(ctx, testData.pushError)
-		if testData.expectedGRPCError == nil {
-			require.Equal(t, testData.expectedOtherError, err)
-		} else {
-			checkGRPCError(t, testData.expectedGRPCError, nil, err)
-		}
+	for testName, testData := range test {
+		t.Run(testName, func(t *testing.T) {
+			err := d[0].handlePushError(ctx, testData.pushError)
+			if testData.expectedGRPCError == nil {
+				require.Equal(t, testData.expectedOtherError, err)
+			} else {
+				var expectedDetails *mimirpb.WriteErrorDetails
+				if distributorErr, ok := testData.pushError.(distributorError); ok {
+					expectedDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+				}
+				checkGRPCError(t, testData.expectedGRPCError, expectedDetails, err)
+			}
+		})
 	}
 }
 
@@ -4944,11 +4966,11 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 	}
 }
 
-func createGRPCErrorWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) error {
+func createGRPCErrorWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
 	stat := status.New(code, message)
 	statWithDetails, err := stat.WithDetails(&mimirpb.WriteErrorDetails{Cause: cause})
 	require.NoError(t, err)
-	return statWithDetails.Err()
+	return statWithDetails
 }
 
 func countCalls(ingesters []mockIngester, name string) int {
