@@ -4787,76 +4787,103 @@ func TestHandleIngesterPushError(t *testing.T) {
 	outputErrorMsgPrefix := "failed pushing to ingester"
 	userID := "test"
 	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
-	test := map[string]struct {
-		ingesterPushError         error
-		expectedOutputError       error
-		expectedIngesterPushError bool
+
+	// Ensure that no error gets translated into no error.
+	t.Run("no error gives no error", func(t *testing.T) {
+		err := handleIngesterPushError(nil)
+		require.NoError(t, err)
+	})
+
+	// Ensure that the errors created by httpgrpc get translated into
+	// other errors created by httpgrpc with the same code, and with
+	// a more explanatory message.
+	// TODO: this is needed for backwards compatibility and will be removed
+	// when httpgrpc is removed from the write path.
+	httpgrpcTests := map[string]struct {
+		ingesterPushError error
+		expectedStatus    int32
+		expectedMessage   string
 	}{
-		"no error gives no error": {
-			ingesterPushError:   nil,
-			expectedOutputError: nil,
-		},
 		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
-			ingesterPushError:   httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
-			expectedOutputError: httpgrpc.Errorf(http.StatusBadRequest, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+			ingesterPushError: httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
+			expectedStatus:    http.StatusBadRequest,
+			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
 		},
 		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
-			ingesterPushError:   httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
-			expectedOutputError: httpgrpc.Errorf(http.StatusServiceUnavailable, "%s: %s", outputErrorMsgPrefix, testErrorMsg),
+			ingesterPushError: httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
+			expectedStatus:    http.StatusServiceUnavailable,
+			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
 		},
-		"a random ingester error without status gives the same wrapped error": {
-			ingesterPushError:   errWithUserID,
-			expectedOutputError: errors.Wrap(errWithUserID, outputErrorMsgPrefix),
-		},
+	}
+	for testName, testData := range httpgrpcTests {
+		t.Run(testName, func(t *testing.T) {
+			err := handleIngesterPushError(testData.ingesterPushError)
+			res, ok := httpgrpc.HTTPResponseFromError(err)
+			require.True(t, ok)
+			require.NotNil(t, res)
+			require.Equal(t, testData.expectedStatus, res.GetCode())
+			require.Equal(t, testData.expectedMessage, string(res.Body))
+		})
+	}
+
+	// Ensure that the errors created by gogo/status package  get translated
+	// into ingesterPushError messages.
+	statusTests := map[string]struct {
+		ingesterPushError         error
+		expectedIngesterPushError ingesterPushError
+	}{
 		"a gRPC error with details gives an ingesterPushError with the same details": {
-			ingesterPushError:         createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
-			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
-			expectedIngesterPushError: true,
+			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
 		},
 		"an Unavailable gRPC error without details gives an ingesterPushError with INVALID cause": {
 			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
-			expectedIngesterPushError: true,
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
 		},
 		"an Internal gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
 			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
-			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
-			expectedIngesterPushError: true,
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
 		},
 		"an Unknown gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
 			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
-			expectedOutputError:       newIngesterPushError(createGRPCErrorWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
-			expectedIngesterPushError: true,
-		},
-		"a context cancel error gives the same wrapped error": {
-			ingesterPushError:   context.Canceled,
-			expectedOutputError: errors.Wrap(context.Canceled, outputErrorMsgPrefix),
-		},
-		"a context deadline exceeded error gives the same wrapped error": {
-			ingesterPushError:   context.DeadlineExceeded,
-			expectedOutputError: errors.Wrap(context.DeadlineExceeded, outputErrorMsgPrefix),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
 		},
 	}
-
-	for testName, testData := range test {
+	for testName, testData := range statusTests {
 		t.Run(testName, func(t *testing.T) {
 			err := handleIngesterPushError(testData.ingesterPushError)
-			if testData.expectedOutputError == nil {
-				require.NoError(t, err)
-			} else {
-				if testData.expectedIngesterPushError {
-					expectedIngesterPushErr, ok := testData.expectedOutputError.(ingesterPushError)
-					require.True(t, ok)
+			ingesterPushErr, ok := err.(ingesterPushError)
+			require.True(t, ok)
 
-					ingesterPushErr, ok := err.(ingesterPushError)
-					require.True(t, ok)
+			require.Equal(t, testData.expectedIngesterPushError.Error(), ingesterPushErr.Error())
+			require.Equal(t, testData.expectedIngesterPushError.errorCause(), ingesterPushErr.errorCause())
+		})
+	}
 
-					require.Equal(t, expectedIngesterPushErr.Error(), ingesterPushErr.Error())
-					require.Equal(t, expectedIngesterPushErr.cause, ingesterPushErr.cause)
-				} else {
-					require.Errorf(t, err, testData.expectedOutputError.Error())
-				}
-			}
+	// Ensure that the errors with no status (e.g., context.Canceled,
+	// context.DeadLine, etc) are correctly wrapped.
+	otherTests := map[string]struct {
+		ingesterPushError error
+		expectedError     error
+	}{
+		"a random ingester error without status gives the same wrapped error": {
+			ingesterPushError: errWithUserID,
+			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
+		},
+		"a context cancel error gives the same wrapped error": {
+			ingesterPushError: context.Canceled,
+			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
+		},
+		"a context deadline exceeded error gives the same wrapped error": {
+			ingesterPushError: context.DeadlineExceeded,
+			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
+		},
+	}
+	for testName, testData := range otherTests {
+		t.Run(testName, func(t *testing.T) {
+			err := handleIngesterPushError(testData.ingesterPushError)
+			require.Errorf(t, err, testData.expectedError.Error())
+			require.ErrorIs(t, err, testData.ingesterPushError)
 		})
 	}
 }
@@ -4966,7 +4993,7 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 	}
 }
 
-func createGRPCErrorWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
+func createStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
 	stat := status.New(code, message)
 	statWithDetails, err := stat.WithDetails(&mimirpb.WriteErrorDetails{Cause: cause})
 	require.NoError(t, err)

@@ -818,10 +818,12 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 		"a generic error gets translated into a HTTP 500": {
 			err:                originalErr,
 			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLog of a generic error gets translated into a HTTP 500": {
 			err:                log.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   originalMsg,
 		},
 		"a context.DeadlineExceeded gets translated into a HTTP 500": {
 			err:                context.DeadlineExceeded,
@@ -851,10 +853,12 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 		"a validationError gets translated into an HTTP 400": {
 			err:                newValidationError(originalErr),
 			expectedHTTPStatus: http.StatusBadRequest,
+			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
 			err:                log.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
+			expectedErrorMsg:   originalMsg,
 		},
 		"an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                ingestionRateLimitedErr,
@@ -890,66 +894,76 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
-	}
-
-	// We enrich testCases with the cases corresponding to ingesterPushErrors
-	// with all possible error causes, and ensure that all those errors, except
-	// the ones with mimirpb.BAD_DATA and mimirpb.TSDB_UNAVAILABLE causes will
-	// be translated into an HTTP status 500, while the former will be translated
-	// an HTTP 400 and an HTTP 503 respectively.
-	// Additionally, we enrich testCases with the same ingeseterPushError, but
-	// wrapped with log.DoNotLogError.
-	ingesterPushErrorCauses := map[string]mimirpb.ErrorCause{
-		"INVALID":             mimirpb.INVALID,
-		"BAD_DATA":            mimirpb.BAD_DATA,
-		"INSTANCE_LIMIT":      mimirpb.INSTANCE_LIMIT,
-		"SERVICE_UNAVAILABLE": mimirpb.SERVICE_UNAVAILABLE,
-		"TSDB_UNAVAILABLE":    mimirpb.TSDB_UNAVAILABLE,
-	}
-
-	for causeName, causeValue := range ingesterPushErrorCauses {
-		expectedHTTPStatus := http.StatusInternalServerError
-		if causeValue == mimirpb.BAD_DATA {
-			expectedHTTPStatus = http.StatusBadRequest
-		} else if causeValue == mimirpb.TSDB_UNAVAILABLE {
-			expectedHTTPStatus = http.StatusServiceUnavailable
-		}
-		name := fmt.Sprintf("an ingesterPushError with %s gets translated into an HTTP %d cause", causeName, expectedHTTPStatus)
-		testCases[name] = testStruct{
-			err:                newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue)),
-			expectedHTTPStatus: expectedHTTPStatus,
+		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA)),
+			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-		}
-
-		name = fmt.Sprintf("a DoNotLogError of %s", name)
-		testCases[name] = testStruct{
-			err:                log.DoNotLogError{Err: newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue))},
-			expectedHTTPStatus: expectedHTTPStatus,
+		},
+		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA))},
+			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-		}
+		},
+		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE)),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE))},
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE)),
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE))},
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT)),
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT))},
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"an ingesterPushError with INVALID cause gets translated into an HTTP 500": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.INVALID)),
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"a DoNotLogError of an ingesterPushError with INVALID cause gets translated into an HTTP 500": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.INVALID))},
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
 	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), userID)
 
-	for _, tc := range testCases {
-		ctx := user.InjectOrgID(context.Background(), userID)
+			tenantLimits := map[string]*validation.Limits{
+				userID: {
+					ServiceOverloadStatusCodeOnRateLimitEnabled: tc.serviceOverloadErrorEnabled,
+				},
+			}
+			limits, err := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(tenantLimits),
+			)
+			require.NoError(t, err)
 
-		tenantLimits := map[string]*validation.Limits{
-			userID: {
-				ServiceOverloadStatusCodeOnRateLimitEnabled: tc.serviceOverloadErrorEnabled,
-			},
-		}
-		limits, err := validation.NewOverrides(
-			validation.Limits{},
-			validation.NewMockTenantLimits(tenantLimits),
-		)
-		require.NoError(t, err)
-
-		status := toHTTPStatus(ctx, tc.err, limits)
-		msg := tc.err.Error()
-		assert.Equal(t, tc.expectedHTTPStatus, status)
-		expectedErrMsg := tc.expectedErrorMsg
-		if expectedErrMsg == "" {
-			expectedErrMsg = originalMsg
-		}
-		assert.Equal(t, expectedErrMsg, msg)
+			status := toHTTPStatus(ctx, tc.err, limits)
+			msg := tc.err.Error()
+			assert.Equal(t, tc.expectedHTTPStatus, status)
+			assert.Equal(t, tc.expectedErrorMsg, msg)
+		})
 	}
 }

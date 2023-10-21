@@ -128,7 +128,7 @@ func TestNewIngesterPushError(t *testing.T) {
 		expectedCause  mimirpb.ErrorCause
 	}{
 		"a gRPC error with details give an ingesterPushError with the same details": {
-			originalStatus: createGRPCErrorWithDetails(t, codes.Internal, testMsg, mimirpb.SERVICE_UNAVAILABLE),
+			originalStatus: createStatusWithDetails(t, codes.Internal, testMsg, mimirpb.SERVICE_UNAVAILABLE),
 			expectedCause:  mimirpb.SERVICE_UNAVAILABLE,
 		},
 		"a gRPC error without details give an ingesterPushError with INVALID cause": {
@@ -145,7 +145,7 @@ func TestNewIngesterPushError(t *testing.T) {
 			assert.EqualError(t, err, expectedErrorMsg)
 			checkDistributorError(t, err, testData.expectedCause)
 
-			anotherErr := newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, anotherTestMsg, testData.expectedCause))
+			anotherErr := newIngesterPushError(createStatusWithDetails(t, codes.Internal, anotherTestMsg, testData.expectedCause))
 			assert.NotErrorIs(t, err, anotherErr)
 
 			assert.True(t, errors.As(err, &ingesterPushError{}))
@@ -258,45 +258,67 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     requestRateLimitedErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
-	}
-
-	// We enrich testCases with the cases corresponding to ingesterPushErrors
-	// with all possible error causes, and ensure that all those errors, except
-	// the ones with mimirpb.BAD_DATA causes will be translated into an Internal
-	// gRPC error with the same cause, while the former will be translated into
-	// a FailedPrecondition error with mimirpb.BAD_DATA cause.
-	// Additionally, we enrich testCases with the same ingeseterPushError, but
-	// wrapped with log.DoNotLogError.
-	ingesterPushErrorCauses := map[string]mimirpb.ErrorCause{
-		"INVALID":             mimirpb.INVALID,
-		"BAD_DATA":            mimirpb.BAD_DATA,
-		"INSTANCE_LIMIT":      mimirpb.INSTANCE_LIMIT,
-		"SERVICE_UNAVAILABLE": mimirpb.SERVICE_UNAVAILABLE,
-		"TSDB_UNAVAILABLE":    mimirpb.TSDB_UNAVAILABLE,
-	}
-
-	for causeName, causeValue := range ingesterPushErrorCauses {
-		expectedCode := codes.Internal
-		if causeValue == mimirpb.BAD_DATA {
-			expectedCode = codes.FailedPrecondition
-		}
-		name := fmt.Sprintf("an ingesterPushError with %s gets translated into a %s error with %s cause", causeName, expectedCode.String(), causeName)
-		testCases[name] = testStruct{
-			err:                  newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue)),
-			expectedGRPCCode:     expectedCode,
+		"an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA)),
+			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: causeValue},
-		}
-
-		name = fmt.Sprintf("a DoNotLogError of %s", name)
-		testCases[name] = testStruct{
-			err:                  log.DoNotLogError{Err: newIngesterPushError(createGRPCErrorWithDetails(t, codes.Internal, originalMsg, causeValue))},
-			expectedGRPCCode:     expectedCode,
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA))},
+			expectedGRPCCode:     codes.FailedPrecondition,
 			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: causeValue},
-		}
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+		},
+		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT)),
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
+		},
+		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT))},
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
+		},
+		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into a Internal error with SERVICE_UNAVAILABLE cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE)),
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
+		},
+		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into a Internal error with SERVICE_UNAVAILABLE cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE))},
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
+		},
+		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into a Internal error with TSDB_UNAVAILABLE cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE)),
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
+		},
+		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into a Internal error with TSDB_UNAVAILABLE cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE))},
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
+		},
+		"an ingesterPushError with INVALID cause gets translated into a Internal error with INVALID cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INVALID)),
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INVALID},
+		},
+		"a DoNotLogError of an ingesterPushError with INVALID cause gets translated into a Internal error with INVALID cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INVALID))},
+			expectedGRPCCode:     codes.Internal,
+			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INVALID},
+		},
 	}
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			err := toGRPCError(tc.err, tc.serviceOverloadErrorEnabled)
