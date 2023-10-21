@@ -85,7 +85,14 @@ func (w *moduleService) start(serviceContext context.Context) error {
 		return errors.Wrapf(err, "error starting module: %s", w.name)
 	}
 
-	return w.service.AwaitRunning(serviceContext)
+	err = w.service.AwaitRunning(serviceContext)
+	if errors.Is(serviceContext.Err(), context.Canceled) && errors.Is(err, context.Canceled) {
+		// We were asked to cancel, but the underlying service may continue starting and complete its startup after we return from moduleService.start.
+		// If we return an error, then we would be considered Failed and won't have moduleService.stop invoked.
+		// We need to invoke moduleService.stop to stop the underlying service in case it finishes starting successfully later.
+		return nil
+	}
+	return err
 }
 
 func (w *moduleService) run(serviceContext context.Context) error {
@@ -97,14 +104,19 @@ func (w *moduleService) run(serviceContext context.Context) error {
 
 func (w *moduleService) stop(_ error) error {
 	var err error
-	if w.service.State() == services.Running {
+	switch w.service.State() {
+	case services.Running:
 		// Only wait for other modules, if underlying service is still running.
 		w.waitForModulesToStop()
-
+		// Then proceed to also stop this service if we didn't wait it out during moduleService.start.
+		fallthrough
+	case services.Starting:
+		// If upstream services can tolerate this service being failed and/or not started, and they have already started,
+		// they should track the state of this service and change state accordingly.
 		level.Debug(w.logger).Log("msg", "stopping", "module", w.name)
 
 		err = services.StopAndAwaitTerminated(context.Background(), w.service)
-	} else {
+	default:
 		err = w.service.FailureCase()
 	}
 
