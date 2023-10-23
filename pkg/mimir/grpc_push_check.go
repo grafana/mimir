@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -28,6 +29,7 @@ type distributorPushReceiver interface {
 }
 
 // getPushReceiver function must be constant -- return same value on each call.
+// if getIngester or getDistributor functions are nil, those specific checks are not used.
 func newGrpcInflightMethodLimiter(getIngester func() ingesterPushReceiver, getDistributor func() distributorPushReceiver) *grpcInflightMethodLimiter {
 	return &grpcInflightMethodLimiter{getIngester: getIngester, getDistributor: getDistributor}
 }
@@ -75,7 +77,7 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 		httpUrl := getSingleMetadata(md, httpgrpc.MetadataURL)
 		msgSize := getMessageSize(md, grpcutil.MetadataMessageSize)
 
-		if httpMethod == http.MethodPost && (httpUrl == api.PrometheusPushEndpoint || httpUrl == api.OTLPPushEndpoint) {
+		if httpMethod == http.MethodPost && (strings.HasSuffix(httpUrl, api.PrometheusPushEndpoint) || strings.HasSuffix(httpUrl, api.OTLPPushEndpoint)) {
 			dist := g.getDistributor()
 			if dist == nil {
 				return ctx, errNoDistributor
