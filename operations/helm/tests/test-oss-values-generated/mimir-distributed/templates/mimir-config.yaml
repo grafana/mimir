@@ -82,7 +82,7 @@ data:
           timeout: 500ms
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
-      query_frontend_grpc_client_config:
+      grpc_client_config:
         max_send_msg_size: 419430400
       query_scheduler_grpc_client_config:
         max_send_msg_size: 419430400
