@@ -30,6 +30,14 @@ const (
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
+// Errors returned by ingester should be gRPC errors, but the errors
+// produced by both gogo/status and grpc/status packages do not keep
+// the semantics of the underlying error, which is sometimes needed.
+// For example, the logging middleware needs to know whether an error
+// should be logged, sampled or ignored. Errors of type errorWithStatus
+// are valid gRPC errors that could be parsed by both gogo/status
+// and grpc/status packages, but which preserve the original error
+// semantics.
 type errorWithStatus struct {
 	err    error // underlying error
 	status *status.Status
@@ -66,7 +74,7 @@ func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 // newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
 // and containing the given HTTP status code.
 // TODO this is needed for backwards compatibility only and should be removed
-// once httpgrpc.Errorf() usages in ingester are removed.
+// in mimir 2.12.0.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -84,11 +92,55 @@ func (e errorWithStatus) Unwrap() error {
 	return e.err
 }
 
+// GRPCStatus with a *grpcstatus.Status as output is needed
+// for a correct execution of grpc/status.FromError().
 func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 	if stat, ok := e.status.Err().(interface{ GRPCStatus() *grpcstatus.Status }); ok {
 		return stat.GRPCStatus()
 	}
 	return nil
+}
+
+// writeErrorDetails is needed for testing purposes only. It returns the
+// mimirpb.WriteErrorDetails object stored in this error's status, if any
+// or nil otherwise.
+func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
+	details := e.status.Details()
+	if len(details) != 1 {
+		return nil
+	}
+	if errDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+		return errDetails
+	}
+	return nil
+}
+
+// writeErrorDetails is needed for testing purposes only. It returns true
+// if the given error and this error are equal, i.e., if they are both of
+// type errorWithStatus, if their underlying statuses have the same code,
+// messages, and if both have either no details, or exactly one detail
+// of type mimirpb.WriteErrorDetails, which are equal too.
+func (e errorWithStatus) equals(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errWithStatus, ok := err.(errorWithStatus)
+	if !ok {
+		return false
+	}
+	if e.status.Code() != errWithStatus.status.Code() || e.status.Message() != errWithStatus.status.Message() {
+		return false
+	}
+	errDetails := e.writeErrorDetails()
+	otherErrDetails := errWithStatus.writeErrorDetails()
+	if errDetails == nil && otherErrDetails == nil {
+		return true
+	}
+	if errDetails != nil && otherErrDetails != nil {
+		return errDetails.GetCause() == otherErrDetails.GetCause()
+	}
+	return false
 }
 
 // ingesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
@@ -482,7 +534,33 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-func handlePushError(err error) error {
+func handlePushErrorWithGRPC(err error) error {
+	var (
+		ingesterErr ingesterError
+		errCode     = codes.Internal
+		wrappedErr  = err
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.BAD_DATA:
+			errCode = codes.FailedPrecondition
+		case mimirpb.SERVICE_UNAVAILABLE:
+			errCode = codes.Unavailable
+		case mimirpb.INSTANCE_LIMIT:
+			errCode = codes.Unavailable
+			wrappedErr = log.DoNotLogError{Err: err}
+		case mimirpb.TSDB_UNAVAILABLE:
+			errCode = codes.Internal
+		}
+	}
+	return newErrorWithStatus(wrappedErr, errCode)
+}
+
+// handlePushErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// errorWithStatus, which may contain both HTTP and gRPC error codes.
+// TODO this method is needed only for the backwards compatibility,
+// and should be removed in mimir 2.12.0.
+func handlePushErrorWithHTTPGRPC(err error) error {
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {

@@ -14,11 +14,12 @@
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
 * [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
-  * `replicasDidNotMatchError` is mapped to `codes.AlreadyExists` instead of `http.StatusAccepted` (202).
-  * `tooManyClustersError` and `validationError` are mapped to `codes.FailedPrecondition` instead of `http.BadRequest` (400).
-  * `ingestionRateLimitedError` is mapped to `codes.ResourceExhausted` instead of `http.StatusTooManyRequests` (429).
-  * `requestRateLimitedError` is mapped to `codes.Unavailable` or `codes.ResourceExhausted` instead of the non-standard `529` (The service is overloaded) or `http.StatusTooManyRequests` (429).
-* [CHANGE] Store-gateway: experimental "eager loading on startup" feature is now enabled by default. The feature is used only when store-gateway blocks lazy-loading is enabled. #6463
+  * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
+  * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
+  * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
+* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, `Push()` will return only gRPC errors. This feature changes the following status codes: #6443
+  * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition`.
+  * `http.StatusServiceUnavailable` (503) and `codes.Unknown` are replaced with `codes.Internal`.
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [FEATURE] Ingester: Experimental support for ignoring context cancellation when querying chunks, useful in ruling out the query engine's potential role in unexpected query cancellations. Enable with `-ingester.chunks-query-ignore-cancellation`. #6408

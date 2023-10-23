@@ -1117,6 +1117,10 @@ instance_limits:
 # (experimental) Ignore cancellation when querying chunks.
 # CLI flag: -ingester.chunks-query-ignore-cancellation
 [chunks_query_ignore_cancellation: <boolean> | default = false]
+
+# (experimental) When enabled only gRPC errors will be returned by the ingester.
+# CLI flag: -ingester.return-only-grpc-errors
+[return_only_grpc_errors: <boolean> | default = false]
 ```
 
 ### querier

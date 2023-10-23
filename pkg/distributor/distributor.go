@@ -1096,14 +1096,8 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 
 	// TODO This code is needed for backwards compatibility, since ingesters may still return
 	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed once that creation is removed from the ingesters.
+	// it. This code should be removed in mimir 2.12.0.
 	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
-	if ok {
-		return pushErr
-	}
-	// If pushErr is already a gRPC (for example returned by the ingester), we just propagate it.
-	// TODO this should be updated once the ingester error handling is improved.
-	_, ok = status.FromError(pushErr)
 	if ok {
 		return pushErr
 	}
@@ -1272,18 +1266,21 @@ func handleIngesterPushError(err error) error {
 	if err == nil {
 		return nil
 	}
+
+	// TODO This code is needed for backwards compatibility, since ingesters may still return
+	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
+	// it. This code should be removed in mimir 2.12.0.
 	resp, ok := httpgrpc.HTTPResponseFromError(err)
 	if ok {
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+		return httpgrpc.Errorf(int(resp.Code), "%s: %s", failedPushingToIngesterMessage, resp.Body)
 	}
+
 	stat, ok := status.FromError(err)
 	if ok {
-		st := stat.Proto()
-		st.Message = fmt.Sprintf("failed pushing to ingester: %s", st.Message)
-		return status.ErrorProto(st)
+		return newIngesterPushError(stat)
 	}
-	return errors.Wrap(err, "failed pushing to ingester")
+	return errors.Wrap(err, failedPushingToIngesterMessage)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
