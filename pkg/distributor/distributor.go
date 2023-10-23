@@ -1045,13 +1045,15 @@ func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (
 		return ctx, rs, nil
 	}
 
+	rs = &requestState{}
+
 	cleanupInDefer := true
 
 	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
 		if cleanupInDefer {
-			d.inflightPushRequests.Dec()
+			d.cleanupAfterPushFinished(rs)
 		}
 	}()
 
@@ -1067,8 +1069,6 @@ func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (
 			return ctx, nil, errMaxIngestionRateReached
 		}
 	}
-
-	rs = &requestState{}
 
 	// If we know the request size already, we can check it.
 	if requestSize > 0 {
@@ -1089,17 +1089,14 @@ func (d *Distributor) checkRequestSize(rs *requestState, requestSize int64) erro
 		return nil
 	}
 
+	rs.requestSize = requestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(requestSize)
 	il := d.getInstanceLimits()
 
 	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
-		d.inflightPushRequestsBytes.Sub(requestSize)
-
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
 		return errMaxInflightRequestsBytesReached
 	}
-
-	rs.requestSize = requestSize
 	return nil
 }
 
