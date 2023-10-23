@@ -2258,6 +2258,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 
 - `ingester.client`
 - `querier.frontend-client`
+- `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
 - `ruler.client`
@@ -2429,10 +2430,15 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
-# Configures the gRPC client used to communicate between the queriers and the
-# query-frontends / query-schedulers.
+# Configures the gRPC client used to communicate between the querier and the
+# query-frontend.
 # The CLI flags prefix for this block configuration is: querier.frontend-client
 [grpc_client_config: <grpc_client>]
+
+# Configures the gRPC client used to communicate between the querier and the
+# query-scheduler.
+# The CLI flags prefix for this block configuration is: querier.scheduler-client
+[query_scheduler_grpc_client_config: <grpc_client>]
 ```
 
 ### etcd
