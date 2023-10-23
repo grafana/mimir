@@ -3564,9 +3564,9 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.max-idle-file-handles
     [max_idle_file_handles: <int> | default = 1]
 
-    # (advanced) If enabled, store-gateway will periodically persist block IDs
-    # of lazy loaded index-headers and load them eagerly during startup. Ignored
-    # if index-header lazy loading is disabled.
+    # (experimental) If enabled, store-gateway will periodically persist block
+    # IDs of lazy loaded index-headers and load them eagerly during startup.
+    # Ignored if index-header lazy loading is disabled.
     # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
     [eager_loading_startup_enabled: <boolean> | default = true]
 

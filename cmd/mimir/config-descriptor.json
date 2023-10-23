@@ -7767,7 +7767,7 @@
                   "fieldDefaultValue": true,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.eager-loading-startup-enabled",
                   "fieldType": "boolean",
-                  "fieldCategory": "advanced"
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
