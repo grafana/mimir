@@ -85,7 +85,7 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 
 			ctx, err := dist.StartPushRequest(ctx, msgSize)
 			if err != nil {
-				return ctx, err
+				return ctx, status.Error(codes.Unavailable, err.Error())
 			}
 
 			return context.WithValue(ctx, pushTypeCtxKey, distributorPush), nil

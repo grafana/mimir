@@ -39,8 +39,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1035,13 +1033,8 @@ type requestState struct {
 //
 // This method creates requestState object and stores it in the context. This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
-//
-// This method returns errors with gRPC status code.
 func (d *Distributor) StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error) {
 	ctx, _, err := d.startPushRequest(ctx, requestSize)
-	if err != nil {
-		return ctx, status.Error(codes.Unavailable, err.Error())
-	}
 	return ctx, err
 }
 

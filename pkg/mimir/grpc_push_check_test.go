@@ -4,12 +4,14 @@ package mimir
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/api"
 )
@@ -64,6 +66,13 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		})
 		require.Equal(t, 1, m.startCalls)
 		require.Equal(t, 1, m.finishCalls)
+
+		m.returnError = errors.New("hello there")
+		ctx, err = l.RPCCallStarting(context.Background(), ingesterPushMethod, nil)
+		require.Error(t, err)
+		_, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
 	})
 
 	t.Run("distributor push via httpgrpc", func(t *testing.T) {
@@ -95,6 +104,18 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		l.RPCCallFinished(ctx)
 		require.Equal(t, 1, m.startCalls)
 		require.Equal(t, 1, m.finishCalls)
+
+		// Now return error from distributor receiver.
+		m.returnError = errors.New("hello there")
+		ctx, err = l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
+			httpgrpc.MetadataMethod:      "POST",
+			httpgrpc.MetadataURL:         api.PrometheusPushEndpoint,
+			grpcutil.MetadataMessageSize: "123456",
+		}))
+		require.Error(t, err)
+		_, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
 	})
 
 	t.Run("distributor push via httpgrpc, GET", func(t *testing.T) {
@@ -147,11 +168,12 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 type mockIngesterReceiver struct {
 	startCalls  int
 	finishCalls int
+	returnError error
 }
 
 func (i *mockIngesterReceiver) StartPushRequest() error {
 	i.startCalls++
-	return nil
+	return i.returnError
 }
 
 func (i *mockIngesterReceiver) FinishPushRequest() {
@@ -162,12 +184,13 @@ type mockDistributorReceiver struct {
 	startCalls      int
 	finishCalls     int
 	lastRequestSize int64
+	returnError     error
 }
 
 func (i *mockDistributorReceiver) StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error) {
 	i.startCalls++
 	i.lastRequestSize = requestSize
-	return ctx, nil
+	return ctx, i.returnError
 }
 
 func (i *mockDistributorReceiver) FinishPushRequest(ctx context.Context) {

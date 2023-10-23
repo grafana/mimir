@@ -5049,23 +5049,23 @@ func TestStartFinishRequest(t *testing.T) {
 		"too many inflight requests": {
 			inflightRequestsBeforePush:     inflightLimit,
 			inflightRequestsSizeBeforePush: 0,
-			expectedStartSizeKnownError:    status.Error(codes.Unavailable, errMaxInflightRequestsReached.Error()),
-			expectedStartSizeUnknownError:  status.Error(codes.Unavailable, errMaxInflightRequestsReached.Error()),
+			expectedStartSizeKnownError:    errMaxInflightRequestsReached,
+			expectedStartSizeUnknownError:  errMaxInflightRequestsReached,
 			expectedPushError:              errMaxInflightRequestsReached,
 		},
 
 		"too many inflight bytes requests": {
 			inflightRequestsBeforePush:     1,
 			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
-			expectedStartSizeKnownError:    status.Error(codes.Unavailable, errMaxInflightRequestsBytesReached.Error()),
+			expectedStartSizeKnownError:    errMaxInflightRequestsBytesReached,
 			expectedStartSizeUnknownError:  nil,
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
 		"high ingestion rate": {
 			addIngestionRateBeforePush:    100 * ingestionRateLimit,
-			expectedStartSizeKnownError:   status.Error(codes.Unavailable, errMaxIngestionRateReached.Error()),
-			expectedStartSizeUnknownError: status.Error(codes.Unavailable, errMaxIngestionRateReached.Error()),
+			expectedStartSizeKnownError:   errMaxIngestionRateReached,
+			expectedStartSizeUnknownError: errMaxIngestionRateReached,
 			expectedPushError:             errMaxIngestionRateReached,
 		},
 	}
@@ -5128,10 +5128,11 @@ func TestStartFinishRequest(t *testing.T) {
 						} else {
 							require.ErrorIs(t, err, expectedStartError)
 
-							// Verify that errors returned by StartPushRequest method are true gRPC status errors.
+							// Verify that errors returned by StartPushRequest method are NOT gRPC status errors.
+							// They will be converted to gRPC status by grpcInflightMethodLimiter.
 							require.Error(t, err)
 							_, ok := status.FromError(err)
-							require.True(t, ok)
+							require.False(t, ok)
 						}
 					}
 
