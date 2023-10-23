@@ -26,13 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
-type processorType int
-
-const (
-	frontend processorType = iota
-	scheduler
-)
-
 type Config struct {
 	FrontendAddress                string            `yaml:"frontend_address"`
 	SchedulerAddress               string            `yaml:"scheduler_address"`
@@ -106,11 +99,11 @@ type serviceDiscoveryFactory func(receiver servicediscovery.Notifications) (serv
 type querierWorker struct {
 	*services.BasicService
 
-	cfg Config
-	log log.Logger
+	maxConcurrentRequests int
+	grpcClientConfig      grpcclient.Config
+	log                   log.Logger
 
-	processorType processorType
-	processor     processor
+	processor processor
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -131,7 +124,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	}
 
 	var processor processor
-	var processorType processorType
+	var grpcCfg grpcclient.Config
 	var servs []services.Service
 	var factory serviceDiscoveryFactory
 
@@ -143,7 +136,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 			return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
 		}
 
-		processorType = scheduler
+		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
@@ -153,24 +146,24 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 			return servicediscovery.NewDNS(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
 		}
 
-		processorType = frontend
+		grpcCfg = cfg.QueryFrontendGRPCClientConfig
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(cfg, log, processor, processorType, factory, servs)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs)
 }
 
-func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, processorType processorType, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
 	f := &querierWorker{
-		cfg:           cfg,
-		log:           log,
-		managers:      map[string]*processorManager{},
-		instances:     map[string]servicediscovery.Instance{},
-		processor:     processor,
-		processorType: processorType,
+		grpcClientConfig:      grpcCfg,
+		maxConcurrentRequests: maxConcReq,
+		log:                   log,
+		managers:              map[string]*processorManager{},
+		instances:             map[string]servicediscovery.Instance{},
+		processor:             processor,
 	}
 
 	// There's no service discovery in some tests.
@@ -356,17 +349,17 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 			continue
 		}
 
-		concurrency := w.cfg.MaxConcurrentRequests / numInUse
+		concurrency := w.maxConcurrentRequests / numInUse
 
 		// If max concurrency does not evenly divide into in-use instances, then a subset will be chosen
 		// to receive an extra connection. Since we're iterating a map (whose iteration order is not guaranteed),
 		// then this should pratically select a random address for the extra connection.
-		if inUseIndex < w.cfg.MaxConcurrentRequests%numInUse {
+		if inUseIndex < w.maxConcurrentRequests%numInUse {
 			level.Warn(w.log).Log("msg", "max concurrency is not evenly divisible across targets, adding an extra connection", "addr", address)
 			concurrency++
 		}
 
-		// If concurrency is 0 then MaxConcurrentRequests is less than the total number of
+		// If concurrency is 0 then maxConcurrentRequests is less than the total number of
 		// frontends/schedulers. In order to prevent accidentally starving a frontend or scheduler we are just going to
 		// always connect once to every target.
 		if concurrency == 0 {
@@ -382,17 +375,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	var opts []grpc.DialOption
-	var err error
-
-	switch w.processorType {
-	case frontend:
-		opts, err = w.cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil)
-	case scheduler:
-		opts, err = w.cfg.QuerySchedulerGRPCClientConfig.DialOption(nil, nil)
-	default:
-		err = fmt.Errorf("unknown querier processor type %T", w.processorType)
-	}
+	opts, err := w.grpcClientConfig.DialOption(nil, nil)
 
 	if err != nil {
 		return nil, err

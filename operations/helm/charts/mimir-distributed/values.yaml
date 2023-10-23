@@ -250,8 +250,6 @@ mimir:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400 # 400MiB
-      query_scheduler_grpc_client_config:
-        max_send_msg_size: 419430400 # 400MiB
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- else }}

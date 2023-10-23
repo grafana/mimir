@@ -122,8 +122,6 @@ data:
         tls_insecure_skip_verify: false
         tls_key_path: /certs/tls.key
         tls_server_name: gem.grafana.com
-      query_scheduler_grpc_client_config:
-        max_send_msg_size: 419430400
       scheduler_address: enterprise-https-values-mimir-query-scheduler-headless.citestns.svc:9095
     gateway:
       proxy:

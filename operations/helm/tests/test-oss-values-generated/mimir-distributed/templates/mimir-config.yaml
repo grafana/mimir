@@ -84,8 +84,6 @@ data:
     frontend_worker:
       grpc_client_config:
         max_send_msg_size: 419430400
-      query_scheduler_grpc_client_config:
-        max_send_msg_size: 419430400
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
       ring:

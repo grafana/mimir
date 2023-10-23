@@ -89,7 +89,6 @@
   querier_args+:: if !$._config.query_sharding_enabled then {} else {
     // Raise the msg size for the GRPC messages query-frontend <-> querier by a factor when query sharding is enabled
     'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
-    'querier.scheduler-client.grpc-max-send-msg-size': super['querier.scheduler-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
   },
 
   // Utility used to override a field only if exists in super.

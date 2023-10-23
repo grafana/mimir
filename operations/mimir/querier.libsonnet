@@ -23,7 +23,6 @@
       'querier.frontend-address': if !$._config.is_microservices_deployment_mode || $._config.query_scheduler_enabled then null else
         'query-frontend-discovery.%(namespace)s.svc.%(cluster_domain)s:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
-      'querier.scheduler-client.grpc-max-send-msg-size': 100 << 20,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.

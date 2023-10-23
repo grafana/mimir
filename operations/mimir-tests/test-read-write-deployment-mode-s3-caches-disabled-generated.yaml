@@ -396,7 +396,6 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.scheduler-client.grpc-max-send-msg-size=104857600
         - -query-frontend.align-queries-with-step=false
         - -query-frontend.max-total-query-length=12000h
         - -query-frontend.query-sharding-target-series-per-shard=0
