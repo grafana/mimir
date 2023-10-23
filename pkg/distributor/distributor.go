@@ -1019,8 +1019,11 @@ type requestState struct {
 	// (which can be after push handler returns).
 	pushHandlerPerformsCleanup bool
 
-	// If positive, it means that request size has been checked and added to inflightPushRequestsBytes.
-	requestSize int64
+	// If positive, it means that size of httpgrpc.HTTPRequest has been checked and added to inflightPushRequestsBytes.
+	httpgrpcRequestSize int64
+
+	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
+	writeRequestSize int64
 }
 
 // StartPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1033,12 +1036,12 @@ type requestState struct {
 //
 // This method creates requestState object and stores it in the context. This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
-func (d *Distributor) StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error) {
-	ctx, _, err := d.startPushRequest(ctx, requestSize)
+func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
+	ctx, _, err := d.startPushRequest(ctx, httpgrpcRequestSize)
 	return ctx, err
 }
 
-func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (context.Context, *requestState, error) {
+func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
@@ -1070,9 +1073,9 @@ func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (
 		}
 	}
 
-	// If we know the request size already, we can check it.
-	if requestSize > 0 {
-		if err := d.checkRequestSize(rs, requestSize); err != nil {
+	// If we know the httpgrpcRequestSize, we can check it.
+	if httpgrpcRequestSize > 0 {
+		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
 			return ctx, nil, err
 		}
 	}
@@ -1083,14 +1086,29 @@ func (d *Distributor) startPushRequest(ctx context.Context, requestSize int64) (
 	return ctx, rs, nil
 }
 
-func (d *Distributor) checkRequestSize(rs *requestState, requestSize int64) error {
-	// If request size was already checked, don't check it again.
-	if rs.requestSize > 0 {
+func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize int64) error {
+	// If httpgrpcRequestSize was already checked, don't check it again.
+	if rs.httpgrpcRequestSize > 0 {
 		return nil
 	}
 
-	rs.requestSize = requestSize
-	inflightBytes := d.inflightPushRequestsBytes.Add(requestSize)
+	rs.httpgrpcRequestSize = httpgrpcRequestSize
+	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
+	return d.checkInflightBytes(inflightBytes)
+}
+
+func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {
+	// If writeRequestSize was already checked, don't check it again.
+	if rs.writeRequestSize > 0 {
+		return nil
+	}
+
+	rs.writeRequestSize = writeRequestSize
+	inflightBytes := d.inflightPushRequestsBytes.Add(writeRequestSize)
+	return d.checkInflightBytes(inflightBytes)
+}
+
+func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
 	il := d.getInstanceLimits()
 
 	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
@@ -1117,8 +1135,11 @@ func (d *Distributor) FinishPushRequest(ctx context.Context) {
 
 func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	d.inflightPushRequests.Dec()
-	if rs.requestSize > 0 {
-		d.inflightPushRequestsBytes.Sub(rs.requestSize)
+	if rs.httpgrpcRequestSize > 0 {
+		d.inflightPushRequestsBytes.Sub(rs.httpgrpcRequestSize)
+	}
+	if rs.writeRequestSize > 0 {
+		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
 }
 
@@ -1164,7 +1185,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if err := d.checkRequestSize(rs, int64(req.Size())); err != nil {
+		if err := d.checkWriteRequestSize(rs, int64(req.Size())); err != nil {
 			return err
 		}
 

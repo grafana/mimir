@@ -24,7 +24,7 @@ type ingesterPushReceiver interface {
 
 // Interface exposed by Distributor.
 type distributorPushReceiver interface {
-	StartPushRequest(ctx context.Context, requestSize int64) (context.Context, error)
+	StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error)
 	FinishPushRequest(ctx context.Context)
 }
 
