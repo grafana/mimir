@@ -35,7 +35,7 @@ const (
 
 var errNoIngester = status.Error(codes.Unavailable, "no ingester")
 
-func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodName string, md metadata.MD) (context.Context, error) {
+func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodName string, _ metadata.MD) (context.Context, error) {
 	if methodName == ingesterPushMethod {
 		ing := g.getIngester()
 		if ing == nil {
