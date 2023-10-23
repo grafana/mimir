@@ -111,7 +111,7 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
 
-	f.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
+	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
 	var err error

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -41,7 +42,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
 							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
-							queue := NewRequestQueue(100, 0, queueLength, discardedRequests, enqueueDuration)
+							queue := NewRequestQueue(log.NewNopLogger(), 100, 0, queueLength, discardedRequests, enqueueDuration)
 
 							start := make(chan struct{})
 							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
@@ -144,7 +145,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
-	queue := NewRequestQueue(1, forgetDelay,
+	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
@@ -188,7 +189,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(1, forgetDelay,
+	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
@@ -222,7 +223,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(1, forgetDelay,
+	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))

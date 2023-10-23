@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,6 +58,7 @@ type Request interface{}
 // in a fair fashion.
 type RequestQueue struct {
 	services.Service
+	log log.Logger
 
 	maxOutstandingPerTenant int
 	forgetDelay             time.Duration
@@ -96,8 +99,16 @@ type requestToEnqueue struct {
 	processed   chan error
 }
 
-func NewRequestQueue(maxOutstandingPerTenant int, forgetDelay time.Duration, queueLength *prometheus.GaugeVec, discardedRequests *prometheus.CounterVec, enqueueDuration prometheus.Histogram) *RequestQueue {
+func NewRequestQueue(
+	log log.Logger,
+	maxOutstandingPerTenant int,
+	forgetDelay time.Duration,
+	queueLength *prometheus.GaugeVec,
+	discardedRequests *prometheus.CounterVec,
+	enqueueDuration prometheus.Histogram,
+) *RequestQueue {
 	q := &RequestQueue{
+		log:                     log,
 		maxOutstandingPerTenant: maxOutstandingPerTenant,
 		forgetDelay:             forgetDelay,
 		connectedQuerierWorkers: atomic.NewInt32(0),
@@ -263,10 +274,15 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	if requestSent {
 		q.queueLength.WithLabelValues(string(tenantID)).Dec()
 	} else {
-		if reqToEnqueue, ok := req.(requestToEnqueue); ok {
-			// should never error; any item previously in the queue already passed validation
-			_ = broker.enqueueRequestFront(reqToEnqueue)
-		}
+		// re-casting to same type it was enqueued as; panic would indicate a bug
+		reqToEnqueue := req.(requestToEnqueue)
+		// should never error; any item previously in the queue already passed validation
+		err := broker.enqueueRequestFront(reqToEnqueue)
+		level.Error(q.log).Log(
+			"msg", "failed to re-enqueue query request after dequeue",
+			"err", err, "tenant", tenantID, "querier", call.querierID,
+		)
+
 	}
 
 	return true
