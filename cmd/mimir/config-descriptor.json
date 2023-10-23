@@ -3877,7 +3877,7 @@
         },
         {
           "kind": "block",
-          "name": "query_frontend_grpc_client_config",
+          "name": "grpc_client_config",
           "required": false,
           "desc": "",
           "blockEntries": [

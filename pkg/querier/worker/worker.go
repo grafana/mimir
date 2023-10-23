@@ -34,12 +34,11 @@ const (
 )
 
 type Config struct {
-	FrontendAddress  string        `yaml:"frontend_address"`
-	SchedulerAddress string        `yaml:"scheduler_address"`
-	DNSLookupPeriod  time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
-	QuerierID        string        `yaml:"id" category:"advanced"`
-	// GRPCClientConfig               grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the queriers and the query-frontends / query-schedulers."`
-	QueryFrontendGRPCClientConfig  grpcclient.Config `yaml:"query_frontend_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
+	FrontendAddress                string            `yaml:"frontend_address"`
+	SchedulerAddress               string            `yaml:"scheduler_address"`
+	DNSLookupPeriod                time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	QuerierID                      string            `yaml:"id" category:"advanced"`
+	QueryFrontendGRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
 	QuerySchedulerGRPCClientConfig grpcclient.Config `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
 
 	// This configuration is injected internally.
@@ -53,7 +52,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 
-	// cfg.GRPCClientConfig.RegisterFlagsWithPrefix("querier.frontend-client", f)
 	cfg.QueryFrontendGRPCClientConfig.RegisterFlagsWithPrefix("querier.frontend-client", f)
 	cfg.QuerySchedulerGRPCClientConfig.RegisterFlagsWithPrefix("querier.scheduler-client", f)
 }

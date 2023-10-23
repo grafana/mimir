@@ -2429,7 +2429,7 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # Configures the gRPC client used to communicate between the querier and the
 # query-frontend.
 # The CLI flags prefix for this block configuration is: querier.frontend-client
-[query_frontend_grpc_client_config: <grpc_client>]
+[grpc_client_config: <grpc_client>]
 
 # Configures the gRPC client used to communicate between the querier and the
 # query-scheduler.
