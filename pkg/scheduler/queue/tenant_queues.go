@@ -197,21 +197,6 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 
 }
 
-// Finds next queue for the querier. To support fair scheduling between tenants, client is expected
-// to pass last tenant index returned by this function as argument. If there was no previous
-// last tenant index, use -1.
-//
-// getNextQueueForQuerier returns an error if the querier has already notified this scheduler that it is shutting down.
-func (qb *queueBroker) getNextQueueForQuerier(lastTenantIndex int, querierID QuerierID) (*list.List, TenantID, int, error) {
-	nextTenantID, nextTenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querierID)
-	if err != nil || nextTenantID == emptyTenantID {
-		return nil, nextTenantID, nextTenantIndex, err
-	}
-
-	tenantQueue := qb.tenantQueues[nextTenantID]
-	return tenantQueue.requests, nextTenantID, nextTenantIndex, nil
-}
-
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {
 	qb.tenantQuerierAssignments.addQuerierConnection(querierID)
 }
