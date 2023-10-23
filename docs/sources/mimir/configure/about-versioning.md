@@ -142,6 +142,10 @@ The following features are currently experimental:
     - `log.rate-limit-enabled`
     - `log.rate-limit-logs-per-second`
     - `log.rate-limit-logs-burst-size`
+- Memcached client
+  - Customise write and read buffer size
+    - `-<prefix>.memcached.write-buffer-size-bytes`
+    - `-<prefix>.memcached.read-buffer-size-bytes`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)

@@ -4157,6 +4157,16 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # CLI flag: -<prefix>.memcached.connect-timeout
 [connect_timeout: <duration> | default = 200ms]
 
+# (experimental) The size of the write buffer (in bytes). The buffer is
+# allocated for each connection to memcached.
+# CLI flag: -<prefix>.memcached.write-buffer-size-bytes
+[write_buffer_size_bytes: <int> | default = 4096]
+
+# (experimental) The size of the read buffer (in bytes). The buffer is allocated
+# for each connection to memcached.
+# CLI flag: -<prefix>.memcached.read-buffer-size-bytes
+[read_buffer_size_bytes: <int> | default = 4096]
+
 # (advanced) The minimum number of idle connections to keep open as a percentage
 # (0-100) of the number of recently used idle connections. If negative, idle
 # connections are kept open indefinitely.
