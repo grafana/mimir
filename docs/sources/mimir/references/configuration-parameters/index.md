@@ -1119,8 +1119,8 @@ instance_limits:
 [chunks_query_ignore_cancellation: <boolean> | default = false]
 
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
-# CLI flag: -ingester.grpc-errors-enabled
-[grpc_errors_enabled: <boolean> | default = false]
+# CLI flag: -ingester.return-only-grpc-errors
+[return_only_grpc_errors: <boolean> | default = false]
 ```
 
 ### querier

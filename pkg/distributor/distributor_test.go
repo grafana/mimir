@@ -4798,7 +4798,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	// other errors created by httpgrpc with the same code, and with
 	// a more explanatory message.
 	// TODO: this is needed for backwards compatibility and will be removed
-	// when httpgrpc is removed from the write path.
+	// in mimir 2.12.0.
 	httpgrpcTests := map[string]struct {
 		ingesterPushError error
 		expectedStatus    int32
@@ -4870,7 +4870,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 			ingesterPushError: errWithUserID,
 			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
 		},
-		"a context cancel error gives the same wrapped error": {
+		"a context canceled error gives the same wrapped error": {
 			ingesterPushError: context.Canceled,
 			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
 		},

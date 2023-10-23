@@ -408,7 +408,7 @@ func TestHandlePushErrorWithGRPC(t *testing.T) {
 			expectedMessage: newTSDBUnavailableError("tsdb stopping").Error(),
 			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
-		"a wrapped instanceLimitReachedError gets translated into a non-loggable errorWithStatus Internal error with details": {
+		"a wrapped tsdbUnavailableError gets translated into a non-loggable errorWithStatus Internal error with details": {
 			err:             fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
 			expectedCode:    codes.Internal,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBUnavailableError("tsdb stopping").Error()),
@@ -607,31 +607,59 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 				http.StatusBadRequest,
 			),
 		},
-		"a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+		"a perUserSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
 			err: newPerUserSeriesLimitReachedError(10),
 			expectedTranslation: newErrorWithHTTPStatus(
 				newPerUserSeriesLimitReachedError(10),
 				http.StatusBadRequest,
 			),
 		},
-		"a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+		"a wrapped perUserSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
 			err: fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
 			expectedTranslation: newErrorWithHTTPStatus(
 				fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
 				http.StatusBadRequest,
 			),
 		},
-		"a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+		"a perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
 			err: newPerMetricSeriesLimitReachedError(10, labels),
 			expectedTranslation: newErrorWithHTTPStatus(
 				newPerMetricSeriesLimitReachedError(10, labels),
 				http.StatusBadRequest,
 			),
 		},
-		"a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+		"a wrapped perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
 			err: fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
 			expectedTranslation: newErrorWithHTTPStatus(
 				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+				http.StatusBadRequest,
+			),
+		},
+		"a perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+			err: newPerUserMetadataLimitReachedError(10),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerUserMetadataLimitReachedError(10),
+				http.StatusBadRequest,
+			),
+		},
+		"a wrapped perUserMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+			err: fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
+				http.StatusBadRequest,
+			),
+		},
+		"a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+			err: newPerMetricMetadataLimitReachedError(10, labels),
+			expectedTranslation: newErrorWithHTTPStatus(
+				newPerMetricMetadataLimitReachedError(10, labels),
+				http.StatusBadRequest,
+			),
+		},
+		"a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
+			err: fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
+			expectedTranslation: newErrorWithHTTPStatus(
+				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
 				http.StatusBadRequest,
 			),
 		},

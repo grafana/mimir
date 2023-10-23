@@ -184,13 +184,13 @@ func TestToGRPCError(t *testing.T) {
 			expectedGRPCCode: codes.Internal,
 			expectedErrorMsg: originalMsg,
 		},
-		"a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause": {
+		"a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICAS_DID_NOT_MATCH cause": {
 			err:                  replicasDidNotMatchErr,
 			expectedGRPCCode:     codes.AlreadyExists,
 			expectedErrorMsg:     replicasDidNotMatchErr.Error(),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
 		},
-		"a DoNotLotError of a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICASE_DID_NOT_MATCH cause": {
+		"a DoNotLotError of a replicasDidNotMatchError gets translated into an AlreadyExists error with REPLICAS_DID_NOT_MATCH cause": {
 			err:                  log.DoNotLogError{Err: replicasDidNotMatchErr},
 			expectedGRPCCode:     codes.AlreadyExists,
 			expectedErrorMsg:     replicasDidNotMatchErr.Error(),

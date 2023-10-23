@@ -1193,7 +1193,7 @@ func TestIngester_Push(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
-			cfg.GRPCErrorsEnabled = true
+			cfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -5666,7 +5666,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.GRPCErrorsEnabled = true
+	cfg.ReturnOnlyGRPCErrors = true
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
 
@@ -6585,7 +6585,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.GRPCErrorsEnabled = true
+		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -6689,7 +6689,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.GRPCErrorsEnabled = true
+		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -8590,7 +8590,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			ingesterCfg := defaultIngesterTestConfig(t)
 			ingesterCfg.IngesterRing.ReplicationFactor = 1
 			ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-			ingesterCfg.GRPCErrorsEnabled = true
+			ingesterCfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms

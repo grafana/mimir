@@ -2939,12 +2939,12 @@
         },
         {
           "kind": "field",
-          "name": "grpc_errors_enabled",
+          "name": "return_only_grpc_errors",
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "ingester.grpc-errors-enabled",
+          "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

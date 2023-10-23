@@ -74,7 +74,7 @@ func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 // newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
 // and containing the given HTTP status code.
 // TODO this is needed for backwards compatibility only and should be removed
-// once httpgrpc.Errorf() usages in ingester are removed.
+// in mimir 2.12.0.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -556,9 +556,10 @@ func handlePushErrorWithGRPC(err error) error {
 	return newErrorWithStatus(wrappedErr, errCode)
 }
 
-// TODO this method is needed only for the backwards compatibility.
-// It will be removed once httpgrpc has been completely removed
-// from both distributor and ingester.
+// handlePushErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// errorWithStatus, which may contain both HTTP and gRPC error codes.
+// TODO this method is needed only for the backwards compatibility,
+// and should be removed in mimir 2.12.0.
 func handlePushErrorWithHTTPGRPC(err error) error {
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
