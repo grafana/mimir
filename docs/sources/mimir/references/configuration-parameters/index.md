@@ -3565,10 +3565,10 @@ bucket_store:
     [max_idle_file_handles: <int> | default = 1]
 
     # (experimental) If enabled, store-gateway will periodically persist block
-    # IDs of lazy loaded index-headers and load them eagerly during startup. It
-    # is not valid to enable this if index-header lazy loading is disabled.
+    # IDs of lazy loaded index-headers and load them eagerly during startup.
+    # Ignored if index-header lazy loading is disabled.
     # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    [eager_loading_startup_enabled: <boolean> | default = false]
+    [eager_loading_startup_enabled: <boolean> | default = true]
 
     # (advanced) If enabled, store-gateway will lazy load an index-header only
     # once required by a query.
