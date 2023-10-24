@@ -244,14 +244,18 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
-	wallTime := details.LoadWallTime()
-	numSeries := details.LoadFetchedSeries()
-	numBytes := details.LoadFetchedChunkBytes()
-	numChunks := details.LoadFetchedChunks()
-	numIndexBytes := details.LoadFetchedIndexBytes()
-	sharded := strconv.FormatBool(details.GetShardedQueries() > 0)
-
+	var stats *querier_stats.Stats
 	if details != nil {
+		stats = details.Stats
+	}
+	wallTime := stats.LoadWallTime()
+	numSeries := stats.LoadFetchedSeries()
+	numBytes := stats.LoadFetchedChunkBytes()
+	numChunks := stats.LoadFetchedChunks()
+	numIndexBytes := stats.LoadFetchedIndexBytes()
+	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
+
+	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
 		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
