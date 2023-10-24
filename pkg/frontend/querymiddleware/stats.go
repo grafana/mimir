@@ -76,8 +76,10 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 
 type QueryDetails struct {
 	*stats.Stats
-	Start, End time.Time
-	Step       time.Duration
+	Start, End           time.Time
+	Step                 time.Duration
+	UncachedResultsBytes int
+	CachedResultsBytes   int
 }
 
 type contextKey int

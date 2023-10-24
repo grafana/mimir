@@ -295,6 +295,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		responses = append(responses, splitReq.downstreamResponses...)
 	}
 
+	s.recordCachedSizes(ctx, splitReqs)
+
 	return s.merger.MergeResponse(responses...)
 }
 
@@ -341,7 +343,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
-		spanLog.LogKV("key", key, "hashedKey", hashed)
+		spanLog.LogKV("msg", "looking up", "key", key, "hashedKey", hashed)
 	}
 
 	// Lookup the cache.
@@ -391,6 +393,8 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 			}
 
 			extents[keyIdx] = append(extents[keyIdx], resp.Extents[ix])
+			// log only hashed key so that we keep the logs briefer
+			spanLog.LogKV("msg", "fetched", "hashedKey", foundKey, "traceID", resp.Extents[ix].TraceId, "start", resp.Extents[ix].Start, "end", resp.Extents[ix].Start)
 		}
 
 		if len(extents[keyIdx]) == 0 {
@@ -434,6 +438,15 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 	}
 
 	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
+}
+
+func (s *splitAndCacheMiddleware) recordCachedSizes(ctx context.Context, reqs splitRequests) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil {
+		return
+	}
+	details.UncachedResultsBytes = reqs.countDownstreamResponseBytes()
+	details.CachedResultsBytes = reqs.countCachedExtentsBytes()
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e *Extent) time.Duration {
@@ -482,6 +495,28 @@ func (s *splitRequests) countDownstreamRequests() int {
 		count += len(req.downstreamRequests)
 	}
 	return count
+}
+
+// countDownstreamRequests returns the total number of bytes returned from downstream requests.
+func (s *splitRequests) countDownstreamResponseBytes() int {
+	bytes := 0
+	for _, req := range *s {
+		for _, resp := range req.downstreamResponses {
+			bytes += proto.Size(resp)
+		}
+	}
+	return bytes
+}
+
+// countDownstreamRequests returns the total number of bytes fetched from cached responses.
+func (s *splitRequests) countCachedExtentsBytes() int {
+	bytes := 0
+	for _, req := range *s {
+		for _, resp := range req.cachedExtents {
+			bytes += proto.Size(resp.Response)
+		}
+	}
+	return bytes
 }
 
 // prepareDownstreamRequests injects a unique ID and hints to all downstream requests and
@@ -564,7 +599,7 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
-	queryStatistics := stats.FromContext(ctx)
+	queryStatistics := QueryDetailsFromContext(ctx)
 	for i := 0; i < len(reqs); i++ {
 		req := reqs[i]
 		g.Go(func() error {

@@ -289,6 +289,8 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 			"length", details.End.Sub(details.Start).String(),
 			"time_since_param_start", time.Since(details.Start).String(),
 			"time_since_param_end", time.Since(details.End).String(),
+			"cached_results_bytes", details.CachedResultsBytes,
+			"uncached_results_bytes", details.UncachedResultsBytes,
 		)
 	}
 
