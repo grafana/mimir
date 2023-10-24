@@ -61,6 +61,7 @@
 * [BUGFIX] Querier: don't try to query further ingesters if ingester query request minimization is enabled and a query limit is reached as a result of the responses from the initial set of ingesters. #6402
 * [BUGFIX] Ingester: Don't cache context cancellation error when querying. #6446
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451 #6469
+* [BUGFIX] All: fix issue where traces for some inter-component gRPC calls would incorrectly show the call as failing due to cancellation. #6470
 
 ### Mixin
 
