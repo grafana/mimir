@@ -214,6 +214,13 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					if err := stream.CloseSend(); err != nil {
 						level.Warn(log).Log("msg", "closing ingester client stream failed", "err", err)
 					}
+
+					// Exhaust the stream to ensure instrumentation middleware correctly observes the end of the stream, rather than reporting it as "context canceled".
+					for {
+						if _, err := stream.Recv(); err != nil {
+							break
+						}
+					}
 				}
 
 				cleanup()
