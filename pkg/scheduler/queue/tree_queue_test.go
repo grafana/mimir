@@ -8,16 +8,20 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+const maxTestQueueLen = 8
+
 func TestTreeQueue(t *testing.T) {
 
 	expectedTreeQueue := &TreeQueue{
 		name:            "root",
+		maxQueueLen:     maxTestQueueLen,
 		localQueue:      list.New(),
 		index:           -1,
 		childQueueOrder: []string{"0", "1", "2"},
 		childQueueMap: map[string]*TreeQueue{
 			"0": {
 				name:            "0",
+				maxQueueLen:     maxTestQueueLen,
 				localQueue:      list.New(),
 				index:           -1,
 				childQueueOrder: nil,
@@ -25,12 +29,14 @@ func TestTreeQueue(t *testing.T) {
 			},
 			"1": {
 				name:            "1",
+				maxQueueLen:     maxTestQueueLen,
 				localQueue:      list.New(),
 				index:           -1,
 				childQueueOrder: []string{"0"},
 				childQueueMap: map[string]*TreeQueue{
 					"0": {
 						name:            "0",
+						maxQueueLen:     maxTestQueueLen,
 						localQueue:      list.New(),
 						index:           -1,
 						childQueueOrder: nil,
@@ -40,12 +46,14 @@ func TestTreeQueue(t *testing.T) {
 			},
 			"2": {
 				name:            "2",
+				maxQueueLen:     maxTestQueueLen,
 				localQueue:      list.New(),
 				index:           -1,
 				childQueueOrder: []string{"0", "1"},
 				childQueueMap: map[string]*TreeQueue{
 					"0": {
 						name:            "0",
+						maxQueueLen:     maxTestQueueLen,
 						localQueue:      list.New(),
 						index:           -1,
 						childQueueOrder: nil,
@@ -53,6 +61,7 @@ func TestTreeQueue(t *testing.T) {
 					},
 					"1": {
 						name:            "1",
+						maxQueueLen:     maxTestQueueLen,
 						localQueue:      list.New(),
 						index:           -1,
 						childQueueOrder: nil,
@@ -63,7 +72,7 @@ func TestTreeQueue(t *testing.T) {
 		},
 	}
 
-	root := NewTreeQueue("root") // creates path: root
+	root := NewTreeQueue("root", maxTestQueueLen) // creates path: root
 
 	root.getOrAddNode([]string{"root", "0"})      // creates paths: root:0
 	root.getOrAddNode([]string{"root", "1", "0"}) // creates paths: root:1 and root:1:0
@@ -178,7 +187,7 @@ func TestTreeQueue(t *testing.T) {
 }
 
 func TestDequeuePath(t *testing.T) {
-	root := NewTreeQueue("root")
+	root := NewTreeQueue("root", maxTestQueueLen)
 	root.EnqueueBackByPath(QueuePath{"root", "0"}, "root:0:val0")
 	root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val0")
 	root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val1")

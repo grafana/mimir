@@ -193,7 +193,7 @@ func (q *RequestQueue) dispatcherLoop() {
 		if needToDispatchQueries {
 			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
-			for currentElement != nil && queueBroker.len() > 0 {
+			for currentElement != nil && !queueBroker.isEmpty() {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
@@ -205,7 +205,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		if stopping && (queueBroker.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
+		if stopping && (queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
 			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
@@ -229,7 +229,7 @@ func (q *RequestQueue) dispatcherLoop() {
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
-	err := broker.enqueueRequestBack(r)
+	err := broker.enqueueRequestBackNew(r)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
@@ -250,7 +250,7 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 // tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
 // Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *nextRequestForQuerierCall) bool {
-	req, tenantID, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
+	req, tenantID, idx, err := broker.dequeueRequestForQuerierNew(call.lastUserIndex.last, call.querierID)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		call.sendError(err)
@@ -277,7 +277,7 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 		// re-casting to same type it was enqueued as; panic would indicate a bug
 		reqToEnqueue := req.(requestToEnqueue)
 		// should never error; any item previously in the queue already passed validation
-		err := broker.enqueueRequestFront(reqToEnqueue)
+		err = broker.enqueueRequestFrontNew(reqToEnqueue)
 		level.Error(q.log).Log(
 			"msg", "failed to re-enqueue query request after dequeue",
 			"err", err, "tenant", tenantID, "querier", call.querierID,
