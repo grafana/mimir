@@ -179,7 +179,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 19+len(tt.expectedParams))
+				require.Len(t, msg, 21+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -414,10 +414,21 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 			expectedApproximateDurations: map[string]time.Duration{},
 			expectedMissingFields:        []string{"length", "param_time", "time_since_param_start", "time_since_param_end"},
 		},
+		{
+			name:              "results cache statistics",
+			requestFormFields: []string{},
+			setQueryDetails: func(d *querymiddleware.QueryDetails) {
+				d.ResultsCacheMissBytes = 10
+				d.ResultsCacheHitBytes = 200
+			},
+			expectedLoggedFields: map[string]string{
+				"results_cache_miss_bytes": "10",
+				"results_cache_hit_bytes":  "200",
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
-
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 				tt.setQueryDetails(querymiddleware.QueryDetailsFromContext(req.Context()))
 				return &http.Response{
@@ -453,7 +464,7 @@ func TestHandler_LogsFormattedQueryDetails(t *testing.T) {
 
 			msg := logger.logMessages[0]
 			for field, expectedVal := range tt.expectedLoggedFields {
-				assert.EqualValues(t, expectedVal, msg[field])
+				assert.EqualValues(t, expectedVal, fmt.Sprint(msg[field]))
 			}
 			for _, expectedMissingVal := range tt.expectedMissingFields {
 				assert.NotContains(t, msg, expectedMissingVal)
