@@ -4785,8 +4785,6 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 func TestHandleIngesterPushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	outputErrorMsgPrefix := "failed pushing to ingester"
-	userID := "test"
-	errWithUserID := fmt.Errorf("user=%s: %s", userID, testErrorMsg)
 
 	// Ensure that no error gets translated into no error.
 	t.Run("no error gives no error", func(t *testing.T) {
@@ -4826,7 +4824,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 		})
 	}
 
-	// Ensure that the errors created by gogo/status package  get translated
+	// Ensure that the errors created by gogo/status package get translated
 	// into ingesterPushError messages.
 	statusTests := map[string]struct {
 		ingesterPushError         error
@@ -4835,6 +4833,11 @@ func TestHandleIngesterPushError(t *testing.T) {
 		"a gRPC error with details gives an ingesterPushError with the same details": {
 			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
 			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+		},
+		"a DedlineExceeded gRPC ingester error an ingesterPushError with INVALID cause": {
+			// This is how context.DeadlineExceeded error is translated into a gRPC error.
+			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.INVALID)),
 		},
 		"an Unavailable gRPC error without details gives an ingesterPushError with INVALID cause": {
 			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
@@ -4857,33 +4860,6 @@ func TestHandleIngesterPushError(t *testing.T) {
 
 			require.Equal(t, testData.expectedIngesterPushError.Error(), ingesterPushErr.Error())
 			require.Equal(t, testData.expectedIngesterPushError.errorCause(), ingesterPushErr.errorCause())
-		})
-	}
-
-	// Ensure that the errors with no status (e.g., context.Canceled,
-	// context.DeadLine, etc) are correctly wrapped.
-	otherTests := map[string]struct {
-		ingesterPushError error
-		expectedError     error
-	}{
-		"a random ingester error without status gives the same wrapped error": {
-			ingesterPushError: errWithUserID,
-			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
-		},
-		"a context canceled error gives the same wrapped error": {
-			ingesterPushError: context.Canceled,
-			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
-		},
-		"a context deadline exceeded error gives the same wrapped error": {
-			ingesterPushError: context.DeadlineExceeded,
-			expectedError:     errors.Wrap(errWithUserID, outputErrorMsgPrefix),
-		},
-	}
-	for testName, testData := range otherTests {
-		t.Run(testName, func(t *testing.T) {
-			err := handleIngesterPushError(testData.ingesterPushError)
-			require.Errorf(t, err, testData.expectedError.Error())
-			require.ErrorIs(t, err, testData.ingesterPushError)
 		})
 	}
 }
