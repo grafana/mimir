@@ -279,9 +279,9 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"fetched_chunk_bytes", numBytes,
 		"fetched_chunks_count", numChunks,
 		"fetched_index_bytes", numIndexBytes,
-		"sharded_queries", details.LoadShardedQueries(),
-		"split_queries", details.LoadSplitQueries(),
-		"estimated_series_count", details.GetEstimatedSeriesCount(),
+		"sharded_queries", stats.LoadShardedQueries(),
+		"split_queries", stats.LoadSplitQueries(),
+		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
