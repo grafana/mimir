@@ -46,8 +46,10 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				BackendConfig: cache.BackendConfig{
 					Backend: IndexCacheBackendMemcached,
 					Memcached: cache.MemcachedClientConfig{
-						Addresses:           []string{"dns+localhost:11211"},
-						MaxAsyncConcurrency: 1,
+						Addresses:            []string{"dns+localhost:11211"},
+						MaxAsyncConcurrency:  1,
+						WriteBufferSizeBytes: 4096,
+						ReadBufferSizeBytes:  4096,
 					},
 				},
 			},

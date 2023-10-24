@@ -39,8 +39,10 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 				BackendConfig: cache.BackendConfig{
 					Backend: cache.BackendMemcached,
 					Memcached: cache.MemcachedClientConfig{
-						Addresses:           []string{"localhost"},
-						MaxAsyncConcurrency: 1,
+						Addresses:            []string{"localhost"},
+						MaxAsyncConcurrency:  1,
+						WriteBufferSizeBytes: 4096,
+						ReadBufferSizeBytes:  4096,
 					},
 				},
 			},
