@@ -210,7 +210,8 @@ func (t *Mimir) initVault() (services.Service, error) {
 
 	// Update Configs - GRPC Clients
 	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.Worker.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
 	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault

@@ -3,7 +3,10 @@
 package mimir
 
 import (
+	"context"
+
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -22,27 +25,36 @@ type grpcInflightMethodLimiter struct {
 	getIngester func() pushReceiver
 }
 
-const ingesterPushMethod = "/cortex.Ingester/Push"
+type ctxKey int
+
+const (
+	ingesterPushStarted ctxKey = 1
+
+	ingesterPushMethod string = "/cortex.Ingester/Push"
+)
 
 var errNoIngester = status.Error(codes.Unavailable, "no ingester")
 
-func (g *grpcInflightMethodLimiter) RPCCallStarting(methodName string) error {
+func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodName string, _ metadata.MD) (context.Context, error) {
 	if methodName == ingesterPushMethod {
 		ing := g.getIngester()
 		if ing == nil {
 			// We return error here, to make sure that RPCCallFinished doesn't get called for this RPC call.
-			return errNoIngester
+			return ctx, errNoIngester
 		}
 
-		if err := ing.StartPushRequest(); err != nil {
-			return status.Error(codes.Unavailable, err.Error())
+		err := ing.StartPushRequest()
+		if err != nil {
+			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
+
+		return context.WithValue(ctx, ingesterPushStarted, true), nil
 	}
-	return nil
+	return ctx, nil
 }
 
-func (g *grpcInflightMethodLimiter) RPCCallFinished(methodName string) {
-	if methodName == ingesterPushMethod {
+func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
+	if v, ok := ctx.Value(ingesterPushStarted).(bool); ok && v {
 		g.getIngester().FinishPushRequest()
 	}
 }

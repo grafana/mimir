@@ -96,7 +96,11 @@ func (l lazyLoadedHeadersSnapshot) persist(persistDir string) error {
 // NewReaderPool makes a new ReaderPool. If lazy-loading is enabled, NewReaderPool also starts a background task for unloading idle Readers and persisting a list of loaded Readers to disk.
 func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate gate.Gate, metrics *ReaderPoolMetrics, lazyLoadedSnapshotConfig LazyLoadedHeadersSnapshotConfig) *ReaderPool {
 	var snapshot *lazyLoadedHeadersSnapshot
-	if indexHeaderConfig.LazyLoadingEnabled && indexHeaderConfig.EagerLoadingStartupEnabled {
+
+	// Eager loading can only be enabled if lazy-loading is enabled.
+	eagerLoadingEnabled := indexHeaderConfig.LazyLoadingEnabled && indexHeaderConfig.EagerLoadingStartupEnabled
+
+	if eagerLoadingEnabled {
 		snapshot = tryRestoreLazyLoadedHeadersSnapshot(logger, lazyLoadedSnapshotConfig)
 	}
 
@@ -112,7 +116,7 @@ func NewReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 
 			var lazyLoadC <-chan time.Time
 
-			if indexHeaderConfig.EagerLoadingStartupEnabled {
+			if eagerLoadingEnabled {
 				tickerLazyLoadPersist := time.NewTicker(time.Minute)
 				defer tickerLazyLoadPersist.Stop()
 

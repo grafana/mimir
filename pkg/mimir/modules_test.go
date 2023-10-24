@@ -340,7 +340,8 @@ func TestInitVault(t *testing.T) {
 
 	// Check GRPC Clients
 	require.NotNil(t, mimir.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader)
-	require.NotNil(t, mimir.Cfg.Worker.GRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader)
+	require.NotNil(t, mimir.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Querier.StoreGatewayClient.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader)
 	require.NotNil(t, mimir.Cfg.Ruler.ClientTLSConfig.TLS.Reader)

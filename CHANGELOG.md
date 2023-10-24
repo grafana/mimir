@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Querier: Split worker GRPC config into separate client configs for the frontend and scheduler to allow TLS to be configured correctly when specifying the `tls_server_name`. The GRPC config specified under `-querier.frontend-client.*` will no longer apply to the scheduler client, and will need to be set explicitly under `-querier.scheduler-client.*`. #6445
 * [CHANGE] Store-gateway: enable sparse index headers by default. Sparse index headers reduce the time to load an index header up to 90%. #6005
 * [CHANGE] Store-gateway: lazy-loading concurrency limit default value is now 4. #6004
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
@@ -13,10 +14,12 @@
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
 * [CHANGE] Distributor: instead of errors with HTTP status codes, `Push()` now returns errors with gRPC codes: #6377
-* * `replicasDidNotMatchError` is mapped to `codes.AlreadyExists` instead of `http.StatusAccepted` (202).
-* * `tooManyClustersError` and `validationError` are mapped to `codes.FailedPrecondition` instead of `http.BadRequest` (400).
-* * `ingestionRateLimitedError` is mapped to `codes.ResourceExhausted` instead of `http.StatusTooManyRequests` (429).
-* * `requestRateLimitedError` is mapped to `codes.Unavailable` or `codes.ResourceExhausted` instead of the non-standard `529` (The service is overloaded) or `http.StatusTooManyRequests` (429).
+  * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
+  * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
+  * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
+* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, `Push()` will return only gRPC errors. This feature changes the following status codes: #6443
+  * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition`.
+  * `http.StatusServiceUnavailable` (503) and `codes.Unknown` are replaced with `codes.Internal`.
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [FEATURE] Ingester: Experimental support for ignoring context cancellation when querying chunks, useful in ruling out the query engine's potential role in unexpected query cancellations. Enable with `-ingester.chunks-query-ignore-cancellation`. #6408
@@ -57,7 +60,7 @@
 * [BUGFIX] Querier: reduce log volume when querying ingesters with zone-awareness enabled and one or more instances in a single zone unavailable. #6381
 * [BUGFIX] Querier: don't try to query further ingesters if ingester query request minimization is enabled and a query limit is reached as a result of the responses from the initial set of ingesters. #6402
 * [BUGFIX] Ingester: Don't cache context cancellation error when querying. #6446
-* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
+* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6469 #6451
 
 ### Mixin
 

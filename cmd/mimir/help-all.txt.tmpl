@@ -500,7 +500,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
     	[deprecated] If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. It is not valid to enable this if index-header lazy loading is disabled.
+    	[experimental] If enabled, store-gateway will periodically persist block IDs of lazy loaded index-headers and load them eagerly during startup. Ignored if index-header lazy loading is disabled. (default true)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	[experimental] Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-enabled
@@ -1313,6 +1313,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+  -ingester.return-only-grpc-errors
+    	[experimental] When enabled only gRPC errors will be returned by the ingester.
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1675,6 +1677,50 @@ Usage of ./cmd/mimir/mimir:
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
+  -querier.scheduler-client.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -querier.scheduler-client.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -querier.scheduler-client.backoff-on-ratelimits
+    	Enable backoff and retry when we hit rate limits.
+  -querier.scheduler-client.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -querier.scheduler-client.connect-backoff-base-delay duration
+    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
+  -querier.scheduler-client.connect-backoff-max-delay duration
+    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
+  -querier.scheduler-client.connect-timeout duration
+    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
+  -querier.scheduler-client.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -querier.scheduler-client.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -querier.scheduler-client.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -querier.scheduler-client.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -querier.scheduler-client.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -querier.scheduler-client.initial-connection-window-size value
+    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.scheduler-client.initial-stream-window-size value
+    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -querier.scheduler-client.tls-ca-path string
+    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
+  -querier.scheduler-client.tls-cert-path string
+    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.scheduler-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -querier.scheduler-client.tls-enabled
+    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -querier.scheduler-client.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -querier.scheduler-client.tls-key-path string
+    	Path to the key for the client certificate. Also requires the client certificate to be configured.
+  -querier.scheduler-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -querier.scheduler-client.tls-server-name string
+    	Override the expected name on the server certificate.
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
   -querier.store-gateway-client.tls-ca-path string

@@ -1117,6 +1117,10 @@ instance_limits:
 # (experimental) Ignore cancellation when querying chunks.
 # CLI flag: -ingester.chunks-query-ignore-cancellation
 [chunks_query_ignore_cancellation: <boolean> | default = false]
+
+# (experimental) When enabled only gRPC errors will be returned by the ingester.
+# CLI flag: -ingester.return-only-grpc-errors
+[return_only_grpc_errors: <boolean> | default = false]
 ```
 
 ### querier
@@ -2258,6 +2262,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 
 - `ingester.client`
 - `querier.frontend-client`
+- `querier.scheduler-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
 - `ruler.client`
@@ -2429,10 +2434,15 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
-# Configures the gRPC client used to communicate between the queriers and the
-# query-frontends / query-schedulers.
+# Configures the gRPC client used to communicate between the querier and the
+# query-frontend.
 # The CLI flags prefix for this block configuration is: querier.frontend-client
 [grpc_client_config: <grpc_client>]
+
+# Configures the gRPC client used to communicate between the querier and the
+# query-scheduler.
+# The CLI flags prefix for this block configuration is: querier.scheduler-client
+[query_scheduler_grpc_client_config: <grpc_client>]
 ```
 
 ### etcd
@@ -3565,10 +3575,10 @@ bucket_store:
     [max_idle_file_handles: <int> | default = 1]
 
     # (experimental) If enabled, store-gateway will periodically persist block
-    # IDs of lazy loaded index-headers and load them eagerly during startup. It
-    # is not valid to enable this if index-header lazy loading is disabled.
+    # IDs of lazy loaded index-headers and load them eagerly during startup.
+    # Ignored if index-header lazy loading is disabled.
     # CLI flag: -blocks-storage.bucket-store.index-header.eager-loading-startup-enabled
-    [eager_loading_startup_enabled: <boolean> | default = false]
+    [eager_loading_startup_enabled: <boolean> | default = true]
 
     # (advanced) If enabled, store-gateway will lazy load an index-header only
     # once required by a query.

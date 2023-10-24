@@ -181,6 +181,8 @@ type Config struct {
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
 	ChunksQueryIgnoreCancellation bool `yaml:"chunks_query_ignore_cancellation" category:"experimental"`
+
+	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -200,6 +202,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Ignore cancellation when querying chunks.")
+	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
 func (cfg *Config) Validate() error {
@@ -3190,8 +3193,15 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	if err == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := handlePushError(err)
+	handledErr := i.handlePushError(err)
 	return nil, handledErr
+}
+
+func (i *Ingester) handlePushError(err error) error {
+	if i.cfg.ReturnOnlyGRPCErrors {
+		return handlePushErrorWithGRPC(err)
+	}
+	return handlePushErrorWithHTTPGRPC(err)
 }
 
 // pushMetadata returns number of ingested metadata.

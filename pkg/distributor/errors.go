@@ -16,8 +16,9 @@ import (
 
 const (
 	// 529 is non-standard status code used by some services to signal that "The service is overloaded".
-	StatusServiceOverloaded     = 529
-	deadlineExceededWrapMessage = "exceeded configured distributor remote timeout"
+	StatusServiceOverloaded        = 529
+	deadlineExceededWrapMessage    = "exceeded configured distributor remote timeout"
+	failedPushingToIngesterMessage = "failed pushing to ingester"
 )
 
 var (
@@ -157,6 +158,38 @@ func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
 
 // Ensure that requestRateLimitedError implements distributorError.
 var _ distributorError = requestRateLimitedError{}
+
+// ingesterPushError is an error used to represent a failed attempt to push to the ingester.
+type ingesterPushError struct {
+	message string
+	cause   mimirpb.ErrorCause
+}
+
+// newIngesterPushError creates a ingesterPushError error representing the given status object.
+func newIngesterPushError(stat *status.Status) ingesterPushError {
+	errorCause := mimirpb.INVALID
+	details := stat.Details()
+	if len(details) == 1 {
+		if errorDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+			errorCause = errorDetails.GetCause()
+		}
+	}
+	return ingesterPushError{
+		message: stat.Message(),
+		cause:   errorCause,
+	}
+}
+
+func (e ingesterPushError) Error() string {
+	return fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, e.message)
+}
+
+func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
+	return e.cause
+}
+
+// Ensure that ingesterPushError implements distributorError.
+var _ distributorError = ingesterPushError{}
 
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {

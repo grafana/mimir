@@ -275,13 +275,6 @@ func TestConfig_Validate(t *testing.T) {
 		setup       func(*Config)
 		expectedErr error
 	}{
-		"should fail on invalid index-header eager loading in startup": {
-			setup: func(cfg *Config) {
-				cfg.EagerLoadingStartupEnabled = true
-				cfg.LazyLoadingEnabled = false
-			},
-			expectedErr: errEagerLoadingStartupEnabledLazyLoadDisabled,
-		},
 		"should fail on invalid index-header lazy loading max concurrency": {
 			setup: func(cfg *Config) {
 				cfg.LazyLoadingConcurrency = -1
