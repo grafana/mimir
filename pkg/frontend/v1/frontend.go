@@ -111,7 +111,7 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
 
-	f.requestQueue = queue.NewRequestQueue(cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
+	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
 	var err error
@@ -334,7 +334,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequest(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}
