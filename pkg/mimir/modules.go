@@ -273,21 +273,34 @@ func (t *Mimir) initSanityCheck() (services.Service, error) {
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
+	// We can't inject t.Ingester and t.Distributor directly, because they may not be set yet. However by the time when grpcInflightMethodLimiter runs
+	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
+	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
+
+	var ingFn func() ingesterPushReceiver
 	if t.Cfg.Ingester.LimitInflightRequestsUsingGrpcMethodLimiter {
-		// We can't inject t.Ingester directly, because it may not be set yet. However by the time when grpcInflightMethodLimiter runs
-		// t.Ingester will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
-		// is started only after t.Ingester is set in initIngester.
-		g := newGrpcInflightMethodLimiter(func() pushReceiver {
+		ingFn = func() ingesterPushReceiver {
 			// Return explicit nil, if there's no ingester. We don't want to return typed-nil as interface value.
 			if t.Ingester == nil {
 				return nil
 			}
 			return t.Ingester
-		})
-
-		// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
-		t.Cfg.Server.GrpcMethodLimiter = g
+		}
 	}
+
+	var distFn func() distributorPushReceiver
+	if t.Cfg.Distributor.LimitInflightRequestsUsingGrpcMethodLimiter {
+		distFn = func() distributorPushReceiver {
+			// Return explicit nil, if there's no distributor. We don't want to return typed-nil as interface value.
+			if t.Distributor == nil {
+				return nil
+			}
+			return t.Distributor
+		}
+	}
+
+	// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
+	t.Cfg.Server.GrpcMethodLimiter = newGrpcInflightMethodLimiter(ingFn, distFn)
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)

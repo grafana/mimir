@@ -186,7 +186,8 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
-	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -201,6 +202,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1005,35 +1007,164 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	}
 }
 
+type ctxKey int
+
+const requestStateKey ctxKey = 1
+
+// requestState represents state of checks for given request. If this object is stored in context,
+// it means that request has been checked against inflight requests limit, and FinishPushRequest,
+// cleanupAfterPushFinished (or both) must be called for given context.
+type requestState struct {
+	// If set to true, push request will perform cleanup of inflight metrics after request has actually finished
+	// (which can be after push handler returns).
+	pushHandlerPerformsCleanup bool
+
+	// If positive, it means that size of httpgrpc.HTTPRequest has been checked and added to inflightPushRequestsBytes.
+	httpgrpcRequestSize int64
+
+	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
+	writeRequestSize int64
+}
+
+func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
+	ctx, _, err := d.startPushRequest(ctx, httpgrpcRequestSize)
+	return ctx, err
+}
+
+// startPushRequest does limits checks at the beginning of Push request in distributor.
+// This can be called from different places, even multiple times for the same request:
+//
+//   - from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata
+//     in gRPC request provided enough information to do the check. Errors are not logged on this path, only returned to client.
+//
+//   - from Distributor's limitsMiddleware method. If error is returned, limitsMiddleware will wrap the error using util_log.DoNotLogError.
+//
+// This method creates requestState object and stores it in the context.
+// This object describes which checks were already performed on the request,
+// and which component is responsible for doing a cleanup.
+func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	// If requestState is already in context, it means that StartPushRequest already ran for this request.
+	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
+	if alreadyInContext {
+		return ctx, rs, nil
+	}
+
+	rs = &requestState{}
+
+	cleanupInDefer := true
+
+	// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
+	inflight := d.inflightPushRequests.Inc()
+	defer func() {
+		if cleanupInDefer {
+			d.cleanupAfterPushFinished(rs)
+		}
+	}()
+
+	il := d.getInstanceLimits()
+	if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
+		return ctx, nil, errMaxInflightRequestsReached
+	}
+
+	if il.MaxIngestionRate > 0 {
+		if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
+			return ctx, nil, errMaxIngestionRateReached
+		}
+	}
+
+	// If we know the httpgrpcRequestSize, we can check it.
+	if httpgrpcRequestSize > 0 {
+		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
+			return ctx, nil, err
+		}
+	}
+
+	ctx = context.WithValue(ctx, requestStateKey, rs)
+
+	cleanupInDefer = false
+	return ctx, rs, nil
+}
+
+func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize int64) error {
+	// If httpgrpcRequestSize was already checked, don't check it again.
+	if rs.httpgrpcRequestSize > 0 {
+		return nil
+	}
+
+	rs.httpgrpcRequestSize = httpgrpcRequestSize
+	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
+	return d.checkInflightBytes(inflightBytes)
+}
+
+func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {
+	// If writeRequestSize was already checked, don't check it again.
+	if rs.writeRequestSize > 0 {
+		return nil
+	}
+
+	rs.writeRequestSize = writeRequestSize
+	inflightBytes := d.inflightPushRequestsBytes.Add(writeRequestSize)
+	return d.checkInflightBytes(inflightBytes)
+}
+
+func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
+	il := d.getInstanceLimits()
+
+	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
+		return errMaxInflightRequestsBytesReached
+	}
+	return nil
+}
+
+// FinishPushRequest is a counter-part to StartPushRequest, and must be called exactly once while handling the push request,
+// on the same goroutine as push method itself.
+func (d *Distributor) FinishPushRequest(ctx context.Context) {
+	rs, ok := ctx.Value(requestStateKey).(*requestState)
+	if !ok {
+		return
+	}
+
+	if rs.pushHandlerPerformsCleanup {
+		return
+	}
+
+	d.cleanupAfterPushFinished(rs)
+}
+
+func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
+	d.inflightPushRequests.Dec()
+	if rs.httpgrpcRequestSize > 0 {
+		d.inflightPushRequestsBytes.Sub(rs.httpgrpcRequestSize)
+	}
+	if rs.writeRequestSize > 0 {
+		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
+	}
+}
+
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
-		inflight := d.inflightPushRequests.Inc()
+		// We don't know request size yet, will check it later.
+		ctx, rs, err := d.startPushRequest(ctx, -1)
+		if err != nil {
+			return util_log.DoNotLogError{Err: err}
+		}
 
+		rs.pushHandlerPerformsCleanup = true
 		// Decrement counter after all ingester calls have finished or been cancelled.
 		pushReq.AddCleanup(func() {
-			d.inflightPushRequests.Dec()
+			d.cleanupAfterPushFinished(rs)
 		})
+
 		cleanupInDefer := true
 		defer func() {
 			if cleanupInDefer {
 				pushReq.CleanUp()
 			}
 		}()
-
-		il := d.getInstanceLimits()
-		if il.MaxInflightPushRequests > 0 && inflight > int64(il.MaxInflightPushRequests) {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-			return util_log.DoNotLogError{Err: errMaxInflightRequestsReached}
-		}
-
-		if il.MaxIngestionRate > 0 {
-			if rate := d.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-				d.rejectedRequests.WithLabelValues(reasonDistributorMaxIngestionRate).Inc()
-				return errMaxIngestionRateReached
-			}
-		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1054,15 +1185,9 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return err
 		}
-		reqSize := int64(req.Size())
-		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
-		pushReq.AddCleanup(func() {
-			d.inflightPushRequestsBytes.Sub(reqSize)
-		})
 
-		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return errMaxInflightRequestsBytesReached
+		if err := d.checkWriteRequestSize(rs, int64(req.Size())); err != nil {
+			return err
 		}
 
 		cleanupInDefer = false

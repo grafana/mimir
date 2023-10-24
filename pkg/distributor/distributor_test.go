@@ -5009,3 +5009,175 @@ func countCalls(ingesters []mockIngester, name string) int {
 
 	return count
 }
+
+func TestStartFinishRequest(t *testing.T) {
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)},
+		}
+	}
+
+	// Pretend push went OK, make sure to call CleanUp.
+	finishPush := func(ctx context.Context, pushReq *Request) error {
+		defer pushReq.CleanUp()
+		return nil
+	}
+
+	type testCase struct {
+		externalCheck       bool  // Start request "externally", from outside of distributor.
+		httpgrpcRequestSize int64 // only used for external check.
+
+		inflightRequestsBeforePush     int
+		inflightRequestsSizeBeforePush int64
+		addIngestionRateBeforePush     int64
+
+		expectedStartError error
+		expectedPushError  error
+	}
+
+	const (
+		inflightLimit      = 5
+		inflightBytesLimit = 1024
+		ingestionRateLimit = 100
+	)
+
+	testcases := map[string]testCase{
+		"request succeeds, internal": {
+			expectedStartError: nil,
+			expectedPushError:  nil,
+		},
+
+		"request succeeds, external": {
+			externalCheck:      true,
+			expectedStartError: nil,
+			expectedPushError:  nil,
+		},
+
+		"request succeeds, external, with httpgrpc size": {
+			externalCheck:       true,
+			httpgrpcRequestSize: 100,
+			expectedStartError:  nil,
+			expectedPushError:   nil,
+		},
+
+		"too many inflight requests, internal": {
+			inflightRequestsBeforePush:     inflightLimit,
+			inflightRequestsSizeBeforePush: 0,
+			expectedStartError:             errMaxInflightRequestsReached,
+			expectedPushError:              errMaxInflightRequestsReached,
+		},
+
+		"too many inflight requests, external": {
+			externalCheck:                  true,
+			inflightRequestsBeforePush:     inflightLimit,
+			inflightRequestsSizeBeforePush: 0,
+			expectedStartError:             errMaxInflightRequestsReached,
+			expectedPushError:              errMaxInflightRequestsReached,
+		},
+
+		"too many inflight bytes requests, internal": {
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"too many inflight bytes requests, external": {
+			externalCheck:                  true,
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
+			expectedStartError:             nil, // httpgrpc request size is not set when calling StartPushRequest, so it's not checked.
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"too many inflight bytes requests, external with httpgrpc size within limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            500,
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: inflightBytesLimit - 500,
+			expectedStartError:             nil, // httpgrpc request size fits into inflight request size limit.
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"too many inflight bytes requests, external with httpgrpc size outside limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            500,
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: inflightBytesLimit,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"high ingestion rate, internal": {
+			addIngestionRateBeforePush: 100 * ingestionRateLimit,
+			expectedStartError:         errMaxIngestionRateReached,
+			expectedPushError:          errMaxIngestionRateReached,
+		},
+
+		"high ingestion rate, external": {
+			externalCheck:              true,
+			addIngestionRateBeforePush: 100 * ingestionRateLimit,
+			expectedStartError:         errMaxIngestionRateReached,
+			expectedPushError:          errMaxIngestionRateReached,
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			pushReq := makeWriteRequestForGenerators(1, uniqueMetricsGen, nil, nil)
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			// Prepare distributor and wrap the mock push function with its middlewares.
+			ds, _, _ := prepare(t, prepConfig{
+				numDistributors:          1,
+				limits:                   &limits,
+				enableTracker:            true,
+				maxInflightRequests:      inflightLimit,
+				maxInflightRequestsBytes: inflightBytesLimit,
+				maxIngestionRate:         ingestionRateLimit,
+			})
+			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
+
+			// Setup inflight values before calling push.
+			ds[0].inflightPushRequests.Add(int64(tc.inflightRequestsBeforePush))
+			ds[0].inflightPushRequestsBytes.Add(tc.inflightRequestsSizeBeforePush)
+			ds[0].ingestionRate.Add(tc.addIngestionRateBeforePush)
+			ds[0].ingestionRate.Tick()
+
+			ctx := user.InjectOrgID(context.Background(), "user")
+			if tc.externalCheck {
+				var err error
+				ctx, err = ds[0].StartPushRequest(ctx, tc.httpgrpcRequestSize)
+
+				if tc.expectedStartError == nil {
+					require.NoError(t, err)
+				} else {
+					require.ErrorIs(t, err, tc.expectedStartError)
+
+					// Verify that errors returned by StartPushRequest method are NOT gRPC status errors.
+					// They will be converted to gRPC status by grpcInflightMethodLimiter.
+					require.Error(t, err)
+					_, ok := status.FromError(err)
+					require.False(t, ok)
+				}
+			}
+
+			err := wrappedPush(ctx, NewParsedRequest(pushReq))
+			if tc.expectedPushError == nil {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, tc.expectedPushError)
+			}
+
+			if tc.externalCheck {
+				ds[0].FinishPushRequest(ctx)
+			}
+
+			// Verify that inflight metrics are the same as before the request.
+			require.Equal(t, int64(tc.inflightRequestsBeforePush), ds[0].inflightPushRequests.Load())
+			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
+		})
+	}
+}
