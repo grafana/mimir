@@ -353,12 +353,14 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))
-	returnedBytes := 0
+	fetchedBytes := 0
+	usedBytes := 0
 	extentsOutOfTTL := 0
 
 	ttl, ttlForExtentsInOOOWindow, oooWindow := s.getCacheOptions(tenantIDs)
 
 	for foundKey, foundData := range founds {
+		fetchedBytes += len(foundData)
 		// Find the index of this cache key.
 		keyIdx, ok := hashedKeysIdx[foundKey]
 		if !ok {
@@ -395,18 +397,18 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 			extents[keyIdx] = append(extents[keyIdx], resp.Extents[ix])
 			// log only hashed key so that we keep the logs briefer
 			spanLog.LogKV("msg", "fetched", "hashedKey", foundKey, "traceID", resp.Extents[ix].TraceId, "start", resp.Extents[ix].Start, "end", resp.Extents[ix].Start)
+			usedBytes += len(foundData)
 		}
 
 		if len(extents[keyIdx]) == 0 {
 			extents[keyIdx] = nil
 		}
-
-		returnedBytes += len(foundData)
 	}
 
 	spanLog.LogKV("requested keys", len(hashedKeys))
 	spanLog.LogKV("found keys", len(founds))
-	spanLog.LogKV("returned bytes", returnedBytes)
+	spanLog.LogKV("fetched bytes", fetchedBytes)
+	spanLog.LogKV("used bytes", usedBytes)
 	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
 
 	return extents
