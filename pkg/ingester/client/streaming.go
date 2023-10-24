@@ -12,6 +12,7 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -59,7 +60,7 @@ func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeri
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *SeriesChunksStreamReader) Close() {
-	if err := s.client.CloseSend(); err != nil {
+	if err := util.CloseAndExhaust[*QueryStreamResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
 	}
 

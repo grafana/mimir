@@ -1371,7 +1371,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 		if err != nil {
 			return nil, err
 		}
-		defer stream.CloseSend() //nolint:errcheck
+		defer util.CloseAndExhaust[*ingester_client.LabelNamesAndValuesResponse](stream) //nolint:errcheck
 		return nil, merger.collectResponses(stream)
 	})
 	if err != nil {
@@ -1528,7 +1528,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		if err != nil {
 			return struct{}{}, err
 		}
-		defer func() { _ = stream.CloseSend() }()
+		defer func() { _ = util.CloseAndExhaust[*ingester_client.LabelValuesCardinalityResponse](stream) }()
 
 		return struct{}{}, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(desc.Zone, stream)
 	}, func(struct{}) {})

@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -151,7 +152,7 @@ func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 // Close cleans up all resources associated with this storeGatewayStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *storeGatewayStreamReader) Close() {
-	if err := s.client.CloseSend(); err != nil {
+	if err := util.CloseAndExhaust[*storepb.SeriesResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing store-gateway client stream failed", "err", err)
 	}
 }
