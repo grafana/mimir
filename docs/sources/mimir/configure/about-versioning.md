@@ -149,6 +149,9 @@ The following features are currently experimental:
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)
+- Limiting inflight requests to Distributor and Ingester via gRPC limiter:
+  - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
+  - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
 
 ## Deprecated features
 

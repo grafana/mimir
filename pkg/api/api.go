@@ -227,12 +227,15 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 	a.RegisterRoute("/api/v1/user_limits", userLimitsHandler, true, true, "GET")
 }
 
+const PrometheusPushEndpoint = "/api/v1/push"
+const OTLPPushEndpoint = "/otlp/v1/metrics"
+
 // RegisterDistributor registers the endpoints associated with the distributor.
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	a.RegisterRoute("/api/v1/push", distributor.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, limits, d.PushWithMiddlewares), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", distributor.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.EnableOtelMetadataStorage, limits, reg, d.PushWithMiddlewares), true, false, "POST")
+	a.RegisterRoute(PrometheusPushEndpoint, distributor.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, limits, d.PushWithMiddlewares), true, false, "POST")
+	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, a.cfg.EnableOtelMetadataStorage, limits, reg, d.PushWithMiddlewares), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
