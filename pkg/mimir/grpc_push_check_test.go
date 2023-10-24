@@ -88,7 +88,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 
 		ctx, err = l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
 			httpgrpc.MetadataMethod:      "POST",
-			httpgrpc.MetadataURL:         api.PrometheusPushEndpoint,
+			httpgrpc.MetadataURL:         api.PrometheusPushEndpoint, // no prefix
 			grpcutil.MetadataMessageSize: "123456",
 		}))
 		require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 
 		_, err := l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
 			httpgrpc.MetadataMethod:      "GET",
-			httpgrpc.MetadataURL:         api.PrometheusPushEndpoint,
+			httpgrpc.MetadataURL:         "prefix" + api.PrometheusPushEndpoint,
 			grpcutil.MetadataMessageSize: "123456",
 		}))
 		require.NoError(t, err)
@@ -155,7 +155,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 
 		_, err := l.RPCCallStarting(context.Background(), httpgrpcHandleMethod, metadata.New(map[string]string{
 			httpgrpc.MetadataMethod:      "POST",
-			httpgrpc.MetadataURL:         api.OTLPPushEndpoint,
+			httpgrpc.MetadataURL:         "prefix" + api.OTLPPushEndpoint,
 			grpcutil.MetadataMessageSize: "one-two-three",
 		}))
 		require.NoError(t, err)
