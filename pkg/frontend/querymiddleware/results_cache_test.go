@@ -35,33 +35,37 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 			}(),
 		},
 		"should pass with memcached backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: cache.MemcachedClientConfig{
-						Addresses:           []string{"localhost"},
-						MaxAsyncConcurrency: 1,
-					},
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{"localhost"}
+
+				return cfg
+			}(),
 		},
 		"should fail with invalid memcached config": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: cache.BackendMemcached,
-					Memcached: cache.MemcachedClientConfig{
-						Addresses: nil,
-					},
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = cache.BackendMemcached
+				cfg.Memcached.Addresses = []string{}
+
+				return cfg
+			}(),
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"should fail with unsupported backend": {
-			cfg: ResultsCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: "unsupported",
-				},
-			},
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = "unsupported"
+
+				return cfg
+			}(),
 			expected: errUnsupportedBackend,
 		},
 	}

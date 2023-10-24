@@ -327,6 +327,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.chunks-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -blocks-storage.bucket-store.chunks-cache.memcached.read-buffer-size-bytes int
+    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path string
@@ -345,6 +347,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.chunks-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.chunks-cache.memcached.write-buffer-size-bytes int
+    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
   -blocks-storage.bucket-store.chunks-cache.redis.connection-pool-timeout duration
@@ -425,6 +429,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.index-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -blocks-storage.bucket-store.index-cache.memcached.read-buffer-size-bytes int
+    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.tls-ca-path string
@@ -443,6 +449,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-cache.memcached.write-buffer-size-bytes int
+    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.index-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
   -blocks-storage.bucket-store.index-cache.redis.connection-pool-timeout duration
@@ -547,6 +555,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -blocks-storage.bucket-store.metadata-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -blocks-storage.bucket-store.metadata-cache.memcached.read-buffer-size-bytes int
+    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.tls-ca-path string
@@ -565,6 +575,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.metadata-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.metadata-cache.memcached.write-buffer-size-bytes int
+    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -blocks-storage.bucket-store.metadata-cache.metafile-attributes-ttl duration
     	How long to cache attributes of the block metafile. (default 168h0m0s)
   -blocks-storage.bucket-store.metadata-cache.metafile-content-ttl duration
@@ -1869,6 +1881,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -query-frontend.results-cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -query-frontend.results-cache.memcached.read-buffer-size-bytes int
+    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.results-cache.memcached.tls-ca-path string
@@ -1887,6 +1901,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.results-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -query-frontend.results-cache.memcached.write-buffer-size-bytes int
+    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -query-frontend.results-cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
   -query-frontend.results-cache.redis.connection-pool-timeout duration
@@ -2101,6 +2117,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced. (default 1048576)
   -ruler-storage.cache.memcached.min-idle-connections-headroom-percentage float
     	The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely. (default -1)
+  -ruler-storage.cache.memcached.read-buffer-size-bytes int
+    	[experimental] The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -ruler-storage.cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -ruler-storage.cache.memcached.tls-ca-path string
@@ -2119,6 +2137,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler-storage.cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler-storage.cache.memcached.write-buffer-size-bytes int
+    	[experimental] The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached. (default 4096)
   -ruler-storage.cache.redis.connection-pool-size int
     	Maximum number of connections in the pool. (default 100)
   -ruler-storage.cache.redis.connection-pool-timeout duration

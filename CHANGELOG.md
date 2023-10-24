@@ -51,6 +51,7 @@
 * [ENHANCEMENT] Querier: reduce memory consumed for queries that hit store-gateways. #6348
 * [ENHANCEMENT] Ruler: include corresponding trace ID with log messages associated with rule evaluation. #6379
 * [ENHANCEMENT] Querier: clarify log messages and span events emitted while querying ingesters, and include both ingester name and address when relevant. #6381
+* [ENHANCEMENT] Memcached: introduce new experimental configuration parameters `-<prefix>.memcached.write-buffer-size-bytes` `-<prefix>.memcached.read-buffer-size-bytes` to customise the memcached client write and read buffer size (the buffer is allocated for each memcached connection). #6468
 * [ENHANCEMENT] Ingester, Distributor: added experimental support for rejecting push requests received via gRPC before reading them into memory, if ingester or distributor is unable to accept the request. This is activated by using `-ingester.limit-inflight-requests-using-grpc-method-limiter` for ingester, and `-distributor.limit-inflight-requests-using-grpc-method-limiter` for distributor. #5976 #6300
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
