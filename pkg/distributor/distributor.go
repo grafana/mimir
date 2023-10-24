@@ -1026,21 +1026,22 @@ type requestState struct {
 	writeRequestSize int64
 }
 
-// StartPushRequest does limits checks at the beginning of Push request in distributor.
-//
-// This can be called from different places, even multiple times for the same request:
-//
-// * from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata in gRPC request provided enough information to do the check.
-//
-// * from Distributor's limitsMiddleware method.
-//
-// This method creates requestState object and stores it in the context. This object describes which checks were already performed on the request,
-// and which component is responsible for doing a cleanup.
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
 	ctx, _, err := d.startPushRequest(ctx, httpgrpcRequestSize)
 	return ctx, err
 }
 
+// startPushRequest does limits checks at the beginning of Push request in distributor.
+// This can be called from different places, even multiple times for the same request:
+//
+//   - from gRPC Method limit check. This only applies if request arrived as httpgrpc.HTTPRequest, and request metadata
+//     in gRPC request provided enough information to do the check. Errors are not logged on this path, only returned to client.
+//
+//   - from Distributor's limitsMiddleware method. If error is returned, limitsMiddleware will wrap the error using util_log.DoNotLogError.
+//
+// This method creates requestState object and stores it in the context.
+// This object describes which checks were already performed on the request,
+// and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
