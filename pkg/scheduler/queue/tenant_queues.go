@@ -121,8 +121,8 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 	}
 }
 
-func (qb *queueBroker) len() int {
-	return len(qb.tenantQueues)
+func (qb *queueBroker) isEmpty() bool {
+	return len(qb.tenantQueues) == 0
 }
 
 func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
