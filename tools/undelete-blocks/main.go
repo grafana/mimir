@@ -17,16 +17,17 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/oklog/ulid"
+
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/objtools"
-	"github.com/oklog/ulid"
 )
 
 type config struct {
 	bucketConfig    objtools.BucketConfig
 	includedTenants flagext.StringSliceCSV
 	excludedTenants flagext.StringSliceCSV
-	inputJsonFile   string
+	inputJSONFile   string
 	dryRun          bool
 }
 
@@ -34,7 +35,7 @@ func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucketConfig.RegisterFlags(f)
 	f.Var(&c.includedTenants, "included-tenants", "If not empty, only blocks for these tenants are recovered.")
 	f.Var(&c.excludedTenants, "excluded-tenants", "Blocks for these tenants are not recovered.")
-	f.StringVar(&c.inputJsonFile, "input-json-file", "", "If set, the blocks to undelete are read from the provided json file. If unset listings are performed to discover deleted blocks.")
+	f.StringVar(&c.inputJSONFile, "input-json-file", "", "If set, the blocks to undelete are read from the provided json file. If unset listings are performed to discover deleted blocks.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If true, no writes/deletes are performed and are instead logged.")
 }
 
@@ -104,14 +105,14 @@ func newTenantFilter(cfg config) tenantFilter {
 
 func getBlocks(ctx context.Context, cfg config, bucket objtools.Bucket) (map[string][]ulid.ULID, error) {
 	tenantFilter := newTenantFilter(cfg)
-	if cfg.inputJsonFile != "" {
-		return getBlocksFromJsonFile(cfg.inputJsonFile, tenantFilter)
+	if cfg.inputJSONFile != "" {
+		return getBlocksFromJSONFile(cfg.inputJSONFile, tenantFilter)
 	}
 	return getBlocksFromListing(ctx, bucket, tenantFilter)
 }
 
 // getBlocksFromFile reads a JSON tenant to blocks map from the specified file
-func getBlocksFromJsonFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
+func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -188,8 +189,8 @@ func listDeletedBlocksForTenant(ctx context.Context, bkt objtools.Bucket, tenant
 	var last ulid.ULID
 	for _, name := range markers {
 		// preventing duplicates from multiple versions (used a version listing only to get deleted delete markers)
-		if blockId, ok := block.IsDeletionMarkFilename(name); ok && blockId.Compare(last) != 0 {
-			blocks = append(blocks, blockId)
+		if blockID, ok := block.IsDeletionMarkFilename(name); ok && blockID.Compare(last) != 0 {
+			blocks = append(blocks, blockID)
 		}
 	}
 	return blocks, nil
@@ -285,10 +286,10 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 		if err := bkt.RestoreVersion(ctx, target.objectName, target.versionInfo); err != nil {
 			logger.Error("failed to restore an object version", "object", target.objectName, "version", target.versionInfo.VersionID)
 			return err
-		} else {
-			logger.Info("restored an object version", "object", target.objectName, "version", target.versionInfo.VersionID)
 		}
+		logger.Info("restored an object version", "object", target.objectName, "version", target.versionInfo.VersionID)
 	}
+
 	for _, objectName := range []string{localDeleteMarkerPath, globalDeleteMarkerPath} {
 		if err = bkt.Delete(ctx, objectName, objtools.DeleteOptions{}); err != nil {
 			logger.Error("failed to delete a delete marker", "object", objectName)

@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 const (

@@ -43,7 +43,7 @@ func (c *AzureClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 
 func (c *AzureClientConfig) Validate(prefix string) error {
 	if c.ContainerName == "" {
-		return fmt.Errorf("the Azure container name (%s) is required", prefix+"account-name")
+		return fmt.Errorf("the Azure container name (%s) is required", prefix+"container-name")
 	}
 	if c.AccountName == "" {
 		return fmt.Errorf("the Azure storage account name (%s) is required", prefix+"account-name")

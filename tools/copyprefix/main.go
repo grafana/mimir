@@ -87,7 +87,7 @@ func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 	if !cfg.overwrite {
 		destNames, err := listNames(ctx, destBucket, destinationPrefix)
 		if err != nil {
-			slog.Error("failed to list destination bucket", "prefix", destinationPrefix)
+			logger.Error("failed to list destination bucket", "prefix", destinationPrefix)
 			return err
 		}
 		exists = make(map[string]struct{}, len(destNames))
@@ -102,7 +102,7 @@ func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 			return err
 		}
 
-		logger := slog.With("sourceObject", sourceName, "destinationObject", destinationName)
+		logger := logger.With("sourceObject", sourceName, "destinationObject", destinationName)
 
 		if _, ok := exists[destinationName]; ok {
 			logger.Info("Not copying an object since it exists in the destination bucket")

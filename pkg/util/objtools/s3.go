@@ -5,7 +5,6 @@ package objtools
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"strings"
 
@@ -160,7 +159,7 @@ func (bkt *s3Bucket) RestoreVersion(ctx context.Context, objectName string, vers
 			})
 		}
 		// it's already current, feasibly we could return nil, but return an error since it might indicate a higher level bug
-		return errors.New(fmt.Sprintf("the non-delete marker version %s of object %s to restore is already current", versionInfo.VersionID, objectName))
+		return errors.Errorf("the non-delete marker version %s of object %s to restore is already current", versionInfo.VersionID, objectName)
 	} else if versionInfo.IsDeleteMarker {
 		return errors.New("delete markers are not restorable")
 	}
