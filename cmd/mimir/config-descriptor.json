@@ -4909,6 +4909,28 @@
                 },
                 {
                   "kind": "field",
+                  "name": "write_buffer_size_bytes",
+                  "required": false,
+                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4096,
+                  "fieldFlag": "query-frontend.results-cache.memcached.write-buffer-size-bytes",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_buffer_size_bytes",
+                  "required": false,
+                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4096,
+                  "fieldFlag": "query-frontend.results-cache.memcached.read-buffer-size-bytes",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
                   "name": "min_idle_connections_headroom_percentage",
                   "required": false,
                   "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
@@ -6168,6 +6190,28 @@
                     },
                     {
                       "kind": "field",
+                      "name": "write_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.write-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "read_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.read-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
                       "name": "min_idle_connections_headroom_percentage",
                       "required": false,
                       "desc": "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.",
@@ -6702,6 +6746,28 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout",
                       "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "write_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.write-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "read_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.read-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -7263,6 +7329,28 @@
                       "fieldDefaultValue": 200000000,
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout",
                       "fieldType": "duration"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "write_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.write-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "read_buffer_size_bytes",
+                      "required": false,
+                      "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 4096,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.read-buffer-size-bytes",
+                      "fieldType": "int",
+                      "fieldCategory": "experimental"
                     },
                     {
                       "kind": "field",
@@ -11902,6 +11990,28 @@
                   "fieldDefaultValue": 200000000,
                   "fieldFlag": "ruler-storage.cache.memcached.connect-timeout",
                   "fieldType": "duration"
+                },
+                {
+                  "kind": "field",
+                  "name": "write_buffer_size_bytes",
+                  "required": false,
+                  "desc": "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4096,
+                  "fieldFlag": "ruler-storage.cache.memcached.write-buffer-size-bytes",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_buffer_size_bytes",
+                  "required": false,
+                  "desc": "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 4096,
+                  "fieldFlag": "ruler-storage.cache.memcached.read-buffer-size-bytes",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
