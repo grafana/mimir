@@ -232,6 +232,10 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		if err := splitReqs.storeDownstreamResponses(execResps); err != nil {
 			return nil, err
 		}
+
+		if details := QueryDetailsFromContext(ctx); details != nil {
+			details.UncachedResultsBytes = splitReqs.countDownstreamResponseBytes()
+		}
 	}
 
 	// Store the updated response in the results cache.
@@ -294,8 +298,6 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		responses = append(responses, splitReq.cachedResponses...)
 		responses = append(responses, splitReq.downstreamResponses...)
 	}
-
-	s.recordCachedSizes(ctx, splitReqs)
 
 	return s.merger.MergeResponse(responses...)
 }
@@ -397,7 +399,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 			extents[keyIdx] = append(extents[keyIdx], respExtent)
 			// log only hashed key so that we keep the logs briefer
 			spanLog.LogKV("msg", "fetched", "hashedKey", foundKey, "traceID", respExtent.TraceId, "start", time.UnixMilli(respExtent.Start), "end", time.UnixMilli(respExtent.Start))
-			usedBytes += len(foundData)
+			usedBytes += respExtent.Response.Size()
 		}
 
 		if len(extents[keyIdx]) == 0 {
@@ -410,6 +412,10 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 	spanLog.LogKV("fetched bytes", fetchedBytes)
 	spanLog.LogKV("used bytes", usedBytes)
 	spanLog.LogKV("extents filtered out due to ttl", extentsOutOfTTL)
+
+	if details := QueryDetailsFromContext(ctx); details != nil {
+		details.CachedResultsBytes = usedBytes
+	}
 
 	return extents
 }
@@ -440,15 +446,6 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(key string, tenantIDs []stri
 	}
 
 	s.cache.StoreAsync(map[string][]byte{cacheHashKey(key): buf}, usedTTL)
-}
-
-func (s *splitAndCacheMiddleware) recordCachedSizes(ctx context.Context, reqs splitRequests) {
-	details := QueryDetailsFromContext(ctx)
-	if details == nil {
-		return
-	}
-	details.UncachedResultsBytes = reqs.countDownstreamResponseBytes()
-	details.CachedResultsBytes = reqs.countCachedExtentsBytes()
 }
 
 func getTTLForExtent(now time.Time, ttl, ttlInOOOWindow, oooWindow time.Duration, e *Extent) time.Duration {
@@ -505,17 +502,6 @@ func (s *splitRequests) countDownstreamResponseBytes() int {
 	for _, req := range *s {
 		for _, resp := range req.downstreamResponses {
 			bytes += proto.Size(resp)
-		}
-	}
-	return bytes
-}
-
-// countDownstreamRequests returns the total number of bytes fetched from cached responses.
-func (s *splitRequests) countCachedExtentsBytes() int {
-	bytes := 0
-	for _, req := range *s {
-		for _, resp := range req.cachedExtents {
-			bytes += proto.Size(resp.Response)
 		}
 	}
 	return bytes
