@@ -74,9 +74,9 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 	if g.getDistributor != nil && methodName == httpgrpcHandleMethod {
 		// Let's check httpgrpc metadata, if present.
 		httpMethod := getSingleMetadata(md, httpgrpc.MetadataMethod)
-		httpUrl := getSingleMetadata(md, httpgrpc.MetadataURL)
+		httpURL := getSingleMetadata(md, httpgrpc.MetadataURL)
 
-		if httpMethod == http.MethodPost && (strings.HasSuffix(httpUrl, api.PrometheusPushEndpoint) || strings.HasSuffix(httpUrl, api.OTLPPushEndpoint)) {
+		if httpMethod == http.MethodPost && (strings.HasSuffix(httpURL, api.PrometheusPushEndpoint) || strings.HasSuffix(httpURL, api.OTLPPushEndpoint)) {
 			dist := g.getDistributor()
 			if dist == nil {
 				return ctx, errNoDistributor

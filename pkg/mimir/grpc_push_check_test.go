@@ -193,6 +193,6 @@ func (i *mockDistributorReceiver) StartPushRequest(ctx context.Context, requestS
 	return ctx, i.returnError
 }
 
-func (i *mockDistributorReceiver) FinishPushRequest(ctx context.Context) {
+func (i *mockDistributorReceiver) FinishPushRequest(_ context.Context) {
 	i.finishCalls++
 }
