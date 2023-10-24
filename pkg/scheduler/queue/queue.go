@@ -193,7 +193,7 @@ func (q *RequestQueue) dispatcherLoop() {
 		if needToDispatchQueries {
 			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
-			for currentElement != nil && queueBroker.len() > 0 {
+			for currentElement != nil && !queueBroker.isEmpty() {
 				call := currentElement.Value.(*nextRequestForQuerierCall)
 				nextElement := currentElement.Next() // We have to capture the next element before calling Remove(), as Remove() clears it.
 
@@ -205,7 +205,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		if stopping && (queueBroker.len() == 0 || q.connectedQuerierWorkers.Load() == 0) {
+		if stopping && (queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
 			// Tell any waiting GetNextRequestForQuerier calls that nothing is coming.
 			currentElement := waitingGetNextRequestForQuerierCalls.Front()
 
