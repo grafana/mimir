@@ -32,15 +32,17 @@ func isValidQueueName(name string) bool {
 type TreeQueue struct {
 	// name of the tree node will be set to its segment of the queue path
 	name            string
+	maxQueueLen     int
 	localQueue      *list.List
 	index           int
 	childQueueOrder []string
 	childQueueMap   map[string]*TreeQueue
 }
 
-func NewTreeQueue(name string) *TreeQueue {
+func NewTreeQueue(name string, maxQueueLen int) *TreeQueue {
 	return &TreeQueue{
 		name:            name,
+		maxQueueLen:     maxQueueLen,
 		localQueue:      list.New(),
 		index:           localQueueIndex,
 		childQueueMap:   map[string]*TreeQueue{},
@@ -69,7 +71,23 @@ func (q *TreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
 	if err != nil {
 		return err
 	}
+	if childQueue.localQueue.Len()+1 > childQueue.maxQueueLen {
+		return ErrTooManyRequests
+	}
+
 	childQueue.localQueue.PushBack(v)
+	return nil
+}
+
+func (q *TreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
+	if path[0] != q.name {
+		return errors.New("path must begin with root node name")
+	}
+	childQueue, err := q.getOrAddNode(path)
+	if err != nil {
+		return err
+	}
+	childQueue.localQueue.PushFront(v)
 	return nil
 }
 
@@ -97,7 +115,7 @@ func (q *TreeQueue) getOrAddNode(path QueuePath) (*TreeQueue, error) {
 	if childQueue, ok = q.childQueueMap[childPath[0]]; !ok {
 		// no child node matches next path segment
 		// create next child before recurring
-		childQueue = NewTreeQueue(childPath[0])
+		childQueue = NewTreeQueue(childPath[0], q.maxQueueLen)
 		// add new child queue to ordered list for round-robining
 		q.childQueueOrder = append(q.childQueueOrder, childQueue.name)
 		// attach new child queue to lookup map
@@ -136,6 +154,19 @@ func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
 	}
 
 	dequeuedPathFromChild, v := childQueue.Dequeue()
+	// perform cleanup if child node is empty after dequeuing recursively
+
+	if childQueue.isEmpty() {
+		delete(q.childQueueMap, childQueue.name)
+		directChildQueueName := dequeuedPathFromChild[0]
+		for i, name := range q.childQueueOrder {
+			if name == directChildQueueName {
+				q.childQueueOrder = append(q.childQueueOrder[:i], q.childQueueOrder[i+1:]...)
+				q.wrapIndex(false)
+			}
+		}
+
+	}
 
 	if v == nil {
 		// guard against slicing into nil path
