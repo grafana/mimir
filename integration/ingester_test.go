@@ -555,7 +555,7 @@ func TestIngesterQuerying(t *testing.T) {
 						counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 							e2e.WithLabelMatchers(
 								labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
-								labels.MustNewMatcher(labels.MatchEqual, "status_code", status),
+								labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
 							),
 							e2e.WithMetricCount,
 							e2e.SkipMissingMetrics,
@@ -571,11 +571,17 @@ func TestIngesterQuerying(t *testing.T) {
 
 					successfulQueryRequests, err := queryRequestCount("2xx")
 					require.NoError(t, err)
-					require.Equal(t, 2.0, successfulQueryRequests) // 1 for first query request, 1 for timestamp query request
 
 					cancelledQueryRequests, err := queryRequestCount("cancel")
 					require.NoError(t, err)
-					require.Equal(t, 0.0, cancelledQueryRequests)
+
+					totalQueryRequests, err := queryRequestCount(".*")
+					require.NoError(t, err)
+
+					// We expect two query requests: the first query request and the timestamp query request
+					require.Equalf(t, 2.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 2.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 				})
 			}
 		})
