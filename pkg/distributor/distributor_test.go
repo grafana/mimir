@@ -4834,7 +4834,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
 			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
 		},
-		"a DedlineExceeded gRPC ingester error an ingesterPushError with INVALID cause": {
+		"a DeadlineExceeded gRPC ingester error an ingesterPushError with INVALID cause": {
 			// This is how context.DeadlineExceeded error is translated into a gRPC error.
 			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
 			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.INVALID)),
