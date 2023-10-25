@@ -2,6 +2,7 @@ package queue
 
 import (
 	"container/list"
+	"fmt"
 
 	"github.com/pkg/errors"
 )
@@ -148,7 +149,9 @@ func (q *TreeQueue) getNode(path QueuePath) *TreeQueue {
 }
 
 func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
+	fmt.Printf("entering DequeueByPath for node: %s, path: %v\n", q.name, path)
 	childQueue := q.getNode(path)
+	fmt.Printf("DequeueByPath selected child node: %v, path: %v\n", childQueue, path)
 	if childQueue == nil {
 		return nil, nil
 	}
@@ -176,20 +179,28 @@ func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
 }
 
 func (q *TreeQueue) Dequeue() (QueuePath, any) {
+	//fmt.Println("entering Dequeue for node: ", q.name)
 	var dequeuedPath QueuePath
 	var v any
 	initialLen := len(q.childQueueOrder)
+	//fmt.Printf("node: %s has initial child Queue Order len %d\n", q.name, initialLen)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
+		//fmt.Printf("node: %s entering loop iteration %d with queue index %d\n", q.name, iters, q.index)
 		increment := true
 
 		if q.index == localQueueIndex {
+			//fmt.Printf("node: %s, iteration: %d, dequeuing from local queue of len %d\n", q.name, iters, q.localQueue.Len())
 			// dequeuing from local queue; either we have:
 			//  1. reached a leaf node, or
 			//  2. reached an inner node when it is the local queue's turn
 			if elem := q.localQueue.Front(); elem != nil {
 				q.localQueue.Remove(elem)
+				fmt.Printf("node: %s, iteration: %d, dequeued item: %v from local queue, now with len %d\n", q.name, iters, elem, q.localQueue.Len())
 				v = elem.Value
+			} else {
+				// now it just spins and times out here I think???
+				//fmt.Printf("node: %s, iteration: %d, item from local queue was nil, now with len %d\n", q.name, iters, q.localQueue.Len())
 			}
 		} else {
 			// dequeuing from child queue node;
