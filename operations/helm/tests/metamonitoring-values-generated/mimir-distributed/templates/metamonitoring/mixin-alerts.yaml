@@ -487,13 +487,27 @@ spec:
         severity: warning
   - name: gossip_alerts
     rules:
-    - alert: MimirGossipMembersMismatch
+    - alert: MimirGossipMembersTooHigh
       annotations:
         message: One or more Mimir instances in {{ $labels.cluster }}/{{ $labels.namespace
-          }} see incorrect number of gossip members.
-        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersmismatch
+          }} consistently sees a higher than expected number of gossip members.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmemberstoohigh
       expr: |
-        avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"})
+        max by (cluster, namespace) (memberlist_client_cluster_members_count)
+        >
+        (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+      for: 15m
+      labels:
+        severity: warning
+    - alert: MimirGossipMembersTooLow
+      annotations:
+        message: One or more Mimir instances in {{ $labels.cluster }}/{{ $labels.namespace
+          }} consistently sees a lower than expected number of gossip members.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmemberstoolow
+      expr: |
+        min by (cluster, namespace) (memberlist_client_cluster_members_count)
+        <
+        (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
       for: 15m
       labels:
         severity: warning

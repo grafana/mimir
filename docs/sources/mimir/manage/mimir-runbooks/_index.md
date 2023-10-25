@@ -277,7 +277,7 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
   - If crashing service is query-frontend, querier or store-gateway, and you have "activity tracker" feature enabled, look for `found unfinished activities from previous run` message and subsequent `activity` messages in the log file to see which queries caused the crash.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 #### Alertmanager
 
@@ -313,7 +313,7 @@ More information:
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
 
-When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedPushes
 
@@ -325,7 +325,7 @@ This alert fires only for first kind of problems, and not for problems caused by
 How to **fix** it:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerTooManyFailedQueries
 
@@ -341,7 +341,7 @@ How to **fix** it:
 - In case remote operational mode is enabled the problem could be at any of the ruler query path components (ruler-query-frontend, ruler-query-scheduler and ruler-querier). Check the `Mimir / Remote ruler reads` and `Mimir / Remote ruler reads resources` dashboards to find out in which Mimir service the error is being originated.
   - If the ruler is logging the gRPC error "received message larger than max", consider increasing `-ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size` in the ruler. This configuration option sets the maximum size of a message received by the ruler from the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
   - If the ruler is logging the gRPC error "trying to send message larger than max", consider increasing `-server.grpc-max-send-msg-size-bytes` in the query-frontend (or ruler-query-frontend if you're running a dedicated read path for rule evaluations). If you're using jsonnet, you should just tune `_config.ruler_remote_evaluation_max_query_response_size_bytes`.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirRulerMissedEvaluations
 
@@ -816,9 +816,39 @@ How to **fix** it:
   - Scale up ingesters; you can use e.g. the `Mimir / Scaling` dashboard for reference, in order to determine the needed amount of ingesters (also keep in mind that each ingester should handle ~1.5 million series, and the series will be duplicated across three instances)
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
-### MimirGossipMembersMismatch
+### MimirGossipMembersTooHigh
 
-This alert fires when any instance does not register all other instances as members of the memberlist cluster.
+This alert fires when any instance registers too many instances as members of the memberlist cluster.
+
+How it **works**:
+
+- This alert applies when memberlist is used as KV store for hash rings.
+- All Mimir instances using the ring, regardless of type, join a single memberlist cluster.
+- Each instance (ie. memberlist cluster member) should see all memberlist cluster members, but not see any other instances (eg. from Loki or Tempo, or other Mimir clusters).
+- Therefore the following should be equal for every instance:
+  - The reported number of cluster members (`memberlist_client_cluster_members_count`)
+  - The total number of currently responsive instances that use memberlist KV store for hash ring.
+- During rollouts, the number of members reported by some instances may be higher than expected as it takes some time for notifications of instances that have shut down
+  to propagate throughout the cluster.
+
+How to **investigate**:
+
+- Check which instances are reporting a higher than expected number of cluster members (the `memberlist_client_cluster_members_count` metric)
+- If most or all instances are reporting a higher than expected number of cluster members, then this cluster may have merged with another cluster
+  - Check the instances listed on each instance's view of the memberlist cluster using the `/memberlist` admin page on that instance, and confirm that all instances listed there are expected
+- If only a small number of instances are reporting a higher than expected number of cluster members, these instances may be experiencing memberlist communication issues:
+  - Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
+    - `memberlist_tcp_transport_packets_received_total`
+    - `memberlist_tcp_transport_packets_sent_total`
+  - If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
+    - `memberlist_tcp_transport_packets_sent_errors_total`
+    - `memberlist_tcp_transport_packets_received_errors_total`
+    - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
+- Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
+
+### MimirGossipMembersTooLow
+
+This alert fires when any instance registers too few instances as members of the memberlist cluster.
 
 How it **works**:
 
@@ -831,19 +861,17 @@ How it **works**:
 
 How to **investigate**:
 
-- The instance which has the incomplete view of the cluster (too few members) is specified in the alert.
-- If the count is zero:
-  - It is possible that the joining the cluster has yet to succeed.
-  - The following log message indicates that the _initial_ initial join did not succeed: `failed to join memberlist cluster`
-  - The following log message indicates that subsequent re-join attempts are failing: `re-joining memberlist cluster failed`
-  - If it is the case that the initial join failed, take action according to the reason given.
-- Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
-  - `memberlist_tcp_transport_packets_received_total`
-  - `memberlist_tcp_transport_packets_sent_total`
-- If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
-  - `memberlist_tcp_transport_packets_sent_errors_total`
-  - `memberlist_tcp_transport_packets_received_errors_total`
-  - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
+- Check which instances are reporting a lower than expected number of cluster members (the `memberlist_client_cluster_members_count` metric)
+- If most or all instances are reporting a lower than expected number of cluster members, then there may be a configuration issue preventing cluster members from finding each other
+  - Check the instances listed on each instance's view of the memberlist cluster using the `/memberlist` admin page on that instance, and confirm that all expected instances are listed there
+- If only a small number of instances are reporting a lower than expected number of cluster members, these instances may be experiencing memberlist communication issues:
+  - Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
+    - `memberlist_tcp_transport_packets_received_total`
+    - `memberlist_tcp_transport_packets_sent_total`
+  - If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
+    - `memberlist_tcp_transport_packets_sent_errors_total`
+    - `memberlist_tcp_transport_packets_received_errors_total`
+    - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
 - Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
 
 ### EtcdAllocatingTooMuchMemory
@@ -900,7 +928,7 @@ The metric for this alert is `cortex_alertmanager_ring_check_errors_total`.
 How to **investigate**:
 
 - Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
-- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for [`MimirGossipMembersMismatch`](#MimirGossipMembersMismatch) alert.
+- When using Memberlist as KV store for hash rings, ensure that Memberlist is working correctly. See instructions for the [`MimirGossipMembersTooHigh`](#MimirGossipMembersTooHigh) and [`MimirGossipMembersTooLow`](#MimirGossipMembersTooLow) alerts.
 
 ### MimirAlertmanagerPartialStateMergeFailing
 
