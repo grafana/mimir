@@ -131,9 +131,9 @@ func TestNewIngesterPushError(t *testing.T) {
 			originalStatus: createStatusWithDetails(t, codes.Internal, testMsg, mimirpb.SERVICE_UNAVAILABLE),
 			expectedCause:  mimirpb.SERVICE_UNAVAILABLE,
 		},
-		"a gRPC error without details give an ingesterPushError with INVALID cause": {
+		"a gRPC error without details give an ingesterPushError with UNKNOWN_CAUSE cause": {
 			originalStatus: status.New(codes.Internal, testMsg),
-			expectedCause:  mimirpb.INVALID,
+			expectedCause:  mimirpb.UNKNOWN_CAUSE,
 		},
 	}
 
@@ -306,17 +306,17 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
-		"an ingesterPushError with INVALID cause gets translated into a Internal error with INVALID cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INVALID)),
+		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into a Internal error with UNKNOWN_CAUSE cause": {
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE)),
 			expectedGRPCCode:     codes.Internal,
 			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INVALID},
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
-		"a DoNotLogError of an ingesterPushError with INVALID cause gets translated into a Internal error with INVALID cause": {
-			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INVALID))},
+		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into a Internal error with UNKNOWN_CAUSE cause": {
+			err:                  log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE))},
 			expectedGRPCCode:     codes.Internal,
 			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INVALID},
+			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
 	}
 	for name, tc := range testCases {
@@ -353,5 +353,5 @@ func (e mockDistributorErr) Error() string {
 }
 
 func (e mockDistributorErr) errorCause() mimirpb.ErrorCause {
-	return mimirpb.INVALID
+	return mimirpb.UNKNOWN_CAUSE
 }

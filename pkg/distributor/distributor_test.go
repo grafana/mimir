@@ -4831,25 +4831,25 @@ func TestHandleIngesterPushError(t *testing.T) {
 		expectedIngesterPushError ingesterPushError
 	}{
 		"a gRPC error with details gives an ingesterPushError with the same details": {
-			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"a DeadlineExceeded gRPC ingester error an ingesterPushError with INVALID cause": {
+		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			// This is how context.DeadlineExceeded error is translated into a gRPC error.
 			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Unavailable gRPC error without details gives an ingesterPushError with INVALID cause": {
+		"an Unavailable gRPC error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Internal gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+		"an Internal gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Unknown gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+		"an Unknown gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
 	}
 	for testName, testData := range statusTests {
