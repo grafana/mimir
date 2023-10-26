@@ -1255,7 +1255,10 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 }
 
 func (d *Distributor) sampleWriteRequest(req *mimirpb.WriteRequest) {
-	const samplingRate = 50
+	const (
+		samplingFilepath = "/tmp/distributor-write-sampling"
+		samplingRate     = 50
+	)
 
 	// The distributor also runs as part of the ruler but doesn't have the ring in that case.
 	if d.distributorsRing == nil || d.distributorsLifecycler == nil {
@@ -1289,11 +1292,15 @@ func (d *Distributor) sampleWriteRequest(req *mimirpb.WriteRequest) {
 	}
 
 	// Open the file if not done yet.
-	d.writeRequestSamplingFile, err = os.OpenFile("/tmp/distributor-write-sampling", os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
-	if err != nil {
-		level.Error(d.log).Log("msg", "Failed to open write request sampling file", "err", err)
-		d.writeRequestSamplingFileDisabled = true
-		return
+	if d.writeRequestSamplingFile == nil {
+		d.writeRequestSamplingFile, err = os.OpenFile(samplingFilepath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
+		if err != nil {
+			level.Error(d.log).Log("msg", "Failed to open write request sampling file", "err", err)
+			d.writeRequestSamplingFileDisabled = true
+			return
+		}
+
+		level.Info(d.log).Log("msg", "Started collecting write request samples", "filepath", samplingFilepath)
 	}
 
 	// Write the data length.
