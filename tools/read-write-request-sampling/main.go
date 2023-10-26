@@ -44,9 +44,25 @@ func main() {
 	}
 
 	// Analysis.
-	analyzeLabelsRepetitionFromRequests(reqs)
-	analyzeLabelsSizeFromRequests(reqs)
-	analyzeCompression(reqs)
+	timeseriesReqs := filterTimeseriesRequests(reqs)
+	analyzeLabelsRepetitionFromRequests(timeseriesReqs)
+	analyzeLabelsSizeFromRequests(timeseriesReqs)
+	analyzeCompression(timeseriesReqs)
+}
+
+// filterTimeseriesRequests returns only requests containing timeseries (some requests contain only metadata).
+func filterTimeseriesRequests(reqs []*mimirpb.WriteRequest) []*mimirpb.WriteRequest {
+	filtered := make([]*mimirpb.WriteRequest, 0, len(reqs))
+
+	for _, req := range reqs {
+		if len(req.Timeseries) == 0 {
+			continue
+		}
+
+		filtered = append(filtered, req)
+	}
+
+	return filtered
 }
 
 func readRequestsFromFile(file string) ([]*mimirpb.WriteRequest, error) {
@@ -99,12 +115,25 @@ func readNextRequestFromFile(fd *os.File) (*mimirpb.WriteRequest, error) {
 }
 
 func analyzeLabelsRepetitionFromRequests(reqs []*mimirpb.WriteRequest) {
+	var (
+		namesRepetitionSum  float64
+		valuesRepetitionSum float64
+	)
+
 	for _, req := range reqs {
-		analyzeLabelsRepetitionFromRequest(req)
+		namesRepetition, valuesRepetition := analyzeLabelsRepetitionFromRequest(req)
+
+		namesRepetitionSum += namesRepetition
+		valuesRepetitionSum += valuesRepetition
 	}
+
+	fmt.Println(fmt.Sprintf("Average label symbols repetitions in the same write requests: names = %.2f values = %.2f",
+		namesRepetitionSum/float64(len(reqs)),
+		valuesRepetitionSum/float64(len(reqs)),
+	))
 }
 
-func analyzeLabelsRepetitionFromRequest(req *mimirpb.WriteRequest) {
+func analyzeLabelsRepetitionFromRequest(req *mimirpb.WriteRequest) (namesRepetition, valuesRepetition float64) {
 	var (
 		names       = map[string]int{}
 		values      = map[string]int{}
@@ -121,10 +150,9 @@ func analyzeLabelsRepetitionFromRequest(req *mimirpb.WriteRequest) {
 	}
 
 	// Compute the average number of repetitions.
-	namesRepetition := 1 - (float64(len(names)) / float64(labelsCount))
-	valuesRepetition := 1 - (float64(len(values)) / float64(labelsCount))
-
-	fmt.Println(fmt.Sprintf("Names repetition: %.2f values repetition: %.2f", namesRepetition, valuesRepetition))
+	namesRepetition = 1 - (float64(len(names)) / float64(labelsCount))
+	valuesRepetition = 1 - (float64(len(values)) / float64(labelsCount))
+	return
 }
 
 func analyzeLabelsSizeFromRequests(reqs []*mimirpb.WriteRequest) {
@@ -155,7 +183,8 @@ func analyzeLabelsSizeFromRequest(req *mimirpb.WriteRequest) (origSize, origWith
 	}
 
 	// Re-encode the version without labels.
-	cloneEncoded, _ := clone.Marshal() // TODO check error
+	cloneEncoded, err := clone.Marshal()
+	panicOnError(err)
 
 	origSize = len(origEncoded)
 	origWithoutLabelsSize = len(cloneEncoded)
@@ -174,7 +203,8 @@ func analyzeCompression(reqs []*mimirpb.WriteRequest) {
 
 	for _, req := range reqs {
 		// Encode the request as is.
-		origEncoded, _ := req.Marshal() // TODO error
+		origEncoded, err := req.Marshal()
+		panicOnError(err)
 		totalOrigSize += len(origEncoded)
 
 		// Gzip.
