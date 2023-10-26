@@ -101,6 +101,48 @@ func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 	return nil
 }
 
+// writeErrorDetails is needed for testing purposes only. It returns the
+// mimirpb.WriteErrorDetails object stored in this error's status, if any
+// or nil otherwise.
+func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
+	details := e.status.Details()
+	if len(details) != 1 {
+		return nil
+	}
+	if errDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+		return errDetails
+	}
+	return nil
+}
+
+// writeErrorDetails is needed for testing purposes only. It returns true
+// if the given error and this error are equal, i.e., if they are both of
+// type errorWithStatus, if their underlying statuses have the same code,
+// messages, and if both have either no details, or exactly one detail
+// of type mimirpb.WriteErrorDetails, which are equal too.
+func (e errorWithStatus) equals(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errWithStatus, ok := err.(errorWithStatus)
+	if !ok {
+		return false
+	}
+	if e.status.Code() != errWithStatus.status.Code() || e.status.Message() != errWithStatus.status.Message() {
+		return false
+	}
+	errDetails := e.writeErrorDetails()
+	otherErrDetails := errWithStatus.writeErrorDetails()
+	if errDetails == nil && otherErrDetails == nil {
+		return true
+	}
+	if errDetails != nil && otherErrDetails != nil {
+		return errDetails.GetCause() == otherErrDetails.GetCause()
+	}
+	return false
+}
+
 // ingesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
 type ingesterError interface {
 	errorCause() mimirpb.ErrorCause
