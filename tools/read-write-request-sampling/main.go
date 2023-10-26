@@ -24,53 +24,98 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Read all requests from all files.
+	var reqs []*mimirpb.WriteRequest
 	for _, file := range args {
-		readSamplingFile(file)
+		got, err := readRequestsFromFile(file)
+
+		// An error may occur after we've read something, so better to not terminate
+		// the process but analyse what we've got.
+		if err != nil {
+			fmt.Println("Failed to read requests from file", file, err.Error())
+		}
+
+		reqs = append(reqs, got...)
 	}
+
+	// Analysis.
+	analyzeLabelsFromRequests(reqs)
 }
 
-func readSamplingFile(file string) {
+func readRequestsFromFile(file string) ([]*mimirpb.WriteRequest, error) {
+	var reqs []*mimirpb.WriteRequest
+
 	fd, err := os.Open(file)
 	if err != nil {
-		fmt.Println("Failed to open file", file)
-		return
+		return reqs, errors.Wrap(err, "open file")
 	}
 
 	// Ensure the file will get closed once done.
 	defer fd.Close()
 
 	for {
-		err := readNextRequestFromFile(fd)
+		req, err := readNextRequestFromFile(fd)
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
-			fmt.Println("Failed to read request from file:", err.Error())
-			break
+			return reqs, errors.Wrap(err, "read request from file")
 		}
+
+		reqs = append(reqs, req)
 	}
+
+	return reqs, nil
 }
 
-func readNextRequestFromFile(fd *os.File) error {
+func readNextRequestFromFile(fd *os.File) (*mimirpb.WriteRequest, error) {
 	var size uint64
 
 	// Read the request size.
 	if err := binary.Read(fd, binary.BigEndian, &size); err != nil {
-		return errors.Wrap(err, "read request size")
+		return nil, errors.Wrap(err, "read request size")
 	}
 
 	// Read the request.
 	buffer := make([]byte, size)
 	if _, err := io.ReadFull(fd, buffer); err != nil {
-		return errors.Wrap(err, "read request data")
+		return nil, errors.Wrap(err, "read request data")
 	}
 
 	// Decode the request.
-	req := mimirpb.WriteRequest{}
+	req := &mimirpb.WriteRequest{}
 	if err := req.Unmarshal(buffer); err != nil {
-		return errors.Wrap(err, "unmarshal request data")
+		return nil, errors.Wrap(err, "unmarshal request data")
 	}
 
-	fmt.Println("Request with", len(req.Timeseries), "timeseries,", len(req.Metadata), "metadata")
-	return nil
+	return req, nil
+}
+
+func analyzeLabelsFromRequests(reqs []*mimirpb.WriteRequest) {
+	for _, req := range reqs {
+		analyzeLabelsFromRequest(req)
+	}
+}
+
+func analyzeLabelsFromRequest(req *mimirpb.WriteRequest) {
+	var (
+		names       = map[string]int{}
+		values      = map[string]int{}
+		labelsCount int
+	)
+
+	// Count label name occurrences.
+	for _, ts := range req.Timeseries {
+		for _, label := range ts.Labels {
+			names[label.Name]++
+			values[label.Value]++
+			labelsCount++
+		}
+	}
+
+	// Compute the average number of repetitions.
+	namesRepetition := 1 - (float64(len(names)) / float64(labelsCount))
+	valuesRepetition := 1 - (float64(len(values)) / float64(labelsCount))
+
+	fmt.Println(fmt.Sprintf("Names repetition: %.2f values repetition: %.2f", namesRepetition, valuesRepetition))
 }
