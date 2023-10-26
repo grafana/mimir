@@ -175,25 +175,9 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 	}()
 
 	if len(s.seriesBatch) == 0 {
-		batch, channelOpen := <-s.seriesBatchChan
-
-		if !channelOpen {
-			// If there's an error, report it.
-			select {
-			case err, haveError := <-s.errorChan:
-				if haveError {
-					if _, ok := err.(validation.LimitError); ok {
-						return nil, err
-					}
-					return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
-				}
-			default:
-			}
-
-			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+		if err := s.readNextBatch(seriesIndex); err != nil {
+			return nil, err
 		}
-
-		s.seriesBatch = batch
 	}
 
 	series := s.seriesBatch[0]
@@ -210,4 +194,27 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 	}
 
 	return series.Chunks, nil
+}
+
+func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
+	batch, channelOpen := <-s.seriesBatchChan
+
+	if !channelOpen {
+		// If there's an error, report it.
+		select {
+		case err, haveError := <-s.errorChan:
+			if haveError {
+				if _, ok := err.(validation.LimitError); ok {
+					return err
+				}
+				return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
+			}
+		default:
+		}
+
+		return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+	}
+
+	s.seriesBatch = batch
+	return nil
 }
