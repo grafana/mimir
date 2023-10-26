@@ -193,6 +193,22 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
+	if int(seriesIndex) == s.expectedSeriesCount-1 {
+		// This is the last series we expect to receive. Wait for StartBuffering() to exit (which is signalled by returning an error or
+		// closing errorChan).
+		//
+		// This ensures two things:
+		// 1. If we receive more series than expected (likely due to a bug), or something else goes wrong after receiving the last series,
+		//    StartBuffering() will return an error. This method will then return it, which will bubble up to the PromQL engine and report
+		//    it, rather than it potentially being logged and missed.
+		// 2. It ensures the gPRC stream is cleaned up before the PromQL engine cancels the context used for the query. If the context
+		//    is cancelled before the gRPC stream's Recv() returns EOF, this can result in misleading context cancellation errors being
+		//    logged and included in metrics and traces, when in fact the call succeeded.
+		if err := <-s.errorChan; err != nil {
+			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
+		}
+	}
+
 	return series.Chunks, nil
 }
 
