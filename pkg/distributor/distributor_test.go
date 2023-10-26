@@ -5017,10 +5017,11 @@ func TestStartFinishRequest(t *testing.T) {
 		}
 	}
 
+	type ctxType string
 	const (
-		distributorKey              = "dist"
-		expectedInflightRequestsKey = "req"
-		expectedInflightBytesKey    = "bytes"
+		distributorKey              ctxType = "dist"
+		expectedInflightRequestsKey ctxType = "req"
+		expectedInflightBytesKey    ctxType = "bytes"
 	)
 
 	// Pretend push went OK, make sure to call CleanUp.
