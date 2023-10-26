@@ -39,7 +39,8 @@ func main() {
 	}
 
 	// Analysis.
-	analyzeLabelsFromRequests(reqs)
+	analyzeLabelsRepetitionFromRequests(reqs)
+	analyzeLabelsSizeFromRequests(reqs)
 }
 
 func readRequestsFromFile(file string) ([]*mimirpb.WriteRequest, error) {
@@ -91,13 +92,13 @@ func readNextRequestFromFile(fd *os.File) (*mimirpb.WriteRequest, error) {
 	return req, nil
 }
 
-func analyzeLabelsFromRequests(reqs []*mimirpb.WriteRequest) {
+func analyzeLabelsRepetitionFromRequests(reqs []*mimirpb.WriteRequest) {
 	for _, req := range reqs {
-		analyzeLabelsFromRequest(req)
+		analyzeLabelsRepetitionFromRequest(req)
 	}
 }
 
-func analyzeLabelsFromRequest(req *mimirpb.WriteRequest) {
+func analyzeLabelsRepetitionFromRequest(req *mimirpb.WriteRequest) {
 	var (
 		names       = map[string]int{}
 		values      = map[string]int{}
@@ -119,3 +120,40 @@ func analyzeLabelsFromRequest(req *mimirpb.WriteRequest) {
 
 	fmt.Println(fmt.Sprintf("Names repetition: %.2f values repetition: %.2f", namesRepetition, valuesRepetition))
 }
+
+func analyzeLabelsSizeFromRequests(reqs []*mimirpb.WriteRequest) {
+	var totalOrigSize, totalOrigWithoutLabelsSize int
+
+	for _, req := range reqs {
+		origSize, origWithoutLabelsSize := analyzeLabelsSizeFromRequest(req)
+
+		totalOrigSize += origSize
+		totalOrigWithoutLabelsSize += origWithoutLabelsSize
+	}
+
+	labelsImpactPerc := 1 - (float64(totalOrigWithoutLabelsSize) / float64(totalOrigSize))
+	fmt.Println(fmt.Sprintf("Labels are %.2f%% of protobuf encoded request", labelsImpactPerc*100))
+}
+
+func analyzeLabelsSizeFromRequest(req *mimirpb.WriteRequest) (origSize, origWithoutLabelsSize int) {
+	// Encode the request as is.
+	origEncoded, _ := req.Marshal()
+
+	// Decode the request to get a clone.
+	clone := &mimirpb.WriteRequest{}
+	_ = clone.Unmarshal(origEncoded)
+
+	// Remove all labels.
+	for i := 0; i < len(clone.Timeseries); i++ {
+		clone.Timeseries[i].SetLabels(nil)
+	}
+
+	// Re-encode the version without labels.
+	cloneEncoded, _ := clone.Marshal()
+
+	origSize = len(origEncoded)
+	origWithoutLabelsSize = len(cloneEncoded)
+	return
+}
+
+// TODO try various compression algorithms
