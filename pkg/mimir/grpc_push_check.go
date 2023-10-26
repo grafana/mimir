@@ -18,8 +18,8 @@ import (
 )
 
 type ingesterPushReceiver interface {
-	StartPushRequest() error
-	FinishPushRequest()
+	StartPushRequest(requestSize int64) error
+	FinishPushRequest(requestSize int64)
 }
 
 // Interface exposed by Distributor.
@@ -45,8 +45,9 @@ type ctxKey int
 const (
 	pushTypeCtxKey ctxKey = 1
 
-	ingesterPush    = 1
-	distributorPush = 2
+	ingesterPush        = 1
+	distributorPush     = 2
+	ingesterRequestSize = 3
 
 	ingesterPushMethod   string = "/cortex.Ingester/Push"
 	httpgrpcHandleMethod string = "/httpgrpc.HTTP/Handle"
@@ -63,11 +64,14 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 			return ctx, errNoIngester
 		}
 
-		err := ing.StartPushRequest()
+		reqSize := getMessageSize(md, grpcutil.MetadataMessageSize)
+
+		err := ing.StartPushRequest(reqSize)
 		if err != nil {
 			return ctx, status.Error(codes.Unavailable, err.Error())
 		}
 
+		ctx = context.WithValue(ctx, ingesterRequestSize, reqSize)
 		return context.WithValue(ctx, pushTypeCtxKey, ingesterPush), nil
 	}
 
@@ -98,7 +102,9 @@ func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
 	if pt, ok := ctx.Value(pushTypeCtxKey).(int); ok {
 		switch pt {
 		case ingesterPush:
-			g.getIngester().FinishPushRequest()
+			// Using two-outputs here to avoid panics, if value is not of int64 type. reqSize will be 0 in that case, which is fine.
+			reqSize, _ := ctx.Value(ingesterRequestSize).(int64)
+			g.getIngester().FinishPushRequest(reqSize)
 
 		case distributorPush:
 			g.getDistributor().FinishPushRequest(ctx)
