@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -47,6 +48,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -5183,4 +5185,61 @@ func TestStartFinishRequest(t *testing.T) {
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
 	}
+}
+
+func TestSendMessageMetadata(t *testing.T) {
+	var distributorCfg Config
+	var clientConfig client.Config
+	var ringConfig ring.Config
+	flagext.DefaultValues(&distributorCfg, &clientConfig, &ringConfig)
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	ringConfig.KVStore.Mock = kvStore
+	ingestersRing, err := ring.New(ringConfig, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	mock := &mockInstanceClient{}
+	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+		return mock, nil
+	})
+
+	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, false, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NotNil(t, d)
+
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, "test")
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+		},
+		Source: mimirpb.API,
+	}
+
+	err = d.send(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	require.NoError(t, err)
+
+	// Verify that d.send added message size to metadata.
+	require.NotEmpty(t, strconv.Itoa(req.Size()), mock.md[grpcutil.MetadataMessageSize])
+}
+
+type mockInstanceClient struct {
+	client.HealthAndIngesterClient
+
+	md metadata.MD
+}
+
+func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+}
+
+func (m *mockInstanceClient) Push(ctx context.Context, in *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	m.md, _ = metadata.FromOutgoingContext(ctx)
+	return nil, nil
 }
