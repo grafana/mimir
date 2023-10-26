@@ -7,11 +7,13 @@ package distributor
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -148,6 +150,13 @@ type Distributor struct {
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
+
+	// Write request sampling.
+	writeRequestSamplingCount *atomic.Int64
+
+	writeRequestSamplingLock         sync.Mutex
+	writeRequestSamplingFile         *os.File
+	writeRequestSamplingFileDisabled bool
 }
 
 // Config contains the configuration required to
@@ -342,6 +351,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   newSampleValidationMetrics(reg),
 		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
 		metadataValidationMetrics: newMetadataValidationMetrics(reg),
+
+		writeRequestSamplingCount: atomic.NewInt64(0),
 	}
 
 	// Initialize expected rejected request labels
@@ -543,6 +554,14 @@ func (d *Distributor) RemoveGroupMetricsForUser(userID, group string) {
 
 // Called after distributor is asked to stop via StopAsync.
 func (d *Distributor) stopping(_ error) error {
+	// Close the sampling file.
+	d.writeRequestSamplingLock.Lock()
+	if d.writeRequestSamplingFile != nil {
+		_ = d.writeRequestSamplingFile.Close()
+		d.writeRequestSamplingFileDisabled = true
+	}
+	d.writeRequestSamplingLock.Unlock()
+
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
@@ -1235,6 +1254,63 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	return toGRPCError(pushErr, serviceOverloadErrorEnabled)
 }
 
+func (d *Distributor) sampleWriteRequest(req *mimirpb.WriteRequest) {
+	const samplingRate = 50
+
+	// The distributor also runs as part of the ruler but doesn't have the ring in that case.
+	if d.distributorsRing == nil || d.distributorsLifecycler == nil {
+		return
+	}
+
+	// Sample only in 1 distributor.
+	rs, _ := d.distributorsRing.Get(0, ring.Read, nil, nil, nil)
+	if !rs.Includes(d.distributorsLifecycler.GetInstanceAddr()) {
+		return
+	}
+
+	// Sample 1 out of N requests.
+	if d.writeRequestSamplingCount.Inc()%samplingRate != 0 {
+		return
+	}
+
+	// Serialise the request.
+	reqData, err := req.Marshal()
+	if err != nil {
+		level.Error(d.log).Log("msg", "Failed to serialise write request for sampling", "err", err)
+		return
+	}
+
+	d.writeRequestSamplingLock.Lock()
+	defer d.writeRequestSamplingLock.Unlock()
+
+	// Skip if has been disabled.
+	if d.writeRequestSamplingFileDisabled {
+		return
+	}
+
+	// Open the file if not done yet.
+	d.writeRequestSamplingFile, err = os.OpenFile("/tmp/distributor-write-sampling", os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
+	if err != nil {
+		level.Error(d.log).Log("msg", "Failed to open write request sampling file", "err", err)
+		d.writeRequestSamplingFileDisabled = true
+		return
+	}
+
+	// Write the data length.
+	if err := binary.Write(d.writeRequestSamplingFile, binary.BigEndian, uint64(len(reqData))); err != nil {
+		level.Error(d.log).Log("msg", "Failed to write request data length to sampling file", "err", err)
+		d.writeRequestSamplingFileDisabled = true
+		return
+	}
+
+	// Write the data.
+	if _, err := d.writeRequestSamplingFile.Write(reqData); err != nil {
+		level.Error(d.log).Log("msg", "Failed to write request data length to sampling file", "err", err)
+		d.writeRequestSamplingFileDisabled = true
+		return
+	}
+}
+
 // push takes a write request and distributes it to ingesters using the ring.
 // Strings in pushReq may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 // push does not check limits like ingestion rate and inflight requests.
@@ -1262,6 +1338,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
 	}
+
+	d.sampleWriteRequest(req)
 
 	span := opentracing.SpanFromContext(ctx)
 	if span != nil {
