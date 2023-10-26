@@ -45,13 +45,15 @@ type ingesterMetrics struct {
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
-	maxUsersGauge           prometheus.GaugeFunc
-	maxSeriesGauge          prometheus.GaugeFunc
-	maxIngestionRate        prometheus.GaugeFunc
-	ingestionRate           prometheus.GaugeFunc
-	maxInflightPushRequests prometheus.GaugeFunc
-	inflightRequests        prometheus.GaugeFunc
-	inflightRequestsSummary prometheus.Summary
+	maxUsersGauge                prometheus.GaugeFunc
+	maxSeriesGauge               prometheus.GaugeFunc
+	maxIngestionRate             prometheus.GaugeFunc
+	ingestionRate                prometheus.GaugeFunc
+	maxInflightPushRequests      prometheus.GaugeFunc
+	maxInflightPushRequestsBytes prometheus.GaugeFunc
+	inflightRequests             prometheus.GaugeFunc
+	inflightRequestsBytes        prometheus.GaugeFunc
+	inflightRequestsSummary      prometheus.Summary
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -83,6 +85,7 @@ func newIngesterMetrics(
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
+	inflightRequestsBytes *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -224,6 +227,17 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		maxInflightPushRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInflightPushRequestsBytes)
+			}
+			return 0
+		}),
+
 		ingestionRate: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_ingestion_rate_samples_per_second",
 			Help: "Current ingestion rate in samples/sec that ingester is using to limit access.",
@@ -240,6 +254,16 @@ func newIngesterMetrics(
 		}, func() float64 {
 			if inflightRequests != nil {
 				return float64(inflightRequests.Load())
+			}
+			return 0
+		}),
+
+		inflightRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_inflight_push_requests_bytes",
+			Help: "Total sum of inflight push request sizes in ingester in bytes.",
+		}, func() float64 {
+			if inflightRequestsBytes != nil {
+				return float64(inflightRequestsBytes.Load())
 			}
 			return 0
 		}),

@@ -37,10 +37,11 @@ const (
 	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
 	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"
 
-	IngesterMaxIngestionRate        ID = "ingester-max-ingestion-rate"
-	IngesterMaxTenants              ID = "ingester-max-tenants"
-	IngesterMaxInMemorySeries       ID = "ingester-max-series"
-	IngesterMaxInflightPushRequests ID = "ingester-max-inflight-push-requests"
+	IngesterMaxIngestionRate             ID = "ingester-max-ingestion-rate"
+	IngesterMaxTenants                   ID = "ingester-max-tenants"
+	IngesterMaxInMemorySeries            ID = "ingester-max-series"
+	IngesterMaxInflightPushRequests      ID = "ingester-max-inflight-push-requests"
+	IngesterMaxInflightPushRequestsBytes ID = "ingester-max-inflight-push-requests-bytes"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"

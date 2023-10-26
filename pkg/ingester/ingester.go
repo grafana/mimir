@@ -120,10 +120,11 @@ const (
 )
 
 var (
-	reasonIngesterMaxIngestionRate        = globalerror.IngesterMaxIngestionRate.LabelValue()
-	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
-	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
-	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxIngestionRate             = globalerror.IngesterMaxIngestionRate.LabelValue()
+	reasonIngesterMaxTenants                   = globalerror.IngesterMaxTenants.LabelValue()
+	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
+	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
 	tooBusyError = newErrorWithHTTPStatus(
 		errors.New(tooBusyErrorMsg),
@@ -284,8 +285,9 @@ type Ingester struct {
 	usersMetadata    map[string]*userMetricsMetadata
 
 	// Rate of pushed samples. Used to limit global samples push rate.
-	ingestionRate        *util_math.EwmaRate
-	inflightPushRequests atomic.Int64
+	ingestionRate             *util_math.EwmaRate
+	inflightPushRequests      atomic.Int64
+	inflightPushRequestsBytes atomic.Int64
 
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
@@ -348,7 +350,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -408,7 +410,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
 
@@ -770,12 +772,17 @@ type pushStats struct {
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
-func (i *Ingester) StartPushRequest() error {
+func (i *Ingester) StartPushRequest(requestSize int64) error {
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 
 	inflight := i.inflightPushRequests.Inc()
+	inflightBytes := int64(0)
+	if requestSize > 0 {
+		inflightBytes = i.inflightPushRequestsBytes.Add(requestSize)
+	}
+
 	decreaseInflightInDefer := true
 	defer func() {
 		if decreaseInflightInDefer {
@@ -784,17 +791,22 @@ func (i *Ingester) StartPushRequest() error {
 	}()
 
 	il := i.getInstanceLimits()
-	if il != nil && il.MaxInflightPushRequests > 0 {
-		if inflight > il.MaxInflightPushRequests {
+	if il != nil {
+		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return errMaxInflightRequestsReached
 		}
-	}
 
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-			return errMaxIngestionRateReached
+		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > il.MaxInflightPushRequestsBytes {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+			return errMaxInflightRequestsBytesReached
+		}
+
+		if il.MaxIngestionRate > 0 {
+			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+				return errMaxIngestionRateReached
+			}
 		}
 	}
 
@@ -802,8 +814,11 @@ func (i *Ingester) StartPushRequest() error {
 	return nil
 }
 
-func (i *Ingester) FinishPushRequest() {
+func (i *Ingester) FinishPushRequest(requestSize int64) {
 	i.inflightPushRequests.Dec()
+	if requestSize > 0 {
+		i.inflightPushRequestsBytes.Sub(requestSize)
+	}
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -814,10 +829,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
-		if err := i.StartPushRequest(); err != nil {
+		reqSize := int64(req.Size())
+		if err := i.StartPushRequest(reqSize); err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
-		defer i.FinishPushRequest()
+		defer i.FinishPushRequest(reqSize)
 	}
 
 	userID, err := tenant.TenantID(ctx)

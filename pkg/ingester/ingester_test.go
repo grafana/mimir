@@ -6130,9 +6130,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	l := InstanceLimits{
-		MaxIngestionRate:   10,
-		MaxInMemoryTenants: 20,
-		MaxInMemorySeries:  30,
+		MaxIngestionRate:             10,
+		MaxInMemoryTenants:           20,
+		MaxInMemorySeries:            30,
+		MaxInflightPushRequests:      40,
+		MaxInflightPushRequestsBytes: 50,
 	}
 
 	cfg := defaultIngesterTestConfig(t)
@@ -6146,10 +6148,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
 		# TYPE cortex_ingester_instance_limits gauge
-		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 0
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 30
 		cortex_ingester_instance_limits{limit="max_tenants"} 20
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 40
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 50
 	`), "cortex_ingester_instance_limits"))
 
 	l.MaxInMemoryTenants = 1000
@@ -6158,10 +6161,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
 		# TYPE cortex_ingester_instance_limits gauge
-		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 0
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 2000
 		cortex_ingester_instance_limits{limit="max_tenants"} 1000
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 40
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 50
 	`), "cortex_ingester_instance_limits"))
 }
 
