@@ -4993,9 +4993,30 @@ func TestStartFinishRequest(t *testing.T) {
 		}
 	}
 
-	// Pretend push went OK, make sure to call CleanUp.
+	type ctxType string
+	const (
+		distributorKey              ctxType = "dist"
+		expectedInflightRequestsKey ctxType = "req"
+		expectedInflightBytesKey    ctxType = "bytes"
+	)
+
+	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
+
+		distrib := ctx.Value(distributorKey).(*Distributor)
+		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
+		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
+
+		reqs := distrib.inflightPushRequests.Load()
+		if expReq != reqs {
+			return errors.Errorf("unexpected number of inflight requests: %d, expected: %d", reqs, expReq)
+		}
+
+		bs := distrib.inflightPushRequestsBytes.Load()
+		if expBytes != bs {
+			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
+		}
 		return nil
 	}
 
@@ -5123,6 +5144,12 @@ func TestStartFinishRequest(t *testing.T) {
 			ds[0].ingestionRate.Tick()
 
 			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Set values that are checked by test handler.
+			ctx = context.WithValue(ctx, distributorKey, ds[0])
+			ctx = context.WithValue(ctx, expectedInflightRequestsKey, int64(tc.inflightRequestsBeforePush)+1)
+			ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize+int64(pushReq.Size()))
+
 			if tc.externalCheck {
 				var err error
 				ctx, err = ds[0].StartPushRequest(ctx, tc.httpgrpcRequestSize)
