@@ -77,7 +77,6 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
-	ctxDone := s.client.Context().Done()
 
 	go func() {
 		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "SeriesChunksStreamReader.StartBuffering")
@@ -87,76 +86,74 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 			close(s.seriesBatchChan)
 			close(s.errorChan)
-			log.Span.Finish()
+			log.Finish()
 		}()
 
-		onError := func(err error) {
+		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
 			ext.Error.Set(log.Span, true)
 		}
+	}()
+}
 
-		totalSeries := 0
-		totalChunks := 0
+func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error {
+	totalSeries := 0
+	totalChunks := 0
 
-		for {
-			msg, err := s.client.Recv()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					if totalSeries < s.expectedSeriesCount {
-						onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
-					} else {
-						level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
-					}
-				} else {
-					onError(err)
+	for {
+		msg, err := s.client.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if totalSeries < s.expectedSeriesCount {
+					return fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
 				}
 
-				return
+				level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+				return nil
 			}
 
-			if len(msg.StreamingSeriesChunks) == 0 {
-				continue
-			}
+			return err
+		}
 
-			totalSeries += len(msg.StreamingSeriesChunks)
-			if totalSeries > s.expectedSeriesCount {
-				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
-				return
-			}
+		if len(msg.StreamingSeriesChunks) == 0 {
+			continue
+		}
 
-			chunkBytes := 0
+		totalSeries += len(msg.StreamingSeriesChunks)
+		if totalSeries > s.expectedSeriesCount {
+			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
+		}
 
-			for _, s := range msg.StreamingSeriesChunks {
-				totalChunks += len(s.Chunks)
+		chunkBytes := 0
 
-				for _, c := range s.Chunks {
-					chunkBytes += c.Size()
-				}
-			}
+		for _, s := range msg.StreamingSeriesChunks {
+			totalChunks += len(s.Chunks)
 
-			// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
-			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-				onError(err)
-				return
-			}
-
-			select {
-			case <-ctxDone:
-				// Why do we abort if the context is done?
-				// We want to make sure that this goroutine is never leaked.
-				// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
-				// more series to a full buffer: it would block forever.
-				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
-				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
-				// which is true at the time of writing.
-				onError(s.client.Context().Err())
-				return
-			case s.seriesBatchChan <- msg.StreamingSeriesChunks:
-				// Batch enqueued successfully, nothing else to do for this batch.
+			for _, c := range s.Chunks {
+				chunkBytes += c.Size()
 			}
 		}
-	}()
+
+		// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
+		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+			return err
+		}
+
+		select {
+		case <-s.client.Context().Done():
+			// Why do we abort if the context is done?
+			// We want to make sure that this goroutine is never leaked.
+			// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
+			// more series to a full buffer: it would block forever.
+			// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
+			// This only works correctly if the context is cancelled when the query request is complete or cancelled,
+			// which is true at the time of writing.
+			return s.client.Context().Err()
+		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
+			// Batch enqueued successfully, nothing else to do for this batch.
+		}
+	}
 }
 
 // GetChunks returns the chunks for the series with index seriesIndex.
