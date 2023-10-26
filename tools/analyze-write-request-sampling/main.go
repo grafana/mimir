@@ -45,6 +45,7 @@ func main() {
 
 	// Analysis.
 	timeseriesReqs := filterTimeseriesRequests(reqs)
+	analyzeDataset(timeseriesReqs)
 	analyzeLabelsRepetitionFromRequests(timeseriesReqs)
 	analyzeLabelsSizeFromRequests(timeseriesReqs)
 	analyzeCompression(timeseriesReqs)
@@ -112,6 +113,26 @@ func readNextRequestFromFile(fd *os.File) (*mimirpb.WriteRequest, error) {
 	}
 
 	return req, nil
+}
+
+func analyzeDataset(reqs []*mimirpb.WriteRequest) {
+	var (
+		seriesCount  float64
+		samplesCount float64
+	)
+
+	for _, req := range reqs {
+		for _, ts := range req.Timeseries {
+			seriesCount++
+			samplesCount += float64(len(ts.Samples) + len(ts.Histograms))
+		}
+	}
+
+	fmt.Println("Dataset:")
+	fmt.Println("- Number of requests:", len(reqs))
+	fmt.Println(fmt.Sprintf("- Average number of series per request: %.2f", seriesCount/float64(len(reqs))))
+	fmt.Println(fmt.Sprintf("- Average number of samples per series: %.2f", samplesCount/seriesCount))
+	fmt.Println("")
 }
 
 func analyzeLabelsRepetitionFromRequests(reqs []*mimirpb.WriteRequest) {
