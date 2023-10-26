@@ -1,32 +1,36 @@
 name: Build and Push mimir-build-image
 
-# configure trigger by pull request
+# configure trigger by the complete of member_pr workflow
 on:
-  pull_request:
-    types: [opened, synchronize]
-    paths:
-      - mimir-build-image/Dockerfile  
+  workflow_run:
+    workflows: ["Membership check"]
+    types: 
+      - completed
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 jobs: 
   build_and_push:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
       # Allow pushing to the GitHub repo for collaborators, forks should remain read-only
       contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Checkout Pull Request Branch
-        run: gh pr checkout ${{ github.event.pull_request.number }}
+        run: gh pr checkout ${{ env.PR_NUMBER }}
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -56,7 +60,7 @@ jobs:
           current_hash=$(md5sum ${{ steps.prepare.outputs.path }} | awk '{print substr($1, 0, 10)}')
           echo "the file path is ${{ steps.prepare.outputs.path }}"
           echo "build tag is $current_hash"
-          tag="pr${{ github.event.pull_request.number }}-$current_hash"
+          tag="pr${{ env.PR_NUMBER }}-$current_hash"
           echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Check Should Build Image
@@ -82,7 +86,7 @@ jobs:
             gh pr comment $PR_NUMBER --body "**Not building new version of mimir-build-image**. This PR modifies \\\`mimir-build-image/Dockerfile\\\`, but the image \\\`$IMAGE:$TAG\\\` already exists."
           fi
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           IMAGE: ${{ steps.prepare.outputs.image }}
@@ -116,8 +120,8 @@ jobs:
           else
             echo "Build Image Version is not up to date"
             sed -i "s/$MAIN_TAG/${{ steps.compute_hash.outputs.tag }}/g" Makefile
-            git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
-            git config --global user.name "${{ github.event.pull_request.user.login }}"
+            git config --global user.email "${{ github.triggering_actor }}@users.noreply.github.com"
+            git config --global user.name "${{ github.triggering_actor }}"
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
             git push origin HEAD
