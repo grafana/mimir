@@ -365,6 +365,7 @@ func newIngesterMetrics(
 	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
 	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
 
 	return m
 }
