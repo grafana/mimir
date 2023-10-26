@@ -34,6 +34,7 @@
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
 * [BUGFIX] Ensure correct nesting of children of the `querier.Select` tracing span. #6085
+* [BUGFIX] Ingester: Don't cache context cancellation error when querying. #6486
 
 ### Mixin
 
