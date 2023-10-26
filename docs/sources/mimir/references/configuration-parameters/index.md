@@ -1094,6 +1094,12 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 30000]
 
+  # (advanced) The sum of the request sizes in bytes of inflight push requests
+  # that this ingester can handle. This limit is per-ingester, not per-tenant.
+  # Additional requests will be rejected. 0 = unlimited.
+  # CLI flag: -ingester.instance-limits.max-inflight-push-requests-bytes
+  [max_inflight_push_requests_bytes: <int> | default = 0]
+
 # (advanced) Comma-separated list of metric names, for which the
 # -ingester.max-global-series-per-metric limit will be ignored. Does not affect
 # the -ingester.max-global-series-per-user limit.

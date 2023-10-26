@@ -2876,6 +2876,17 @@
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_push_requests_bytes",
+              "required": false,
+              "desc": "The sum of the request sizes in bytes of inflight push requests that this ingester can handle. This limit is per-ingester, not per-tenant. Additional requests will be rejected. 0 = unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.instance-limits.max-inflight-push-requests-bytes",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
