@@ -5819,6 +5819,16 @@
             },
             {
               "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the values of `account-name` and `endpoint-suffix` values will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.azure.connection-string",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "container_name",
               "required": false,
               "desc": "Azure storage container name",
@@ -11673,6 +11683,16 @@
             },
             {
               "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the values of `account-name` and `endpoint-suffix` values will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.azure.connection-string",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "container_name",
               "required": false,
               "desc": "Azure storage container name",
@@ -13679,6 +13699,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.azure.account-key",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the values of `account-name` and `endpoint-suffix` values will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.azure.connection-string",
               "fieldType": "string"
             },
             {
@@ -15933,6 +15963,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.azure.account-key",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_string",
+                  "required": false,
+                  "desc": "If `connection-string` is set, the values of `account-name` and `endpoint-suffix` values will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.azure.connection-string",
                   "fieldType": "string"
                 },
                 {
