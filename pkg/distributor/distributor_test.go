@@ -5024,7 +5024,7 @@ func TestStartFinishRequest(t *testing.T) {
 		expectedInflightBytesKey    ctxType = "bytes"
 	)
 
-	// Pretend push went OK, make sure to call CleanUp.
+	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
 
