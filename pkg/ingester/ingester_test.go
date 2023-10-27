@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -3674,6 +3675,25 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 	require.Equal(t, len(expectedSeries), seriesReceivedCount, "expected to receive chunks for all series")
 	require.Equal(t, expectedSeriesPerChunksMessage, actualSeriesPerChunksMessage)
+}
+
+func TestIngester_QueryStream_ReturnsErrorFromChunksIterator(t *testing.T) {
+	errorFromChunksIterator := errors.New("something went wrong")
+
+	series := &chunkSeriesNode{
+		series: []storage.ChunkSeries{
+			&storage.ChunkSeriesEntry{
+				ChunkIteratorFn: func(_ chunks.Iterator) chunks.Iterator {
+					return errChunksIterator{err: errorFromChunksIterator}
+				},
+			},
+		},
+	}
+
+	ingester := &Ingester{}
+	_, _, _, err := ingester.sendStreamingQueryChunks(series, nil, 1000)
+
+	require.Equal(t, errorFromChunksIterator, err)
 }
 
 func TestIngester_QueryExemplars(t *testing.T) {
@@ -9003,3 +9023,11 @@ func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 	require.True(t, ok)
 	require.True(t, errWithStatus.equals(expectedErr))
 }
+
+type errChunksIterator struct {
+	err error
+}
+
+func (e errChunksIterator) At() chunks.Meta { return chunks.Meta{} }
+func (e errChunksIterator) Next() bool      { return false }
+func (e errChunksIterator) Err() error      { return e.err }
