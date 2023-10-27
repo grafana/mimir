@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -145,15 +146,21 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
-	r = r.WithQuery(shardedQuery)
-	shardedQueryable := newShardedQueryable(r, s.next)
+	shardedR := r.WithQuery(shardedQuery)
+	shardedQueryable := newShardedQueryable(shardedR, s.next)
 
-	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	qry, err := newQuery(ctx, shardedR, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	res := qry.Exec(ctx)
+	for _, anno := range res.Warnings {
+		// Rerun this without query sharding in the event the sharded version results in this monotonicity bug.
+		if errors.Is(annotations.ExtractAnnoError(anno), annotations.HistogramQuantileForcedMonotonicityInfo) {
+			return s.next.Do(ctx, r)
+		}
+	}
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
 		return nil, mapEngineError(err)
