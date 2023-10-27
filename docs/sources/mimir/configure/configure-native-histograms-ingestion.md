@@ -38,14 +38,6 @@ overrides:
     max_native_histogram_buckets: 160
 ```
 
-## Configure Prometheus to write native histograms to Grafana Mimir
-
-To enable experimental support for scraping and ingesting native histograms in Prometheus, [enable the feature](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) with the flag `--enable-feature=native-histograms`.
-
-To enable Prometheus remote write to send native histograms to Grafana Mimir, add the `send_native_histograms: true` parameter to your remote write configuration, for example:
-
-```yaml
-remote_write:
-  - url: <your-url>
-    send_native_histograms: true
-```
+To learn more about sending native histograms to Mimir or Grafana Cloud Metrics via Grafana Agent or Prometheus,
+see [Scrape and send native histograms with Grafana Agent]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-grafana-agent" >}}) or
+[Scrape and send native histograms with Prometheus]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-prometheus" >}}).
