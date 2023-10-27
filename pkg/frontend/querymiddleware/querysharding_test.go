@@ -1709,8 +1709,10 @@ func TestQuerySharding_Warnings(t *testing.T) {
 				Query: query,
 			}
 
+			injectedContext := user.InjectOrgID(context.Background(), "test")
+
 			// Run the query without sharding.
-			expectedRes, err := downstream.Do(context.Background(), req)
+			expectedRes, err := downstream.Do(injectedContext, req)
 			require.Nil(t, err)
 
 			// Ensure the query produces some results and warnings.
@@ -1718,7 +1720,7 @@ func TestQuerySharding_Warnings(t *testing.T) {
 			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Warnings)
 
 			// Run the query with sharding.
-			shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			shardedRes, err := shardingware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
 
 			// Ensure the query produces some results and warnings.
@@ -1726,7 +1728,7 @@ func TestQuerySharding_Warnings(t *testing.T) {
 			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Warnings)
 
 			// Run the query with splitting.
-			splitRes, err := splitware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			splitRes, err := splitware.Wrap(downstream).Do(injectedContext, req)
 			require.Nil(t, err)
 
 			// Ensure the query produces some results and warnings.
