@@ -180,7 +180,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
-	promWarnings := make([]string, 0)
+	var promWarnings []string
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
@@ -198,10 +198,6 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	// Merge the responses.
 	sort.Sort(byFirstTime(promResponses))
-
-	if len(promWarnings) == 0 {
-		promWarnings = nil
-	}
 
 	return &PrometheusResponse{
 		Status: statusSuccess,

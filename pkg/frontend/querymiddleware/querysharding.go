@@ -167,8 +167,9 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		Headers: shardedQueryable.getResponseHeaders(),
 		// Note that the positions based on the original query may be wrong as the rewritten
 		// query which is actually used is different, but the user does not see the rewritten
-		// query so we base it on the original query.
-		Warnings: res.Warnings.AsStrings(r.GetQuery(), 0),
+		// query, so we pass in an empty string as the query so the positions will be shown
+		// as invalid.
+		Warnings: res.Warnings.AsStrings("", 0),
 	}, nil
 }
 
