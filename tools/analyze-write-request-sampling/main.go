@@ -45,12 +45,14 @@ func main() {
 
 	// Analysis.
 	timeseriesReqs := filterTimeseriesRequests(reqs)
-	//analyzeDataset(timeseriesReqs)
-	//analyzeLabelsRepetitionFromRequests(timeseriesReqs)
-	//analyzeLabelsSizeFromRequests(timeseriesReqs)
-	analyzeOriginalWriteRequestsCompression(timeseriesReqs)
+	analyzeDataset(timeseriesReqs)
+	analyzeLabelsRepetitionFromRequests(timeseriesReqs)
+	analyzeLabelsSizeFromRequests(timeseriesReqs)
 	analyzeMinimizedWriteRequests(timeseriesReqs)
+	analyzeHyperMinimizedWriteRequests(timeseriesReqs)
+	analyzeOriginalWriteRequestsCompression(timeseriesReqs)
 	analyzeMinimizedWriteRequestsCompression(timeseriesReqs)
+	analyzeHyperMinimizedWriteRequestsCompression(timeseriesReqs)
 }
 
 // filterTimeseriesRequests returns only requests containing timeseries (some requests contain only metadata).
@@ -150,10 +152,10 @@ func analyzeLabelsRepetitionFromRequests(reqs []*mimirpb.WriteRequest) {
 		valuesRepetitionSum += valuesRepetition
 	}
 
-	fmt.Println(fmt.Sprintf("Average label symbols repetitions in the same write requests: names = %.2f values = %.2f",
-		namesRepetitionSum/float64(len(reqs)),
-		valuesRepetitionSum/float64(len(reqs)),
-	))
+	fmt.Println("Label symbols repetitions:")
+	fmt.Println(fmt.Sprintf("- Names:  %.2f", namesRepetitionSum/float64(len(reqs))))
+	fmt.Println(fmt.Sprintf("- Values: %.2f", valuesRepetitionSum/float64(len(reqs))))
+	fmt.Println("")
 }
 
 func analyzeLabelsRepetitionFromRequest(req *mimirpb.WriteRequest) (namesRepetition, valuesRepetition float64) {
@@ -189,7 +191,10 @@ func analyzeLabelsSizeFromRequests(reqs []*mimirpb.WriteRequest) {
 	}
 
 	labelsImpactPerc := 1 - (float64(totalOrigWithoutLabelsSize) / float64(totalOrigSize))
-	fmt.Println(fmt.Sprintf("Labels are %.2f%% of protobuf encoded request", labelsImpactPerc*100))
+
+	fmt.Println("Labels sized compared to the whole (protobuf encoded) request:")
+	fmt.Println(fmt.Sprintf("- Labels are %.2f%% of protobuf encoded request", labelsImpactPerc*100))
+	fmt.Println("")
 }
 
 func analyzeLabelsSizeFromRequest(req *mimirpb.WriteRequest) (origSize, origWithoutLabelsSize int) {
@@ -296,6 +301,56 @@ func analyzeMinimizedWriteRequestsCompression(reqs []*mimirpb.WriteRequest) {
 	fmt.Println("")
 }
 
+func analyzeHyperMinimizedWriteRequestsCompression(reqs []*mimirpb.WriteRequest) {
+	var (
+		totalOrigSize                 int
+		totalHyperMinimizedSize       int
+		totalHyperMinimizedGzipSize   int
+		totalHyperMinimizedSnappySize int
+		totalHyperMinimizedZlibSize   int
+		totalHyperMinimizedFlateSize  int
+		buffer                        = bytes.NewBuffer(nil)
+	)
+
+	for _, req := range reqs {
+		// Encode the original request just to get its size.
+		// NOTE: restrict scope to ensure we don't do any mistake and compress the original one.
+		{
+			origEncoded, err := req.Marshal()
+			panicOnError(err)
+			totalOrigSize += len(origEncoded)
+		}
+
+		// Convert to a hyper minimized request.
+		minReq := hyperMinimizeWriteRequest(req)
+
+		// Encode the request as is.
+		minEncoded, err := minReq.Marshal()
+		panicOnError(err)
+		totalHyperMinimizedSize += len(minEncoded)
+
+		gzipSize, snappySize, zlibSize, flateSize := compressDataWithMultipleAlgorithms(minEncoded, buffer)
+
+		totalHyperMinimizedGzipSize += gzipSize
+		totalHyperMinimizedSnappySize += snappySize
+		totalHyperMinimizedZlibSize += zlibSize
+		totalHyperMinimizedFlateSize += flateSize
+	}
+
+	fmt.Println("Hyper minimized write request (protobuf encoded) compression ratios:")
+	fmt.Println("- Compared to original (uncompressed) write request:")
+	fmt.Println(fmt.Sprintf("  - snappy = %.2f", float64(totalOrigSize)/float64(totalHyperMinimizedSnappySize)))
+	fmt.Println(fmt.Sprintf("  - gzip =   %.2f", float64(totalOrigSize)/float64(totalHyperMinimizedGzipSize)))
+	fmt.Println(fmt.Sprintf("  - zlib =   %.2f", float64(totalOrigSize)/float64(totalHyperMinimizedZlibSize)))
+	fmt.Println(fmt.Sprintf("  - flate =  %.2f", float64(totalOrigSize)/float64(totalHyperMinimizedFlateSize)))
+	fmt.Println("- Compared to minimized (uncompressed) write request:")
+	fmt.Println(fmt.Sprintf("  - snappy = %.2f", float64(totalHyperMinimizedSize)/float64(totalHyperMinimizedSnappySize)))
+	fmt.Println(fmt.Sprintf("  - gzip =   %.2f", float64(totalHyperMinimizedSize)/float64(totalHyperMinimizedGzipSize)))
+	fmt.Println(fmt.Sprintf("  - zlib =   %.2f", float64(totalHyperMinimizedSize)/float64(totalHyperMinimizedZlibSize)))
+	fmt.Println(fmt.Sprintf("  - flate =  %.2f", float64(totalHyperMinimizedSize)/float64(totalHyperMinimizedFlateSize)))
+	fmt.Println("")
+}
+
 func compressDataWithMultipleAlgorithms(data []byte, buffer *bytes.Buffer) (gzipSize, snappySize, zlibSize, flateSize int) {
 	// Gzip.
 	gzipSize = compressAndReturnSize(data, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
@@ -355,6 +410,33 @@ func analyzeMinimizedWriteRequests(reqs []*mimirpb.WriteRequest) {
 	fmt.Println(fmt.Sprintf("- Total original size:  %d", totalOrigSize))
 	fmt.Println(fmt.Sprintf("- Total minimized size: %d", totalMinimizedSize))
 	fmt.Println(fmt.Sprintf("- Reduction ratio:      %.2f", float64(totalOrigSize)/float64(totalMinimizedSize)))
+	fmt.Println("")
+}
+
+func analyzeHyperMinimizedWriteRequests(reqs []*mimirpb.WriteRequest) {
+	var (
+		totalOrigSize           int
+		totalHyperMinimizedSize int
+	)
+
+	for _, req := range reqs {
+		minReq := hyperMinimizeWriteRequest(req)
+
+		// Encode the request as is.
+		origEncoded, err := req.Marshal()
+		panicOnError(err)
+		totalOrigSize += len(origEncoded)
+
+		// Encode the hyper minimized request.
+		minEncoded, err := minReq.Marshal()
+		panicOnError(err)
+		totalHyperMinimizedSize += len(minEncoded)
+	}
+
+	fmt.Println("Hyper minimized request (per-request symbols table):")
+	fmt.Println(fmt.Sprintf("- Total original size:        %d", totalOrigSize))
+	fmt.Println(fmt.Sprintf("- Total hyper minimized size: %d", totalHyperMinimizedSize))
+	fmt.Println(fmt.Sprintf("- Reduction ratio:            %.2f", float64(totalOrigSize)/float64(totalHyperMinimizedSize)))
 	fmt.Println("")
 }
 

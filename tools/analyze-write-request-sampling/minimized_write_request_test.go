@@ -56,6 +56,45 @@ func TestMinimizeWriteRequest(t *testing.T) {
 	assert.Equal(t, packRef(23, 3), minReq.Timeseries[1].LabelSymbols[3])
 }
 
+func TestHyperMinimizeWriteRequest(t *testing.T) {
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "__name__", Value: "metric_1"},
+						{Name: "cluster", Value: "dev"},
+					},
+					Samples: []mimirpb.Sample{
+						{TimestampMs: 10, Value: 20},
+						{TimestampMs: 20, Value: 30},
+					},
+				},
+			}, {
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "__name__", Value: "metric_2"},
+						{Name: "cluster", Value: "dev"},
+					},
+					Samples: []mimirpb.Sample{
+						{TimestampMs: 30, Value: 40},
+						{TimestampMs: 40, Value: 50},
+					},
+				},
+			},
+		},
+	}
+
+	minReq := hyperMinimizeWriteRequest(req)
+	assert.Equal(t, "__name__metric_1clusterdevmetric_2", minReq.Symbols)
+	assert.Equal(t, []uint32{0, 8, 16, 23, 26}, minReq.SymbolOffsets)
+	assert.Equal(t, []uint32{8, 8, 7, 3, 8}, minReq.SymbolLength)
+
+	require.Len(t, minReq.Timeseries, 2)
+	assert.Equal(t, []uint32{0, 1, 2, 3}, minReq.Timeseries[0].LabelSymbolIds)
+	assert.Equal(t, []uint32{0, 4, 2, 3}, minReq.Timeseries[1].LabelSymbolIds)
+}
+
 func TestPackAndUnpackRef(t *testing.T) {
 	tests := []struct {
 		offset int
