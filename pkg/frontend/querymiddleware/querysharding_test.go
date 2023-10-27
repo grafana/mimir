@@ -1644,9 +1644,10 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 }
 
 func TestQuerySharding_Warnings(t *testing.T) {
-	storageSeries := make([]*promql.StorageSeries, 0)
-	var floats []promql.FPoint
+	numSeries := 10
 	endTime := 100
+	storageSeries := make([]*promql.StorageSeries, 0, numSeries)
+	floats := make([]promql.FPoint, 0, endTime)
 	for i := 0; i < endTime; i++ {
 		floats = append(floats, promql.FPoint{
 			T: int64(i * 1000),
@@ -1655,7 +1656,6 @@ func TestQuerySharding_Warnings(t *testing.T) {
 	}
 	histograms := make([]promql.HPoint, 0)
 	seriesName := `test_float`
-	numSeries := 10
 	for i := 0; i < numSeries; i++ {
 		nss := promql.NewStorageSeries(promql.Series{
 			Metric:     labels.FromStrings("__name__", seriesName, "series", fmt.Sprint(i)),
