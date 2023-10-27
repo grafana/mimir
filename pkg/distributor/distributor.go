@@ -261,8 +261,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "The total number of received requests, excluding rejected and deduped requests.",
 		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_distributor_received_samples_total",
-			Help: "The total number of received samples, excluding rejected and deduped samples.",
+			Name:        "cortex_distributor_received_samples_total",
+			Help:        "The total number of received samples, excluding rejected and deduped samples.",
+			ConstLabels: prometheus.Labels{"destination": "ingester"},
 		}, []string{"user"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_received_exemplars_total",

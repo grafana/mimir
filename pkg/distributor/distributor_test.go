@@ -418,8 +418,8 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
-		cortex_distributor_received_samples_total{user="userA"} 5
-		cortex_distributor_received_samples_total{user="userB"} 10
+		cortex_distributor_received_samples_total{destination="ingester",user="userA"} 5
+		cortex_distributor_received_samples_total{destination="ingester",user="userB"} 10
 
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
@@ -456,7 +456,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 		# TYPE cortex_distributor_received_samples_total counter
-		cortex_distributor_received_samples_total{user="userB"} 10
+		cortex_distributor_received_samples_total{destination="ingester",user="userB"} 10
 
 		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
@@ -4352,7 +4352,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				cortex_distributor_received_requests_total{user="%s"} %d
 				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
 				# TYPE cortex_distributor_received_samples_total counter
-				cortex_distributor_received_samples_total{user="%s"} %d
+				cortex_distributor_received_samples_total{destination="ingester",user="%s"} %d
 				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
 				# TYPE cortex_distributor_received_exemplars_total counter
 				cortex_distributor_received_exemplars_total{user="%s"} %d
