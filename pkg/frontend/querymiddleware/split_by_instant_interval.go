@@ -193,6 +193,10 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 			Result:     extracted,
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
+		// Note that the positions based on the original query may be wrong as the rewritten
+		// query which is actually used is different, but the user does not see the rewritten
+		// query so we base it on the original query.
+		Warnings: res.Warnings.AsStrings(req.GetQuery(), 0),
 	}, nil
 }
 
