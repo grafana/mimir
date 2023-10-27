@@ -199,6 +199,10 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	// Merge the responses.
 	sort.Sort(byFirstTime(promResponses))
 
+	if len(promWarnings) == 0 {
+		promWarnings = nil
+	}
+
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
