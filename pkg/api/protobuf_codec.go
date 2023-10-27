@@ -43,6 +43,7 @@ func (c protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
 		Status:    status,
 		ErrorType: errorType,
 		Error:     resp.Error,
+		Warnings:  resp.Warnings,
 	}
 
 	if resp.Data != nil {
