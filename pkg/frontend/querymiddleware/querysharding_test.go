@@ -1643,6 +1643,102 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 
 }
 
+func TestQuerySharding_Warnings(t *testing.T) {
+	storageSeries := make([]*promql.StorageSeries, 0)
+	var floats []promql.FPoint
+	endTime := 100
+	for i := 0; i < endTime; i++ {
+		floats = append(floats, promql.FPoint{
+			T: int64(i * 1000),
+			F: float64(i),
+		})
+	}
+	histograms := make([]promql.HPoint, 0)
+	seriesName := `test_float`
+	numSeries := 10
+	for i := 0; i < numSeries; i++ {
+		nss := promql.NewStorageSeries(promql.Series{
+			Metric:     labels.FromStrings("__name__", seriesName, "series", fmt.Sprint(i)),
+			Floats:     floats,
+			Histograms: histograms,
+		})
+		storageSeries = append(storageSeries, nss)
+	}
+	queryable := storageSeriesQueryable(storageSeries)
+
+	const numShards = 8
+	const step = 20 * time.Second
+	const splitInterval = 15 * time.Second
+
+	reg := prometheus.NewPedanticRegistry()
+	engine := newEngine()
+	shardingware := newQueryShardingMiddleware(
+		log.NewNopLogger(),
+		engine,
+		mockLimits{totalShards: numShards},
+		0,
+		reg,
+	)
+	splitware := newSplitAndCacheMiddleware(
+		true,
+		false, // Cache disabled.
+		splitInterval,
+		mockLimits{},
+		newTestPrometheusCodec(),
+		nil,
+		nil,
+		nil,
+		nil,
+		log.NewNopLogger(),
+		reg,
+	)
+	downstream := &downstreamHandler{
+		engine:    engine,
+		queryable: queryable,
+	}
+
+	templates := []string{"quantile(10, %s)", "quantile(10, sum(%s))"}
+	for _, template := range templates {
+		t.Run(template, func(t *testing.T) {
+			query := fmt.Sprintf(template, seriesName)
+			req := &PrometheusRangeQueryRequest{
+				Path:  "/query_range",
+				Start: 0,
+				End:   int64(endTime * 1000),
+				Step:  step.Milliseconds(),
+				Query: query,
+			}
+
+			// Run the query without sharding.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			require.Nil(t, err)
+
+			// Ensure the query produces some results and warnings.
+			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Warnings)
+
+			// Run the query with sharding.
+			shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.Nil(t, err)
+
+			// Ensure the query produces some results and warnings.
+			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, shardedRes.(*PrometheusResponse).Warnings)
+
+			// Run the query with splitting.
+			splitRes, err := splitware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.Nil(t, err)
+
+			// Ensure the query produces some results and warnings.
+			require.NotEmpty(t, splitRes.(*PrometheusResponse).Data.Result)
+			require.NotEmpty(t, splitRes.(*PrometheusResponse).Warnings)
+
+			require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, shardedRes.(*PrometheusResponse).Warnings)
+			require.Equal(t, expectedRes.(*PrometheusResponse).Warnings, splitRes.(*PrometheusResponse).Warnings)
+		})
+	}
+}
+
 func BenchmarkQuerySharding(b *testing.B) {
 	var shards []int
 
@@ -1986,6 +2082,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
+		Warnings: res.Warnings.AsStrings("", 0),
 	}, nil
 }
 

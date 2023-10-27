@@ -180,7 +180,8 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
-	var promWarnings []string
+	promWarningsMap := make(map[string]interface{}, 0)
+	var empty interface{}
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
@@ -193,7 +194,14 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
-		promWarnings = append(promWarnings, pr.Warnings...)
+		for _, warning := range pr.Warnings {
+			promWarningsMap[warning] = empty
+		}
+	}
+
+	var promWarnings []string
+	for warning := range promWarningsMap {
+		promWarnings = append(promWarnings, warning)
 	}
 
 	// Merge the responses.
