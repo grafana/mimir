@@ -2076,14 +2076,18 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 		return nil, err
 	}
 
-	return &PrometheusResponse{
+	resp := &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Warnings: res.Warnings.AsStrings("", 0),
-	}, nil
+	}
+	warnings := res.Warnings.AsStrings("", 0)
+	if len(warnings) > 0 {
+		resp.Warnings = warnings
+	}
+	return resp, nil
 }
 
 func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
