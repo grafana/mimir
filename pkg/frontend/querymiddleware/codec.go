@@ -180,6 +180,8 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
+	promWarningsMap := make(map[string]struct{}, 0)
+	var present struct{}
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
@@ -192,6 +194,14 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
+		for _, warning := range pr.Warnings {
+			promWarningsMap[warning] = present
+		}
+	}
+
+	var promWarnings []string
+	for warning := range promWarningsMap {
+		promWarnings = append(promWarnings, warning)
 	}
 
 	// Merge the responses.
@@ -203,6 +213,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),
 		},
+		Warnings: promWarnings,
 	}, nil
 }
 
