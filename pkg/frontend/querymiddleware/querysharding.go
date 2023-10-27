@@ -157,7 +157,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	res := qry.Exec(ctx)
 	for _, anno := range res.Warnings {
 		// Rerun this without query sharding in the event the sharded version results in this monotonicity bug.
-		if errors.Is(annotations.ExtractAnnoError(anno), annotations.HistogramQuantileForcedMonotonicityInfo) {
+		if errors.Is(anno, annotations.HistogramQuantileForcedMonotonicityInfo) {
+			level.Warn(log).Log("msg", "retrying query without sharding to fix monotonicity bug", "original", r.GetQuery())
 			return s.next.Do(ctx, r)
 		}
 	}
