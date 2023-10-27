@@ -290,3 +290,52 @@ message MatrixSeries {
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false];
 }
+
+
+//
+// Experiment with a minimized version of the write request.
+//
+
+message MinimizedWriteRequest {
+  // The symbols table. All symbols are concatenated strings. To read the symbols table, it's required
+  // to know the offset:length range of the actual symbol to read from this string.
+  string symbols = 1001;
+
+  repeated MinimizedTimeSeries timeseries = 1 [(gogoproto.nullable) = false];
+
+  //
+  // The following is equal to WriteRequest.
+  //
+
+  int32 Source = 2;
+  repeated MetricMetadata metadata = 3 [(gogoproto.nullable) = true];
+
+  // Mimir-specific fields, using intentionally high field numbers to avoid conflicts with upstream Prometheus.
+
+  // Skip validation of label names.
+  bool skip_label_name_validation = 1000;
+}
+
+message MinimizedTimeSeries {
+  // Sorted list of label name-value pair references. This list is always even. At even indices
+  // there's the reference to label name, while at odd indices there's the reference to label value.
+  //
+  // A reference is a uint32 where the 20 most significant bits are the offset in the symbols table
+  // and the 12 least significant bits are the length. This means that the symbols table limits are:
+  // - Max 4KB for 1 symbol (max length).
+  // - Max 1MB-1 for the entire symbols table (max offset).
+  //
+  // Beyond this prototype, the idea is that if a label escapes the maximum limits, then its series
+  // will be encoded using the standard non-minimized WriteRequest (there's no issue splitting an
+  // incoming WriteRequest into multiple requests).
+  repeated uint32 label_symbols = 1 [(gogoproto.nullable) = false];
+
+  //
+  // The following is equal to WriteRequest.
+  //
+
+  // Sorted by time, oldest sample first.
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+}

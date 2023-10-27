@@ -45,10 +45,12 @@ func main() {
 
 	// Analysis.
 	timeseriesReqs := filterTimeseriesRequests(reqs)
-	analyzeDataset(timeseriesReqs)
-	analyzeLabelsRepetitionFromRequests(timeseriesReqs)
-	analyzeLabelsSizeFromRequests(timeseriesReqs)
-	analyzeCompression(timeseriesReqs)
+	//analyzeDataset(timeseriesReqs)
+	//analyzeLabelsRepetitionFromRequests(timeseriesReqs)
+	//analyzeLabelsSizeFromRequests(timeseriesReqs)
+	analyzeOriginalWriteRequestsCompression(timeseriesReqs)
+	analyzeMinimizedWriteRequests(timeseriesReqs)
+	analyzeMinimizedWriteRequestsCompression(timeseriesReqs)
 }
 
 // filterTimeseriesRequests returns only requests containing timeseries (some requests contain only metadata).
@@ -212,7 +214,7 @@ func analyzeLabelsSizeFromRequest(req *mimirpb.WriteRequest) (origSize, origWith
 	return
 }
 
-func analyzeCompression(reqs []*mimirpb.WriteRequest) {
+func analyzeOriginalWriteRequestsCompression(reqs []*mimirpb.WriteRequest) {
 	var (
 		totalOrigSize   int
 		totalGzipSize   int
@@ -224,39 +226,100 @@ func analyzeCompression(reqs []*mimirpb.WriteRequest) {
 
 	for _, req := range reqs {
 		// Encode the request as is.
-		origEncoded, err := req.Marshal()
+		encoded, err := req.Marshal()
 		panicOnError(err)
-		totalOrigSize += len(origEncoded)
+		totalOrigSize += len(encoded)
 
-		// Gzip.
-		totalGzipSize += compressAndReturnSize(origEncoded, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
-			return gzip.NewWriter(buffer)
-		})
+		gzipSize, snappySize, zlibSize, flateSize := compressDataWithMultipleAlgorithms(encoded, buffer)
 
-		// Snappy.
-		totalSnappySize += compressAndReturnSize(origEncoded, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
-			return snappy.NewBufferedWriter(buffer)
-		})
-
-		// Zlib.
-		totalZlibSize += compressAndReturnSize(origEncoded, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
-			return zlib.NewWriter(buffer)
-		})
-
-		// Flate.
-		totalFlateSize += compressAndReturnSize(origEncoded, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
-			writer, err := flate.NewWriter(buffer, flate.DefaultCompression)
-			panicOnError(err)
-			return writer
-		})
+		totalGzipSize += gzipSize
+		totalSnappySize += snappySize
+		totalZlibSize += zlibSize
+		totalFlateSize += flateSize
 	}
 
-	gzipRatio := float64(totalOrigSize) / float64(totalGzipSize)
-	snappyRatio := float64(totalOrigSize) / float64(totalSnappySize)
-	zlibRatio := float64(totalOrigSize) / float64(totalZlibSize)
-	flateRatio := float64(totalOrigSize) / float64(totalFlateSize)
+	fmt.Println("Original write request (protobuf encoded) compression ratios:")
+	fmt.Println(fmt.Sprintf("- snappy = %.2f", float64(totalOrigSize)/float64(totalSnappySize)))
+	fmt.Println(fmt.Sprintf("- gzip =   %.2f", float64(totalOrigSize)/float64(totalGzipSize)))
+	fmt.Println(fmt.Sprintf("- zlib =   %.2f", float64(totalOrigSize)/float64(totalZlibSize)))
+	fmt.Println(fmt.Sprintf("- flate =  %.2f", float64(totalOrigSize)/float64(totalFlateSize)))
+	fmt.Println("")
+}
 
-	fmt.Println(fmt.Sprintf("Per-request compression ratios: gzip = %.2f snappy = %.2f zlib = %.2f flate = %.2f", gzipRatio, snappyRatio, zlibRatio, flateRatio))
+func analyzeMinimizedWriteRequestsCompression(reqs []*mimirpb.WriteRequest) {
+	var (
+		totalOrigSize            int
+		totalMinimizedSize       int
+		totalMinimizedGzipSize   int
+		totalMinimizedSnappySize int
+		totalMinimizedZlibSize   int
+		totalMinimizedFlateSize  int
+		buffer                   = bytes.NewBuffer(nil)
+	)
+
+	for _, req := range reqs {
+		// Encode the original request just to get its size.
+		// NOTE: restrict scope to ensure we don't do any mistake and compress the original one.
+		{
+			origEncoded, err := req.Marshal()
+			panicOnError(err)
+			totalOrigSize += len(origEncoded)
+		}
+
+		// Convert to a minimized request.
+		minReq := minimizeWriteRequest(req)
+
+		// Encode the request as is.
+		minEncoded, err := minReq.Marshal()
+		panicOnError(err)
+		totalMinimizedSize += len(minEncoded)
+
+		gzipSize, snappySize, zlibSize, flateSize := compressDataWithMultipleAlgorithms(minEncoded, buffer)
+
+		totalMinimizedGzipSize += gzipSize
+		totalMinimizedSnappySize += snappySize
+		totalMinimizedZlibSize += zlibSize
+		totalMinimizedFlateSize += flateSize
+	}
+
+	fmt.Println("Minimized write request (protobuf encoded) compression ratios:")
+	fmt.Println("- Compared to original (uncompressed) write request:")
+	fmt.Println(fmt.Sprintf("  - snappy = %.2f", float64(totalOrigSize)/float64(totalMinimizedSnappySize)))
+	fmt.Println(fmt.Sprintf("  - gzip =   %.2f", float64(totalOrigSize)/float64(totalMinimizedGzipSize)))
+	fmt.Println(fmt.Sprintf("  - zlib =   %.2f", float64(totalOrigSize)/float64(totalMinimizedZlibSize)))
+	fmt.Println(fmt.Sprintf("  - flate =  %.2f", float64(totalOrigSize)/float64(totalMinimizedFlateSize)))
+	fmt.Println("- Compared to minimized (uncompressed) write request:")
+	fmt.Println(fmt.Sprintf("  - snappy = %.2f", float64(totalMinimizedSize)/float64(totalMinimizedSnappySize)))
+	fmt.Println(fmt.Sprintf("  - gzip =   %.2f", float64(totalMinimizedSize)/float64(totalMinimizedGzipSize)))
+	fmt.Println(fmt.Sprintf("  - zlib =   %.2f", float64(totalMinimizedSize)/float64(totalMinimizedZlibSize)))
+	fmt.Println(fmt.Sprintf("  - flate =  %.2f", float64(totalMinimizedSize)/float64(totalMinimizedFlateSize)))
+	fmt.Println("")
+}
+
+func compressDataWithMultipleAlgorithms(data []byte, buffer *bytes.Buffer) (gzipSize, snappySize, zlibSize, flateSize int) {
+	// Gzip.
+	gzipSize = compressAndReturnSize(data, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
+		return gzip.NewWriter(buffer)
+	})
+
+	// Snappy.
+	snappySize = compressAndReturnSize(data, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
+		return snappy.NewBufferedWriter(buffer)
+	})
+
+	// Zlib.
+	zlibSize = compressAndReturnSize(data, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
+		return zlib.NewWriter(buffer)
+	})
+
+	// Flate.
+	flateSize = compressAndReturnSize(data, buffer, func(buffer *bytes.Buffer) io.WriteCloser {
+		writer, err := flate.NewWriter(buffer, flate.DefaultCompression)
+		panicOnError(err)
+		return writer
+	})
+
+	return
 }
 
 func compressAndReturnSize(data []byte, tmpBuffer *bytes.Buffer, getCompressor func(buffer *bytes.Buffer) io.WriteCloser) int {
@@ -266,6 +329,33 @@ func compressAndReturnSize(data []byte, tmpBuffer *bytes.Buffer, getCompressor f
 	panicOnError(writer.Close())
 
 	return tmpBuffer.Len()
+}
+
+func analyzeMinimizedWriteRequests(reqs []*mimirpb.WriteRequest) {
+	var (
+		totalOrigSize      int
+		totalMinimizedSize int
+	)
+
+	for _, req := range reqs {
+		minReq := minimizeWriteRequest(req)
+
+		// Encode the request as is.
+		origEncoded, err := req.Marshal()
+		panicOnError(err)
+		totalOrigSize += len(origEncoded)
+
+		// Encode the minimized request.
+		minEncoded, err := minReq.Marshal()
+		panicOnError(err)
+		totalMinimizedSize += len(minEncoded)
+	}
+
+	fmt.Println("Minimized request (per-request symbols table):")
+	fmt.Println(fmt.Sprintf("- Total original size:  %d", totalOrigSize))
+	fmt.Println(fmt.Sprintf("- Total minimized size: %d", totalMinimizedSize))
+	fmt.Println(fmt.Sprintf("- Reduction ratio:      %.2f", float64(totalOrigSize)/float64(totalMinimizedSize)))
+	fmt.Println("")
 }
 
 func panicOnError(args ...any) {
