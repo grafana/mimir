@@ -6,7 +6,6 @@
 package queue
 
 import (
-	"container/list"
 	"math/rand"
 	"sort"
 	"time"
@@ -95,7 +94,6 @@ type queueTenant struct {
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueues     map[TenantID]*tenantQueue
 	tenantQueuesTree *TreeQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
@@ -103,13 +101,8 @@ type queueBroker struct {
 	maxTenantQueueSize int
 }
 
-type tenantQueue struct {
-	requests *list.List
-}
-
 func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueues:     map[TenantID]*tenantQueue{},
 		tenantQueuesTree: NewTreeQueue("root", maxTenantQueueSize),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
@@ -124,7 +117,6 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	//return len(qb.tenantQueues) == 0
 	return qb.tenantQueuesTree.isEmpty()
 }
 
@@ -217,6 +209,14 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 	}
 
 	return emptyTenantID, lastTenantIndex, nil
+}
+
+func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant, error) {
+	if tenantID == emptyTenantID {
+		return nil, ErrInvalidTenantID
+	}
+	tenant := tqa.tenantsByID[tenantID]
+	return tenant, nil
 }
 
 func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
