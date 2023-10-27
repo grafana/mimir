@@ -697,6 +697,7 @@ alertmanager:
       storageClass: null
 
 distributor:
+  # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
   service:
@@ -1201,6 +1202,7 @@ querier:
   extraEnvFrom: []
 
 query_frontend:
+  # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
   service:
@@ -3247,6 +3249,7 @@ graphite:
   enabled: false
 
   querier:
+    # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
     replicas: 2
 
     schemasConfiguration:
