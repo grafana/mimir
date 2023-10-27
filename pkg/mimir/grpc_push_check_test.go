@@ -34,12 +34,12 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 
 		require.Panics(t, func() {
 			// In practice, this will not be called, since l.RPCCallStarting() for ingester push returns error if there's no ingester.
-			l.RPCCallFinished(context.WithValue(ctx, pushTypeCtxKey, ingesterPush))
+			l.RPCCallFinished(context.WithValue(ctx, pushTypeCtxKey, pushTypeIngester))
 		})
 
 		require.Panics(t, func() {
 			// In practice, this will not be called, since l.RPCCallStarting() distributor push returns error if there's no distributor.
-			l.RPCCallFinished(context.WithValue(ctx, pushTypeCtxKey, distributorPush))
+			l.RPCCallFinished(context.WithValue(ctx, pushTypeCtxKey, pushTypeDistributor))
 		})
 	})
 
