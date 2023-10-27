@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
@@ -1377,13 +1378,14 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 	c := h.(ingester_client.IngesterClient)
 
-	req := mimirpb.WriteRequest{
+	req := &mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     source,
 	}
 
-	_, err = c.Push(ctx, &req)
+	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
+	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
 }
 
