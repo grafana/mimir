@@ -6195,7 +6195,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(t, ctx, i, targetRequestDuration)
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
 		// Signal that we're going to do the real push now.
 		close(startCh)
@@ -6280,7 +6280,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(t, ctx, i, targetRequestDuration)
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
 		// Update instance limits
 		limitsMx.Lock()
@@ -6336,7 +6336,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	`), "cortex_ingester_instance_rejected_requests_total"))
 }
 
-func prepareRequestForTargetRequestDuration(t *testing.T, ctx context.Context, i *Ingester, targetRequestDuration time.Duration) *mimirpb.WriteRequest {
+func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i *Ingester, targetRequestDuration time.Duration) *mimirpb.WriteRequest {
 	samples := 100000
 	ser := 1
 
