@@ -5226,7 +5226,7 @@ func TestSendMessageMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify that d.send added message size to metadata.
-	require.NotEmpty(t, strconv.Itoa(req.Size()), mock.md[grpcutil.MetadataMessageSize])
+	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 
 type mockInstanceClient struct {
