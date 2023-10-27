@@ -10,8 +10,10 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -312,14 +314,20 @@ func clusterWait(position func() int, timeout time.Duration) func() time.Duratio
 
 // ApplyConfig applies a new configuration to an Alertmanager.
 func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg string) error {
-	templateFiles := make([]string, len(conf.Templates))
-	for i, t := range conf.Templates {
+	templateFiles := make([]string, 0, len(conf.Templates))
+	for _, t := range conf.Templates {
 		templateFilepath, err := safeTemplateFilepath(filepath.Join(am.cfg.TenantDataDir, templatesDir), t)
 		if err != nil {
 			return err
 		}
 
-		templateFiles[i] = templateFilepath
+		if _, err = os.Stat(templateFilepath); errors.Is(err, os.ErrNotExist) {
+			if err = copyFile(t, templateFilepath); err != nil {
+				return errors.Wrap(err, "copying template file")
+			}
+		}
+
+		templateFiles = append(templateFiles, templateFilepath)
 	}
 
 	tmpl, err := template.FromGlobs(templateFiles, withCustomFunctions(userID))
@@ -725,4 +733,37 @@ func alertSize(alert model.Alert) int {
 	}
 	size += len(alert.GeneratorURL)
 	return size
+}
+
+func copyFile(sourceFilePath, destinationFilePath string) error {
+	sourceFile, err := os.Open(sourceFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "opening: %s", sourceFilePath)
+	}
+
+	destinationDirectory := strings.TrimSuffix(destinationFilePath, filepath.Base(destinationFilePath))
+	if _, err = os.Stat(destinationDirectory); os.IsNotExist(err) {
+		if err = os.MkdirAll(destinationDirectory, fs.ModePerm); err != nil {
+			return errors.Wrapf(err, "creating destination directory: %s", destinationDirectory)
+		}
+	}
+
+	destinationFile, err := os.Create(destinationFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "creating: %s", sourceFilePath)
+	}
+
+	if _, err = destinationFile.ReadFrom(sourceFile); err != nil {
+		return errors.Wrapf(err, "copying %s to %s", sourceFilePath, destinationFilePath)
+	}
+
+	if err = sourceFile.Close(); err != nil {
+		return errors.Wrapf(err, "closing %s", sourceFilePath)
+	}
+
+	if err = destinationFile.Close(); err != nil {
+		return errors.Wrapf(err, "closing %s", destinationFilePath)
+	}
+
+	return nil
 }
