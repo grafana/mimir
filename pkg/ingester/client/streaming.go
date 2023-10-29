@@ -12,6 +12,7 @@ import (
 	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -59,7 +60,7 @@ func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeri
 // Close cleans up all resources associated with this SeriesChunksStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *SeriesChunksStreamReader) Close() {
-	if err := s.client.CloseSend(); err != nil {
+	if err := util.CloseAndExhaust[*QueryStreamResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing ingester client stream failed", "err", err)
 	}
 
@@ -76,7 +77,6 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
-	ctxDone := s.client.Context().Done()
 
 	go func() {
 		log, _ := spanlogger.NewWithLogger(s.client.Context(), s.log, "SeriesChunksStreamReader.StartBuffering")
@@ -86,76 +86,74 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 			close(s.seriesBatchChan)
 			close(s.errorChan)
-			log.Span.Finish()
+			log.Finish()
 		}()
 
-		onError := func(err error) {
+		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
 			ext.Error.Set(log.Span, true)
 		}
+	}()
+}
 
-		totalSeries := 0
-		totalChunks := 0
+func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error {
+	totalSeries := 0
+	totalChunks := 0
 
-		for {
-			msg, err := s.client.Recv()
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					if totalSeries < s.expectedSeriesCount {
-						onError(fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries))
-					} else {
-						level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
-					}
-				} else {
-					onError(err)
+	for {
+		msg, err := s.client.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				if totalSeries < s.expectedSeriesCount {
+					return fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
 				}
 
-				return
+				log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+				return nil
 			}
 
-			if len(msg.StreamingSeriesChunks) == 0 {
-				continue
-			}
+			return err
+		}
 
-			totalSeries += len(msg.StreamingSeriesChunks)
-			if totalSeries > s.expectedSeriesCount {
-				onError(fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries))
-				return
-			}
+		if len(msg.StreamingSeriesChunks) == 0 {
+			continue
+		}
 
-			chunkBytes := 0
+		totalSeries += len(msg.StreamingSeriesChunks)
+		if totalSeries > s.expectedSeriesCount {
+			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
+		}
 
-			for _, s := range msg.StreamingSeriesChunks {
-				totalChunks += len(s.Chunks)
+		chunkBytes := 0
 
-				for _, c := range s.Chunks {
-					chunkBytes += c.Size()
-				}
-			}
+		for _, s := range msg.StreamingSeriesChunks {
+			totalChunks += len(s.Chunks)
 
-			// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
-			if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-				onError(err)
-				return
-			}
-
-			select {
-			case <-ctxDone:
-				// Why do we abort if the context is done?
-				// We want to make sure that this goroutine is never leaked.
-				// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
-				// more series to a full buffer: it would block forever.
-				// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
-				// This only works correctly if the context is cancelled when the query request is complete or cancelled,
-				// which is true at the time of writing.
-				onError(s.client.Context().Err())
-				return
-			case s.seriesBatchChan <- msg.StreamingSeriesChunks:
-				// Batch enqueued successfully, nothing else to do for this batch.
+			for _, c := range s.Chunks {
+				chunkBytes += c.Size()
 			}
 		}
-	}()
+
+		// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
+		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+			return err
+		}
+
+		select {
+		case <-s.client.Context().Done():
+			// Why do we abort if the context is done?
+			// We want to make sure that this goroutine is never leaked.
+			// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
+			// more series to a full buffer: it would block forever.
+			// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
+			// This only works correctly if the context is cancelled when the query request is complete or cancelled,
+			// which is true at the time of writing.
+			return s.client.Context().Err()
+		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
+			// Batch enqueued successfully, nothing else to do for this batch.
+		}
+	}
 }
 
 // GetChunks returns the chunks for the series with index seriesIndex.
@@ -174,25 +172,9 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 	}()
 
 	if len(s.seriesBatch) == 0 {
-		batch, channelOpen := <-s.seriesBatchChan
-
-		if !channelOpen {
-			// If there's an error, report it.
-			select {
-			case err, haveError := <-s.errorChan:
-				if haveError {
-					if _, ok := err.(validation.LimitError); ok {
-						return nil, err
-					}
-					return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
-				}
-			default:
-			}
-
-			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+		if err := s.readNextBatch(seriesIndex); err != nil {
+			return nil, err
 		}
-
-		s.seriesBatch = batch
 	}
 
 	series := s.seriesBatch[0]
@@ -208,5 +190,44 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
+	if int(seriesIndex) == s.expectedSeriesCount-1 {
+		// This is the last series we expect to receive. Wait for StartBuffering() to exit (which is signalled by returning an error or
+		// closing errorChan).
+		//
+		// This ensures two things:
+		// 1. If we receive more series than expected (likely due to a bug), or something else goes wrong after receiving the last series,
+		//    StartBuffering() will return an error. This method will then return it, which will bubble up to the PromQL engine and report
+		//    it, rather than it potentially being logged and missed.
+		// 2. It ensures the gPRC stream is cleaned up before the PromQL engine cancels the context used for the query. If the context
+		//    is cancelled before the gRPC stream's Recv() returns EOF, this can result in misleading context cancellation errors being
+		//    logged and included in metrics and traces, when in fact the call succeeded.
+		if err := <-s.errorChan; err != nil {
+			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
+		}
+	}
+
 	return series.Chunks, nil
+}
+
+func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
+	batch, channelOpen := <-s.seriesBatchChan
+
+	if !channelOpen {
+		// If there's an error, report it.
+		select {
+		case err, haveError := <-s.errorChan:
+			if haveError {
+				if _, ok := err.(validation.LimitError); ok {
+					return err
+				}
+				return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
+			}
+		default:
+		}
+
+		return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+	}
+
+	s.seriesBatch = batch
+	return nil
 }

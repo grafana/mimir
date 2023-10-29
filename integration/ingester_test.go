@@ -469,6 +469,27 @@ func TestIngesterQuerying(t *testing.T) {
 				},
 			},
 		},
+		"query that returns no results": {
+			// We have to push at least one sample to ensure that the tenant TSDB exists (otherwise the ingester takes a shortcut and returns early).
+			inSeries: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{
+							Name:  "__name__",
+							Value: "not_foobar",
+						},
+					},
+					Samples: []prompb.Sample{
+						{
+							Timestamp: queryStart.Add(-2 * time.Second).UnixMilli(),
+							Value:     100,
+						},
+					},
+				},
+			},
+			expectedQueryResult:          model.Matrix{},
+			expectedTimestampQueryResult: model.Matrix{},
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -529,6 +550,38 @@ func TestIngesterQuerying(t *testing.T) {
 					result, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
 					require.NoError(t, err)
 					require.Equal(t, tc.expectedTimestampQueryResult, result)
+
+					queryRequestCount := func(status string) (float64, error) {
+						counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
+							e2e.WithLabelMatchers(
+								labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+								labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
+							),
+							e2e.WithMetricCount,
+							e2e.SkipMissingMetrics,
+						)
+
+						if err != nil {
+							return 0, err
+						}
+
+						require.Len(t, counts, 1)
+						return counts[0], nil
+					}
+
+					successfulQueryRequests, err := queryRequestCount("2xx")
+					require.NoError(t, err)
+
+					cancelledQueryRequests, err := queryRequestCount("cancel")
+					require.NoError(t, err)
+
+					totalQueryRequests, err := queryRequestCount(".*")
+					require.NoError(t, err)
+
+					// We expect two query requests: the first query request and the timestamp query request
+					require.Equalf(t, 2.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 2.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 				})
 			}
 		})

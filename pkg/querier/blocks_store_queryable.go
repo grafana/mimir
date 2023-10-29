@@ -898,8 +898,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	// Wait until all client requests complete.
 	if err := g.Wait(); err != nil {
 		for _, stream := range streams {
-			if err := stream.CloseSend(); err != nil {
-				level.Warn(q.logger).Log("msg", "closing storegateway client stream failed", "err", err)
+			if err := util.CloseAndExhaust[*storepb.SeriesResponse](stream); err != nil {
+				level.Warn(q.logger).Log("msg", "closing store-gateway client stream failed", "err", err)
 			}
 		}
 		return nil, nil, nil, nil, nil, err

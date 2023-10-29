@@ -465,31 +465,51 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 }
 
 func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
-	batches := []storepb.StreamingChunksBatch{
-		{
-			Series: []*storepb.StreamingChunks{
-				{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
-				{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
-				{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+	testCases := map[string][]storepb.StreamingChunksBatch{
+		"extra series received as part of batch for last expected series": {
+			{
+				Series: []*storepb.StreamingChunks{
+					{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+					{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
+					{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+				},
+			},
+		},
+		"extra series received as part of batch after batch containing last expected series": {
+			{
+				Series: []*storepb.StreamingChunks{
+					{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+				},
+			},
+			{
+				Series: []*storepb.StreamingChunks{
+					{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
+					{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+				},
 			},
 		},
 	}
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
-	reader.StartBuffering()
 
-	s, err := reader.GetChunks(0)
-	require.Nil(t, s)
-	expectedError := "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
-	require.EqualError(t, err, expectedError)
+	for name, batches := range testCases {
+		t.Run(name, func(t *testing.T) {
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
+			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			reader.StartBuffering()
 
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+			s, err := reader.GetChunks(0)
+			require.Nil(t, s)
+			expectedError := "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
+			require.EqualError(t, err, expectedError)
 
-	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
-	_, err = reader.GetChunks(1)
-	require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
-	_, err = reader.GetChunks(2)
-	require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+
+			// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+			_, err = reader.GetChunks(1)
+			require.EqualError(t, err, "attempted to read series at index 1 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+			_, err = reader.GetChunks(2)
+			require.EqualError(t, err, "attempted to read series at index 2 from store-gateway chunks stream, but the stream previously failed and returned an error: "+expectedError)
+		})
+	}
 }
 
 func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
