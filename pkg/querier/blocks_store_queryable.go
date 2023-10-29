@@ -353,7 +353,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 
 	minT, maxT := q.minT, q.maxT
 
-	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
+	spanLog.DebugLog("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
@@ -398,7 +398,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 
 	minT, maxT := q.minT, q.maxT
 
-	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
+	spanLog.DebugLog("start", util.TimeFromMillis(minT).UTC().String(), "end",
 		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
 
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
@@ -475,21 +475,21 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	}
 
 	if len(streamStarters) > 0 {
-		level.Debug(spanLog).Log("msg", "starting streaming")
+		spanLog.DebugLog("msg", "starting streaming")
 
 		// If this was a streaming call, start fetching streaming chunks here.
 		for _, ss := range streamStarters {
 			ss()
 		}
 
-		level.Debug(spanLog).Log("msg", "streaming started, waiting for chunks estimates")
+		spanLog.DebugLog("msg", "streaming started, waiting for chunks estimates")
 
 		chunksEstimate := 0
 		for _, chunkEstimator := range chunkEstimators {
 			chunksEstimate += chunkEstimator()
 		}
 
-		level.Debug(spanLog).Log("msg", "received chunks estimate from all store-gateways", "chunks_estimate", chunksEstimate)
+		spanLog.DebugLog("msg", "received chunks estimate from all store-gateways", "chunks_estimate", chunksEstimate)
 
 		if err := queryLimiter.AddEstimatedChunks(chunksEstimate); err != nil {
 			return storage.ErrSeriesSet(err)
@@ -508,17 +508,17 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
 
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
-	ctx context.Context, logger log.Logger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
+	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
 ) error {
 	now := time.Now()
 
 	if !ShouldQueryBlockStore(q.queryStoreAfter, now, minT) {
 		q.metrics.storesHit.Observe(0)
-		level.Debug(logger).Log("msg", "not querying block store; query time range begins after the query-store-after limit")
+		spanLog.DebugLog("msg", "not querying block store; query time range begins after the query-store-after limit")
 		return nil
 	}
 
-	maxT = clampMaxTime(logger, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
+	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
@@ -528,18 +528,18 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	if len(knownBlocks) == 0 {
 		q.metrics.storesHit.Observe(0)
-		level.Debug(logger).Log("msg", "no blocks found")
+		spanLog.DebugLog("msg", "no blocks found")
 		return nil
 	}
 
 	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
 
 	if shard != nil && shard.ShardCount > 0 {
-		level.Debug(logger).Log("msg", "filtering blocks due to sharding", "blocksBeforeFiltering", knownBlocks.String(), "shardID", shard.LabelValue())
+		spanLog.DebugLog("msg", "filtering blocks due to sharding", "blocksBeforeFiltering", knownBlocks.String(), "shardID", shard.LabelValue())
 
 		result, incompatibleBlocks := filterBlocksByShard(knownBlocks, shard.ShardIndex, shard.ShardCount)
 
-		level.Debug(logger).Log("msg", "result of filtering blocks", "before", len(knownBlocks), "after", len(result), "filtered", len(knownBlocks)-len(result), "incompatible", incompatibleBlocks)
+		spanLog.DebugLog("msg", "result of filtering blocks", "before", len(knownBlocks), "after", len(result), "filtered", len(knownBlocks)-len(result), "incompatible", incompatibleBlocks)
 		q.metrics.blocksWithCompactorShardButIncompatibleQueryShard.Add(float64(incompatibleBlocks))
 
 		knownBlocks = result
@@ -547,7 +547,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	q.metrics.blocksQueried.Add(float64(len(knownBlocks)))
 
-	level.Debug(logger).Log("msg", "found blocks to query", "expected", knownBlocks.String())
+	spanLog.DebugLog("msg", "found blocks to query", "expected", knownBlocks.String())
 
 	var (
 		// At the beginning the list of blocks to query are all known blocks.
@@ -566,13 +566,13 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 			// If it's a retry and we get an error, it means there are no more store-gateways left
 			// from which running another attempt, so we're just stopping retrying.
 			if attempt > 1 {
-				level.Warn(logger).Log("msg", "unable to get store-gateway clients while retrying to fetch missing blocks", "err", err)
+				level.Warn(spanLog).Log("msg", "unable to get store-gateway clients while retrying to fetch missing blocks", "err", err)
 				break
 			}
 
 			return err
 		}
-		level.Debug(logger).Log("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
+		spanLog.DebugLog("msg", "found store-gateway instances to query", "num instances", len(clients), "attempt", attempt)
 
 		// Fetch series from stores. If an error occur we do not retry because retries
 		// are only meant to cover missing blocks.
@@ -580,7 +580,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		if err != nil {
 			return err
 		}
-		level.Debug(logger).Log("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
+		spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
 
 		resQueriedBlocks = append(resQueriedBlocks, queriedBlocks...)
 
@@ -602,14 +602,14 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 			return nil
 		}
 
-		level.Debug(logger).Log("msg", "consistency check failed", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(missingBlocks), " "))
+		spanLog.DebugLog("msg", "consistency check failed", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(missingBlocks), " "))
 
 		// The next attempt should just query the missing blocks.
 		remainingBlocks = missingBlocks
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "failed consistency check", "err", err)
+	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check", "err", err)
 	return newStoreConsistencyCheckFailedError(remainingBlocks)
 }
 
@@ -993,7 +993,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 				myQueriedBlocks = ids
 			}
 
-			level.Debug(spanLog).Log("msg", "received label names from store-gateway",
+			spanLog.DebugLog("msg", "received label names from store-gateway",
 				"instance", c,
 				"num labels", len(namesResp.Names),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
@@ -1075,7 +1075,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 				myQueriedBlocks = ids
 			}
 
-			level.Debug(spanLog).Log("msg", "received label values from store-gateway",
+			spanLog.DebugLog("msg", "received label values from store-gateway",
 				"instance", c.RemoteAddress(),
 				"num values", len(valuesResp.Values),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),

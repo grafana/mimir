@@ -869,7 +869,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	defer func(startTime time.Time) {
 		spanLog := spanlogger.FromContext(s.ctx, s.logger)
-		level.Debug(spanLog).Log(
+		spanLog.DebugLog(
 			"msg", "loaded series and chunk refs",
 			"block_id", s.blockID.String(),
 			"series_count", s.At().len(),
