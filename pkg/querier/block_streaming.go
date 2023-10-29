@@ -331,7 +331,7 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.Ag
 		// 1. If we receive more series than expected (likely due to a bug), or something else goes wrong after receiving the last series,
 		//    StartBuffering() will return an error. This method will then return it, which will bubble up to the PromQL engine and report
 		//    it, rather than it potentially being logged and missed.
-		// 2. It ensures the gPRC stream is cleaned up before the PromQL engine cancels the context used for the query. If the context
+		// 2. It ensures the gRPC stream is cleaned up before the PromQL engine cancels the context used for the query. If the context
 		//    is cancelled before the gRPC stream's Recv() returns EOF, this can result in misleading context cancellation errors being
 		//    logged and included in metrics and traces, when in fact the call succeeded.
 		if err := <-s.errorChan; err != nil {

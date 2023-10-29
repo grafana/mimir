@@ -109,7 +109,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 					return fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
 				}
 
-				level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+				log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 				return nil
 			}
 
