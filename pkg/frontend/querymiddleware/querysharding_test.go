@@ -771,6 +771,99 @@ func TestQuerySharding_Correctness(t *testing.T) {
 	}
 }
 
+func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
+	queries := []string{
+		`histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+		`histogram_quantile(0.5, sum by(le, app) (rate(metric_histogram_bucket[1m])))`,
+
+		`histogram_quantile(0.9, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+		`histogram_quantile(0.9, sum by(le, app) (rate(metric_histogram_bucket[1m])))`,
+
+		`histogram_quantile(0.99, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+		`histogram_quantile(0.99, sum by(le, app) (rate(metric_histogram_bucket[1m])))`,
+
+		`histogram_quantile(1, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+		`histogram_quantile(1, sum by(le, app) (rate(metric_histogram_bucket[1m])))`,
+	}
+
+	series := []*promql.StorageSeries{
+		// Bucket: 10
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "a", "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(1)),
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "b", "le", "10"), start.Add(-lookbackDelta), end, step, arithmeticSequence(2)),
+		// Bucket: 20
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "a", "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(5)),
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "b", "le", "20"), start.Add(-lookbackDelta), end, step, arithmeticSequence(6)),
+		// Bucket: 30 (non monotonic)
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "a", "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(4.99)),
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "b", "le", "30"), start.Add(-lookbackDelta), end, step, arithmeticSequence(5.99)),
+		// Bucket: 40
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "a", "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(6)),
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "b", "le", "40"), start.Add(-lookbackDelta), end, step, arithmeticSequence(7)),
+		// Bucket: +Inf
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "a", "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(6)),
+		newSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", "b", "le", "+Inf"), start.Add(-lookbackDelta), end, step, arithmeticSequence(7)),
+	}
+
+	// Create a queryable on the fixtures.
+	queryable := storageSeriesQueryable(series)
+
+	engine := newEngine()
+	downstream := &downstreamHandler{
+		engine:    engine,
+		queryable: queryable,
+	}
+
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: query,
+			}
+
+			// Run the query without sharding.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			require.Nil(t, err)
+
+			expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+			sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+
+			// Ensure the query produces some results.
+			require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+			requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+			for _, numShards := range []int{2, 4, 8, 16} {
+				t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+					reg := prometheus.NewPedanticRegistry()
+					shardingware := newQueryShardingMiddleware(
+						log.NewNopLogger(),
+						engine,
+						mockLimits{totalShards: numShards},
+						0,
+						reg,
+					)
+
+					// Run the query with sharding.
+					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					require.Nil(t, err)
+
+					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+					// if you rerun the same query twice).
+					shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+					sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+					approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+
+					// Ensure the bucket monotonicity has been fixed by PromQL engine.
+					require.Len(t, shardedPrometheusRes.GetWarnings(), 1)
+					assert.Contains(t, shardedPrometheusRes.Warnings[0], annotations.HistogramQuantileForcedMonotonicityInfo.Error())
+				})
+			}
+		})
+	}
+}
+
 // requireValidSamples ensures the query produces some results which are not NaN.
 func requireValidSamples(t *testing.T, result []SampleStream) {
 	t.Helper()
