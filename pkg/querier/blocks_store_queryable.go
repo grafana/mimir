@@ -713,7 +713,10 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // before iterating on the series.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, startStreamingChunks func(), estimateChunks func() int, _ error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
+		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
+		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
+		reqCtx, cancelReqCtx = context.WithCancel(grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)) //nolint:govet
+
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		seriesSets    = []storage.SeriesSet(nil)
@@ -897,6 +900,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 	// Wait until all client requests complete.
 	if err := g.Wait(); err != nil {
+		cancelReqCtx()
+
 		for _, stream := range streams {
 			if err := util.CloseAndExhaust[*storepb.SeriesResponse](stream); err != nil {
 				level.Warn(q.logger).Log("msg", "closing store-gateway client stream failed", "err", err)
@@ -921,7 +926,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		return totalChunks
 	}
 
-	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil
+	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
 func shouldStopQueryFunc(err error) bool {
