@@ -240,3 +240,43 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	_, _, err := queue.GetNextRequestForQuerier(context.Background(), FirstUser(), querierID)
 	require.EqualError(t, err, "querier has informed the scheduler it is shutting down")
 }
+
+func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSendToQuerier(t *testing.T) {
+	const forgetDelay = 3 * time.Second
+	const querierID = "querier-1"
+
+	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+
+	// bypassing queue dispatcher loop for direct usage of the queueBroker and
+	// passing a nextRequestForQuerierCall for a canceled querier connection
+	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
+	queueBroker.addQuerierConnection(querierID)
+
+	tr := tenantRequest{
+		tenantID:    TenantID("tenant-1"),
+		req:         "request",
+		maxQueriers: 0, // no sharding
+	}
+
+	require.Nil(t, queueBroker.tenantQueues["tenant-1"])
+	require.NoError(t, queueBroker.enqueueRequestBack(&tr))
+	require.Equal(t, queueBroker.tenantQueues["tenant-1"].requests.Len(), 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	call := &nextRequestForQuerierCall{
+		ctx:           ctx,
+		querierID:     QuerierID(querierID),
+		lastUserIndex: FirstUser(),
+		processed:     make(chan nextRequestForQuerier),
+	}
+	cancel() // ensure querier context done before send is attempted
+
+	// send to querier will fail but method returns true,
+	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
+	require.True(t, queue.tryDispatchRequestToQuerier(queueBroker, call))
+	// assert request was re-enqueued for tenant after failed send
+	require.Equal(t, queueBroker.tenantQueues["tenant-1"].requests.Len(), 1)
+}
