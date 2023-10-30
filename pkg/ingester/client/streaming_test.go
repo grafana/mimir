@@ -260,8 +260,8 @@ func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			expectedError := "attempted to read series at index 0 from ingester chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
 			require.EqualError(t, err, expectedError)
 
-			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
-			require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
+			require.Eventually(t, cleanedUp.Load, time.Second, 10*time.Millisecond, "expected cleanup function to be called")
 
 			// Ensure we continue to return the error, even for subsequent calls to GetChunks.
 			_, err = reader.GetChunks(1)
@@ -319,7 +319,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			}
 
 			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
-			require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+			require.Eventually(t, cleanedUp.Load, time.Second, 10*time.Millisecond, "expected cleanup function to be called")
 
 			if testCase.expectedError != "" {
 				// Ensure we continue to return the error, even for subsequent calls to GetChunks.

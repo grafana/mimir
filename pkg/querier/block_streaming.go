@@ -200,7 +200,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			return fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
 		}
 
-		level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+		log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 		return nil
 	}
 
@@ -214,7 +214,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		return fmt.Errorf("expected to receive chunks estimate, but got message of type %T", msg.Result)
 	}
 
-	level.Debug(log).Log("msg", "received estimated number of chunks", "chunks", estimate.EstimatedChunkCount)
+	log.DebugLog("msg", "received estimated number of chunks", "chunks", estimate.EstimatedChunkCount)
 	if err := s.sendChunksEstimate(estimate.EstimatedChunkCount); err != nil {
 		return err
 	}
