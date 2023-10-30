@@ -8,7 +8,7 @@ type Stream[T any] interface {
 }
 
 func CloseAndExhaust[T any](stream Stream[T]) error {
-	err := stream.CloseSend()
+	err := stream.CloseSend() //nolint:forbidigo // This is the one place we want to call this method.
 	if err != nil {
 		return err
 	}
