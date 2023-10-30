@@ -43,7 +43,7 @@ func TestCloseAndExhaust(t *testing.T) {
 		select {
 		case err := <-returned:
 			require.Equal(t, ErrCloseAndExhaustTimedOut, err)
-		case <-time.After(5 * time.Second):
+		case <-time.After(500 * time.Millisecond):
 			require.FailNow(t, "expected CloseAndExhaust to time out waiting for Recv() to return, but it did not")
 		}
 	})
