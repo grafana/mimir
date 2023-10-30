@@ -79,20 +79,19 @@ func (w *moduleService) start(serviceContext context.Context) error {
 
 	// we don't want to let this service to stop until all dependant services are stopped,
 	// so we use independent context here
-	level.Info(w.logger).Log("msg", "initialising", "module", w.name)
+	level.Info(w.logger).Log("msg", "starting", "module", w.name)
 	err := w.service.StartAsync(context.Background())
 	if err != nil {
 		return errors.Wrapf(err, "error starting module: %s", w.name)
 	}
 
 	err = w.service.AwaitRunning(serviceContext)
-	if errors.Is(serviceContext.Err(), context.Canceled) && errors.Is(err, context.Canceled) {
-		// We were asked to cancel, but the underlying service may continue starting and complete its startup after we return from moduleService.start.
-		// If we return an error, then we would be considered Failed and won't have moduleService.stop invoked.
-		// We need to invoke moduleService.stop to stop the underlying service in case it finishes starting successfully later.
-		return nil
+	if err != nil {
+		// Make sure that underlying service is stopped before returning
+		// (e.g. in case of context cancellation, AwaitRunning returns early, but service may still be starting).
+		_ = services.StopAndAwaitTerminated(context.Background(), w.service)
 	}
-	return err
+	return errors.Wrapf(err, "starting module %s", w.name)
 }
 
 func (w *moduleService) run(serviceContext context.Context) error {
@@ -104,19 +103,14 @@ func (w *moduleService) run(serviceContext context.Context) error {
 
 func (w *moduleService) stop(_ error) error {
 	var err error
-	switch w.service.State() {
-	case services.Running:
+	if w.service.State() == services.Running {
 		// Only wait for other modules, if underlying service is still running.
 		w.waitForModulesToStop()
-		// Then proceed to also stop this service if we didn't wait it out during moduleService.start.
-		fallthrough
-	case services.Starting:
-		// If upstream services can tolerate this service being failed and/or not started, and they have already started,
-		// they should track the state of this service and change state accordingly.
+
 		level.Debug(w.logger).Log("msg", "stopping", "module", w.name)
 
 		err = services.StopAndAwaitTerminated(context.Background(), w.service)
-	default:
+	} else {
 		err = w.service.FailureCase()
 	}
 
