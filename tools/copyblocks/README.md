@@ -30,9 +30,9 @@ go build .
   --source-service gcs \
   --destination-service gcs \
   --copy-period 24h \
-  --min-block-duration 23h \
-  --gcs-source-bucket-name <source bucket name> \
-  --gcs-destination-bucket-name <destination bucket name>
+  --min-block-duration 13h \
+  --gcs.source.bucket-name <source bucket name> \
+  --gcs.destination.bucket-name <destination bucket name>
 ```
 
 ### Example for Azure Blob Storage
@@ -42,13 +42,13 @@ go build .
   --source-service abs \
   --destination-service abs \
   --copy-period 24h \
-  --min-block-duration 23h \
-  --azure-source-container-url https://<source account name>.blob.core.windows.net/<source bucket name> \
-  --azure-source-account-name <source account name> \
-  --azure-source-account-key <source account key> \
-  --azure-destination-container-url https://<destination account name>.blob.core.windows.net/<destination bucket name> \
-  --azure-destination-account-name <destination account name> \
-  --azure-destination-account-key <destination account key>
+  --min-block-duration 13h \
+  --azure.source.container-name <source container name>
+  --azure.source.account-name <source account name> \
+  --azure.source.account-key <source account key> \
+  --azure.destination.container-name <destination container name> \
+  --azure.destination.account-name <destination account name> \
+  --azure.destination.account-key <destination account key>
 ```
 
 ### Example for Amazon Simple Storage Service
@@ -61,15 +61,15 @@ Consider passing `--client-side-copy` to avoid having to deal with that.
   --source-service s3 \
   --destination-service s3 \
   --copy-period 24h \
-  --min-block-duration 23h \
-  --s3-source-bucket-name <source bucket name> \
-  --s3-source-access-key <source access key> \
-  --s3-source-secret-key <source secret key> \
-  --s3-source-endpoint <source endpoint> \
-  --s3-destination-bucket-name <destination bucket name> \
-  --s3-destination-access-key <destination access key> \
-  --s3-destination-secret-key <destination secret key> \
-  --s3-destination-endpoint <destination endpoint>
+  --min-block-duration 13h \
+  --s3.source.bucket-name <source bucket name> \
+  --s3.source.access-key <source access key> \
+  --s3.source.secret-key <source secret key> \
+  --s3.source.endpoint <source endpoint> \
+  --s3.destination.bucket-name <destination bucket name> \
+  --s3.destination.access-key <destination access key> \
+  --s3.destination.secret-key <destination secret key> \
+  --s3.destination.endpoint <destination endpoint>
 ```
 
 ### Example for copying between different providers
@@ -82,12 +82,12 @@ For instance, to copy from S3 to ABS:
   --source-service s3 \
   --destination-service abs \
   --copy-period 24h \
-  --min-block-duration 23h \
+  --min-block-duration 13h \
   --s3-source-bucket-name <source bucket name> \
   --s3-source-access-key <source access key> \
   --s3-source-secret-key <source secret key> \
   --s3-source-endpoint <source endpoint> \
-  --azure-destination-container-url https://<destination account name>.blob.core.windows.net/<destination bucket name> \
+  --azure-destination-container-name <destination container name> \
   --azure-destination-account-name <destination account name> \
   --azure-destination-account-key <destination account key>
 ```

@@ -82,7 +82,7 @@ func (result *ListResult) ToNamesWithoutPrefix(prefix string) ([]string, error) 
 	for _, p := range result.Prefixes {
 		name, hasPrefix := strings.CutPrefix(p, prefix)
 		if !hasPrefix {
-			return nil, errors.Errorf("ToNames: prefux result has an invalid prefix: %v, expected prefix: %v", p, prefix)
+			return nil, errors.Errorf("ToNames: prefix result has an invalid prefix: %v, expected prefix: %v", p, prefix)
 		}
 		names = append(names, strings.TrimSuffix(name, Delim))
 	}

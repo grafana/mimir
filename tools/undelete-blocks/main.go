@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -136,6 +135,7 @@ func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]u
 	return m, nil
 }
 
+// getBlocksFromListing lists the global delete markers for each unfiltered tenant
 func getBlocksFromListing(ctx context.Context, bucket objtools.Bucket, filter tenantFilter) (map[string][]ulid.ULID, error) {
 	tenants, err := listTenants(ctx, bucket)
 	if err != nil {
@@ -148,7 +148,7 @@ func getBlocksFromListing(ctx context.Context, bucket objtools.Bucket, filter te
 			continue
 		}
 
-		blockIDs, err := listDeletedBlocksForTenant(ctx, bucket, tenantID)
+		blockIDs, err := listBlocksForTenant(ctx, bucket, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -160,9 +160,8 @@ func getBlocksFromListing(ctx context.Context, bucket objtools.Bucket, filter te
 }
 
 func listTenants(ctx context.Context, bkt objtools.Bucket) ([]string, error) {
-	// Using versioned listing in case a tenant only has deleted objects
 	result, err := bkt.List(ctx, objtools.ListOptions{
-		Versioned: true,
+		Versioned: true, // using versioned listing in case a tenant only has deleted objects
 	})
 	if err != nil {
 		return nil, err
@@ -171,42 +170,49 @@ func listTenants(ctx context.Context, bkt objtools.Bucket) ([]string, error) {
 	return result.ToNames(), nil
 }
 
-func listDeletedBlocksForTenant(ctx context.Context, bkt objtools.Bucket, tenantID string) ([]ulid.ULID, error) {
-	prefix := path.Join(tenantID, block.MarkersPathname)
+func listBlocksForTenant(ctx context.Context, bkt objtools.Bucket, tenantID string) ([]ulid.ULID, error) {
 	result, err := bkt.List(ctx, objtools.ListOptions{
-		Prefix:    prefix,
-		Versioned: true,
+		Prefix:    tenantID,
+		Versioned: true, // using versioned listing in case a block only has deleted objects
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	markers, err := result.ToNamesWithoutPrefix(prefix)
+	names, err := result.ToNamesWithoutPrefix(tenantID)
 	if err != nil {
 		return nil, err
 	}
-	blocks := make([]ulid.ULID, 0, len(markers))
-	var last ulid.ULID
-	for _, name := range markers {
-		// preventing duplicates from multiple versions (used a version listing only to get deleted delete markers)
-		if blockID, ok := block.IsDeletionMarkFilename(name); ok && blockID.Compare(last) != 0 {
-			blocks = append(blocks, blockID)
+
+	blockIDs := make([]ulid.ULID, 0, len(names))
+	for _, name := range names {
+		blockID, err := ulid.Parse(name)
+		if err != nil {
+			return nil, err
 		}
+		blockIDs = append(blockIDs, blockID)
 	}
-	return blocks, nil
+	return blockIDs, nil
 }
 
 func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, dryRun bool) {
+	succeeded, skipped, failed := 0, 0, 0
 	for tenantID, blockIDs := range blocks {
 		for _, blockID := range blockIDs {
 			err := undeleteBlock(ctx, bucket, tenantID, blockID, dryRun)
 			if err != nil {
+				failed++
 				slog.Error("failed to undelete block", "tenant", tenantID, "block", blockID, "err", err)
-			} else if !dryRun {
-				slog.Info("successfully restored block", "tenant", tenantID, "block", blockID)
+			} else if dryRun {
+				skipped++
+				slog.Info("skipped attempting to undelete block due to dry run", "tenant", tenantID, "block", blockID)
+			} else {
+				succeeded++
+				slog.Info("successfully undeleted block", "tenant", tenantID, "block", blockID)
 			}
 		}
 	}
+	slog.Info("completed undelete operations", "succeeded", succeeded, "skipped", skipped, "failed", failed)
 }
 
 type version struct {
