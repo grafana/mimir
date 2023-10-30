@@ -420,12 +420,22 @@
           "kind": "field",
           "name": "http_server_read_timeout",
           "required": false,
-          "desc": "Read timeout for HTTP server",
+          "desc": "Read timeout for entire HTTP request, including headers and body.",
           "fieldValue": null,
           "fieldDefaultValue": 30000000000,
           "fieldFlag": "server.http-read-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "http_server_read_header_timeout",
+          "required": false,
+          "desc": "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "server.http-read-header-timeout",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
