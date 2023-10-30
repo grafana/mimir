@@ -171,9 +171,9 @@ func (p *Proxy) Start() error {
 		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
 		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
 		// Same size configurations as in Mimir default gRPC configuration values
-		GPRCServerMaxRecvMsgSize:           100 * 1024 * 1024,
+		GRPCServerMaxRecvMsgSize:           100 * 1024 * 1024,
 		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,
-		GPRCServerMaxConcurrentStreams:     10000,
+		GRPCServerMaxConcurrentStreams:     10000,
 		GRPCServerMinTimeBetweenPings:      10 * time.Second,
 		GRPCServerPingWithoutStreamAllowed: true,
 
