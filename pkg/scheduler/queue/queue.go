@@ -281,13 +281,13 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	} else {
 		// should never error; any item previously in the queue already passed validation
 		err := broker.enqueueRequestFront(req)
-		level.Error(q.log).Log(
-			"msg", "failed to re-enqueue query request after dequeue",
-			"err", err, "tenant", tenantID, "querier", call.querierID,
-		)
-
+		if err != nil {
+			level.Error(q.log).Log(
+				"msg", "failed to re-enqueue query request after dequeue",
+				"err", err, "tenant", tenantID, "querier", call.querierID,
+			)
+		}
 	}
-
 	return true
 }
 
