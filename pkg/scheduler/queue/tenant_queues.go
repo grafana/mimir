@@ -127,12 +127,12 @@ func (qb *queueBroker) isEmpty() bool {
 }
 
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest) error {
-	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
+	_, err := qb.tenantQuerierAssignments.getOrAddTenant(request.tenantID, request.maxQueriers)
 	if err != nil {
 		return err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(r.tenantID)}
+	queuePath := QueuePath{qb.tenantQueuesTree.name, string(request.tenantID)}
 	return qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 }
 
@@ -142,13 +142,13 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest) error {
 // max tenant queue size checks are skipped even though queue size violations
 // are not expected to occur when re-enqueuing a previously dequeued request.
 func (qb *queueBroker) enqueueRequestFront(request *tenantRequest) error {
-	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
+	_, err := qb.tenantQuerierAssignments.getOrAddTenant(request.tenantID, request.maxQueriers)
 	if err != nil {
 		return err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(r.tenantID)}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath,request)
+	queuePath := QueuePath{qb.tenantQueuesTree.name, string(request.tenantID)}
+	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, TenantID, int, error) {
@@ -166,11 +166,11 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
 
-  var request *tenantRequest
-  if queueElement != nil {
-	  // re-casting to same type it was enqueued as; panic would indicate a bug
-	  request := queueElement.(*tenantRequest)
-  }
+	var request *tenantRequest
+	if queueElement != nil {
+		// re-casting to same type it was enqueued as; panic would indicate a bug
+		request = queueElement.(*tenantRequest)
+	}
 
 	return request, tenantID, tenantIndex, nil
 }
