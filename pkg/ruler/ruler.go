@@ -41,6 +41,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -991,7 +992,7 @@ func (r *Ruler) Rules(ctx context.Context, in *RulesRequest) (*RulesResponse, er
 		return nil, fmt.Errorf("no user id found in context")
 	}
 
-	groupDescs, err := r.getLocalRules(userID, *in)
+	groupDescs, err := r.getLocalRules(ctx, userID, *in)
 	if err != nil {
 		return nil, err
 	}
@@ -1019,8 +1020,15 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 	return !ok
 }
 
-func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDesc, error) {
+func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
+	defer spanLog.Finish()
+
+	// Get the rule groups from the manager. We track the time it takes because the manager needs to
+	// take a lock to run GetRules() and we want to make sure we're not hanging here.
+	getRulesStart := time.Now()
 	groups := r.manager.GetRules(userID)
+	spanLog.DebugLog("msg", "fetched rules from manager", "duration", time.Since(getRulesStart))
 
 	groupDescs := make([]*GroupStateDesc, 0, len(groups))
 	prefix := filepath.Join(r.cfg.RulePath, userID) + "/"
@@ -1087,7 +1095,7 @@ func (r *Ruler) getLocalRules(userID string, req RulesRequest) ([]*GroupStateDes
 				if !getAlertingRules {
 					continue
 				}
-				rule.ActiveAlerts()
+
 				alerts := []*AlertStateDesc{}
 				for _, a := range rule.ActiveAlerts() {
 					alerts = append(alerts, &AlertStateDesc{
