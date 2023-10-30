@@ -284,7 +284,7 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 
 		loopErr = w.schedulerLoop(loop)
 		if closeErr := util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](loop); closeErr != nil {
-			level.Debug(w.log).Log("msg", "failed to close frontend loop", "err", loopErr, "addr", w.schedulerAddr)
+			level.Debug(w.log).Log("msg", "failed to close frontend loop", "err", closeErr, "addr", w.schedulerAddr)
 		}
 
 		if loopErr != nil {
