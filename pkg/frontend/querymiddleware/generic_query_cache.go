@@ -64,7 +64,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	// Skip the cache if disabled for this request.
 	if decodeCacheDisabledOption(req) {
-		level.Debug(spanLog).Log("msg", "cache disabled for the request")
+		spanLog.DebugLog("msg", "cache disabled for the request")
 		return c.next.RoundTrip(req)
 	}
 
@@ -77,7 +77,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	// if it's disabled for any of tenants.
 	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.delegate.getTTL)
 	if cacheTTL <= 0 {
-		level.Debug(spanLog).Log("msg", "cache disabled for the tenant")
+		spanLog.DebugLog("msg", "cache disabled for the tenant")
 		return c.next.RoundTrip(req)
 	}
 
@@ -106,7 +106,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	res := c.fetchCachedResponse(ctx, cacheKey, hashedCacheKey)
 	if res != nil {
 		c.metrics.cacheHits.Inc()
-		level.Debug(spanLog).Log("msg", "response fetched from the cache")
+		spanLog.DebugLog("msg", "response fetched from the cache")
 		return res, nil
 	}
 

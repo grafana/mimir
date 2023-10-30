@@ -272,7 +272,7 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
 	}
-	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
+	spanlogger.FromContext(ctx, logger).DebugLog(keyvals...)
 }
 
 func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
@@ -609,7 +609,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
 	defer func(startTime time.Time) {
 		spanLog := spanlogger.FromContext(ctx, r.block.logger)
-		level.Debug(spanLog).Log(
+		spanLog.DebugLog(
 			"msg", "fetched series and chunk refs from object store",
 			"block_id", r.block.meta.ULID.String(),
 			"series_count", len(loadedSeries.series),

@@ -223,7 +223,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	queryTime := s.currentTime()
 
 	if len(execReqs) > 0 {
-		execResps, err := doRequests(ctx, s.next, execReqs, true)
+		execResps, err := doRequests(ctx, s.next, execReqs)
 		if err != nil {
 			return nil, err
 		}
@@ -560,7 +560,7 @@ type requestResponse struct {
 }
 
 // doRequests executes a list of requests in parallel.
-func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordSpan bool) ([]requestResponse, error) {
+func doRequests(ctx context.Context, downstream Handler, reqs []Request) ([]requestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
 	resps := make([]requestResponse, 0, len(reqs))
@@ -571,12 +571,10 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 			// partialStats are the statistics for this partial query, which we'll need to
 			// get correct aggregation of statistics for partial queries.
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
-			if recordSpan {
-				var span opentracing.Span
-				span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
-				req.LogToSpan(span)
-				defer span.Finish()
-			}
+			var span opentracing.Span
+			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
+			req.LogToSpan(span)
+			defer span.Finish()
 
 			resp, err := downstream.Do(childCtx, req)
 			queryStatistics.Merge(partialStats)

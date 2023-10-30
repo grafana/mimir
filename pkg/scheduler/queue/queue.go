@@ -229,7 +229,12 @@ func (q *RequestQueue) dispatcherLoop() {
 //
 // If request is successfully enqueued, successFn is called before any querier can receive the request.
 func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEnqueue) error {
-	err := broker.enqueueRequestBack(r)
+	tr := tenantRequest{
+		tenantID:    r.tenantID,
+		req:         r.req,
+		maxQueriers: r.maxQueriers,
+	}
+	err := broker.enqueueRequestBack(&tr)
 	if err != nil {
 		if errors.Is(err, ErrTooManyRequests) {
 			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
@@ -264,7 +269,7 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	}
 
 	reqForQuerier := nextRequestForQuerier{
-		req:           req,
+		req:           req.req,
 		lastUserIndex: call.lastUserIndex,
 		err:           nil,
 	}
@@ -273,10 +278,8 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	if requestSent {
 		q.queueLength.WithLabelValues(string(tenantID)).Dec()
 	} else {
-		// re-casting to same type it was enqueued as; panic would indicate a bug
-		reqToEnqueue := req.(requestToEnqueue)
 		// should never error; any item previously in the queue already passed validation
-		err := broker.enqueueRequestFront(reqToEnqueue)
+		err := broker.enqueueRequestFront(req)
 		if err != nil {
 			level.Error(q.log).Log(
 				"msg", "failed to re-enqueue query request after dequeue",
@@ -284,7 +287,6 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 			)
 		}
 	}
-
 	return true
 }
 

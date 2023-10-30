@@ -68,9 +68,9 @@
     if weight <= 0.5 then std.ceil(replicas * weight) else std.floor(replicas * weight),
 
   // getScaleDownPeriod will return the scale down period expressed in seconds.
-  // If the config doesn't have a scaledownPeriod set, the default value of 60 seconds will be returned.
+  // If the config doesn't have a scale_down_period set, the default value of 60 seconds will be returned.
   local getScaleDownPeriod(config) =
-    if std.objectHas(config, 'scaledownPeriod') then config.scaledownPeriod else 60,
+    if std.objectHas(config, 'scale_down_period') then config.scale_down_period else 60,
 
   // The ScaledObject resource is watched by the KEDA operator. When this resource is created, KEDA
   // creates the related HPA resource in the namespace. Likewise, then ScaledObject is deleted, KEDA
@@ -227,13 +227,13 @@
     memory_target_utilization,
     with_cortex_prefix=false,
     weight=1,
-    scaledownPeriod=null,
+    scale_down_period=null,
   ):: self.newScaledObject(
     name, $._config.namespace, {
       min_replica_count: replicasWithWeight(min_replicas, weight),
       max_replica_count: replicasWithWeight(max_replicas, weight),
 
-      [if scaledownPeriod != null then 'scaledownPeriod']: scaledownPeriod,
+      [if scale_down_period != null then 'scale_down_period']: scale_down_period,
 
       triggers: [
         {
@@ -440,9 +440,9 @@
     max_replicas=$._config.autoscaling_ruler_max_replicas,
     cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
     memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
-    // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and down of the ruler.
-    // As a result, we have made the decision to set the scale down periodSeconds to 600.
-    scaledownPeriod=600,
+    // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
+    // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
+    scale_down_period=600,
   ),
 
   ruler_deployment: overrideSuperIfExists(

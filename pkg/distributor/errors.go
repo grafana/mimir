@@ -167,7 +167,7 @@ type ingesterPushError struct {
 
 // newIngesterPushError creates a ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status) ingesterPushError {
-	errorCause := mimirpb.INVALID
+	errorCause := mimirpb.UNKNOWN_CAUSE
 	details := stat.Details()
 	if len(details) == 1 {
 		if errorDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {

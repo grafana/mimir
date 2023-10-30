@@ -685,7 +685,7 @@ func (e mockIngesterErr) Error() string {
 }
 
 func (e mockIngesterErr) errorCause() mimirpb.ErrorCause {
-	return mimirpb.INVALID
+	return mimirpb.UNKNOWN_CAUSE
 }
 
 func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCause, isSoft bool) {

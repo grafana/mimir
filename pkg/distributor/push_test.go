@@ -934,15 +934,20 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
-		"an ingesterPushError with INVALID cause gets translated into an HTTP 500": {
-			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.INVALID)),
+		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE)),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
-		"a DoNotLogError of an ingesterPushError with INVALID cause gets translated into an HTTP 500": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.INVALID))},
+		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
+			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE))},
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+		},
+		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
+			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
+			expectedHTTPStatus: http.StatusInternalServerError,
+			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, context.DeadlineExceeded),
 		},
 	}
 	for name, tc := range testCases {

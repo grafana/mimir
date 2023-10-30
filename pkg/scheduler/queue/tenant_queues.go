@@ -35,6 +35,12 @@ func (s querierIDSlice) Search(x QuerierID) int {
 	return sort.Search(len(s), func(i int) bool { return s[i] >= x })
 }
 
+type tenantRequest struct {
+	tenantID    TenantID
+	req         Request
+	maxQueriers int
+}
+
 type querierConn struct {
 	// Number of active connections.
 	connections int
@@ -120,14 +126,14 @@ func (qb *queueBroker) isEmpty() bool {
 	return qb.tenantQueuesTree.isEmpty()
 }
 
-func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(r.tenantID, r.maxQueriers)
+func (qb *queueBroker) enqueueRequestBack(request *tenantRequest) error {
+	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
 	if err != nil {
 		return err
 	}
 
 	queuePath := QueuePath{qb.tenantQueuesTree.name, string(r.tenantID)}
-	return qb.tenantQueuesTree.EnqueueBackByPath(queuePath, r.req)
+	return qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
@@ -135,17 +141,17 @@ func (qb *queueBroker) enqueueRequestBack(r requestToEnqueue) error {
 //
 // max tenant queue size checks are skipped even though queue size violations
 // are not expected to occur when re-enqueuing a previously dequeued request.
-func (qb *queueBroker) enqueueRequestFront(r requestToEnqueue) error {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(r.tenantID, r.maxQueriers)
+func (qb *queueBroker) enqueueRequestFront(request *tenantRequest) error {
+	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
 	if err != nil {
 		return err
 	}
 
 	queuePath := QueuePath{qb.tenantQueuesTree.name, string(r.tenantID)}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, r.req)
+	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath,request)
 }
 
-func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (Request, TenantID, int, error) {
+func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, TenantID, int, error) {
 	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querierID)
 	if err != nil {
 		return nil, tenantID, tenantIndex, err
@@ -159,7 +165,14 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 		// queue node was deleted due to being empty after dequeue
 		qb.tenantQuerierAssignments.removeTenant(tenantID)
 	}
-	return queueElement, tenantID, tenantIndex, nil
+
+  var request *tenantRequest
+  if queueElement != nil {
+	  // re-casting to same type it was enqueued as; panic would indicate a bug
+	  request := queueElement.(*tenantRequest)
+  }
+
+	return request, tenantID, tenantIndex, nil
 }
 
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {

@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -151,7 +152,7 @@ func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient
 // Close cleans up all resources associated with this storeGatewayStreamReader.
 // This method should only be called if StartBuffering is not called.
 func (s *storeGatewayStreamReader) Close() {
-	if err := s.client.CloseSend(); err != nil {
+	if err := util.CloseAndExhaust[*storepb.SeriesResponse](s.client); err != nil {
 		level.Warn(s.log).Log("msg", "closing store-gateway client stream failed", "err", err)
 	}
 }
@@ -199,7 +200,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			return fmt.Errorf("expected to receive %v series, but got EOF after receiving %v series", s.expectedSeriesCount, totalSeries)
 		}
 
-		level.Debug(log).Log("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
+		log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 		return nil
 	}
 
@@ -213,7 +214,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		return fmt.Errorf("expected to receive chunks estimate, but got message of type %T", msg.Result)
 	}
 
-	level.Debug(log).Log("msg", "received estimated number of chunks", "chunks", estimate.EstimatedChunkCount)
+	log.DebugLog("msg", "received estimated number of chunks", "chunks", estimate.EstimatedChunkCount)
 	if err := s.sendChunksEstimate(estimate.EstimatedChunkCount); err != nil {
 		return err
 	}
@@ -306,25 +307,9 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.Ag
 	}()
 
 	if len(s.chunksBatch) == 0 {
-		chks, channelOpen := <-s.seriesChunksChan
-
-		if !channelOpen {
-			// If there's an error, report it.
-			select {
-			case err, haveError := <-s.errorChan:
-				if haveError {
-					if _, ok := err.(validation.LimitError); ok {
-						return nil, err
-					}
-					return nil, errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)
-				}
-			default:
-			}
-
-			return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+		if err := s.readNextBatch(seriesIndex); err != nil {
+			return nil, err
 		}
-
-		s.chunksBatch = chks.Series
 	}
 
 	chks := s.chunksBatch[0]
@@ -338,7 +323,46 @@ func (s *storeGatewayStreamReader) GetChunks(seriesIndex uint64) (_ []storepb.Ag
 		return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has series with index %v", seriesIndex, chks.SeriesIndex)
 	}
 
+	if int(seriesIndex) == s.expectedSeriesCount-1 {
+		// This is the last series we expect to receive. Wait for StartBuffering() to exit (which is signalled by returning an error or
+		// closing errorChan).
+		//
+		// This ensures two things:
+		// 1. If we receive more series than expected (likely due to a bug), or something else goes wrong after receiving the last series,
+		//    StartBuffering() will return an error. This method will then return it, which will bubble up to the PromQL engine and report
+		//    it, rather than it potentially being logged and missed.
+		// 2. It ensures the gRPC stream is cleaned up before the PromQL engine cancels the context used for the query. If the context
+		//    is cancelled before the gRPC stream's Recv() returns EOF, this can result in misleading context cancellation errors being
+		//    logged and included in metrics and traces, when in fact the call succeeded.
+		if err := <-s.errorChan; err != nil {
+			return nil, fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has failed: %w", seriesIndex, err)
+		}
+	}
+
 	return chks.Chunks, nil
+}
+
+func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
+	chks, channelOpen := <-s.seriesChunksChan
+
+	if !channelOpen {
+		// If there's an error, report it.
+		select {
+		case err, haveError := <-s.errorChan:
+			if haveError {
+				if _, ok := err.(validation.LimitError); ok {
+					return err
+				}
+				return errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)
+			}
+		default:
+		}
+
+		return fmt.Errorf("attempted to read series at index %v from store-gateway chunks stream, but the stream has already been exhausted (was expecting %v series)", seriesIndex, s.expectedSeriesCount)
+	}
+
+	s.chunksBatch = chks.Series
+	return nil
 }
 
 // EstimateChunkCount returns an estimate of the number of chunks this stream reader will return.

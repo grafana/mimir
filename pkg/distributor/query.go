@@ -25,6 +25,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -211,7 +212,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		defer func() {
 			if closeStream {
 				if stream != nil {
-					if err := stream.CloseSend(); err != nil {
+					if err := util.CloseAndExhaust[*ingester_client.QueryStreamResponse](stream); err != nil {
 						level.Warn(log).Log("msg", "closing ingester client stream failed", "err", err)
 					}
 				}
