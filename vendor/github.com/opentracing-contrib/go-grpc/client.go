@@ -124,11 +124,15 @@ func OpenTracingStreamClientInterceptor(tracer opentracing.Tracer, optFuncs ...O
 			clientSpan.Finish()
 			return cs, err
 		}
-		return newOpenTracingClientStream(ctx, cs, method, desc, clientSpan, otgrpcOpts), nil
+		return newOpenTracingClientStream(cs, method, desc, clientSpan, otgrpcOpts), nil
 	}
 }
 
-func newOpenTracingClientStream(ctx context.Context, cs grpc.ClientStream, method string, desc *grpc.StreamDesc, clientSpan opentracing.Span, otgrpcOpts *options) grpc.ClientStream {
+func newOpenTracingClientStream(cs grpc.ClientStream, method string, desc *grpc.StreamDesc, clientSpan opentracing.Span, otgrpcOpts *options) grpc.ClientStream {
+	// Grab the client stream context because when the finish function or the goroutine below will be
+	// executed it's not guaranteed cs.Context() will be valid.
+	csCtx := cs.Context()
+
 	finishChan := make(chan struct{})
 
 	isFinished := new(int32)
@@ -148,7 +152,7 @@ func newOpenTracingClientStream(ctx context.Context, cs grpc.ClientStream, metho
 			SetSpanTags(clientSpan, err, true)
 		}
 		if otgrpcOpts.decorator != nil {
-			otgrpcOpts.decorator(ctx, clientSpan, method, nil, nil, err)
+			otgrpcOpts.decorator(csCtx, clientSpan, method, nil, nil, err)
 		}
 	}
 	go func() {
@@ -156,15 +160,8 @@ func newOpenTracingClientStream(ctx context.Context, cs grpc.ClientStream, metho
 		case <-finishChan:
 			// The client span is being finished by another code path; hence, no
 			// action is necessary.
-		case <-ctx.Done():
-			// Why use ctx rather than cs.Context()? Two reasons:
-			// 1. According to its docs, cs.Context() should not be used until after the first Header() or
-			//    RecvMsg() call has returned.
-			// 2. ClientStream implementations cancel their context as soon as an error is received in Header(),
-			//    RecvMsg(), SendMsg() or CloseSend(). This causes a race between the interceptor logging the
-			//    returned error and this method logging the cancelled context.
-			// Using ctx avoids both of these issues.
-			finishFunc(ctx.Err())
+		case <-csCtx.Done():
+			finishFunc(csCtx.Err())
 		}
 	}()
 	otcs := &openTracingClientStream{

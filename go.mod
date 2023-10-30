@@ -273,4 +273,4 @@ replace github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-2023
 replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 
 // Replace opentracing-contrib/go-grpc with a fork until https://github.com/opentracing-contrib/go-grpc/pull/16 is merged.
-replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
+replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20210225150812-73cb765af46e
