@@ -1,6 +1,6 @@
 name: Build and Push mimir-build-image
 
-# configure trigger by the complete of member_pr workflow
+# trigger on completion of member_pr workflow
 on:
   workflow_run:
     workflows: ["Membership check"]
