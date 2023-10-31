@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 
@@ -140,6 +141,7 @@ func handler(
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
+			addHeaders(w, err)
 			http.Error(w, msg, code)
 		}
 	})
@@ -186,4 +188,11 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	}
 
 	return http.StatusInternalServerError
+}
+
+func addHeaders(w http.ResponseWriter, err error) {
+	var doNotLogError middleware.DoNotLogError
+	if errors.As(err, &doNotLogError) {
+		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
+	}
 }

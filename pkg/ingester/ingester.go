@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -814,7 +815,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
 		if err := i.StartPushRequest(); err != nil {
-			return util_log.DoNotLogError{Err: err}
+			return middleware.DoNotLogError{Err: err}
 		}
 		defer i.FinishPushRequest()
 	}

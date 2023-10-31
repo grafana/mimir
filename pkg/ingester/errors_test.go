@@ -22,7 +22,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -256,7 +255,7 @@ func TestErrorWithStatus(t *testing.T) {
 			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()},
 		},
 		"new errorWithStatus backed by a DoNotLog error of ingesterError contains WriteErrorDetails": {
-			originErr:            log.DoNotLogError{Err: ingesterErr},
+			originErr:            middleware.DoNotLogError{Err: ingesterErr},
 			statusCode:           codes.Unimplemented,
 			doNotLog:             true,
 			expectedErrorMessage: errMsg,
@@ -370,7 +369,7 @@ func TestHandlePushErrorWithGRPC(t *testing.T) {
 			expectedDetails: nil,
 		},
 		"a DoNotLog of a generic error gets translated into an Internal gRPC error without details": {
-			err:              log.DoNotLogError{Err: originalErr},
+			err:              middleware.DoNotLogError{Err: originalErr},
 			expectedCode:     codes.Internal,
 			expectedMessage:  originalMsg,
 			expectedDetails:  nil,
@@ -509,7 +508,7 @@ func TestHandlePushErrorWithGRPC(t *testing.T) {
 			require.Equal(t, tc.expectedMessage, stat.Message())
 			checkErrorWithStatusDetails(t, stat.Details(), tc.expectedDetails)
 			if tc.doNotLogExpected {
-				var doNotLogError log.DoNotLogError
+				var doNotLogError middleware.DoNotLogError
 				require.ErrorAs(t, handledErr, &doNotLogError)
 				require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
 			}
@@ -534,8 +533,8 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 			expectedTranslation: originalErr,
 		},
 		"a DoNotLog error of a generic error is not translated": {
-			err:                 log.DoNotLogError{Err: originalErr},
-			expectedTranslation: log.DoNotLogError{Err: originalErr},
+			err:                 middleware.DoNotLogError{Err: originalErr},
+			expectedTranslation: middleware.DoNotLogError{Err: originalErr},
 			doNotLogExpected:    true,
 		},
 		"an unavailableError gets translated into an errorWithStatus Unavailable error": {
@@ -552,7 +551,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 		"an instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error": {
 			err: newInstanceLimitReachedError("instance limit reached"),
 			expectedTranslation: newErrorWithStatus(
-				log.DoNotLogError{Err: newInstanceLimitReachedError("instance limit reached")},
+				middleware.DoNotLogError{Err: newInstanceLimitReachedError("instance limit reached")},
 				codes.Unavailable,
 			),
 			doNotLogExpected: true,
@@ -560,7 +559,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 		"a wrapped instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error": {
 			err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
 			expectedTranslation: newErrorWithStatus(
-				log.DoNotLogError{Err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached"))},
+				middleware.DoNotLogError{Err: fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached"))},
 				codes.Unavailable,
 			),
 			doNotLogExpected: true,
@@ -670,7 +669,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 			handledErr := handlePushErrorWithHTTPGRPC(tc.err)
 			require.Equal(t, tc.expectedTranslation, handledErr)
 			if tc.doNotLogExpected {
-				var doNotLogError log.DoNotLogError
+				var doNotLogError middleware.DoNotLogError
 				require.ErrorAs(t, handledErr, &doNotLogError)
 				require.False(t, doNotLogError.ShouldLog(context.Background(), 0))
 			}
