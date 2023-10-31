@@ -58,7 +58,7 @@ spec:
             secretName: tls-certs
       containers:
         - name: memcached
-          image: memcached:1.6.21-alpine
+          image: memcached:1.6.22-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits:
