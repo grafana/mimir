@@ -2559,8 +2559,10 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-read-header-timeout duration
+    	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration
-    	Read timeout for HTTP server (default 30s)
+    	Read timeout for entire HTTP request, including headers and body. (default 30s)
   -server.http-tls-ca-path string
     	HTTP TLS Client CA path.
   -server.http-tls-cert-path string
