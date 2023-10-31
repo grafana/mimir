@@ -1218,7 +1218,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRulersWithRuleGroups int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCount += len(actualRuleGroups)
 
@@ -1256,7 +1256,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRuleGroupsCountPerRuler []int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
 		}
