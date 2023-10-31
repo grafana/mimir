@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 
-# Configuration.
+# Begin of configuration.
 K8S_CONTEXT=""
 K8S_NAMESPACE=""
 MIMIR_TENANT_ID=""
+# End of configuration.
 
 mkdir -p chunks-dump/
 
