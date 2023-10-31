@@ -52,10 +52,10 @@ func dumpResponse(res QueryStreamResponse) {
 		fmt.Println(series.LabelSet().String())
 
 		for _, chunk := range series.Chunks {
-			fmt.Println(fmt.Sprintf(
-				"- Chunk: %s - %s",
+			fmt.Printf(
+				"- Chunk: %s - %s\n",
 				chunk.StartTime().Format(time.TimeOnly),
-				chunk.EndTime().Format(time.TimeOnly)))
+				chunk.EndTime().Format(time.TimeOnly))
 
 			chunkIterator := chunk.EncodedChunk().NewIterator(nil)
 			for {
