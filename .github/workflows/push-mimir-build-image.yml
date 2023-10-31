@@ -18,8 +18,8 @@ jobs:
       contents: read
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
-      # We want to allow running github actions for all contributors, but don't want all contributors to be able to 
-      # publish new build images just by sending the PR. Hence this change.
+    # We want to allow running github actions for all contributors, but don't want all contributors to be able to 
+    # publish new build images just by sending the PR. Hence this change.
     if: github.event.pull_request.author_association == 'MEMBER' || github.actor == 'renovate[bot]'
     steps:
       - name: Checkout Repository
