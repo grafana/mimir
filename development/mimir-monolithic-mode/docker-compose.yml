@@ -44,7 +44,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.37.2
+    image: grafana/agent:v0.37.3
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
       - ./config:/etc/agent-config
@@ -54,7 +54,7 @@ services:
   grafana-agent-flow:
     profiles:
       - grafana-agent-flow
-    image: grafana/agent:v0.37.2
+    image: grafana/agent:v0.37.3
     environment:
       - AGENT_MODE=flow
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
