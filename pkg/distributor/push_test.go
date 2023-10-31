@@ -19,6 +19,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
@@ -33,7 +34,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -728,47 +728,89 @@ func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
 }
 
 func TestHandler_ErrorTranslation(t *testing.T) {
+	errMsg := "this is an error"
+	parserTestCases := []struct {
+		name                 string
+		err                  error
+		expectedHTTPStatus   int
+		expectedErrorMessage string
+	}{
+		{
+			name:                 "a generic error during request parsing gets an HTTP 400",
+			err:                  fmt.Errorf(errMsg),
+			expectedHTTPStatus:   http.StatusBadRequest,
+			expectedErrorMessage: errMsg,
+		},
+		{
+			name:                 "a gRPC error with a status during request parsing gets translated into HTTP error without DoNotLogError header",
+			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
+			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
+			expectedErrorMessage: errMsg,
+		},
+	}
+	for _, tc := range parserTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
+				return nil, tc.err
+			}
+			pushFunc := func(ctx context.Context, req *Request) error {
+				_, err := req.WriteRequest() // just read the body so we can trigger the parser
+				return err
+			}
+
+			h := handler(10, nil, false, nil, pushFunc, parserFunc)
+
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+
+			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
+			assert.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
+		})
+	}
+
 	testCases := []struct {
-		name               string
-		parserError        bool
-		err                error
-		expectedHTTPStatus int
+		name                        string
+		err                         error
+		expectedHTTPStatus          int
+		expectedErrorMessage        string
+		expectedDoNotLogErrorHeader bool
 	}{
 		{
 			name:               "no error during push gets translated into a HTTP 200",
-			parserError:        false,
 			err:                nil,
 			expectedHTTPStatus: http.StatusOK,
 		},
 		{
-			name:               "a generic error during request parsing gets an HTTP 400",
-			parserError:        true,
-			err:                fmt.Errorf("something went wrong during the request parsing"),
-			expectedHTTPStatus: http.StatusBadRequest,
+			name:                 "a generic error during push gets a HTTP 500 without DoNotLogError header",
+			err:                  fmt.Errorf(errMsg),
+			expectedHTTPStatus:   http.StatusInternalServerError,
+			expectedErrorMessage: errMsg,
 		},
 		{
-			name:               "a gRPC error with a status during request parsing gets translated into HTTP error",
-			parserError:        true,
-			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
-			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
+			name:                        "a DoNotLogError of a generic error during push gets a HTTP 500 with DoNotLogError header",
+			err:                         middleware.DoNotLogError{Err: fmt.Errorf(errMsg)},
+			expectedHTTPStatus:          http.StatusInternalServerError,
+			expectedErrorMessage:        errMsg,
+			expectedDoNotLogErrorHeader: true,
 		},
 		{
-			name:               "a generic error during push gets a HTTP 500",
-			parserError:        false,
-			err:                fmt.Errorf("something went wrong during the push"),
-			expectedHTTPStatus: http.StatusInternalServerError,
+			name:                 "a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
+			err:                  httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg),
+			expectedHTTPStatus:   http.StatusRequestEntityTooLarge,
+			expectedErrorMessage: errMsg,
 		},
 		{
-			name:               "a gRPC error with a status during push gets translated into HTTP error",
-			parserError:        false,
-			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
-			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
+			name:                        "a DoNotLogError of a gRPC error with a status during push gets translated into HTTP error without DoNotLogError header",
+			err:                         middleware.DoNotLogError{Err: httpgrpc.Errorf(http.StatusRequestEntityTooLarge, errMsg)},
+			expectedHTTPStatus:          http.StatusRequestEntityTooLarge,
+			expectedErrorMessage:        errMsg,
+			expectedDoNotLogErrorHeader: true,
 		},
 		{
-			name:               "a context.Canceled error during push gets translated into a HTTP 499",
-			parserError:        false,
-			err:                context.Canceled,
-			expectedHTTPStatus: statusClientClosedRequest,
+			name:                 "a context.Canceled error during push gets translated into a HTTP 499",
+			err:                  context.Canceled,
+			expectedHTTPStatus:   statusClientClosedRequest,
+			expectedErrorMessage: context.Canceled.Error(),
 		},
 	}
 
@@ -776,9 +818,6 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
-				if tc.parserError {
-					return nil, tc.err
-				}
 				return nil, nil
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
@@ -795,6 +834,15 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
+			if tc.err != nil {
+				assert.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
+			}
+			header := recorder.Header().Get(server.DoNotLogErrorHeaderKey)
+			if tc.expectedDoNotLogErrorHeader {
+				require.Equal(t, "true", header)
+			} else {
+				require.Equal(t, "", header)
+			}
 		})
 	}
 }
@@ -821,7 +869,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLog of a generic error gets translated into a HTTP 500": {
-			err:                log.DoNotLogError{Err: originalErr},
+			err:                middleware.DoNotLogError{Err: originalErr},
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   originalMsg,
 		},
@@ -836,7 +884,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
 		"a DoNotLogError of a replicasDidNotMatchError gets translated into an HTTP 202": {
-			err:                log.DoNotLogError{Err: replicasNotMatchErr},
+			err:                middleware.DoNotLogError{Err: replicasNotMatchErr},
 			expectedHTTPStatus: http.StatusAccepted,
 			expectedErrorMsg:   replicasNotMatchErr.Error(),
 		},
@@ -846,7 +894,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
 		"a DoNotLogError of a tooManyClustersError gets translated into an HTTP 400": {
-			err:                log.DoNotLogError{Err: tooManyClustersErr},
+			err:                middleware.DoNotLogError{Err: tooManyClustersErr},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   tooManyClustersErr.Error(),
 		},
@@ -856,7 +904,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   originalMsg,
 		},
 		"a DoNotLogError of a validationError gets translated into an HTTP 400": {
-			err:                log.DoNotLogError{Err: newValidationError(originalErr)},
+			err:                middleware.DoNotLogError{Err: newValidationError(originalErr)},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   originalMsg,
 		},
@@ -866,7 +914,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
-			err:                log.DoNotLogError{Err: ingestionRateLimitedErr},
+			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
@@ -877,7 +925,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of a requestRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
-			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
+			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: true,
 			expectedHTTPStatus:          StatusServiceOverloaded,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
@@ -889,7 +937,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
 		},
 		"a DoNotLogError of a requestRateLimitedError without serviceOverloadErrorEnabled gets translated into an HTTP 429": {
-			err:                         log.DoNotLogError{Err: requestRateLimitedErr},
+			err:                         middleware.DoNotLogError{Err: requestRateLimitedErr},
 			serviceOverloadErrorEnabled: false,
 			expectedHTTPStatus:          http.StatusTooManyRequests,
 			expectedErrorMsg:            requestRateLimitedErr.Error(),
@@ -900,7 +948,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA))},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA))},
 			expectedHTTPStatus: http.StatusBadRequest,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
@@ -910,7 +958,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE))},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE))},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
@@ -920,7 +968,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE))},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE))},
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
@@ -930,7 +978,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT))},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT))},
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
@@ -940,7 +988,7 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
-			err:                log.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE))},
+			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE))},
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
 		},
