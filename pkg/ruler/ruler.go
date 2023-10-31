@@ -1021,6 +1021,7 @@ func (fs StringFilterSet) IsFiltered(val string) bool {
 }
 
 func (r *Ruler) getLocalRules(ctx context.Context, userID string, req RulesRequest) ([]*GroupStateDesc, error) {
+	//nolint:ineffassign Update ctx even if not strictly required, so that we don't forget to do it in the future(if we'll use it in this function).
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, r.logger, "Ruler.getLocalRules")
 	defer spanLog.Finish()
 
