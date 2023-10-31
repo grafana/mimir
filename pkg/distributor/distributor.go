@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/limiter"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -46,7 +47,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -1151,7 +1151,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		// We don't know request size yet, will check it later.
 		ctx, rs, err := d.startPushRequest(ctx, -1)
 		if err != nil {
-			return util_log.DoNotLogError{Err: err}
+			return middleware.DoNotLogError{Err: err}
 		}
 
 		rs.pushHandlerPerformsCleanup = true
