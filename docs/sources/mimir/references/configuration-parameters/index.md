@@ -590,9 +590,14 @@ grpc_tls_config:
 # CLI flag: -server.graceful-shutdown-timeout
 [graceful_shutdown_timeout: <duration> | default = 30s]
 
-# (advanced) Read timeout for HTTP server
+# (advanced) Read timeout for entire HTTP request, including headers and body.
 # CLI flag: -server.http-read-timeout
 [http_server_read_timeout: <duration> | default = 30s]
+
+# Read timeout for HTTP request headers. If set to 0, value of
+# -server.http-read-timeout is used.
+# CLI flag: -server.http-read-header-timeout
+[http_server_read_header_timeout: <duration> | default = 0s]
 
 # (advanced) Write timeout for HTTP server
 # CLI flag: -server.http-write-timeout
