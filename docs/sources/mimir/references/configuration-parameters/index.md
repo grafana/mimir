@@ -4612,6 +4612,12 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.account-key
 [account_key: <string> | default = ""]
 
+# If `connection-string` is set, the value of `endpoint-suffix` will not be
+# used. Use this method over `account-key` if you need to authenticate via a SAS
+# token. Or if you use the Azurite emulator.
+# CLI flag: -<prefix>.azure.connection-string
+[connection_string: <string> | default = ""]
+
 # Azure storage container name
 # CLI flag: -<prefix>.azure.container-name
 [container_name: <string> | default = ""]

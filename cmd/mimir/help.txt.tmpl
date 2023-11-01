@@ -5,6 +5,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
+  -alertmanager-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -alertmanager-storage.azure.container-name string
     	Azure storage container name
   -alertmanager-storage.azure.endpoint-suffix string
@@ -111,6 +113,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
+  -blocks-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -blocks-storage.azure.container-name string
     	Azure storage container name
   -blocks-storage.azure.endpoint-suffix string
@@ -231,6 +235,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
+  -common.storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -common.storage.azure.container-name string
     	Azure storage container name
   -common.storage.azure.endpoint-suffix string
@@ -531,6 +537,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
+  -ruler-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -ruler-storage.azure.container-name string
     	Azure storage container name
   -ruler-storage.azure.endpoint-suffix string

@@ -55,6 +55,7 @@
 * [ENHANCEMENT] Ingester, Distributor: added experimental support for rejecting push requests received via gRPC before reading them into memory, if ingester or distributor is unable to accept the request. This is activated by using `-ingester.limit-inflight-requests-using-grpc-method-limiter` for ingester, and `-distributor.limit-inflight-requests-using-grpc-method-limiter` for distributor. #5976 #6300
 * [ENHANCEMENT] Query-frontend: return warnings generated during query evaluation. #6391
 * [ENHANCEMENT] Server: Add the option `-server.http-read-header-timeout` to enable specifying a timeout for reading HTTP request headers. It defaults to 0, in which case reading of headers can take up to `-server.http-read-timeout`, leaving no time for reading body, if there's any. #6517
+* [ENHANCEMENT] Add connection-string option, `-<prefix>.azure.connection-string`, for Azure Blob Storage. #6487
 * [ENHANCEMENT] Ingester: Add `-ingester.instance-limits.max-inflight-push-requests-bytes`. This limit protects the ingester against requests that together may cause an OOM. #6492
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
