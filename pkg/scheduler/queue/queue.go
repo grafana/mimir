@@ -241,7 +241,6 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 		}
 		return err
 	}
-
 	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
 
 	// Call the successFn here to ensure we call it before sending this request to a waiting querier.

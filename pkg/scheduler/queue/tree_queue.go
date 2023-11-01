@@ -9,15 +9,9 @@ import (
 )
 
 type QueuePath []string //nolint:revive
-type QueueIndex int
+type QueueIndex int     //nolint:revive
 
 const localQueueIndex = -1
-
-var removedQueueName = string([]byte{byte(0)})
-
-func isValidQueueName(name string) bool {
-	return !(name == removedQueueName)
-}
 
 // TreeQueue is a hierarchical queue implementation with an arbitrary amount of child queues.
 //
@@ -156,8 +150,8 @@ func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
 	}
 
 	dequeuedPathFromChild, v := childQueue.Dequeue()
-	// perform cleanup if child node is empty after dequeuing recursively
 
+	// perform cleanup if child node is empty after dequeuing recursively
 	if childQueue.isEmpty() {
 		delete(q.childQueueMap, childQueue.name)
 		directChildQueueName := dequeuedPathFromChild[0]
@@ -183,7 +177,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	initialLen := len(q.childQueueOrder)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
-		increment := true
+		//increment := true
 
 		if q.index == localQueueIndex {
 			// dequeuing from local queue; either we have:
@@ -193,6 +187,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 				q.localQueue.Remove(elem)
 				v = elem.Value
 			}
+			q.wrapIndex(true)
 		} else {
 			// dequeuing from child queue node;
 			// pick the child node whose turn it is and recur
@@ -205,16 +200,43 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 				delete(q.childQueueMap, childQueueName)
 				q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
 				// no need to increment; remainder of the slice has moved left to be under q.index
-				increment = false
+				//increment = false
+				q.wrapIndex(false)
+			} else {
+				q.wrapIndex(true)
 			}
 		}
-		q.wrapIndex(increment)
+		//q.wrapIndex(increment)
 	}
 	if v == nil {
 		// don't report path when nothing was dequeued
 		return nil, nil
 	}
 	return append(QueuePath{q.name}, dequeuedPath...), v
+}
+
+func (q *TreeQueue) deleteNode(path QueuePath) bool {
+	if len(path) <= 1 {
+		// node cannot delete itself
+		return false
+	}
+
+	parentPath, childQueueName := path[:len(path)-1], path[len(path)-1]
+
+	parentNode := q.getNode(parentPath)
+	if parentNode == nil {
+		// not found
+		return false
+	}
+
+	delete(parentNode.childQueueMap, childQueueName)
+	for i, name := range parentNode.childQueueOrder {
+		if name == childQueueName {
+			parentNode.childQueueOrder = append(q.childQueueOrder[:i], q.childQueueOrder[i+1:]...)
+			parentNode.wrapIndex(false)
+		}
+	}
+	return true
 }
 
 func (q *TreeQueue) wrapIndex(increment bool) {
