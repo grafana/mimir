@@ -6282,7 +6282,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	g.Go(func() error {
 		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
-		// Update instance limits
+		// Update instance limits. Set limit to EXACTLY the request size.
 		limitsMx.Lock()
 		limits.MaxInflightPushRequestsBytes = int64(req.Size())
 		limitsMx.Unlock()
@@ -6295,7 +6295,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	})
 
 	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
 
 		select {
 		case <-ctx.Done():
@@ -6308,6 +6308,15 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 			return i.inflightPushRequests.Load()
 		})
 
+		// Starting push request fails
+		err = i.StartPushRequest(100)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+		// Starting push request with unknown size fails
+		err = i.StartPushRequest(0)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+		// Sending push request fails
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
@@ -6329,7 +6338,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 1
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 3
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0

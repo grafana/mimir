@@ -779,8 +779,12 @@ func (i *Ingester) StartPushRequest(requestSize int64) error {
 
 	inflight := i.inflightPushRequests.Inc()
 	inflightBytes := int64(0)
+	rejectEqualInflightBytes := false
 	if requestSize > 0 {
 		inflightBytes = i.inflightPushRequestsBytes.Add(requestSize)
+	} else {
+		inflightBytes = i.inflightPushRequestsBytes.Load()
+		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
 	}
 
 	finishRequestInDefer := true
@@ -797,9 +801,11 @@ func (i *Ingester) StartPushRequest(requestSize int64) error {
 			return errMaxInflightRequestsReached
 		}
 
-		if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > il.MaxInflightPushRequestsBytes {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
-			return errMaxInflightRequestsBytesReached
+		if il.MaxInflightPushRequestsBytes > 0 {
+			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+				return errMaxInflightRequestsBytesReached
+			}
 		}
 
 		if il.MaxIngestionRate > 0 {
