@@ -44,6 +44,9 @@ type ingesterMetrics struct {
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
+	// Owned series
+	ownedSeriesPerUser *prometheus.GaugeVec
+
 	// Global limit metrics
 	maxUsersGauge                prometheus.GaugeFunc
 	maxSeriesGauge               prometheus.GaugeFunc
@@ -185,6 +188,11 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
 		}, []string{"reason"}),
+
+		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_series",
+			Help: "Number of currently owned series per user.",
+		}, []string{"user"}),
 
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
@@ -392,6 +400,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {

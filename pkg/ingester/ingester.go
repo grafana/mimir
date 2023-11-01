@@ -567,6 +567,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	localLimitMetricUpdateTicker := time.NewTicker(time.Second * 15)
 	defer localLimitMetricUpdateTicker.Stop()
 
+	ownedSeriesUpdateTicker := time.NewTicker(time.Second * 15)
+	defer ownedSeriesUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -588,6 +591,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.updateUsageStats()
 		case <-localLimitMetricUpdateTicker.C:
 			i.updateLocalLimitMetrics()
+		case <-ownedSeriesUpdateTicker.C:
+			i.updateOwnedSeriesMetrics()
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():
@@ -751,6 +756,19 @@ func (i *Ingester) updateLocalLimitMetrics() {
 
 		// update metrics
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
+	}
+}
+
+func (i *Ingester) updateOwnedSeriesMetrics() {
+	for _, userID := range i.getTSDBUsers() {
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+		count := db.Head().CountSecondaryHashesInRanges([]uint32{0, math.MaxUint32})
+
+		// update metrics
+		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(count))
 	}
 }
 
