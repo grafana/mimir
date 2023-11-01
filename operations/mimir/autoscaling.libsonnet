@@ -344,54 +344,15 @@
   // Ruler-queriers
   //
 
-  // newRulerQuerierScaledObject will create a scaled object for the ruler-querier component with the given name.
-  // `weight` param works in the same way as in `newQuerierScaledObject`, see docs there.
-  newRulerQuerierScaledObject(
-    name,
-    querier_cpu_requests,
-    memory_requests,
-    min_replicas,
-    max_replicas,
-    cpu_target_utilization,
-    memory_target_utilization,
-    weight=1,
-  ):: self.newScaledObject(name, $._config.namespace, {
-    min_replica_count: replicasWithWeight(min_replicas, weight),
-    max_replica_count: replicasWithWeight(max_replicas, weight),
-
-    triggers: [
-      {
-        metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
-        query: metricWithWeight(cpuHPAQuery % { container: name, namespace: $._config.namespace }, weight),
-
-        // threshold is expected to be a string.
-        threshold: std.toString(std.floor(cpuToMilliCPUInt(querier_cpu_requests) * cpu_target_utilization)),
-      },
-      {
-        metric_name: '%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
-
-        query: memoryHPAQuery % {
-          container: name,
-          namespace: $._config.namespace,
-        },
-
-        // Threshold is expected to be a string
-        threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
-      },
-    ],
-  }),
-
   ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
-    $.newRulerQuerierScaledObject(
+    $.newResourceScaledObject(
       name='ruler-querier',
-      querier_cpu_requests=$.ruler_querier_container.resources.requests.cpu,
+      cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
       min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
-      memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
+      memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
     ),
 
   ruler_querier_deployment: overrideSuperIfExists(
