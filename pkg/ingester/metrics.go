@@ -55,6 +55,9 @@ type ingesterMetrics struct {
 	inflightRequestsBytes        prometheus.GaugeFunc
 	inflightRequestsSummary      prometheus.Summary
 
+	// Local limit metrics
+	maxLocalSeriesPerUser *prometheus.GaugeVec
+
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
 	compactionsFailed      prometheus.Counter
@@ -276,6 +279,12 @@ func newIngesterMetrics(
 			AgeBuckets: 6,
 		}),
 
+		maxLocalSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_local_limits",
+			Help:        "Local per-user limits used by this ingester.",
+			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
+		}, []string{"user"}),
+
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_loading",
@@ -381,6 +390,8 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+
+	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
