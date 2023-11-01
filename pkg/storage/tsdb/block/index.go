@@ -325,6 +325,16 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 
 			// Chunk vs the block ranges.
 			if c.MinTime < minTime || c.MaxTime > maxTime {
+				level.Info(logger).Log("msg", "suspect chunk", "i", i, "c.MinTime", c.MinTime, "c.MaxTime", c.MaxTime, "minTime", minTime, "maxTime", maxTime)
+
+				if c.MinTime < minTime {
+					level.Info(logger).Log("msg", "chunk starts before block min time")
+				}
+
+				if c.MaxTime > maxTime {
+					level.Info(logger).Log("msg", "chunk ends after block max time")
+				}
+
 				stats.OutsideChunks++
 				if c.MinTime > maxTime || c.MaxTime < minTime {
 					stats.CompleteOutsideChunks++
