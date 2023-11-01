@@ -242,6 +242,14 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 		return err
 	}
 
+	err = broker.enqueueRequestBackNew(r)
+	if err != nil {
+		if errors.Is(err, ErrTooManyRequests) {
+			q.discardedRequests.WithLabelValues(string(r.tenantID)).Inc()
+		}
+		return err
+	}
+
 	q.queueLength.WithLabelValues(string(r.tenantID)).Inc()
 
 	// Call the successFn here to ensure we call it before sending this request to a waiting querier.
@@ -255,13 +263,34 @@ func (q *RequestQueue) enqueueRequestToBroker(broker *queueBroker, r requestToEn
 // tryDispatchRequestToQuerier finds and forwards a request to a waiting GetNextRequestForQuerier call, if a suitable request is available.
 // Returns true if call should be removed from the list of waiting calls (eg. because a request has been forwarded to it), false otherwise.
 func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *nextRequestForQuerierCall) bool {
+	level.Info(q.log).Log("HELLO")
+	fmt.Println("HELLO PRINTLN")
 	req, tenantID, idx, err := broker.dequeueRequestForQuerier(call.lastUserIndex.last, call.querierID)
+	fmt.Printf("after dequeueRequestForQuerier, received req: %v, tenantID: %s, tenant index: %d, err: %s\n", req, tenantID, idx, err)
 	if err != nil {
 		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
 		call.sendError(err)
 		// ...and remove the waiting GetNextRequestForQuerier call from our list.
 		return true
 	}
+
+	req, tenantID, idx, err = broker.dequeueRequestForQuerierNew(call.lastUserIndex.last, call.querierID)
+	fmt.Printf("after dequeueRequestForQuerierNew, received req: %v, tenantID: %s, tenant index: %d, err: %s\n", req, tenantID, idx, err)
+	if err != nil {
+		// If this querier has told us it's shutting down, terminate GetNextRequestForQuerier with an error now...
+		call.sendError(err)
+		// ...and remove the waiting GetNextRequestForQuerier call from our list.
+		return true
+	}
+
+	//tenantID, _, err = broker.tenantQuerierAssignmentsNew.getNextTenantIDForQuerier(call.lastUserIndex.last, call.querierID)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//path := QueuePath{broker.tenantQueuesTree.name, string(tenantID)}
+	//fmt.Println(path)
+	//childQueue := broker.tenantQueuesTree.getNode(path)
+	//fmt.Println(childQueue)
 
 	call.lastUserIndex.last = idx
 	if req == nil {
@@ -281,6 +310,13 @@ func (q *RequestQueue) tryDispatchRequestToQuerier(broker *queueBroker, call *ne
 	} else {
 		// should never error; any item previously in the queue already passed validation
 		err := broker.enqueueRequestFront(req)
+		if err != nil {
+			level.Error(q.log).Log(
+				"msg", "failed to re-enqueue query request after dequeue",
+				"err", err, "tenant", tenantID, "querier", call.querierID,
+			)
+		}
+		err = broker.enqueueRequestFrontNew(req)
 		if err != nil {
 			level.Error(q.log).Log(
 				"msg", "failed to re-enqueue query request after dequeue",
