@@ -1299,6 +1299,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
+  -ingester.instance-limits.max-inflight-push-requests-bytes int
+    	The sum of the request sizes in bytes of inflight push requests that this ingester can handle. This limit is per-ingester, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -ingester.instance-limits.max-series int
