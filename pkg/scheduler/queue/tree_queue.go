@@ -135,10 +135,10 @@ func (q *TreeQueue) getNode(path QueuePath) *TreeQueue {
 
 	if childQueue, ok := q.childQueueMap[childPath[0]]; ok {
 		return childQueue.getNode(childPath)
-	} else {
-		// no child node matches next path segment
-		return nil
 	}
+
+	// no child node matches next path segment
+	return nil
 }
 
 func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
