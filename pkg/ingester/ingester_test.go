@@ -6274,7 +6274,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	startCh := make(chan struct{})
+	startCh := make(chan int)
 
 	const targetRequestDuration = time.Second
 
@@ -6288,6 +6288,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		limitsMx.Unlock()
 
 		// Signal that we're going to do the real push now.
+		startCh <- req.Size()
 		close(startCh)
 
 		_, err := i.Push(ctx, req)
@@ -6297,16 +6298,23 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	g.Go(func() error {
 		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
 
+		var requestSize int
 		select {
 		case <-ctx.Done():
 		// failed to setup
-		case <-startCh:
+		case requestSize = <-startCh:
 			// we can start the test.
 		}
 
 		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
 			return i.inflightPushRequests.Load()
 		})
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
+			# TYPE cortex_ingester_inflight_push_requests_bytes gauge
+			cortex_ingester_inflight_push_requests_bytes %d
+		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
 
 		// Starting push request fails
 		err = i.StartPushRequest(100)
