@@ -1077,8 +1077,8 @@ How to **investigate**:
   kubectl --namespace default get pod --selector='name=prometheus'
   ```
 
-For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
-When `keda_metrics_adapter_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
+For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_scaler_metrics_value` is 0.
+When `keda_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
 
 ### MimirAutoscalerKedaFailing
 
