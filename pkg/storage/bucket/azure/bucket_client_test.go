@@ -37,6 +37,20 @@ func TestNewBucketClient(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
 	})
+
+	t.Run("endpoint using connection string", func(t *testing.T) {
+		cfg := Config{
+			StorageAccountName:      "test",
+			StorageAccountKey:       flagext.SecretWithValue("test"),
+			StorageConnectionString: flagext.SecretWithValue("test-connection-string"),
+			ContainerName:           "test",
+			MaxRetries:              3,
+			Endpoint:                "test-endpoint",
+		}
+		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
+		require.NoError(t, err)
+		require.NotNil(t, bkt)
+	})
 }
 
 // fakeFactory is a test utility to act as an azure.Bucket factory, but in reality verify the input config.
@@ -44,6 +58,7 @@ func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string
 	expCfg := azure.DefaultConfig
 	expCfg.StorageAccountName = cfg.StorageAccountName
 	expCfg.StorageAccountKey = cfg.StorageAccountKey.String()
+	expCfg.StorageConnectionString = cfg.StorageConnectionString.String()
 	expCfg.ContainerName = cfg.ContainerName
 	expCfg.MaxRetries = cfg.MaxRetries
 	expCfg.UserAssignedID = cfg.UserAssignedID
