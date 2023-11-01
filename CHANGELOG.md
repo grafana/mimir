@@ -59,7 +59,8 @@
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
 * [BUGFIX] Querier: fix issue where `-querier.max-fetched-series-per-query` is not applied to `/series` endpoint if the series are loaded from ingesters. #7055
-* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic and corrupt ingested data #7176
+* [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic and corrupt ingested data. #7176
+* [BUGFIX] Distributor: reject push messages received via httpgrpc if size of the message is unknown, and distributor is already at the limit. #6534
 
 ### Mixin
 
