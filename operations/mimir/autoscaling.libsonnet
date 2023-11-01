@@ -112,12 +112,15 @@
 
       triggers: [
         {
+          name: trigger.metric_name,
           type: 'prometheus',
           metadata: {
             serverAddress: $._config.autoscaling_prometheus_url,
             query: trigger.query,
 
             // The metric name uniquely identifies a metric in the KEDA metrics server.
+            // This is deprecatd in KEDA 2.10, and is instead set to a default based on the trigger type (e.g. `s0-prometheus`).
+            // Instead we use the metric_name as the name for the trigger (above). This appears as the `scaler` label on `keda_scaler_metrics_value`.
             metricName: trigger.metric_name,
 
             // The threshold value is set to the HPA's targetAverageValue. The number of desired replicas is computed
