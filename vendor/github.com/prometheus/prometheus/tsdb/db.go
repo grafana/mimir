@@ -236,6 +236,9 @@ type Options struct {
 	// BlockPostingsForMatchersCacheForce forces the usage of postings for matchers cache for all calls on compacted blocks
 	// regardless of the `concurrent` param.
 	BlockPostingsForMatchersCacheForce bool
+
+	// TODO(pprus)
+	SecondaryHashFunction func(labels.Labels) uint32
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -922,6 +925,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.PostingsForMatchersCacheMaxItems = opts.HeadPostingsForMatchersCacheMaxItems
 	headOpts.PostingsForMatchersCacheMaxBytes = opts.HeadPostingsForMatchersCacheMaxBytes
 	headOpts.PostingsForMatchersCacheForce = opts.HeadPostingsForMatchersCacheForce
+	headOpts.SecondaryHashFunction = opts.SecondaryHashFunction
 	if opts.WALReplayConcurrency > 0 {
 		headOpts.WALReplayConcurrency = opts.WALReplayConcurrency
 	}

@@ -28,6 +28,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -139,6 +140,9 @@ type Head struct {
 	writeNotified wlog.WriteNotified
 
 	memTruncationInProcess atomic.Bool
+
+	// TODO(pprus)
+	secondaryHashFunc func(labels.Labels) uint32
 }
 
 type ExemplarStorage interface {
@@ -189,6 +193,9 @@ type HeadOptions struct {
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+
+	// TODO(pprus)
+	SecondaryHashFunction func(labels.Labels) uint32
 }
 
 const (
@@ -268,6 +275,14 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 		opts.MaxExemplars.Store(0)
 	}
 
+	// TODO(pprus): set this in DefaultHeadOptions() instead?
+	shf := opts.SecondaryHashFunction
+	if shf == nil {
+		shf = func(labels.Labels) uint32 {
+			return 0
+		}
+	}
+
 	h := &Head{
 		wal:    wal,
 		wbl:    wbl,
@@ -278,10 +293,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *Hea
 				return &memChunk{}
 			},
 		},
-		stats: stats,
-		reg:   r,
-
-		pfmc: NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
+		stats:             stats,
+		reg:               r,
+		secondaryHashFunc: shf,
+		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1661,7 +1676,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, labels.StableHash(lset), h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1987,6 +2002,9 @@ type memSeries struct {
 	// Series labels hash to use for sharding purposes.
 	shardHash uint64
 
+	// TODO(pprus)
+	secondaryHash uint32
+
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
 	//
@@ -2040,13 +2058,14 @@ type memSeriesOOOFields struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0].
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64, secondaryHash uint32, chunkEndTimeVariance float64, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:                 lset,
 		ref:                  id,
 		nextAt:               math.MinInt64,
 		chunkEndTimeVariance: chunkEndTimeVariance,
 		shardHash:            shardHash,
+		secondaryHash:        secondaryHash,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)
@@ -2257,4 +2276,49 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+func (h *Head) CountSecondaryHashesInRanges(ranges []uint32) int {
+	count := 0
+
+	for i := 0; i < h.series.size; i++ {
+		h.series.locks[i].RLock()
+		for _, all := range h.series.hashes[i] {
+			for _, s := range all {
+				s.RLock()
+				if hashInRanges(s.secondaryHash, ranges) {
+					count++
+				}
+				s.RUnlock()
+			}
+		}
+		h.series.locks[i].RUnlock()
+	}
+
+	return count
+}
+
+func hashInRanges(hash uint32, ranges []uint32) bool {
+	switch {
+	case len(ranges) == 0:
+		return false
+	case hash < ranges[0]:
+		// hash comes before the first range
+		return false
+	case hash > ranges[len(ranges)-1]:
+		// hash comes after the last range
+		return false
+	}
+
+	index, found := slices.BinarySearch(ranges, hash)
+	switch {
+	case found:
+		// ranges are closed
+		return true
+	case index%2 == 1:
+		// hash would be inserted after the start of a range (even index)
+		return true
+	default:
+		return false
+	}
 }
