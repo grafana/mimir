@@ -1860,4 +1860,5 @@ spec:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="mimir-backend",namespace="default",quantile="0.75"}[5m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "6"
+    name: cortex_mimir_read_hpa_default
     type: prometheus
