@@ -593,35 +593,37 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
+    autoscaling_hpa_prefix: 'keda-hpa-',
+
     autoscaling: {
       query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'query-frontend',
       },
       ruler_query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-query-frontend',
       },
       querier: {
         enabled: false,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
-        hpa_name: 'keda-hpa-querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'querier',
       },
       ruler_querier: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
       distributor: {
         enabled: false,
-        hpa_name: 'keda-hpa-distributor',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
       },
       ruler: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler',
       },
       gateway: {
         enabled: false,
-        hpa_name: 'keda-hpa-cortex-gw.*',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
     },
 

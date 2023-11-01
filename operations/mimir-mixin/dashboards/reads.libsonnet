@@ -323,15 +323,15 @@ local filename = 'mimir-reads.json';
           [
             |||
               sum by (scaledObject) (
-                keda_metrics_adapter_scaler_metrics_value
+                keda_scaler_metrics_value{%s=~"$cluster", exported_namespace=~"$namespace"}
                 /
-                on(metric) group_left
-                label_replace(
+                on(scaledObject, metric) group_left
+                label_replace(label_replace(
                     kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
                     "metric", "$1", "metric_name", "(.+)"
-                )
+                ), "scaledObject", "$1", "horizontalpodautoscaler", "%s(.*)")
               )
-            ||| % [$.namespaceMatcher(), $._config.autoscaling.querier.hpa_name],
+            ||| % [$._config.per_cluster_label, $.namespaceMatcher(), $._config.autoscaling.querier.hpa_name, $._config.autoscaling_hpa_prefix],
           ], [
             '{{ scaledObject }}',
           ]
@@ -349,8 +349,8 @@ local filename = 'mimir-reads.json';
         local title = 'Autoscaler failures rate';
         $.panel(title) +
         $.queryPanel(
-          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.querier.hpa_name),
-          '{{metric}} failures'
+          $.filterKedaScalerErrorsByHPA($._config.autoscaling.querier.hpa_name),
+          '{{scaler}} failures'
         ) +
         $.panelDescription(
           title,
