@@ -5485,11 +5485,30 @@ func TestStartFinishRequest(t *testing.T) {
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
-		"too many inflight bytes requests, external": {
+		"too many inflight bytes requests, external check, unknown httpgrpc size, under bytes limit": {
 			externalCheck:                  true,
+			httpgrpcRequestSize:            0,
 			inflightRequestsBeforePush:     1,
-			inflightRequestsSizeBeforePush: 2 * inflightBytesLimit,
-			expectedStartError:             nil, // httpgrpc request size is not set when calling StartPushRequest, so it's not checked.
+			inflightRequestsSizeBeforePush: inflightBytesLimit - 1,
+			expectedStartError:             nil,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"too many inflight bytes requests, external check, unknown httpgrpc size, at bytes limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            0,
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: inflightBytesLimit,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
+			expectedPushError:              errMaxInflightRequestsBytesReached,
+		},
+
+		"too many inflight bytes requests, external check, unknown httpgrpc size, over bytes limit": {
+			externalCheck:                  true,
+			httpgrpcRequestSize:            0,
+			inflightRequestsBeforePush:     1,
+			inflightRequestsSizeBeforePush: inflightBytesLimit + 1,
+			expectedStartError:             errMaxInflightRequestsBytesReached,
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
