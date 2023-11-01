@@ -9,7 +9,6 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -300,8 +299,7 @@ func runLimiterMaxFunctionTest(
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			registry := prometheus.NewRegistry()
-			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled, NewLimiterMetrics(registry))
+			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
 			actual := runMaxFn(limiter)
 			assert.Equal(t, testData.expectedValue, actual)
 		})
@@ -354,8 +352,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			registry := prometheus.NewRegistry()
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, NewLimiterMetrics(registry))
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.IsWithinMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -408,8 +405,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			registry := prometheus.NewRegistry()
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, NewLimiterMetrics(registry))
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.IsWithinMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -463,8 +459,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			registry := prometheus.NewRegistry()
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, NewLimiterMetrics(registry))
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -518,8 +513,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			registry := prometheus.NewRegistry()
-			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false, NewLimiterMetrics(registry))
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.IsWithinMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)

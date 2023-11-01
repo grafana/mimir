@@ -383,7 +383,6 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		i.lifecycler,
 		cfg.IngesterRing.ReplicationFactor,
 		cfg.IngesterRing.ZoneAwarenessEnabled,
-		NewLimiterMetrics(registerer),
 	)
 
 	if cfg.ReadPathCPUUtilizationLimit > 0 || cfg.ReadPathMemoryUtilizationLimit > 0 {
@@ -565,6 +564,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
+	localLimitMetricUpdateTicker := time.NewTicker(time.Second * 15)
+	defer localLimitMetricUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -578,16 +580,14 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 				db.ingestedRuleSamples.Tick()
 			}
 			i.tsdbsMtx.RUnlock()
-
 		case <-tsdbUpdateTicker.C:
 			i.applyTSDBSettings()
-
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
-
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
-
+		case <-localLimitMetricUpdateTicker.C:
+			i.updateLocalLimitMetrics()
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():
@@ -742,6 +742,15 @@ func (i *Ingester) applyTSDBSettings() {
 		} else {
 			db.db.DisableNativeHistograms()
 		}
+	}
+}
+
+func (i *Ingester) updateLocalLimitMetrics() {
+	for _, userID := range i.getTSDBUsers() {
+		localValue := i.limiter.maxSeriesPerUser(userID)
+
+		// update metrics
+		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
 	}
 }
 
@@ -2949,7 +2958,6 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
-	i.limiter.deletePerUserMetrics(userID)
 
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {

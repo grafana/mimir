@@ -8,9 +8,6 @@ package ingester
 import (
 	"math"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -24,22 +21,6 @@ type RingCount interface {
 	ZonesCount() int
 }
 
-// LimiterMetrics defines the metrics exposed by the limiter
-type LimiterMetrics struct {
-	// Local limit metrics
-	maxLocalSeriesPerUser *prometheus.GaugeVec
-}
-
-func NewLimiterMetrics(reg prometheus.Registerer) *LimiterMetrics {
-	return &LimiterMetrics{
-		maxLocalSeriesPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "cortex_ingester_local_limits",
-			Help:        "Local per-user limits used by this ingester.",
-			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
-		}, []string{"user"}),
-	}
-}
-
 // Limiter implements primitives to get the maximum number of series
 // an ingester can handle for a specific tenant
 type Limiter struct {
@@ -47,7 +28,6 @@ type Limiter struct {
 	ring                 RingCount
 	replicationFactor    int
 	zoneAwarenessEnabled bool
-	metrics              *LimiterMetrics
 }
 
 // NewLimiter makes a new in-memory series limiter
@@ -56,14 +36,12 @@ func NewLimiter(
 	ring RingCount,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
-	metrics *LimiterMetrics,
 ) *Limiter {
 	return &Limiter{
 		limits:               limits,
 		ring:                 ring,
 		replicationFactor:    replicationFactor,
 		zoneAwarenessEnabled: zoneAwarenessEnabled,
-		metrics:              metrics,
 	}
 }
 
@@ -85,7 +63,6 @@ func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool
 // number of series in input; otherwise returns false.
 func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int) bool {
 	actualLimit := l.maxSeriesPerUser(userID)
-	l.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(actualLimit))
 	return series < actualLimit
 }
 
@@ -171,8 +148,4 @@ func (l *Limiter) getZonesCount() int {
 		return util_math.Max(l.ring.ZonesCount(), 1)
 	}
 	return 1
-}
-
-func (l *Limiter) deletePerUserMetrics(userID string) {
-	l.metrics.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 }

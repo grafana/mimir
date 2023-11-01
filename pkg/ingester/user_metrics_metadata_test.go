@@ -83,7 +83,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 				MaxGlobalMetadataPerMetric:          testData.maxMetadataPerMetric,
 			}, nil)
 			require.NoError(t, err)
-			limiter := NewLimiter(limits, ring, 1, false, NewLimiterMetrics(prometheus.NewRegistry()))
+			limiter := NewLimiter(limits, ring, 1, false)
 
 			metrics := newIngesterMetrics(
 				prometheus.NewPedanticRegistry(),
@@ -138,7 +138,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 
 	limits, err := validation.NewOverrides(validation.Limits{}, nil)
 	require.NoError(t, err)
-	limiter := NewLimiter(limits, ring, 1, false, NewLimiterMetrics(prometheus.NewRegistry()))
+	limiter := NewLimiter(limits, ring, 1, false)
 
 	metrics := newIngesterMetrics(
 		prometheus.NewPedanticRegistry(),
