@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -47,6 +48,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -4831,25 +4833,25 @@ func TestHandleIngesterPushError(t *testing.T) {
 		expectedIngesterPushError ingesterPushError
 	}{
 		"a gRPC error with details gives an ingesterPushError with the same details": {
-			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID).Err(),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"a DeadlineExceeded gRPC ingester error an ingesterPushError with INVALID cause": {
+		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			// This is how context.DeadlineExceeded error is translated into a gRPC error.
 			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Unavailable gRPC error without details gives an ingesterPushError with INVALID cause": {
+		"an Unavailable gRPC error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Internal gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+		"an Internal gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
-		"an Unknown gRPC ingester error without details gives an ingesterPushError with INVALID cause": {
+		"an Unknown gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.INVALID)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
 		},
 	}
 	for testName, testData := range statusTests {
@@ -4993,9 +4995,30 @@ func TestStartFinishRequest(t *testing.T) {
 		}
 	}
 
-	// Pretend push went OK, make sure to call CleanUp.
+	type ctxType string
+	const (
+		distributorKey              ctxType = "dist"
+		expectedInflightRequestsKey ctxType = "req"
+		expectedInflightBytesKey    ctxType = "bytes"
+	)
+
+	// Pretend push went OK, make sure to call CleanUp. Also check for expected values of inflight requests and inflight request size.
 	finishPush := func(ctx context.Context, pushReq *Request) error {
 		defer pushReq.CleanUp()
+
+		distrib := ctx.Value(distributorKey).(*Distributor)
+		expReq := ctx.Value(expectedInflightRequestsKey).(int64)
+		expBytes := ctx.Value(expectedInflightBytesKey).(int64)
+
+		reqs := distrib.inflightPushRequests.Load()
+		if expReq != reqs {
+			return errors.Errorf("unexpected number of inflight requests: %d, expected: %d", reqs, expReq)
+		}
+
+		bs := distrib.inflightPushRequestsBytes.Load()
+		if expBytes != bs {
+			return errors.Errorf("unexpected number of inflight request bytes: %d, expected: %d", bs, expBytes)
+		}
 		return nil
 	}
 
@@ -5123,6 +5146,12 @@ func TestStartFinishRequest(t *testing.T) {
 			ds[0].ingestionRate.Tick()
 
 			ctx := user.InjectOrgID(context.Background(), "user")
+
+			// Set values that are checked by test handler.
+			ctx = context.WithValue(ctx, distributorKey, ds[0])
+			ctx = context.WithValue(ctx, expectedInflightRequestsKey, int64(tc.inflightRequestsBeforePush)+1)
+			ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize+int64(pushReq.Size()))
+
 			if tc.externalCheck {
 				var err error
 				ctx, err = ds[0].StartPushRequest(ctx, tc.httpgrpcRequestSize)
@@ -5156,4 +5185,61 @@ func TestStartFinishRequest(t *testing.T) {
 			require.Equal(t, tc.inflightRequestsSizeBeforePush, ds[0].inflightPushRequestsBytes.Load())
 		})
 	}
+}
+
+func TestSendMessageMetadata(t *testing.T) {
+	var distributorCfg Config
+	var clientConfig client.Config
+	var ringConfig ring.Config
+	flagext.DefaultValues(&distributorCfg, &clientConfig, &ringConfig)
+
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	ringConfig.KVStore.Mock = kvStore
+	ingestersRing, err := ring.New(ringConfig, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+
+	mock := &mockInstanceClient{}
+	distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
+		return mock, nil
+	})
+
+	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, false, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NotNil(t, d)
+
+	ctx := context.Background()
+	ctx = user.InjectOrgID(ctx, "test")
+
+	req := &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
+				Exemplars: []mimirpb.Exemplar{},
+			}},
+		},
+		Source: mimirpb.API,
+	}
+
+	err = d.send(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	require.NoError(t, err)
+
+	// Verify that d.send added message size to metadata.
+	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
+}
+
+type mockInstanceClient struct {
+	client.HealthAndIngesterClient
+
+	md metadata.MD
+}
+
+func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCheckRequest, _ ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+}
+
+func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	m.md, _ = metadata.FromOutgoingContext(ctx)
+	return nil, nil
 }

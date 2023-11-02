@@ -7,6 +7,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
+  -alertmanager-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -alertmanager-storage.azure.container-name string
     	Azure storage container name
   -alertmanager-storage.azure.endpoint-suffix string
@@ -275,6 +277,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
+  -blocks-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -blocks-storage.azure.container-name string
     	Azure storage container name
   -blocks-storage.azure.endpoint-suffix string
@@ -807,6 +811,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
+  -common.storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -common.storage.azure.container-name string
     	Azure storage container name
   -common.storage.azure.endpoint-suffix string
@@ -1293,6 +1299,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
+  -ingester.instance-limits.max-inflight-push-requests-bytes int
+    	The sum of the request sizes in bytes of inflight push requests that this ingester can handle. This limit is per-ingester, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -ingester.instance-limits.max-series int
@@ -2087,6 +2095,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
+  -ruler-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -ruler-storage.azure.container-name string
     	Azure storage container name
   -ruler-storage.azure.endpoint-suffix string
@@ -2559,8 +2569,10 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-read-header-timeout duration
+    	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration
-    	Read timeout for HTTP server (default 30s)
+    	Read timeout for entire HTTP request, including headers and body. (default 30s)
   -server.http-tls-ca-path string
     	HTTP TLS Client CA path.
   -server.http-tls-cert-path string

@@ -64,7 +64,7 @@ message AggrChunk {
   int64 min_time = 1;
   int64 max_time = 2;
 
-  Chunk raw     = 3;
+  Chunk raw = 3 [(gogoproto.nullable) = false];
 
   // Thanos count.
   reserved 4;

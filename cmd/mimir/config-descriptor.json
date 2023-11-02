@@ -420,12 +420,22 @@
           "kind": "field",
           "name": "http_server_read_timeout",
           "required": false,
-          "desc": "Read timeout for HTTP server",
+          "desc": "Read timeout for entire HTTP request, including headers and body.",
           "fieldValue": null,
           "fieldDefaultValue": 30000000000,
           "fieldFlag": "server.http-read-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "http_server_read_header_timeout",
+          "required": false,
+          "desc": "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "server.http-read-header-timeout",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -2864,6 +2874,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 30000,
               "fieldFlag": "ingester.instance-limits.max-inflight-push-requests",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_push_requests_bytes",
+              "required": false,
+              "desc": "The sum of the request sizes in bytes of inflight push requests that this ingester can handle. This limit is per-ingester, not per-tenant. Additional requests will be rejected. 0 = unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ingester.instance-limits.max-inflight-push-requests-bytes",
               "fieldType": "int",
               "fieldCategory": "advanced"
             }
@@ -5805,6 +5826,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.azure.account-key",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.azure.connection-string",
               "fieldType": "string"
             },
             {
@@ -11663,6 +11694,16 @@
             },
             {
               "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.azure.connection-string",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
               "name": "container_name",
               "required": false,
               "desc": "Azure storage container name",
@@ -13669,6 +13710,16 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.azure.account-key",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "connection_string",
+              "required": false,
+              "desc": "If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.azure.connection-string",
               "fieldType": "string"
             },
             {
@@ -15923,6 +15974,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.azure.account-key",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "connection_string",
+                  "required": false,
+                  "desc": "If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.azure.connection-string",
                   "fieldType": "string"
                 },
                 {

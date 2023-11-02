@@ -89,8 +89,7 @@ func TestUserMetricsMetadata(t *testing.T) {
 				prometheus.NewPedanticRegistry(),
 				true,
 				func() *InstanceLimits { return nil },
-				nil,
-				nil,
+				nil, nil, nil,
 			)
 
 			mm := newMetadataMap(limiter, metrics, errorSamplers, "test")
@@ -145,8 +144,7 @@ func TestUserMetricsMetadataRequest(t *testing.T) {
 		prometheus.NewPedanticRegistry(),
 		true,
 		func() *InstanceLimits { return nil },
-		nil,
-		nil,
+		nil, nil, nil,
 	)
 
 	mm := newMetadataMap(limiter, metrics, newIngesterErrSamplers(0), "test")

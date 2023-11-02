@@ -644,7 +644,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if err != nil {
 			return err
 		}
-		level.Debug(spanLogger).Log(
+		spanLogger.DebugLog(
 			"msg", "sent streaming series",
 			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
@@ -686,7 +686,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if req.StreamingChunksBatchSize > 0 {
 		debugMessage = "sent streaming chunks"
 	}
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", debugMessage,
 		"num_series", numSeries,
 		"num_chunks", numChunks,
@@ -980,7 +980,7 @@ func (s *BucketStore) sendStats(srv storepb.Store_SeriesServer, stats *safeQuery
 
 func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger := spanlogger.FromContext(ctx, l)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
 		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
@@ -1459,7 +1459,7 @@ func fetchCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label names entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label names entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
 		return nil, false
 	}
 
@@ -1702,11 +1702,11 @@ func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 		return nil, false
 	}
 	if entry.LabelName != labelName {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label values entry label name doesn't match, possible collision", "cached_label_name", entry.LabelName, "requested_label_name", labelName)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label values entry label name doesn't match, possible collision", "cached_label_name", entry.LabelName, "requested_label_name", labelName)
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label values entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label values entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
 		return nil, false
 	}
 
@@ -1717,7 +1717,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 	// This limit is a workaround for panics in decoding large responses. See https://github.com/golang/go/issues/59172
 	const valuesLimit = 655360
 	if len(values) > valuesLimit {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
 		return
 	}
 	entry := labelValuesCacheEntry{

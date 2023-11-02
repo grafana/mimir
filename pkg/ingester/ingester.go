@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
@@ -119,10 +120,11 @@ const (
 )
 
 var (
-	reasonIngesterMaxIngestionRate        = globalerror.IngesterMaxIngestionRate.LabelValue()
-	reasonIngesterMaxTenants              = globalerror.IngesterMaxTenants.LabelValue()
-	reasonIngesterMaxInMemorySeries       = globalerror.IngesterMaxInMemorySeries.LabelValue()
-	reasonIngesterMaxInflightPushRequests = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxIngestionRate             = globalerror.IngesterMaxIngestionRate.LabelValue()
+	reasonIngesterMaxTenants                   = globalerror.IngesterMaxTenants.LabelValue()
+	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
+	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
+	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
 	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
 	tooBusyError = newErrorWithHTTPStatus(
 		errors.New(tooBusyErrorMsg),
@@ -283,8 +285,9 @@ type Ingester struct {
 	usersMetadata    map[string]*userMetricsMetadata
 
 	// Rate of pushed samples. Used to limit global samples push rate.
-	ingestionRate        *util_math.EwmaRate
-	inflightPushRequests atomic.Int64
+	ingestionRate             *util_math.EwmaRate
+	inflightPushRequests      atomic.Int64
+	inflightPushRequestsBytes atomic.Int64
 
 	// Anonymous usage statistics tracked by ingester.
 	memorySeriesStats                  *expvar.Int
@@ -347,7 +350,7 @@ func New(cfg Config, limits *validation.Overrides, activeGroupsCleanupService *u
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
 
 	if registerer != nil {
@@ -407,7 +410,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
 	i.shipperIngesterID = "flusher"
 
@@ -561,6 +564,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
+	localLimitMetricUpdateTicker := time.NewTicker(time.Second * 15)
+	defer localLimitMetricUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -574,16 +580,14 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 				db.ingestedRuleSamples.Tick()
 			}
 			i.tsdbsMtx.RUnlock()
-
 		case <-tsdbUpdateTicker.C:
 			i.applyTSDBSettings()
-
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
-
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
-
+		case <-localLimitMetricUpdateTicker.C:
+			i.updateLocalLimitMetrics()
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():
@@ -741,6 +745,15 @@ func (i *Ingester) applyTSDBSettings() {
 	}
 }
 
+func (i *Ingester) updateLocalLimitMetrics() {
+	for _, userID := range i.getTSDBUsers() {
+		localValue := i.limiter.maxSeriesPerUser(userID)
+
+		// update metrics
+		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
+	}
+}
+
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
@@ -769,40 +782,59 @@ type pushStats struct {
 // In the first case, returned errors can be inspected/logged by middleware. Ingester.PushWithCleanup will wrap the error in util_log.DoNotLogError wrapper.
 //
 // In the second case, returned errors will not be logged, because request will not reach any middleware.
-func (i *Ingester) StartPushRequest() error {
+func (i *Ingester) StartPushRequest(requestSize int64) error {
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 
 	inflight := i.inflightPushRequests.Inc()
-	decreaseInflightInDefer := true
+	inflightBytes := int64(0)
+	rejectEqualInflightBytes := false
+	if requestSize > 0 {
+		inflightBytes = i.inflightPushRequestsBytes.Add(requestSize)
+	} else {
+		inflightBytes = i.inflightPushRequestsBytes.Load()
+		rejectEqualInflightBytes = true // if inflightBytes == limit, reject new request
+	}
+
+	finishRequestInDefer := true
 	defer func() {
-		if decreaseInflightInDefer {
-			i.inflightPushRequests.Dec()
+		if finishRequestInDefer {
+			i.FinishPushRequest(requestSize)
 		}
 	}()
 
 	il := i.getInstanceLimits()
-	if il != nil && il.MaxInflightPushRequests > 0 {
-		if inflight > il.MaxInflightPushRequests {
+	if il != nil {
+		if il.MaxInflightPushRequests > 0 && inflight > il.MaxInflightPushRequests {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
 			return errMaxInflightRequestsReached
 		}
-	}
 
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
-			return errMaxIngestionRateReached
+		if il.MaxInflightPushRequestsBytes > 0 {
+			if (rejectEqualInflightBytes && inflightBytes >= il.MaxInflightPushRequestsBytes) || inflightBytes > il.MaxInflightPushRequestsBytes {
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes).Inc()
+				return errMaxInflightRequestsBytesReached
+			}
+		}
+
+		if il.MaxIngestionRate > 0 {
+			if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+				i.metrics.rejected.WithLabelValues(reasonIngesterMaxIngestionRate).Inc()
+				return errMaxIngestionRateReached
+			}
 		}
 	}
 
-	decreaseInflightInDefer = false
+	finishRequestInDefer = false
 	return nil
 }
 
-func (i *Ingester) FinishPushRequest() {
+func (i *Ingester) FinishPushRequest(requestSize int64) {
 	i.inflightPushRequests.Dec()
+	if requestSize > 0 {
+		i.inflightPushRequestsBytes.Sub(requestSize)
+	}
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
@@ -813,10 +845,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// If we're using grpc handlers, we don't need to start/finish request here.
 	if !i.cfg.LimitInflightRequestsUsingGrpcMethodLimiter {
-		if err := i.StartPushRequest(); err != nil {
-			return util_log.DoNotLogError{Err: err}
+		reqSize := int64(req.Size())
+		if err := i.StartPushRequest(reqSize); err != nil {
+			return middleware.DoNotLogError{Err: err}
 		}
-		defer i.FinishPushRequest()
+		defer i.FinishPushRequest(reqSize)
 	}
 
 	userID, err := tenant.TenantID(ctx)
@@ -1683,10 +1716,10 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 			chunksCtx = context.WithoutCancel(ctx)
 		}
 		if req.StreamingChunksBatchSize > 0 {
-			level.Debug(spanlog).Log("msg", "using executeStreamingQuery")
+			spanlog.DebugLog("msg", "using executeStreamingQuery")
 			numSeries, numSamples, err = i.executeStreamingQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 		} else {
-			level.Debug(spanlog).Log("msg", "using executeChunksQuery")
+			spanlog.DebugLog("msg", "using executeChunksQuery")
 			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 
@@ -1694,7 +1727,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 			dumpContextError(ctx, err, start, spanlog)
 		}
 	} else {
-		level.Debug(spanlog).Log("msg", "using executeSamplesQuery")
+		spanlog.DebugLog("msg", "using executeSamplesQuery")
 		numSeries, numSamples, err = i.executeSamplesQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
 	if err != nil {
@@ -1703,7 +1736,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	i.metrics.queriedSeries.Observe(float64(numSeries))
 	i.metrics.queriedSamples.Observe(float64(numSamples))
-	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples)
+	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
 }
 
@@ -1930,14 +1963,14 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 		return 0, 0, err
 	}
 
-	level.Debug(spanlog).Log("msg", "finished sending series", "series", numSeries)
+	spanlog.DebugLog("msg", "finished sending series", "series", numSeries)
 
 	numSamples, numChunks, numBatches, err := i.sendStreamingQueryChunks(allSeries, stream, batchSize)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	level.Debug(spanlog).Log("msg", "finished sending chunks", "chunks", numChunks, "batches", numBatches)
+	spanlog.DebugLog("msg", "finished sending chunks", "chunks", numChunks, "batches", numBatches)
 
 	return numSeries, numSamples, nil
 }

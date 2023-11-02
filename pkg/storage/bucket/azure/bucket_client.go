@@ -21,6 +21,7 @@ func newBucketClient(cfg Config, name string, logger log.Logger, factory func(lo
 	bucketConfig := azure.DefaultConfig
 	bucketConfig.StorageAccountName = cfg.StorageAccountName
 	bucketConfig.StorageAccountKey = cfg.StorageAccountKey.String()
+	bucketConfig.StorageConnectionString = cfg.StorageConnectionString.String()
 	bucketConfig.ContainerName = cfg.ContainerName
 	bucketConfig.MaxRetries = cfg.MaxRetries
 	bucketConfig.UserAssignedID = cfg.UserAssignedID

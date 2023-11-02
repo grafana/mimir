@@ -6,7 +6,6 @@
 package log
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -119,9 +118,3 @@ func Flush() error {
 
 	return nil
 }
-
-type DoNotLogError struct{ Err error }
-
-func (i DoNotLogError) Error() string                                     { return i.Err.Error() }
-func (i DoNotLogError) Unwrap() error                                     { return i.Err }
-func (i DoNotLogError) ShouldLog(_ context.Context, _ time.Duration) bool { return false }

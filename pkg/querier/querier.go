@@ -257,7 +257,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 		mq.queryMetrics,
 	))
 
-	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, mq.cfg.MaxQueryIntoFuture, mq.logger)
+	mq.minT, mq.maxT, err = validateQueryTimeRange(tenantID, mq.minT, mq.maxT, now.UnixMilli(), mq.limits, mq.cfg.MaxQueryIntoFuture, spanlogger.FromContext(ctx, mq.logger))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -325,7 +325,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, mq.logger)
+	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, mq.maxQueryIntoFuture, spanLog)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
@@ -543,11 +543,11 @@ func (s *sliceSeriesSet) Warnings() annotations.Annotations {
 	return nil
 }
 
-func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
-	endMs = clampMaxTime(logger, endMs, now, maxQueryIntoFuture, "max query into future")
+func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, spanLog *spanlogger.SpanLogger) (int64, int64, error) {
+	endMs = clampMaxTime(spanLog, endMs, now, maxQueryIntoFuture, "max query into future")
 
 	maxQueryLookback := limits.MaxQueryLookback(userID)
-	startMs = clampMinTime(logger, startMs, now, -maxQueryLookback, "max query lookback")
+	startMs = clampMinTime(spanLog, startMs, now, -maxQueryLookback, "max query lookback")
 
 	if endMs < startMs {
 		return 0, 0, errEmptyTimeRange
@@ -568,7 +568,7 @@ func validateQueryTimeRange(userID string, startMs, endMs, now int64, limits *va
 //     and may need to be clamped further into the past
 //   - max-query-into-future: refT is now(), limitDelta is positive. maxT is now or in the future,
 //     and may need to be clamped to be less far into the future
-func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
 	if limitDelta == 0 {
 		// limits equal to 0 are considered to not be enabled
 		return maxT
@@ -576,7 +576,7 @@ func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duratio
 	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
 
 	if clampedT != maxT {
-		logClampEvent(ll, maxT, clampedT, "max", limitName)
+		logClampEvent(spanLog, maxT, clampedT, "max", limitName)
 	}
 
 	return clampedT
@@ -591,7 +591,7 @@ func clampMaxTime(ll log.Logger, maxT int64, refT int64, limitDelta time.Duratio
 //
 // limitDelta should be negative for all existing use cases for clamping minT,
 // as we look backwards from the reference time to apply the limit.
-func clampMinTime(ll log.Logger, minT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
+func clampMinTime(spanLog *spanlogger.SpanLogger, minT int64, refT int64, limitDelta time.Duration, limitName string) int64 {
 	if limitDelta == 0 {
 		// limits equal to 0 are considered to not be enabled
 		return minT
@@ -599,18 +599,18 @@ func clampMinTime(ll log.Logger, minT int64, refT int64, limitDelta time.Duratio
 	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
 
 	if clampedT != minT {
-		logClampEvent(ll, minT, clampedT, "min", limitName)
+		logClampEvent(spanLog, minT, clampedT, "min", limitName)
 	}
 
 	return clampedT
 }
 
-func logClampEvent(ll log.Logger, originalT, clampedT int64, minOrMax, settingName string) {
+func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, minOrMax, settingName string) {
 	msg := fmt.Sprintf(
 		"the %s time of the query has been manipulated because of the '%s' setting",
 		minOrMax, settingName,
 	)
-	level.Debug(ll).Log(
+	spanLog.DebugLog(
 		"msg", msg,
 		"original", util.TimeFromMillis(originalT).String(),
 		"updated", util.TimeFromMillis(clampedT).String(),

@@ -54,7 +54,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 					{
 						MinTime: minTimestamp.Unix() * 1000,
 						MaxTime: maxTimestamp.Unix() * 1000,
-						Raw:     &storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBXorChunkData(t)},
+						Raw:     storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBXorChunkData(t)},
 					},
 				},
 			},
@@ -73,7 +73,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 					{
 						MinTime: minTimestamp.Unix() * 1000,
 						MaxTime: maxTimestamp.Unix() * 1000,
-						Raw:     &storepb.Chunk{Type: storepb.Chunk_Histogram, Data: mockTSDBHistogramChunkData(t)},
+						Raw:     storepb.Chunk{Type: storepb.Chunk_Histogram, Data: mockTSDBHistogramChunkData(t)},
 					},
 				},
 			},
@@ -92,7 +92,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 					{
 						MinTime: minTimestamp.Unix() * 1000,
 						MaxTime: maxTimestamp.Unix() * 1000,
-						Raw:     &storepb.Chunk{Type: storepb.Chunk_FloatHistogram, Data: mockTSDBFloatHistogramChunkData(t)},
+						Raw:     storepb.Chunk{Type: storepb.Chunk_FloatHistogram, Data: mockTSDBFloatHistogramChunkData(t)},
 					},
 				},
 			},
@@ -106,7 +106,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 			series: &storepb.Series{
 				Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 				Chunks: []storepb.AggrChunk{
-					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
+					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
 				},
 			},
 			expectedMetric: labels.FromStrings("foo", "bar"),
@@ -470,7 +470,7 @@ func createAggrChunk(minTime, maxTime int64, samples ...promql.FPoint) storepb.A
 	return storepb.AggrChunk{
 		MinTime: minTime,
 		MaxTime: maxTime,
-		Raw: &storepb.Chunk{
+		Raw: storepb.Chunk{
 			Type: storepb.Chunk_XOR,
 			Data: chunk.Bytes(),
 		},

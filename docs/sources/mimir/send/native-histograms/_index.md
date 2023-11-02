@@ -130,7 +130,7 @@ Use the latest version of Prometheus or at least version 2.47.
 
 ## Scrape and send native histograms with Grafana Agent
 
-Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) or at least version 0.37.
+Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) or at least version 0.37.3.
 
 1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
 
