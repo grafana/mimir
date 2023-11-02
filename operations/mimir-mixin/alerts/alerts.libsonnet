@@ -714,7 +714,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               >
               (sum by (%s) (up{%s=~".+/%s"}) + 10)
             ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
-          'for': '15m',
+          'for': '20m',
           labels: {
             severity: 'warning',
           },
@@ -733,7 +733,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               <
               (sum by (%s) (up{%s=~".+/%s"}) * 0.5)
             ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
-          'for': '15m',
+          'for': '20m',
           labels: {
             severity: 'warning',
           },
