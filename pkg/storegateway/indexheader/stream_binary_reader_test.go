@@ -5,6 +5,7 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,7 +49,8 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	sparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
 
-	err = r.loadFromSparseIndexHeader(log.NewNopLogger(), blockID, sparseHeadersPath, sparseData, 3)
+	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
+	err = r.loadFromSparseIndexHeader(logger, blockID, sparseHeadersPath, sparseData, 3)
 	require.NoError(t, err)
 }
 

@@ -10,13 +10,13 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/go-kit/log"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
@@ -92,7 +92,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 }
 
 // newFileStreamBinaryReader loads sparse index-headers from disk or constructs it from the index-header if not available.
-func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath string, sparsePersistenceEnabled bool, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath string, sparsePersistenceEnabled bool, postingOffsetsInMemSampling int, logger *spanlogger.SpanLogger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
 		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
 	}
@@ -184,7 +184,7 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.
-func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, id ulid.ULID, sparseHeadersPath string, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
+func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger *spanlogger.SpanLogger, id ulid.ULID, sparseHeadersPath string, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
 	defer func() {
 		level.Info(logger).Log("msg", "loaded sparse index-header from disk", "id", id, "path", sparseHeadersPath, "elapsed", time.Since(start))
@@ -222,7 +222,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, id uli
 }
 
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.
-func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, id ulid.ULID, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
+func (r *StreamBinaryReader) loadFromIndexHeader(logger *spanlogger.SpanLogger, id ulid.ULID, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
 	defer func() {
 		level.Info(logger).Log("msg", "loaded sparse index-header from full index-header", "id", id, "elapsed", time.Since(start))
@@ -244,7 +244,7 @@ func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, id ulid.ULID
 }
 
 // writeSparseHeadersToFile uses protocol buffer to write StreamBinaryReader to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(logger log.Logger, id ulid.ULID, sparseHeadersPath string, reader *StreamBinaryReader) error {
+func writeSparseHeadersToFile(logger *spanlogger.SpanLogger, id ulid.ULID, sparseHeadersPath string, reader *StreamBinaryReader) error {
 	start := time.Now()
 	defer func() {
 		level.Info(logger).Log("msg", "wrote sparse index-header to disk", "id", id, "path", sparseHeadersPath, "elapsed", time.Since(start))
