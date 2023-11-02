@@ -5,12 +5,12 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
