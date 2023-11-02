@@ -48,7 +48,7 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	sparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
 
-	err = r.loadFromSparseIndexHeader(ctx, log.NewNopLogger(), blockID, sparseHeadersPath, sparseData, 3)
+	err = r.loadFromSparseIndexHeader(log.NewNopLogger(), blockID, sparseHeadersPath, sparseData, 3)
 	require.NoError(t, err)
 }
 
