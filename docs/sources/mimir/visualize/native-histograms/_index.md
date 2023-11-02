@@ -96,4 +96,6 @@ Never use the `histogram_quantile` function without including `rate` or `increas
 
 ## Grafana
 
-The functions `histogram_count`, `histogram_sum`, `histogram_fraction` and `histogram_quantile` will result in normal floating point series which you can plot as usual.
+The two panel types most relevant for native histograms are the [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/) panels.
+
+Regarding [Explore](/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum` and `histogram_quantile` will result in normal floating point series which you can plot as usual. Visualizing native histogram series directly in the explore view is a work in progress.
