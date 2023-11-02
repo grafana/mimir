@@ -384,7 +384,8 @@ func TestValidateLabelDuplication(t *testing.T) {
 }
 
 type sampleValidationCfg struct {
-	maxNativeHistogramBuckets int
+	maxNativeHistogramBuckets              int
+	downscaleNativeHistogramOverMaxBuckets bool
 }
 
 func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
@@ -393,6 +394,10 @@ func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
 
 func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
+}
+
+func (c sampleValidationCfg) DownscaleNativeHistogramOverMaxBuckets(_ string) bool {
+	return c.downscaleNativeHistogramOverMaxBuckets
 }
 
 func TestMaxNativeHistorgramBuckets(t *testing.T) {
@@ -515,7 +520,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 
 				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
 					{Name: model.MetricNameLabel, Value: "a"},
-					{Name: "a", Value: "a"}}, h)
+					{Name: "a", Value: "a"}}, &h)
 
 				if limit == 1 {
 					require.Error(t, err)

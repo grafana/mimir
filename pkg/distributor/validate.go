@@ -107,6 +107,7 @@ var (
 type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
+	DownscaleNativeHistogramOverMaxBuckets(userID string) bool
 }
 
 // sampleValidationMetrics is a collection of metrics used during sample validation.
@@ -207,7 +208,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) error {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -222,8 +223,16 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
 		}
 		if bucketCount > bucketLimit {
-			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+			if !cfg.DownscaleNativeHistogramOverMaxBuckets(userID) {
+				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+			}
+			var err error
+			for bucketCount, err = s.ReduceResolution(); err == nil && bucketCount > bucketLimit; bucketCount, err = s.ReduceResolution() {
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
 
