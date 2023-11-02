@@ -10,13 +10,13 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // TODO: fix tests and add config flag test
