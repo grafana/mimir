@@ -485,6 +485,16 @@ spec:
       for: 5m
       labels:
         severity: warning
+    - alert: MimirRulerZeroFetchedSeriesQueries
+      annotations:
+        message: |
+          Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} have {{ printf "%.2f" $value }}% occurrences of queries fetching zero series, meaning the data could be late and potentially preventing alerts from firing.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerzerofetchedseriesqueries
+      expr: |
+        sum by(cluster, namespace) (rate(cortex_ruler_queries_zero_fetched_series_total[1m])) > 0
+      for: 5m
+      labels:
+        severity: warning
   - name: gossip_alerts
     rules:
     - alert: MimirGossipMembersMismatch

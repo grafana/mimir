@@ -692,6 +692,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         },
+        {
+          alert: $.alertName('RulerZeroFetchedSeriesQueries'),
+          expr: |||
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_ruler_queries_zero_fetched_series_total[1m])) > 0
+          ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s rulers in %(alert_aggregation_variables)s have {{ printf "%%.2f" $value }}%% occurrences of queries fetching zero series, meaning the data could be late and potentially preventing alerts from firing.
+            ||| % $._config,
+          },
+        },
       ],
     },
     {
