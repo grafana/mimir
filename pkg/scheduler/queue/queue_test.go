@@ -255,14 +255,14 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
+	tenantMaxQueriers := 0 // no sharding
 	tr := tenantRequest{
-		tenantID:    TenantID("tenant-1"),
-		req:         "request",
-		maxQueriers: 0, // no sharding
+		tenantID: TenantID("tenant-1"),
+		req:      "request",
 	}
 
 	require.Nil(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"root", "tenant-1"}))
-	require.NoError(t, queueBroker.enqueueRequestBack(&tr))
+	require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
 	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"root", "tenant-1"}).isEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
