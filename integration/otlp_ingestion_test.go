@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -21,6 +22,18 @@ import (
 )
 
 func TestOTLPIngestion(t *testing.T) {
+	t.Run("enabling OTel suffixes", func(t *testing.T) {
+		testOTLPIngestion(t, true)
+	})
+
+	t.Run("disabling OTel suffixes", func(t *testing.T) {
+		testOTLPIngestion(t, false)
+	})
+}
+
+func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
+	t.Helper()
+
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -34,12 +47,17 @@ func TestOTLPIngestion(t *testing.T) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
+	enable := "false"
+	if enableSuffixes {
+		enable = "true"
+	}
 	flags := mergeFlags(
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
 		map[string]string{
 			"-distributor.enable-otlp-metadata-storage": "true",
+			"-distributor.otel-metric-suffixes-enabled": enable,
 		},
 	)
 
@@ -90,11 +108,15 @@ func TestOTLPIngestion(t *testing.T) {
 	metadataResponseBody, err := io.ReadAll(metadataResult.Body)
 	require.NoError(t, err)
 
-	expectedJSON := `
+	sfx := ""
+	if enableSuffixes {
+		sfx = "_foo"
+	}
+	expectedJSON := fmt.Sprintf(`
 	{
 	   "status":"success",
 	   "data":{
-		  "series_1":[
+		  "series_1%s":[
 			 {
 				"type":"gauge",
 				"help":"foo",
@@ -103,7 +125,7 @@ func TestOTLPIngestion(t *testing.T) {
 		  ]
 	   }
 	}
-	`
+	`, sfx)
 
 	require.JSONEq(t, expectedJSON, string(metadataResponseBody))
 
@@ -124,18 +146,18 @@ func TestOTLPIngestion(t *testing.T) {
 	// till https://github.com/open-telemetry/opentelemetry-proto/pull/441 is released. That is only
 	// to test setup logic
 
-	expectedJSON = `
+	expectedJSON = fmt.Sprintf(`
 		{
 		   "status":"success",
 		   "data":{
-			  "series":[
+			  "series%s":[
 				 {
 					"type":"histogram",
 					"help":"foo",
 					"unit":"foo"
 				 }
 			  ],
-			  "series_1":[
+			  "series_1%s":[
 				 {
 					"type":"gauge",
 					"help":"foo",
@@ -144,7 +166,7 @@ func TestOTLPIngestion(t *testing.T) {
 			  ]
 		   }
 		}
-	`
+	`, sfx, sfx)
 
 	metadataResult, err = c.GetPrometheusMetadata()
 	require.NoError(t, err)

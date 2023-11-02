@@ -51,7 +51,7 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, _ []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
 		logger := log.WithContext(ctx, log.Logger)
@@ -128,7 +128,7 @@ func OTLPHandler(
 
 		level.Debug(log).Log("msg", "decoding complete, starting conversion")
 
-		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, limits, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -155,7 +155,10 @@ func OTLPHandler(
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(otlpReq.Metrics())
+			metadata, err := otelMetricsToMetadata(ctx, limits, otlpReq.Metrics())
+			if err != nil {
+				return nil, err
+			}
 			req.Metadata = metadata
 		}
 
@@ -183,7 +186,14 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
+func otelMetricsToMetadata(ctx context.Context, limits *validation.Overrides, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -194,7 +204,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 		}
 	}
 
-	var metadata = make([]*mimirpb.MetricMetadata, 0, metadataLength)
+	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
@@ -203,7 +213,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToMimirMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration (https://github.com/grafana/mimir/issues/5967)
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -212,21 +222,21 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 		}
 	}
 
-	return metadata
-
+	return metadata, nil
 }
 
-func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
+func otelMetricsToTimeseries(ctx context.Context, limits *validation.Overrides, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
 
+	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{
+		AddMetricSuffixes: limits.OTelMetricSuffixesEnabled(tenantID),
+	})
 	if errs != nil {
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		dropped := len(multierr.Errors(errs))
-		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
+		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {

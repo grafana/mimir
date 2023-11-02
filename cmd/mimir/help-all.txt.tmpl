@@ -1139,6 +1139,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Use experimental method of limiting push requests.
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
+  -distributor.otel-metric-suffixes-enabled
+    	Whether to enable automatic suffixes to OTel metric names.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int

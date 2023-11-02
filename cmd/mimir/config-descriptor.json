@@ -3896,6 +3896,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "otel_metric_suffixes_enabled",
+          "required": false,
+          "desc": "Whether to enable automatic suffixes to OTel metric names.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-metric-suffixes-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
