@@ -709,6 +709,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.downscale-native-histogram-over-max-buckets
+    	Whether to downscale or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

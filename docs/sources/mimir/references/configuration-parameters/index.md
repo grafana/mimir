@@ -2880,6 +2880,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
+# Whether to downscale or reject native histogram samples with more buckets than
+# the configured limit.
+# CLI flag: -validation.downscale-native-histogram-over-max-buckets
+[downscale_native_histogram_over_max_buckets: <boolean> | default = true]
+
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
