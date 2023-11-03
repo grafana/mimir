@@ -73,7 +73,7 @@ require (
 	github.com/prometheus/procfs v0.12.0
 	github.com/thanos-io/objstore v0.0.0-20230921130928-63a603e651ed
 	github.com/xlab/treeprint v1.2.0
-	go.opentelemetry.io/collector/pdata v1.0.0-rcv0016
+	go.opentelemetry.io/collector/pdata v1.0.0-rcv0017
 	go.opentelemetry.io/otel v1.19.0
 	go.opentelemetry.io/otel/trace v1.19.0
 	go.uber.org/multierr v1.11.0
@@ -227,7 +227,7 @@ require (
 	go.mongodb.org/mongo-driver v1.12.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v1.0.0-rcv0014 // indirect
-	go.opentelemetry.io/collector/semconv v0.87.0 // indirect
+	go.opentelemetry.io/collector/semconv v0.88.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.19.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
@@ -249,7 +249,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231101140207-5f9db04c2d53
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231103061820-790cede0a18a
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
