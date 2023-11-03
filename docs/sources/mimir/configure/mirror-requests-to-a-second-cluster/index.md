@@ -96,4 +96,7 @@ static_resources:
       hosts: [{ socket_address: { address: mimir-secondary, port_value: 8080 }}]
       dns_refresh_rate: 5s
 ```
+
+[embedmd]:# (../../../../configurations/requests-mirroring-envoy.yaml)
+
 <!-- prettier-ignore-end -->
