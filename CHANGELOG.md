@@ -74,7 +74,6 @@
 * [ENHANCEMENT] Alerts: added a critical alert for `CompactorSkippedBlocksWithOutOfOrderChunks` when multiple blocks are affected. #6410
 * [ENHANCEMENT] Dashboards: Added the min-replicas for autoscaling dashboards. #6528
 * [BUGFIX] Alerts: fixed issue where `GossipMembersMismatch` warning message referred to per-instance labels that were not produced by the alert query. #6146
-* [BUGFIX] Autoscaling: KEDA > 2.9 removed the ability to set metricName in the trigger metadata. To help discern which metric is used by the HPA, we set the trigger name to what was the metricName. This is available as the `scaler` label on `keda_*` metrics. #6528
 * [BUGFIX] Dashboards: Fix autoscaling dashboard panels for KEDA > 2.9. [Requires scraping the KEDA operator for metrics since they moved](https://github.com/kedacore/keda/issues/3972). #6528
 * [BUGFIX] Alerts: Fix autoscaling alerts for KEDA > 2.9. [Requires scraping the KEDA operator for metrics since they moved](https://github.com/kedacore/keda/issues/3972). #6528
 
@@ -94,6 +93,7 @@
 * [ENHANCEMENT] Store-gateway: replaced the following deprecated CLI flags: #6319
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`
+* [BUGFIX] Autoscaling: KEDA > 2.9 removed the ability to set metricName in the trigger metadata. To help discern which metric is used by the HPA, we set the trigger name to what was the metricName. This is available as the `scaler` label on `keda_*` metrics. #6528
 
 ### Mimirtool
 
