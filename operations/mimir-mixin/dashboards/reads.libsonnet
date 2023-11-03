@@ -322,18 +322,27 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           [
             |||
-              sum by (scaledObject) (
-                keda_scaler_metrics_value{%s=~"$cluster", exported_namespace=~"$namespace"}
+              sum by (scaler) (
+                label_replace(
+                  keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace"},
+                  "namespace", "$1", "exported_namespace", "(.*)"
+                )
                 /
-                on(scaledObject, metric) group_left
+                on(%(aggregation_labels)s, scaledObject, metric) group_left
                 label_replace(label_replace(
-                    kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler=~"%s"},
+                    kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
                     "metric", "$1", "metric_name", "(.+)"
-                ), "scaledObject", "$1", "horizontalpodautoscaler", "%s(.*)")
+                ), "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)")
               )
-            ||| % [$._config.per_cluster_label, $.namespaceMatcher(), $._config.autoscaling.querier.hpa_name, $._config.autoscaling_hpa_prefix],
+            ||| % {
+              aggregation_labels: $._config.alert_aggregation_labels,
+              cluster_label: $._config.per_cluster_label,
+              hpa_prefix: $._config.autoscaling_hpa_prefix,
+              hpa_name: $._config.autoscaling.querier.hpa_name,
+              namespace: $.namespaceMatcher(),
+            },
           ], [
-            '{{ scaledObject }}',
+            '{{ scaler }}',
           ]
         ) +
         $.panelDescription(

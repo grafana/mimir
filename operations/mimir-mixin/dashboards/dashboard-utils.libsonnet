@@ -560,10 +560,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            sum by (scaledObject) (
-              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*cpu.*"}
+            sum by (scaler) (
+              label_replace(
+                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*cpu.*"},
+                "namespace", "$1", "exported_namespace", "(.*)"
+              )
               /
-              on(scaledObject, metric) group_left label_replace(
+              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
                 label_replace(
                   kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
                   "metric", "$1", "metric_name", "(.+)"
@@ -572,13 +575,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             )
           ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
             cluster_label: $._config.per_cluster_label,
             hpa_prefix: $._config.autoscaling_hpa_prefix,
             hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
-          '{{ scaledObject }}',
+          '{{ scaler }}',
         ]
       ) +
       $.panelDescription(
@@ -595,10 +599,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            sum by (scaledObject) (
-              keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*memory.*"}
+            sum by (scaler) (
+              label_replace(
+                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*memory.*"},
+                "namespace", "$1", "exported_namespace", "(.*)"
+              )
               /
-              on(scaledObject, metric) group_left label_replace(
+              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
                 label_replace(
                   kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
                   "metric", "$1", "metric_name", "(.+)"
@@ -607,13 +614,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             )
           ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
             cluster_label: $._config.per_cluster_label,
             hpa_prefix: $._config.autoscaling_hpa_prefix,
             hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
-          '{{ scaledObject }}',
+          '{{ scaler }}',
         ]
       ) +
       $.panelDescription(
