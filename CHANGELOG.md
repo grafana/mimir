@@ -70,6 +70,7 @@
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451 #6469
 * [BUGFIX] All: fix issue where traces for some inter-component gRPC calls would incorrectly show the call as failing due to cancellation. #6470
 * [BUGFIX] Querier: correctly mark streaming requests to ingesters or store-gateways as successful, not cancelled, in metrics and traces. #6471 #6505
+* [BUGFIX] Querier: fix issue where queries fail with "context canceled" error when an ingester or store-gateway fails healthcheck while the query is in progress. #6550
 
 ### Mixin
 
