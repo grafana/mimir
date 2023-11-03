@@ -386,7 +386,7 @@ _If the alert `MimirIngesterTSDBHeadCompactionFailed` fired as well, then give p
 
 If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
 
-1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refers to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
+1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refer to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
 2. Investigate why the disk capacity has been hit
 
 - Was the disk just too small?
@@ -1028,9 +1028,9 @@ How it **works**:
 How to **investigate**:
 
 - Limit reached in `gateway`:
-  - Check if it's caused by an **high latency on write path**:
+  - Check if it's caused by **high latency on write path**:
     - Check the distributors and ingesters latency in the `Mimir / Writes` dashboard
-    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
+    - High latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
