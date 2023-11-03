@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -251,7 +252,7 @@ func TestFrontendStats(t *testing.T) {
 		require.NoError(t, err)
 
 		queryStatsFound := false
-		for _, le := range tl.logMessages {
+		for _, le := range tl.getLogMessages() {
 			if le["msg"] == "query stats" {
 				require.False(t, queryStatsFound)
 				queryStatsFound = true
@@ -265,6 +266,7 @@ func TestFrontendStats(t *testing.T) {
 }
 
 type testLogger struct {
+	mu          sync.Mutex
 	logMessages []map[string]interface{}
 }
 
@@ -283,8 +285,17 @@ func (t *testLogger) Log(keyvals ...interface{}) error {
 		msg[name] = value
 	}
 
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	t.logMessages = append(t.logMessages, msg)
 	return nil
+}
+
+func (t *testLogger) getLogMessages() []map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]map[string]interface{}(nil), t.logMessages...)
 }
 
 func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), l log.Logger, reg prometheus.Registerer) {
