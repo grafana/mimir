@@ -2960,17 +2960,6 @@
         },
         {
           "kind": "field",
-          "name": "chunks_query_ignore_cancellation",
-          "required": false,
-          "desc": "Ignore cancellation when querying chunks.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.chunks-query-ignore-cancellation",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "return_only_grpc_errors",
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
