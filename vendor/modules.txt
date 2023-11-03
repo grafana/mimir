@@ -807,7 +807,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.26.0
+# github.com/prometheus/alertmanager v0.26.1-0.20231103145006-fdea7e731cd0
 ## explicit; go 1.18
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -826,6 +826,7 @@ github.com/prometheus/alertmanager/cluster
 github.com/prometheus/alertmanager/cluster/clusterpb
 github.com/prometheus/alertmanager/config
 github.com/prometheus/alertmanager/dispatch
+github.com/prometheus/alertmanager/featurecontrol
 github.com/prometheus/alertmanager/inhibit
 github.com/prometheus/alertmanager/nflog
 github.com/prometheus/alertmanager/nflog/nflogpb
@@ -945,7 +946,7 @@ github.com/prometheus/prometheus/web/api/v1
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
-# github.com/rs/cors v1.9.0
+# github.com/rs/cors v1.10.1
 ## explicit; go 1.13
 github.com/rs/cors
 # github.com/rs/xid v1.5.0
