@@ -22230,6 +22230,11 @@ data:
                          {
                             "alias": "/Current .+/",
                             "fill": 0
+                         },
+                         {
+                            "alias": "/Min .+/",
+                            "dashes": true,
+                            "fill": 0
                          }
                       ],
                       "spaceLength": 10,
@@ -22249,6 +22254,13 @@ data:
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n# Add the scaletargetref_name label which is more readable than \"kube-hpa-...\"\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-querier\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Min {{ scaletargetref_name }}",
                             "legendLink": null
                          }
                       ],
@@ -26974,6 +26986,11 @@ data:
                          {
                             "alias": "/Current .+/",
                             "fill": 0
+                         },
+                         {
+                            "alias": "/Min .+/",
+                            "dashes": true,
+                            "fill": 0
                          }
                       ],
                       "spaceLength": 10,
@@ -26993,6 +27010,13 @@ data:
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-ruler-querier\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Min {{ scaletargetref_name }}",
                             "legendLink": null
                          }
                       ],
@@ -40013,6 +40037,11 @@ data:
                          {
                             "alias": "/Current .+/",
                             "fill": 0
+                         },
+                         {
+                            "alias": "/Min .+/",
+                            "dashes": true,
+                            "fill": 0
                          }
                       ],
                       "spaceLength": 10,
@@ -40032,6 +40061,13 @@ data:
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "Current {{ scaletargetref_name }}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                            "format": "time_series",
+                            "intervalFactor": 2,
+                            "legendFormat": "Min {{ scaletargetref_name }}",
                             "legendLink": null
                          }
                       ],

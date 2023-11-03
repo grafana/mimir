@@ -288,10 +288,21 @@ local filename = 'mimir-reads.json';
               cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
+            |||
+              kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            ||| % {
+              namespace_matcher: $.namespaceMatcher(),
+              cluster_labels: std.join(', ', $._config.cluster_labels),
+              hpa_name: $._config.autoscaling.querier.hpa_name,
+            },
           ],
           [
             'Max {{ scaletargetref_name }}',
             'Current {{ scaletargetref_name }}',
+            'Min {{ scaletargetref_name }}',
           ],
         ) +
         $.panelDescription(
@@ -311,6 +322,11 @@ local filename = 'mimir-reads.json';
             },
             {
               alias: '/Current .+/',
+              fill: 0,
+            },
+            {
+              alias: '/Min .+/',
+              dashes: true,
               fill: 0,
             },
           ],

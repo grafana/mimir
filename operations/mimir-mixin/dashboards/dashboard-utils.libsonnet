@@ -526,10 +526,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
             hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
+          |||
+            kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          ||| % {
+            namespace_matcher: $.namespaceMatcher(),
+            hpa_name: $._config.autoscaling[field].hpa_name,
+            cluster_labels: std.join(', ', $._config.cluster_labels),
+          },
         ],
         [
           'Max {{ scaletargetref_name }}',
           'Current {{ scaletargetref_name }}',
+          'Min {{ scaletargetref_name }}',
         ],
       ) +
       $.panelDescription(
@@ -549,6 +560,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           {
             alias: '/Current .+/',
+            fill: 0,
+          },
+          {
+            alias: '/Min .+/',
+            dashes: true,
             fill: 0,
           },
         ],
