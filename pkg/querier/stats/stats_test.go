@@ -124,7 +124,7 @@ func TestStats_QueueTime(t *testing.T) {
 		assert.Equal(t, 2*time.Second, stats.LoadQueueTime())
 	})
 
-	t.Run("add and load wall time nil receiver", func(t *testing.T) {
+	t.Run("add and load queue time nil receiver", func(t *testing.T) {
 		var stats *Stats
 		stats.AddQueueTime(time.Second)
 

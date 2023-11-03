@@ -170,11 +170,11 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		processClient.AssertNumberOfCalls(t, "Send", 2)
 	}
 
-	t.Run("query stats enabled should record query time", func(t *testing.T) {
+	t.Run("query stats enabled should record queue time", func(t *testing.T) {
 		runTest(t, true)
 	})
 
-	t.Run("query stats disabled will not record query time", func(t *testing.T) {
+	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
 		runTest(t, false)
 	})
 }
