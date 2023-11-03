@@ -277,6 +277,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
+		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
 	}, formatQueryString(queryString)...)
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {

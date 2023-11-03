@@ -39,6 +39,9 @@ message FrontendToClient {
   // Whether query statistics tracking should be enabled. The response will include
   // statistics only when this option is enabled.
   bool statsEnabled = 3;
+
+  // How much time did query spend in the queue.
+  int64 queueTimeNanos = 4;
 }
 
 message ClientToFrontend {

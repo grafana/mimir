@@ -85,10 +85,11 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		HttpRequest:  &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		StatsEnabled: true,
 	})
 
 	{
@@ -102,6 +103,8 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
 		require.Equal(t, "GET", msg2.HttpRequest.Method)
 		require.Equal(t, "/hello", msg2.HttpRequest.Url)
+		require.True(t, msg2.StatsEnabled)
+		require.Greater(t, msg2.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 
