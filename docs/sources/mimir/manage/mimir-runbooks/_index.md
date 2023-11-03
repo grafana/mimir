@@ -371,6 +371,15 @@ How to **investigate**:
   - **High latency**
     - Check the `Mimir / Remote ruler reads resources` dashboard to see if CPU or Memory usage increased unexpectedly
 
+### MimirRulerZeroFetchedSeriesQueries
+
+This alert fires when the per-tenant `cortex_ruler_queries_zero_fetched_series_total` counter goes up significantly, meaning that there are rules with queries that fetched no series, indicating that there could be late data affecting the rules, which could potentially result in alerts not firing when they should.
+
+How to **investigate**:
+
+- Search the logs for `{cluster="<CLUSTER>", namespace="<NAMESPACE>", container="ruler"} |= `query stats`|=`user=<USER>`|=`fetched_series_count=0`` to find the affected query.
+- Alternatively, search `{cluster="<CLUSTER>", namespace="<NAMESPACE>", container="ruler-query-frontend"} |= `query stats`|=`user=<USER>`|=`fetched_series_count=0`|=`response_size_bytes=4``. This is not the one that is used by the metric, but contains more info for investigation.
+
 ### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
