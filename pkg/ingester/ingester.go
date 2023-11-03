@@ -182,8 +182,6 @@ type Config struct {
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
-	ChunksQueryIgnoreCancellation bool `yaml:"chunks_query_ignore_cancellation" category:"experimental"`
-
 	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
 }
 
@@ -203,7 +201,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
-	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Ignore cancellation when querying chunks.")
 	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
@@ -1651,8 +1648,6 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
-	start := time.Now()
-
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -1708,23 +1703,12 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		chunksCtx := ctx
-		if i.cfg.ChunksQueryIgnoreCancellation {
-			// Pass an independent context, to help investigating a problem with ingester queries
-			// getting canceled. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
-			// queriers actually ignored context, so we are emulating that behavior.
-			chunksCtx = context.WithoutCancel(ctx)
-		}
 		if req.StreamingChunksBatchSize > 0 {
 			spanlog.DebugLog("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 		} else {
 			spanlog.DebugLog("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
-		}
-
-		if i.cfg.ChunksQueryIgnoreCancellation && (ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
-			dumpContextError(ctx, err, start, spanlog)
+			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 	} else {
 		spanlog.DebugLog("msg", "using executeSamplesQuery")
@@ -1738,19 +1722,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-// Dump context error for diagnosis.
-func dumpContextError(ctx context.Context, err error, start time.Time, spanlog *spanlogger.SpanLogger) {
-	deadline, deadlineSet := ctx.Deadline()
-	var timeout string
-	if deadlineSet {
-		timeout = fmt.Sprintf("%.2f seconds", deadline.Sub(start).Seconds())
-	} else {
-		timeout = "not set"
-	}
-	level.Debug(spanlog).Log("msg", "query context error", "cause", context.Cause(ctx), "timeout", timeout,
-		"err", err)
 }
 
 func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
