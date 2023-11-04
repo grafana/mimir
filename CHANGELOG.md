@@ -59,6 +59,7 @@
 * [ENHANCEMENT] Ingester: Add `-ingester.instance-limits.max-inflight-push-requests-bytes`. This limit protects the ingester against requests that together may cause an OOM. #6492
 * [ENHANCEMENT] Ingester: add new per-tenant `cortex_ingester_local_limits` metric to expose the calculated local per-tenant limits seen at each ingester. Exports the local per-tenant series limit with label `{limit="max_global_series_per_user"}` #6403
 * [ENHANCEMENT] Query-frontend: added "queue_time_seconds" field to "query stats" log. This is total time that query and subqueries spent in the queue, before queriers picked it up. #6537
+* [ENHANCEMENT] All: enabled reporting gRPC codes as `status_code` label in `cortex_request_duration_seconds` and `cortex_ingester_client_request_duration_seconds` metrics. #6561
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
@@ -74,6 +75,7 @@
 
 ### Mixin
 
+* [CHANGE] Dashboards: enabled reporting gRPC codes as `status_code` label in Mimir dashboards. In case of gRPC calls, the successful `status_code` label on `cortex_request_duration_seconds` and `cortex_ingester_client_request_duration_seconds` metrics has changed from 'success' and '2xx' to 'OK'. #6561
 * [ENHANCEMENT] Dashboards: Optionally show rejected requests on Mimir Writes dashboard. Useful when used together with "early request rejection". #6132
 * [ENHANCEMENT] Alerts: added a critical alert for `CompactorSkippedBlocksWithOutOfOrderChunks` when multiple blocks are affected. #6410
 * [ENHANCEMENT] Dashboards: Added the min-replicas for autoscaling dashboards. #6528

@@ -569,7 +569,7 @@ func TestIngesterQuerying(t *testing.T) {
 						return counts[0], nil
 					}
 
-					successfulQueryRequests, err := queryRequestCount("2xx")
+					successfulQueryRequests, err := queryRequestCount("OK")
 					require.NoError(t, err)
 
 					cancelledQueryRequests, err := queryRequestCount("cancel")
@@ -662,7 +662,7 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 					[]string{"cortex_request_duration_seconds"},
 					e2e.WithLabelMatchers(
 						labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"),
-						labels.MustNewMatcher(labels.MatchEqual, "status_code", "success"),
+						labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
 					),
 					e2e.SkipMissingMetrics,
 					e2e.WithMetricCount,
