@@ -176,10 +176,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   qpsPanel(selector, statusLabelName='status_code')::
-    local src = super.qpsPanel(selector, statusLabelName);
-    src
+    super.qpsPanel(selector, statusLabelName) +
     {
-      aliasColors: src.aliasColors {
+      aliasColors+: {
         OK: '#7EB26D',
       },
       targets: [
