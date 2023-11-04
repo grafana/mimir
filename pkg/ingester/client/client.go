@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -34,7 +35,11 @@ type closableHealthAndIngesterClient struct {
 // MakeIngesterClient makes a new IngesterClient
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	logger = log.With(logger, "component", "ingester-client")
-	unary, stream := grpcclient.Instrument(metrics.requestDuration)
+	var reportGRPCStatusesOptions []middleware.InstrumentationOption
+	if cfg.ReportGRPCStatusCodes {
+		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
+	}
+	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
@@ -64,14 +69,16 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
-	CircuitBreaker   CircuitBreakerConfig `yaml:"circuit_breaker"`
+	GRPCClientConfig      grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
+	CircuitBreaker        CircuitBreakerConfig `yaml:"circuit_breaker"`
+	ReportGRPCStatusCodes bool                 `yaml:"report_grpc_status_codes"`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 	cfg.CircuitBreaker.RegisterFlagsWithPrefix("ingester.client", f)
+	f.BoolVar(&cfg.ReportGRPCStatusCodes, "ingester.client.report-grpc-status-codes", false, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
 }
 
 func (cfg *Config) Validate() error {

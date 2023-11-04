@@ -407,6 +407,16 @@
         },
         {
           "kind": "field",
+          "name": "report_grpc_codes_in_instrumentation_label",
+          "required": false,
+          "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.report-grpc-codes-in-instrumentation-label",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "graceful_shutdown_timeout",
           "required": false,
           "desc": "Timeout for graceful shutdowns",
@@ -2202,6 +2212,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "report_grpc_status_codes",
+          "required": false,
+          "desc": "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.client.report-grpc-status-codes",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
