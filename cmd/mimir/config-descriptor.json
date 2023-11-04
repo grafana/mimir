@@ -407,6 +407,16 @@
         },
         {
           "kind": "field",
+          "name": "report_grpc_codes_in_instrumentation_label",
+          "required": false,
+          "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.report-grpc-codes-in-instrumentation-label",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "graceful_shutdown_timeout",
           "required": false,
           "desc": "Timeout for graceful shutdowns",

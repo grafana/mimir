@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -34,7 +35,7 @@ type closableHealthAndIngesterClient struct {
 // MakeIngesterClient makes a new IngesterClient
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	logger = log.With(logger, "component", "ingester-client")
-	unary, stream := grpcclient.Instrument(metrics.requestDuration)
+	unary, stream := grpcclient.Instrument(metrics.requestDuration, middleware.ReportGRPCStatusOption)
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}

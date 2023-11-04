@@ -2597,6 +2597,8 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
+  -server.report-grpc-codes-in-instrumentation-label
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string

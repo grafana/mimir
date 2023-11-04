@@ -671,6 +671,8 @@ Usage of ./cmd/mimir/mimir:
     	Optionally log request headers.
   -server.log-request-headers-exclude-list string
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
+  -server.report-grpc-codes-in-instrumentation-label
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
