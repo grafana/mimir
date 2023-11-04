@@ -177,6 +177,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
+    {
+      targets: [
+        {
+          expr:
+            |||
+              sum by (status) (
+                label_replace(label_replace(rate(%s[$__rate_interval]),
+                "status", "${1}xx", "%s", "([0-9]).."),
+                "status", "${1}", "%s", "([a-zA-Z]+)"))
+            ||| % [selector, statusLabelName, statusLabelName],
+          format: 'time_series',
+          intervalFactor: 2,
+          legendFormat: '{{status}}',
+          refId: 'A',
+        },
+      ],
+    } +
     { yaxes: $.yaxes('reqps') },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
