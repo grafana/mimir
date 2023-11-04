@@ -459,6 +459,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -697,6 +698,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1281,6 +1283,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1466,6 +1469,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1651,6 +1655,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
