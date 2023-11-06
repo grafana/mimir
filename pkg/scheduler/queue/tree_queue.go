@@ -4,8 +4,6 @@ package queue
 
 import (
 	"container/list"
-
-	"github.com/pkg/errors"
 )
 
 type QueuePath []string //nolint:revive
@@ -59,11 +57,13 @@ func (q *TreeQueue) isEmpty() bool {
 	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
 }
 
-func (q *TreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
-	if path[0] != q.name {
-		return errors.New("path must begin with root node name")
-	}
-	childQueue, err := q.getOrAddNode(path)
+// EnqueueBackByPath enqueues an item in the back of the local queue of the node
+// located at a given path through the tree; nodes for the path are created as needed.
+//
+// QueuePath must be relative to the receiver node; providing a QueuePath beginning with
+// the receiver/parent node name will create a child node of the same name as the parent.
+func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
+	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
 		return err
 	}
@@ -75,11 +75,8 @@ func (q *TreeQueue) EnqueueBackByPath(path QueuePath, v any) error {
 	return nil
 }
 
-func (q *TreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
-	if path[0] != q.name {
-		return errors.New("path must begin with root node name")
-	}
-	childQueue, err := q.getOrAddNode(path)
+func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
+	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
 		return err
 	}
@@ -87,21 +84,9 @@ func (q *TreeQueue) EnqueueFrontByPath(path QueuePath, v any) error {
 	return nil
 }
 
-// getOrAddNode recursively adds queues based on given path
-func (q *TreeQueue) getOrAddNode(path QueuePath) (*TreeQueue, error) {
-	if len(path) == 0 {
-		// non-nil tree must have at least the path equal to the root name
-		// not a recursion case; only occurs if empty path provided to root node
-		return nil, nil
-	}
-
-	if path[0] != q.name {
-		return nil, errors.New("path must begin with this node name")
-	}
-
-	childPath := path[1:]
+// getOrAddNode recursively adds tree queue nodes based on given path
+func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	if len(childPath) == 0 {
-		// no path left to create; we have arrived
 		return q, nil
 	}
 
@@ -118,33 +103,25 @@ func (q *TreeQueue) getOrAddNode(path QueuePath) (*TreeQueue, error) {
 		q.childQueueMap[childPath[0]] = childQueue
 	}
 
-	return childQueue.getOrAddNode(childPath)
+	return childQueue.getOrAddNode(childPath[1:])
 
 }
 
-func (q *TreeQueue) getNode(path QueuePath) *TreeQueue {
-	if len(path) == 0 {
-		// non-nil tree must have at least the path equal to the root name
-		// not a recursion case; only occurs if empty path provided to root node
-		return nil
-	}
-
-	childPath := path[1:]
+func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
 	if len(childPath) == 0 {
-		// no path left to search for; we have arrived
 		return q
 	}
 
 	if childQueue, ok := q.childQueueMap[childPath[0]]; ok {
-		return childQueue.getNode(childPath)
+		return childQueue.getNode(childPath[1:])
 	}
 
 	// no child node matches next path segment
 	return nil
 }
 
-func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
-	childQueue := q.getNode(path)
+func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
+	childQueue := q.getNode(childPath)
 	if childQueue == nil {
 		return nil, nil
 	}
@@ -168,7 +145,7 @@ func (q *TreeQueue) DequeueByPath(path QueuePath) (QueuePath, any) {
 		// guard against slicing into nil path
 		return nil, nil
 	}
-	return append(path, dequeuedPathFromChild[1:]...), v
+	return append(childPath, dequeuedPathFromChild[1:]...), v
 }
 
 func (q *TreeQueue) Dequeue() (QueuePath, any) {
@@ -177,7 +154,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	initialLen := len(q.childQueueOrder)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
-		//increment := true
+		incrementQueueIndex := true
 
 		if q.index == localQueueIndex {
 			// dequeuing from local queue; either we have:
@@ -187,7 +164,6 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 				q.localQueue.Remove(elem)
 				v = elem.Value
 			}
-			q.wrapIndex(true)
 		} else {
 			// dequeuing from child queue node;
 			// pick the child node whose turn it is and recur
@@ -200,13 +176,10 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 				delete(q.childQueueMap, childQueueName)
 				q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
 				// no need to increment; remainder of the slice has moved left to be under q.index
-				//increment = false
-				q.wrapIndex(false)
-			} else {
-				q.wrapIndex(true)
+				incrementQueueIndex = false
 			}
 		}
-		//q.wrapIndex(increment)
+		q.wrapIndex(incrementQueueIndex)
 	}
 	if v == nil {
 		// don't report path when nothing was dequeued
@@ -215,13 +188,8 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	return append(QueuePath{q.name}, dequeuedPath...), v
 }
 
-func (q *TreeQueue) deleteNode(path QueuePath) bool {
-	if len(path) <= 1 {
-		// node cannot delete itself
-		return false
-	}
-
-	parentPath, childQueueName := path[:len(path)-1], path[len(path)-1]
+func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
+	parentPath, childQueueName := childPath[:len(childPath)-1], childPath[len(childPath)-1]
 
 	parentNode := q.getNode(parentPath)
 	if parentNode == nil {
@@ -234,6 +202,7 @@ func (q *TreeQueue) deleteNode(path QueuePath) bool {
 		if name == childQueueName {
 			parentNode.childQueueOrder = append(q.childQueueOrder[:i], q.childQueueOrder[i+1:]...)
 			parentNode.wrapIndex(false)
+			break
 		}
 	}
 	return true

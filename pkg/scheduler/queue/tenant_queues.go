@@ -132,7 +132,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(request.tenantID)}
+	queuePath := QueuePath{string(request.tenantID)}
 	return qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 }
 
@@ -147,7 +147,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 		return err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(request.tenantID)}
+	queuePath := QueuePath{string(request.tenantID)}
 	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
@@ -157,7 +157,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 		return nil, tenant, tenantIndex, err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(tenant.tenantID)}
+	queuePath := QueuePath{string(tenant.tenantID)}
 	_, queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
 
 	queueNodeAfterDequeue := qb.tenantQueuesTree.getNode(queuePath)

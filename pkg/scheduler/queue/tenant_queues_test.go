@@ -422,7 +422,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 		return nil, err
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(tenantID)}
+	queuePath := QueuePath{string(tenantID)}
 	return qb.tenantQueuesTree.getOrAddNode(queuePath)
 }
 
@@ -432,7 +432,7 @@ func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 		return nil
 	}
 
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(tenantID)}
+	queuePath := QueuePath{string(tenantID)}
 	tenantQueue := qb.tenantQueuesTree.getNode(queuePath)
 	return tenantQueue
 }

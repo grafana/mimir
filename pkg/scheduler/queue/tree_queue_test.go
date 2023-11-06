@@ -77,55 +77,55 @@ func TestTreeQueue(t *testing.T) {
 
 	root := NewTreeQueue("root", maxTestQueueLen) // creates path: root
 
-	_, _ = root.getOrAddNode([]string{"root", "0"})      // creates paths: root:0
-	_, _ = root.getOrAddNode([]string{"root", "1", "0"}) // creates paths: root:1 and root:1:0
-	_, _ = root.getOrAddNode([]string{"root", "2", "0"}) // creates paths: root:2 and root:2:0
-	_, _ = root.getOrAddNode([]string{"root", "2", "1"}) // creates paths: root:2:1 only, as root:2 already exists
+	_, _ = root.getOrAddNode(QueuePath{"0"})      // creates paths: root:0
+	_, _ = root.getOrAddNode(QueuePath{"1", "0"}) // creates paths: root:1 and root:1:0
+	_, _ = root.getOrAddNode(QueuePath{"2", "0"}) // creates paths: root:2 and root:2:0
+	_, _ = root.getOrAddNode(QueuePath{"2", "1"}) // creates paths: root:2:1 only, as root:2 already exists
 
 	assert.Equal(t, expectedTreeQueue, root)
 
-	child := root.getNode(QueuePath{"root", "0"})
+	child := root.getNode(QueuePath{"0"})
 	assert.NotNil(t, child)
 
-	child = root.getNode(QueuePath{"root", "1"})
+	child = root.getNode(QueuePath{"1"})
 	assert.NotNil(t, child)
 
-	child = root.getNode(QueuePath{"root", "1", "0"})
+	child = root.getNode(QueuePath{"1", "0"})
 	assert.NotNil(t, child)
 
-	child = root.getNode([]string{"root", "2"})
+	child = root.getNode(QueuePath{"2"})
 	assert.NotNil(t, child)
 
-	child = root.getNode(QueuePath{"root", "2", "0"})
+	child = root.getNode(QueuePath{"2", "0"})
 	assert.NotNil(t, child)
 
-	child = root.getNode(QueuePath{"root", "2", "1"})
+	child = root.getNode(QueuePath{"2", "1"})
 	assert.NotNil(t, child)
 
 	// nonexistent paths
-	child = root.getNode(QueuePath{"root", "3"})
+	child = root.getNode(QueuePath{"3"})
 
 	assert.Nil(t, child)
 
-	child = root.getNode(QueuePath{"root", "1", "1"})
+	child = root.getNode(QueuePath{"1", "1"})
 
 	assert.Nil(t, child)
 
-	child = root.getNode(QueuePath{"root", "2", "2"})
+	child = root.getNode(QueuePath{"2", "2"})
 	assert.Nil(t, child)
 
 	// enqueue in order
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "0"}, "root:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "1"}, "root:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "1"}, "root:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2"}, "root:2:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2", "0"}, "root:2:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2", "0"}, "root:2:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath([]string{"root", "2", "1"}, "root:2:1:val2"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"0"}, "root:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2"}, "root:2:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val2"))
 
 	// note no queue at a given level is dequeued from twice in a row
 	// unless all others at the same level are empty down to the leaf node
@@ -176,7 +176,7 @@ func TestTreeQueue(t *testing.T) {
 			// here we insert something new into root:1 to test that:
 			//  - the new root:1 insert does not jump the line in front of root:2
 			//  - root:2 will not be dequeued from twice in a row now that there is a value in root:1 again
-			require.NoError(t, root.EnqueueBackByPath([]string{"root", "1", "0"}, "root:1:0:val2"))
+			require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val2"))
 		}
 	}
 	assert.Equal(t, expectedQueueOutput, queueOutput)
@@ -191,19 +191,19 @@ func TestTreeQueue(t *testing.T) {
 
 func TestDequeuePath(t *testing.T) {
 	root := NewTreeQueue("root", maxTestQueueLen)
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "0"}, "root:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "1"}, "root:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2"}, "root:2:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "1", "0"}, "root:1:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "1", "0"}, "root:1:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2", "0"}, "root:2:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2", "0"}, "root:2:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"root", "2", "1"}, "root:2:1:val2"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"0"}, "root:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2"}, "root:2:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val0"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val1"))
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val2"))
 
-	path := QueuePath{"root", "2"}
+	path := QueuePath{"2"}
 	dequeuedPath, v := root.DequeueByPath(path)
 	assert.Equal(t, "root:2:val0", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
