@@ -93,7 +93,7 @@ type Config struct {
 	GRPCTLSConfig TLSConfig `yaml:"grpc_tls_config"`
 
 	RegisterInstrumentation               bool `yaml:"register_instrumentation"`
-	ReportGRPCCodesInInstrumentationLabel bool `yaml:"report_grpc_codes_in_instrumentation_label"`
+	ReportGRPCCodesInInstrumentationLabel bool `yaml:"report_grpc_codes_in_instrumentation_label_enabled"`
 	ExcludeRequestInLog                   bool `yaml:"-"`
 	DisableRequestSuccessLog              bool `yaml:"-"`
 
@@ -169,7 +169,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
-	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
+	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for entire HTTP request, including headers and body.")
 	f.DurationVar(&cfg.HTTPServerReadHeaderTimeout, "server.http-read-header-timeout", 0, "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.")

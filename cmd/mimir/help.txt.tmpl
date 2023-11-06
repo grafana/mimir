@@ -379,8 +379,6 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
-  -ingester.client.report-grpc-status-codes
-    	If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error"
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int
@@ -673,7 +671,7 @@ Usage of ./cmd/mimir/mimir:
     	Optionally log request headers.
   -server.log-request-headers-exclude-list string
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
-  -server.report-grpc-codes-in-instrumentation-label
+  -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.

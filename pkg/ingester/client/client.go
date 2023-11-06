@@ -71,14 +71,14 @@ func (c *closableHealthAndIngesterClient) Close() error {
 type Config struct {
 	GRPCClientConfig      grpcclient.Config    `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
 	CircuitBreaker        CircuitBreakerConfig `yaml:"circuit_breaker"`
-	ReportGRPCStatusCodes bool                 `yaml:"report_grpc_status_codes"`
+	ReportGRPCStatusCodes bool                 `yaml:"report_grpc_codes_in_instrumentation_label_enabled" category:"advanced"`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
 	cfg.CircuitBreaker.RegisterFlagsWithPrefix("ingester.client", f)
-	f.BoolVar(&cfg.ReportGRPCStatusCodes, "ingester.client.report-grpc-status-codes", false, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
+	f.BoolVar(&cfg.ReportGRPCStatusCodes, "ingester.client.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"")
 }
 
 func (cfg *Config) Validate() error {

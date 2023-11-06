@@ -1275,7 +1275,7 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -ingester.client.report-grpc-status-codes
+  -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error"
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
@@ -2599,7 +2599,7 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
-  -server.report-grpc-codes-in-instrumentation-label
+  -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.

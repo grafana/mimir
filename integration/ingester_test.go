@@ -742,10 +742,10 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 			defer s.Close()
 
 			baseFlags := map[string]string{
-				"-distributor.ingestion-tenant-shard-size":           "0",
-				"-ingester.ring.heartbeat-period":                    "1s",
-				"-ingester.client.report-grpc-status-codes":          strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
-				"-server.report-grpc-codes-in-instrumentation-label": strconv.FormatBool(testData.serverReportGRPCStatusCodes),
+				"-distributor.ingestion-tenant-shard-size":                            "0",
+				"-ingester.ring.heartbeat-period":                                     "1s",
+				"-ingester.client.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
+				"-server.report-grpc-codes-in-instrumentation-label-enabled":          strconv.FormatBool(testData.serverReportGRPCStatusCodes),
 			}
 
 			flags := mergeFlags(

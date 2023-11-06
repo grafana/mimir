@@ -588,8 +588,8 @@ grpc_tls_config:
 
 # If set to true, gRPC statuses will be reported in instrumentation labels with
 # their string representations. Otherwise, they will be reported as "error".
-# CLI flag: -server.report-grpc-codes-in-instrumentation-label
-[report_grpc_codes_in_instrumentation_label: <boolean> | default = false]
+# CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
 
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
@@ -2271,11 +2271,11 @@ circuit_breaker:
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
 
-# If set to true, gRPC status codes will be reported in "status_code" label of
-# "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will
-# be reported as "error"
-# CLI flag: -ingester.client.report-grpc-status-codes
-[report_grpc_status_codes: <boolean> | default = false]
+# (advanced) If set to true, gRPC status codes will be reported in "status_code"
+# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
+# they will be reported as "error"
+# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
 ```
 
 ### grpc_client
