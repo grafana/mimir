@@ -7,8 +7,8 @@
     <mime_type>text/x-gdscript</mime_type>
     <mime_type>application/x-gdscript</mime_type>
     <priority>0.1</priority>
-    <analyse first="true">
-      <regex pattern="^@" score="0.4"/>
+    <analyse>
+      <regex pattern="^export" score="0.1"/>
     </analyse>
   </config>
   <rules>
