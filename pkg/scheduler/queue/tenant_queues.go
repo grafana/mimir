@@ -123,7 +123,7 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 }
 
 func (qb *queueBroker) isEmpty() bool {
-	return qb.tenantQueuesTree.isEmpty()
+	return qb.tenantQueuesTree.IsEmpty()
 }
 
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {

@@ -263,7 +263,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 	require.Nil(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}))
 	require.NoError(t, queueBroker.enqueueRequestBack(&tr, tenantMaxQueriers))
-	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).isEmpty())
+	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	call := &nextRequestForQuerierCall{
@@ -278,5 +278,5 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	// indicating not to re-submit a request for nextRequestForQuerierCall for the querier
 	require.True(t, queue.tryDispatchRequestToQuerier(queueBroker, call))
 	// assert request was re-enqueued for tenant after failed send
-	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).isEmpty())
+	require.False(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}).IsEmpty())
 }

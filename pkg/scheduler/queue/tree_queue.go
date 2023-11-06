@@ -44,7 +44,7 @@ func NewTreeQueue(name string, maxQueueLen int) *TreeQueue {
 	}
 }
 
-func (q *TreeQueue) isEmpty() bool {
+func (q *TreeQueue) IsEmpty() bool {
 	// avoid recursion to make this a cheap operation
 	//
 	// Because we dereference empty child nodes during dequeuing,
@@ -52,9 +52,25 @@ func (q *TreeQueue) isEmpty() bool {
 	// and nothing in this tree node's local queue.
 	//
 	// In reality a package member could attach empty child queues with getOrAddNode
-	// in order to get a functionally-empty tree that would report false for isEmpty.
+	// in order to get a functionally-empty tree that would report false for IsEmpty.
 	// We assume this does not occur or is not relevant during normal operation.
 	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
+}
+
+func (q *TreeQueue) NodeCount() int {
+	count := 1 // count self
+	for _, childQueue := range q.childQueueMap {
+		count += childQueue.NodeCount()
+	}
+	return count
+}
+
+func (q *TreeQueue) ItemCount() int {
+	count := q.localQueue.Len() // count self
+	for _, childQueue := range q.childQueueMap {
+		count += childQueue.ItemCount()
+	}
+	return count
 }
 
 // EnqueueBackByPath enqueues an item in the back of the local queue of the node
@@ -75,6 +91,18 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 	return nil
 }
 
+// EnqueueFrontByPath enqueues an item in the front of the local queue of the node
+// located at a given path through the tree; nodes for the path are created as needed.
+//
+// Max queue length check is skipped; enqueueing to the front is intended only for items
+// which were first enqueued to the back and then dequeued after reaching the front.
+//
+// Re-enqueueing to the front is intended for cases where a queue consumer fails to
+// complete operations on the dequeued item, but failure is not yet final, and the
+// operations should be retried by a subsequent queue consumer.
+//
+// QueuePath must be relative to the receiver node; providing a QueuePath beginning with
+// the receiver/parent node name will create a child node of the same name as the parent.
 func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
@@ -128,10 +156,10 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 
 	dequeuedPathFromChild, v := childQueue.Dequeue()
 
-	if childQueue.isEmpty() {
+	if childQueue.IsEmpty() {
 		// child node will recursively clean up its own empty children during dequeue,
 		// but nodes cannot delete themselves; delete the empty child in order to
-		// maintain structural guarantees relied on to make isEmpty() non-recursive
+		// maintain structural guarantees relied on to make IsEmpty() non-recursive
 		q.deleteNode(childPath)
 	}
 
@@ -165,7 +193,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 			dequeuedPath, v = childQueue.Dequeue()
 
 			// perform cleanup if child node is empty after dequeuing recursively
-			if childQueue.isEmpty() {
+			if childQueue.IsEmpty() {
 				q.deleteNode(QueuePath{childQueueName})
 			} else {
 				q.wrapIndex(true)

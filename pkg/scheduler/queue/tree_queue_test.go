@@ -186,29 +186,89 @@ func TestTreeQueue(t *testing.T) {
 	path, v := root.Dequeue()
 	assert.Nil(t, v) // assert we get nil back,
 	assert.Nil(t, path)
-	assert.True(t, root.isEmpty()) // assert nothing in local or child queues
+	assert.True(t, root.IsEmpty()) // assert nothing in local or child queues
+}
+
+func makeTreeQueue(t *testing.T) *TreeQueue {
+	/*
+	   root
+	   ├── child0
+	   │		 └── localQueue
+	   │		     └── val0
+	   ├── child1
+	   │		 ├── child0
+	   │		 │		 └── localQueue
+	   │		 │		     ├── val0
+	   │		 │		     └── val1
+	   │		 └── localQueue
+	   │		     ├── val0
+	   │		     └── val1
+	   ├── child2
+	   │		 ├── child0
+	   │		 │		 └── localQueue
+	   │		 │		     ├── val0
+	   │		 │		     └── val1
+	   │		 ├── child1
+	   │		 │		 └── localQueue
+	   │		 │		     ├── val0
+	   │		 │		     ├── val1
+	   │		 │		     └── val2
+	   │		 └── localQueue
+	   └── localQueue
+	*/
+	root := NewTreeQueue("root", maxTestQueueLen)
+	require.Equal(t, 1, root.NodeCount())
+	require.Equal(t, 0, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"0"}, "root:0:val0"))
+	require.Equal(t, 2, root.NodeCount())
+	require.Equal(t, 1, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val0"))
+	require.Equal(t, 3, root.NodeCount())
+	require.Equal(t, 2, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val1"))
+	require.Equal(t, 3, root.NodeCount())
+	require.Equal(t, 3, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val0"))
+	require.Equal(t, 4, root.NodeCount())
+	require.Equal(t, 4, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val1"))
+	require.Equal(t, 4, root.NodeCount())
+	require.Equal(t, 5, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val0"))
+	require.Equal(t, 6, root.NodeCount())
+	require.Equal(t, 6, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val1"))
+	require.Equal(t, 6, root.NodeCount())
+	require.Equal(t, 7, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val0"))
+	require.Equal(t, 7, root.NodeCount())
+	require.Equal(t, 8, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val1"))
+	require.Equal(t, 7, root.NodeCount())
+	require.Equal(t, 9, root.ItemCount())
+
+	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val2"))
+	require.Equal(t, 7, root.NodeCount())
+	require.Equal(t, 10, root.ItemCount())
+
+	return root
 }
 
 func TestDequeuePath(t *testing.T) {
-	root := NewTreeQueue("root", maxTestQueueLen)
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"0"}, "root:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, "root:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2"}, "root:2:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1", "0"}, "root:1:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "0"}, "root:2:0:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val0"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val1"))
-	require.NoError(t, root.EnqueueBackByPath(QueuePath{"2", "1"}, "root:2:1:val2"))
+	root := makeTreeQueue(t)
 
+	// dequeue from root:2 until exhausted
 	path := QueuePath{"2"}
 	dequeuedPath, v := root.DequeueByPath(path)
-	assert.Equal(t, "root:2:val0", v)
-	assert.Equal(t, path, dequeuedPath[:len(path)])
-
-	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:0:val0", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
@@ -228,9 +288,66 @@ func TestDequeuePath(t *testing.T) {
 	assert.Equal(t, "root:2:1:val2", v)
 	assert.Equal(t, path, dequeuedPath[:len(path)])
 
-	// root:2 is exhausted
+	// root:2 is exhausted;
 	dequeuedPath, v = root.DequeueByPath(path)
 	assert.Nil(t, v)
 	assert.Nil(t, dequeuedPath)
+	// root:2 and its two children root:2:0 and root:2:1 were deleted
+	assert.Nil(t, root.getNode(path))
+	assert.Equal(t, 2, len(root.childQueueMap))
+	assert.Equal(t, 2, len(root.childQueueOrder))
+	assert.Equal(t, 4, root.NodeCount())
+	// 5 of 10 items were dequeued
+	assert.Equal(t, 5, root.ItemCount())
 
+	// dequeue from root:1 until exhausted
+	path = QueuePath{"1"}
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Equal(t, "root:1:val0", v)
+	assert.Equal(t, path, dequeuedPath[:len(path)])
+
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Equal(t, "root:1:0:val0", v)
+	assert.Equal(t, path, dequeuedPath[:len(path)])
+
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Equal(t, "root:1:val1", v)
+	assert.Equal(t, path, dequeuedPath[:len(path)])
+
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Equal(t, "root:1:0:val1", v)
+	assert.Equal(t, path, dequeuedPath[:len(path)])
+
+	// root:1 is exhausted;
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Nil(t, v)
+	assert.Nil(t, dequeuedPath)
+	// root:1 and its child root:1:0 were deleted
+	assert.Nil(t, root.getNode(path))
+	assert.Equal(t, 1, len(root.childQueueMap))
+	assert.Equal(t, 1, len(root.childQueueOrder))
+	assert.Equal(t, 2, root.NodeCount())
+	// 9 of 10 items have been dequeued
+	assert.Equal(t, 1, root.ItemCount())
+
+	// dequeue from root:0 until exhausted
+	path = QueuePath{"0"}
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Equal(t, "root:0:val0", v)
+	assert.Equal(t, path, dequeuedPath[:len(path)])
+
+	// root:0 is exhausted;
+	dequeuedPath, v = root.DequeueByPath(path)
+	assert.Nil(t, v)
+	assert.Nil(t, dequeuedPath)
+	// root:0 was deleted
+	assert.Nil(t, root.getNode(path))
+	assert.Equal(t, 0, len(root.childQueueMap))
+	assert.Equal(t, 0, len(root.childQueueOrder))
+	assert.Equal(t, 1, root.NodeCount())
+	// 10 of 10 items have been dequeued
+	assert.Equal(t, 0, root.ItemCount())
+
+	// final state of root
+	assert.True(t, root.IsEmpty())
 }
