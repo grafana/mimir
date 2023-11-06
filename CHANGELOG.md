@@ -70,7 +70,7 @@
 * [BUGFIX] Querier: reduce log volume when querying ingesters with zone-awareness enabled and one or more instances in a single zone unavailable. #6381
 * [BUGFIX] Querier: don't try to query further ingesters if ingester query request minimization is enabled and a query limit is reached as a result of the responses from the initial set of ingesters. #6402
 * [BUGFIX] Ingester: Don't cache context cancellation error when querying. #6446
-* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451 #6469
+* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6469
 * [BUGFIX] All: fix issue where traces for some inter-component gRPC calls would incorrectly show the call as failing due to cancellation. #6470
 * [BUGFIX] Querier: correctly mark streaming requests to ingesters or store-gateways as successful, not cancelled, in metrics and traces. #6471 #6505
 
