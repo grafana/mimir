@@ -238,7 +238,15 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, errors.Wrap(err, "failed to start state persister service")
 	}
 
-	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, featurecontrol.NoopFlags{})
+	// Alertmanager defines two flags for the classic vs new matcher parsing.
+	// The default behavior with no flags set, is to actually use the new matcher parsing that's still under development.
+	// Therefore, we must pass in a flag here to force usage of the default/stable matcher parser.
+	// In the future, when the new matcher parsing stabilizes and we feel ready to adopt it, we can remove this flag to enable it.
+	features, err := featurecontrol.NewFlags(am.logger, "classic-matchers-parsing")
+	if err != nil {
+		return nil, fmt.Errorf("invalid alertmanager featuresset: %v", err)
+	}
+	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, features)
 
 	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
