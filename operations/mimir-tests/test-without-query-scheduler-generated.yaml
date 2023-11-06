@@ -870,7 +870,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -924,7 +924,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -978,7 +978,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1032,7 +1032,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
