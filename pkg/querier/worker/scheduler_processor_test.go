@@ -10,6 +10,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -177,6 +179,23 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
 		runTest(t, false)
 	})
+}
+
+func TestCreateSchedulerProcessor(t *testing.T) {
+	conf := grpcclient.Config{}
+	flagext.DefaultValues(&conf)
+	conf.MaxSendMsgSize = 1 * 1024 * 1024
+
+	sp, _ := newSchedulerProcessor(Config{
+		SchedulerAddress:               "sched:12345",
+		QuerierID:                      "test",
+		QueryFrontendGRPCClientConfig:  conf,
+		QuerySchedulerGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 5 * 1024}, // schedulerProcessor should ignore this.
+		MaxConcurrentRequests:          5,
+	}, nil, nil, nil)
+
+	assert.Equal(t, 1*1024*1024, sp.maxMessageSize)
+	assert.Equal(t, conf, sp.grpcConfig)
 }
 
 func prepareSchedulerProcessor() (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock) {
