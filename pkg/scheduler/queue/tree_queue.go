@@ -128,17 +128,11 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 
 	dequeuedPathFromChild, v := childQueue.Dequeue()
 
-	// perform cleanup if child node is empty after dequeuing recursively
 	if childQueue.isEmpty() {
-		delete(q.childQueueMap, childQueue.name)
-		directChildQueueName := dequeuedPathFromChild[0]
-		for i, name := range q.childQueueOrder {
-			if name == directChildQueueName {
-				q.childQueueOrder = append(q.childQueueOrder[:i], q.childQueueOrder[i+1:]...)
-				q.wrapIndex(false)
-			}
-		}
-
+		// child node will recursively clean up its own empty children during dequeue,
+		// but nodes cannot delete themselves; delete the empty child in order to
+		// maintain structural guarantees relied on to make isEmpty() non-recursive
+		q.deleteNode(childPath)
 	}
 
 	if v == nil {
