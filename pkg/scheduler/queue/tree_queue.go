@@ -148,8 +148,6 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	initialLen := len(q.childQueueOrder)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
-		incrementQueueIndex := true
-
 		if q.index == localQueueIndex {
 			// dequeuing from local queue; either we have:
 			//  1. reached a leaf node, or
@@ -158,6 +156,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 				q.localQueue.Remove(elem)
 				v = elem.Value
 			}
+			q.wrapIndex(true)
 		} else {
 			// dequeuing from child queue node;
 			// pick the child node whose turn it is and recur
@@ -167,13 +166,11 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.isEmpty() {
-				delete(q.childQueueMap, childQueueName)
-				q.childQueueOrder = append(q.childQueueOrder[:q.index], q.childQueueOrder[q.index+1:]...)
-				// no need to increment; remainder of the slice has moved left to be under q.index
-				incrementQueueIndex = false
+				q.deleteNode(QueuePath{childQueueName})
+			} else {
+				q.wrapIndex(true)
 			}
 		}
-		q.wrapIndex(incrementQueueIndex)
 	}
 	if v == nil {
 		// don't report path when nothing was dequeued
