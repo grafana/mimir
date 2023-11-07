@@ -78,7 +78,7 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDele
 		checksFailed: c.checksFailed,
 		checksTotal:  c.checksTotal,
 		tracked:      blocksToTrack,
-		queried:      make(map[ulid.ULID]struct{}, len(knownBlocks)),
+		queried:      make(map[ulid.ULID]struct{}, len(blocksToTrack)),
 	}
 }
 
