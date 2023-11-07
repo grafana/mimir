@@ -45,8 +45,6 @@ func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, 
 // NewTracker creates a consistency tracker from the known blocks. It filters out any block uploaded within uploadGracePeriod
 // and with a deletion mark within deletionGracePeriod.
 func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark) BlocksConsistencyTracker {
-	c.checksTotal.Inc()
-
 	blocksToTrack := make(map[ulid.ULID]struct{}, len(knownBlocks))
 	for _, block := range knownBlocks {
 		// Some recently uploaded blocks, already discovered by the querier, may not have been discovered
@@ -78,12 +76,14 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDele
 
 	return BlocksConsistencyTracker{
 		checksFailed: c.checksFailed,
+		checksTotal:  c.checksTotal,
 		tracked:      blocksToTrack,
 		queried:      make(map[ulid.ULID]struct{}, len(knownBlocks)),
 	}
 }
 
 type BlocksConsistencyTracker struct {
+	checksTotal  prometheus.Counter
 	checksFailed prometheus.Counter
 
 	tracked map[ulid.ULID]struct{}
@@ -114,6 +114,8 @@ func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlock
 }
 
 func (c BlocksConsistencyTracker) Complete() {
+	c.checksTotal.Inc()
+
 	if len(c.queried) < len(c.tracked) {
 		c.checksFailed.Inc()
 	}
