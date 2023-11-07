@@ -167,7 +167,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 		// guard against slicing into nil path
 		return nil, nil
 	}
-	return append(childPath, dequeuedPathFromChild[1:]...), v
+	return append(QueuePath{q.name}, append(childPath, dequeuedPathFromChild[1:]...)...), v
 }
 
 func (q *TreeQueue) Dequeue() (QueuePath, any) {
