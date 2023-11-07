@@ -6992,6 +6992,17 @@
             },
             {
               "kind": "field",
+              "name": "num_tokens",
+              "required": false,
+              "desc": "Number of tokens for each store-gateway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 512,
+              "fieldFlag": "store-gateway.sharding-ring.num-tokens",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "zone_awareness_enabled",
               "required": false,
               "desc": "True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
