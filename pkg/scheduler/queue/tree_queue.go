@@ -25,22 +25,22 @@ const localQueueIndex = -1
 // at the same level of the tree are empty down to the leaf node.
 type TreeQueue struct {
 	// name of the tree node will be set to its segment of the queue path
-	name            string
-	maxQueueLen     int
-	localQueue      *list.List
-	index           int
-	childQueueOrder []string
-	childQueueMap   map[string]*TreeQueue
+	name                   string
+	maxQueueLen            int
+	localQueue             *list.List
+	currentChildQueueIndex int
+	childQueueOrder        []string
+	childQueueMap          map[string]*TreeQueue
 }
 
 func NewTreeQueue(name string, maxQueueLen int) *TreeQueue {
 	return &TreeQueue{
-		name:            name,
-		maxQueueLen:     maxQueueLen,
-		localQueue:      list.New(),
-		index:           localQueueIndex,
-		childQueueMap:   map[string]*TreeQueue{},
-		childQueueOrder: nil,
+		name:                   name,
+		maxQueueLen:            maxQueueLen,
+		localQueue:             list.New(),
+		currentChildQueueIndex: localQueueIndex,
+		childQueueMap:          map[string]*TreeQueue{},
+		childQueueOrder:        nil,
 	}
 }
 
@@ -125,8 +125,28 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 		// no child node matches next path segment
 		// create next child before recurring
 		childQueue = NewTreeQueue(childPath[0], q.maxQueueLen)
-		// add new child queue to ordered list for round-robining
-		q.childQueueOrder = append(q.childQueueOrder, childQueue.name)
+
+		// add new child queue to ordered list for round-robining;
+		// in order to maintain round-robin order as nodes are created and deleted,
+		// the new child queue should be inserted directly before the current child
+		// queue index, essentially placing the new node at the end of the line
+		if q.currentChildQueueIndex == localQueueIndex {
+			// special case; cannot slice into childQueueOrder with index -1
+			// place at end of slice, which is the last slot before the local queue slot
+			q.childQueueOrder = append(q.childQueueOrder, childQueue.name)
+		} else {
+			// insert into order behind current child queue index
+			q.childQueueOrder = append(
+				q.childQueueOrder[:q.currentChildQueueIndex],
+				append(
+					[]string{childQueue.name},
+					q.childQueueOrder[q.currentChildQueueIndex:]...,
+				)...,
+			)
+			// update current child queue index to its new place in the expanded slice
+			q.currentChildQueueIndex++
+		}
+
 		// attach new child queue to lookup map
 		q.childQueueMap[childPath[0]] = childQueue
 	}
@@ -176,7 +196,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	initialLen := len(q.childQueueOrder)
 
 	for iters := 0; iters <= initialLen && v == nil; iters++ {
-		if q.index == localQueueIndex {
+		if q.currentChildQueueIndex == localQueueIndex {
 			// dequeuing from local queue; either we have:
 			//  1. reached a leaf node, or
 			//  2. reached an inner node when it is the local queue's turn
@@ -188,7 +208,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 		} else {
 			// dequeuing from child queue node;
 			// pick the child node whose turn it is and recur
-			childQueueName := q.childQueueOrder[q.index]
+			childQueueName := q.childQueueOrder[q.currentChildQueueIndex]
 			childQueue := q.childQueueMap[childQueueName]
 			dequeuedPath, v = childQueue.Dequeue()
 
@@ -229,9 +249,9 @@ func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
 
 func (q *TreeQueue) wrapIndex(increment bool) {
 	if increment {
-		q.index++
+		q.currentChildQueueIndex++
 	}
-	if q.index >= len(q.childQueueOrder) {
-		q.index = localQueueIndex
+	if q.currentChildQueueIndex >= len(q.childQueueOrder) {
+		q.currentChildQueueIndex = localQueueIndex
 	}
 }
