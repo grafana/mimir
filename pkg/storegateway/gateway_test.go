@@ -57,6 +57,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+var (
+	// RingNumTokens is the number of tokens registered in the ring by each store-gateway
+	// instance. We use a safe default instead of exposing to config option to the user
+	// in order to simplify the config.
+	RingNumTokens = 512
+)
+
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
 		setup    func(cfg *Config, limits *validation.Limits)
