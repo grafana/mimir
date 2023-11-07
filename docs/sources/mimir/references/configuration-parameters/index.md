@@ -4080,6 +4080,10 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
+  # (advanced) Number of tokens for each store-gateway.
+  # CLI flag: -store-gateway.sharding-ring.num-tokens
+  [num_tokens: <int> | default = 512]
+
   # True to enable zone-awareness and replicate blocks across different
   # availability zones. This option needs be set both on the store-gateway,
   # querier and ruler when running in microservices mode.

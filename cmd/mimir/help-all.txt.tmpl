@@ -2659,6 +2659,8 @@ Usage of ./cmd/mimir/mimir:
     	Primary backend storage used by multi-client.
   -store-gateway.sharding-ring.multi.secondary string
     	Secondary backend storage used by multi-client.
+  -store-gateway.sharding-ring.num-tokens int
+    	Number of tokens for each store-gateway. (default 512)
   -store-gateway.sharding-ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -store-gateway.sharding-ring.replication-factor int
