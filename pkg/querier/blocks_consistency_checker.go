@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-type BlocksConsistencyChecker struct {
+type BlocksConsistency struct {
 	uploadGracePeriod   time.Duration
 	deletionGracePeriod time.Duration
 	logger              log.Logger
@@ -26,8 +26,8 @@ type BlocksConsistencyChecker struct {
 	checksFailed prometheus.Counter
 }
 
-func NewBlocksConsistencyChecker(uploadGracePeriod, deletionGracePeriod time.Duration, logger log.Logger, reg prometheus.Registerer) *BlocksConsistencyChecker {
-	return &BlocksConsistencyChecker{
+func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, logger log.Logger, reg prometheus.Registerer) *BlocksConsistency {
+	return &BlocksConsistency{
 		uploadGracePeriod:   uploadGracePeriod,
 		deletionGracePeriod: deletionGracePeriod,
 		logger:              logger,
@@ -37,21 +37,17 @@ func NewBlocksConsistencyChecker(uploadGracePeriod, deletionGracePeriod time.Dur
 		}),
 		checksFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_failed_total",
-			Help: "Total number of consistency checks failed on queried blocks.",
+			Help: "Total number of consistency checks failed on queried blocks. A failed consistency check means that some of the block which had to be queried weren't present in any of the store-gateways.",
 		}),
 	}
 }
 
-func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark, queriedBlocks []ulid.ULID) (missingBlocks []ulid.ULID) {
+// NewTracker creates a consistency tracker from the known blocks. It filters out any block uploaded within uploadGracePeriod
+// and with a deletion mark within deletionGracePeriod.
+func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark) BlocksConsistencyTracker {
 	c.checksTotal.Inc()
 
-	// Make map of queried blocks, for quick lookup.
-	actualBlocks := map[ulid.ULID]struct{}{}
-	for _, blockID := range queriedBlocks {
-		actualBlocks[blockID] = struct{}{}
-	}
-
-	// Look for any missing blocks.
+	blocksToTrack := make(map[ulid.ULID]struct{}, len(knownBlocks))
 	for _, block := range knownBlocks {
 		// Some recently uploaded blocks, already discovered by the querier, may not have been discovered
 		// and loaded by the store-gateway yet. In order to avoid false positives, we grant some time
@@ -77,15 +73,48 @@ func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDe
 				continue
 			}
 		}
+		blocksToTrack[block.ID] = struct{}{}
+	}
 
-		if _, ok := actualBlocks[block.ID]; !ok {
-			missingBlocks = append(missingBlocks, block.ID)
+	return BlocksConsistencyTracker{
+		checksFailed: c.checksFailed,
+		tracked:      blocksToTrack,
+		queried:      make(map[ulid.ULID]struct{}, len(knownBlocks)),
+	}
+}
+
+type BlocksConsistencyTracker struct {
+	checksFailed prometheus.Counter
+
+	tracked map[ulid.ULID]struct{}
+	queried map[ulid.ULID]struct{}
+}
+
+// Check takes a slice of blocks which can be all queried blocks so far or only blocks queried since the last call to Check.
+// Check returns the blocks which haven't been seen in any call to Check yet.
+func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlocks []ulid.ULID) {
+	// Make map of queried blocks, for quick lookup.
+	for _, blockID := range queriedBlocks {
+		if _, ok := c.tracked[blockID]; !ok {
+			// Since we will use the length of c.queried to check if the consistency check was successful in the end,
+			// we don't include blocks we weren't asked to track in the first place.
+			continue
+		}
+		c.queried[blockID] = struct{}{}
+	}
+
+	// Look for any missing blocks.
+	for block := range c.tracked {
+		if _, ok := c.queried[block]; !ok {
+			missingBlocks = append(missingBlocks, block)
 		}
 	}
 
-	if len(missingBlocks) > 0 {
+	return missingBlocks
+}
+
+func (c BlocksConsistencyTracker) Complete() {
+	if len(c.queried) < len(c.tracked) {
 		c.checksFailed.Inc()
 	}
-
-	return missingBlocks
 }

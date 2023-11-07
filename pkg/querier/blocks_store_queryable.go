@@ -144,7 +144,7 @@ type BlocksStoreQueryable struct {
 
 	stores                   BlocksStoreSet
 	finder                   BlocksFinder
-	consistency              *BlocksConsistencyChecker
+	consistency              *BlocksConsistency
 	logger                   log.Logger
 	queryStoreAfter          time.Duration
 	metrics                  *blocksStoreQueryableMetrics
@@ -159,7 +159,7 @@ type BlocksStoreQueryable struct {
 func NewBlocksStoreQueryable(
 	stores BlocksStoreSet,
 	finder BlocksFinder,
-	consistency *BlocksConsistencyChecker,
+	consistency *BlocksConsistency,
 	limits BlocksStoreLimits,
 	queryStoreAfter time.Duration,
 	streamingChunksBatchSize uint64,
@@ -251,7 +251,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
 
-	consistency := NewBlocksConsistencyChecker(
+	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
 		3*storageCfg.BucketStore.SyncInterval,
@@ -321,7 +321,7 @@ type blocksStoreQuerier struct {
 	finder                   BlocksFinder
 	stores                   BlocksStoreSet
 	metrics                  *blocksStoreQueryableMetrics
-	consistency              *BlocksConsistencyChecker
+	consistency              *BlocksConsistency
 	limits                   BlocksStoreLimits
 	streamingChunksBatchSize uint64
 	logger                   log.Logger
@@ -554,9 +554,9 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		remainingBlocks = knownBlocks.GetULIDs()
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
-
-		resQueriedBlocks = []ulid.ULID(nil)
 	)
+	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
+	defer consistencyTracker.Complete()
 
 	for attempt := 1; attempt <= maxFetchSeriesAttempts; attempt++ {
 		// Find the set of store-gateway instances having the blocks. The exclude parameter is the
@@ -582,8 +582,6 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		}
 		spanLog.DebugLog("msg", "received series from all store-gateways", "queried blocks", strings.Join(convertULIDsToString(queriedBlocks), " "))
 
-		resQueriedBlocks = append(resQueriedBlocks, queriedBlocks...)
-
 		// Update the map of blocks we attempted to query.
 		for client, blockIDs := range clients {
 			touchedStores[client.RemoteAddress()] = struct{}{}
@@ -594,18 +592,16 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		}
 
 		// Ensure all expected blocks have been queried (during all tries done so far).
-		missingBlocks := q.consistency.Check(knownBlocks, knownDeletionMarks, resQueriedBlocks)
-		if len(missingBlocks) == 0 {
+		// The next attempt should just query the missing blocks.
+		remainingBlocks = consistencyTracker.Check(queriedBlocks)
+		if len(remainingBlocks) == 0 {
 			q.metrics.storesHit.Observe(float64(len(touchedStores)))
 			q.metrics.refetches.Observe(float64(attempt - 1))
 
 			return nil
 		}
 
-		spanLog.DebugLog("msg", "consistency check failed", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(missingBlocks), " "))
-
-		// The next attempt should just query the missing blocks.
-		remainingBlocks = missingBlocks
+		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks), " "))
 	}
 
 	// We've not been able to query all expected blocks after all retries.
