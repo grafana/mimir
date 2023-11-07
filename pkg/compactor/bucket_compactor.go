@@ -836,7 +836,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 							c.bkt,
 							err.(OutOfOrderChunksError).id,
 							block.OutOfOrderChunksNoCompactReason,
-							"OutofOrderChunk: marking block with out-of-order series/chunks to as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact); err == nil {
+							"OutofOrderChunk: marking block with out-of-order series/chunks to as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)); err == nil {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()
@@ -853,7 +853,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 							c.bkt,
 							err.(CriticalError).id,
 							block.CriticalNoCompactReason,
-							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact); err == nil {
+							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason)); err == nil {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()

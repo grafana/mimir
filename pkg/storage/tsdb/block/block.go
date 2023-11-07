@@ -326,7 +326,7 @@ func GatherFileStats(blockDir string) (res []File, _ error) {
 }
 
 // MarkForNoCompact creates a file which marks block to be not compacted.
-func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact *prometheus.CounterVec) error {
+func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
 	noCompactMarkExists, err := bkt.Exists(ctx, m)
 	if err != nil {
@@ -352,7 +352,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
-	markedForNoCompact.WithLabelValues(string(reason)).Inc()
+	markedForNoCompact.Inc()
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
 	return nil
 }
