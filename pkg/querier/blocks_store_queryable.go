@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -610,6 +611,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 }
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
+	// Sort the blocks, so it's easier to test the error strings.
+	sort.Slice(remainingBlocks, func(i, j int) bool {
+		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
+	})
 	return fmt.Errorf("%v. The failed blocks are: %s", globalerror.StoreConsistencyCheckFailed.Message("failed to fetch some blocks"), strings.Join(convertULIDsToString(remainingBlocks), " "))
 }
 
