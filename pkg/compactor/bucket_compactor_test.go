@@ -120,7 +120,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 4, m)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, false, testCase.ownJob, nil, 0, 4, m)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -156,7 +156,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 4, metrics)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, false, nil, nil, 0, 4, metrics)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
@@ -257,7 +257,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			// Block 2 is marked for no-compaction.
-			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, block.OutOfOrderChunksNoCompactReason, "details...", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, block.OutOfOrderChunksNoCompactReason, "details...", promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"reason"})))
 			// Block 3 has marker with invalid version
 			require.NoError(t, bkt.Upload(ctx, block3.String()+"/no-compact-mark.json", strings.NewReader(`{"id":"`+block3.String()+`","version":100,"details":"details","no_compact_time":1637757932,"reason":"reason"}`)))
 			// Block 4 has marker with invalid JSON syntax

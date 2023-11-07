@@ -302,7 +302,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels)
+			return criticalError(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels), meta.ULID)
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
@@ -541,6 +541,26 @@ func IsOutOfOrderChunkError(err error) bool {
 	return ok
 }
 
+// CriticalError is a type wrapper for block health critical errors.
+type CriticalError struct {
+	err error
+	id  ulid.ULID
+}
+
+func (e CriticalError) Error() string {
+	return e.err.Error()
+}
+
+func criticalError(err error, brokenBlock ulid.ULID) CriticalError {
+	return CriticalError{err: err, id: brokenBlock}
+}
+
+// IsCriticalError returns true if the base error is a CriticalError.
+func IsCriticalError(err error) bool {
+	_, ok := errors.Cause(err).(CriticalError)
+	return ok
+}
+
 // RepairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, issue347Err error) error {
 	ie, ok := errors.Cause(issue347Err).(Issue347Error)
@@ -622,7 +642,7 @@ type BucketCompactorMetrics struct {
 	groupCompactions                   prometheus.Counter
 	compactionBlocksVerificationFailed prometheus.Counter
 	blocksMarkedForDeletion            prometheus.Counter
-	blocksMarkedForNoCompact           prometheus.Counter
+	blocksMarkedForNoCompact           *prometheus.CounterVec
 	blocksMaxTimeDelta                 prometheus.Histogram
 }
 
@@ -650,11 +670,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
 		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
-		blocksMarkedForNoCompact: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_compactor_blocks_marked_for_no_compaction_total",
-			Help:        "Total number of blocks that were marked for no-compaction.",
-			ConstLabels: prometheus.Labels{"reason": block.OutOfOrderChunksNoCompactReason},
-		}),
+		blocksMarkedForNoCompact: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_compactor_blocks_marked_for_no_compaction_total",
+			Help: "Total number of blocks that were marked for no-compaction.",
+		}, []string{"reason"}),
 		blocksMaxTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_compactor_block_max_time_delta_seconds",
 			Help:    "Difference between now and the max time of a block being compacted in seconds.",
@@ -680,6 +699,7 @@ type BucketCompactor struct {
 	compactDir                     string
 	bkt                            objstore.Bucket
 	concurrency                    int
+	skipUnhealthyBlocks            bool
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
 	sortJobs                       JobsOrderFunc
@@ -698,6 +718,7 @@ func NewBucketCompactor(
 	compactDir string,
 	bkt objstore.Bucket,
 	concurrency int,
+	skipUnhealthyBlocks bool,
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
@@ -717,6 +738,7 @@ func NewBucketCompactor(
 		compactDir:                     compactDir,
 		bkt:                            bkt,
 		concurrency:                    concurrency,
+		skipUnhealthyBlocks:            skipUnhealthyBlocks,
 		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
 		ownJob:                         ownJob,
 		sortJobs:                       sortJobs,
@@ -821,6 +843,24 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 							continue
 						}
 					}
+
+					// In case an unhealthy block is found, we mark it for no compaction
+					// to unblock future compaction run.
+					if IsCriticalError(err) && c.skipUnhealthyBlocks {
+						if err := block.MarkForNoCompact(
+							ctx,
+							c.logger,
+							c.bkt,
+							err.(CriticalError).id,
+							block.CriticalNoCompactReason,
+							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact); err == nil {
+							mtx.Lock()
+							finishedAllJobs = false
+							mtx.Unlock()
+							continue
+						}
+					}
+
 					errChan <- errors.Wrapf(err, "group %s", g.Key())
 					return
 				}

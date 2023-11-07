@@ -2245,6 +2245,75 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	))
 }
 
+func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
+	// Generate a single block with a single chunk.
+	specs := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("case", "critical"),
+			Chunks: []chunks.Meta{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					newSample(0, 0, nil, nil),
+					newSample(2*time.Hour.Milliseconds()-1, 1, nil, nil),
+				})),
+			},
+		},
+	}
+
+	const user = "user"
+
+	storageDir := t.TempDir()
+	// We need two blocks to start compaction.
+	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+
+	// Force chunk to fall out of the block time range by modifying MaxTime.
+	meta1.MaxTime -= 1000
+	meta2.MaxTime -= 1000
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	cfg := prepareConfig(t)
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil)
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Wait until a compaction run has been completed.
+	test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	// Stop the compactor.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Verify that compactor has found the unhealthy block, and this block is now marked for no-compaction.
+	r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
+	matches := r.FindStringSubmatch(logs.String())
+	require.Len(t, matches, 2) // Entire string match + single group match.
+
+	skippedBlock := matches[1]
+	require.True(t, skippedBlock == meta1.ULID.String() || skippedBlock == meta2.ULID.String())
+
+	m := &block.NoCompactMark{}
+	require.NoError(t, block.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, skippedBlock), m))
+	require.Equal(t, skippedBlock, m.ID.String())
+	require.NotZero(t, m.NoCompactTime)
+	require.Equal(t, block.NoCompactReason(block.CriticalNoCompactReason), m.Reason)
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
+	`),
+		"cortex_compactor_blocks_marked_for_no_compaction_total",
+	))
+}
+
 type sample struct {
 	t  int64
 	v  float64
