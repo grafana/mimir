@@ -230,12 +230,12 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
 enqueueAgain:
-	level.Debug(spanLogger).Log("msg", "enqueuing request")
+	spanLogger.DebugLog("msg", "enqueuing request")
 
 	var cancelCh chan<- uint64
 	select {
 	case <-ctx.Done():
-		level.Debug(spanLogger).Log("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
+		spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
 		return nil, ctx.Err()
 
 	case f.requestsCh <- freq:
@@ -247,21 +247,21 @@ enqueueAgain:
 		} else if enqRes.status == failed {
 			retries--
 			if retries > 0 {
-				level.Debug(spanLogger).Log("msg", "enqueuing request failed, will retry")
+				spanLogger.DebugLog("msg", "enqueuing request failed, will retry")
 				goto enqueueAgain
 			}
 		}
 
-		level.Debug(spanLogger).Log("msg", "enqueuing request failed, retries are exhausted, aborting")
+		spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
 
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
-	level.Debug(spanLogger).Log("msg", "request enqueued successfully, waiting for response")
+	spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
 
 	select {
 	case <-ctx.Done():
-		level.Debug(spanLogger).Log("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
+		spanLogger.DebugLog("msg", "request context cancelled after enqueuing request, aborting", "err", ctx.Err())
 
 		if cancelCh != nil {
 			select {
@@ -275,7 +275,7 @@ enqueueAgain:
 		return nil, ctx.Err()
 
 	case resp := <-freq.response:
-		level.Debug(spanLogger).Log("msg", "received response")
+		spanLogger.DebugLog("msg", "received response")
 
 		if stats.ShouldTrackHTTPGRPCResponse(resp.HttpResponse) {
 			stats := stats.FromContext(ctx)

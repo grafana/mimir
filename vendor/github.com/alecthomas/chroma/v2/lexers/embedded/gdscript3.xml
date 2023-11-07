@@ -6,8 +6,10 @@
     <filename>*.gd</filename>
     <mime_type>text/x-gdscript</mime_type>
     <mime_type>application/x-gdscript</mime_type>
-    <analyse first="true">
-      <regex pattern="^export" score="0.1"/>
+    <analyse>
+      <regex pattern="func (_ready|_init|_input|_process|_unhandled_input)" score="0.8"/>
+      <regex pattern="(extends |class_name |onready |preload|load|setget|func [^_])" score="0.4"/>
+      <regex pattern="(var|const|enum|export|signal|tool)" score="0.2"/>
     </analyse>
   </config>
   <rules>

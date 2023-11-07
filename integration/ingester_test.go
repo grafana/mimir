@@ -469,6 +469,27 @@ func TestIngesterQuerying(t *testing.T) {
 				},
 			},
 		},
+		"query that returns no results": {
+			// We have to push at least one sample to ensure that the tenant TSDB exists (otherwise the ingester takes a shortcut and returns early).
+			inSeries: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{
+							Name:  "__name__",
+							Value: "not_foobar",
+						},
+					},
+					Samples: []prompb.Sample{
+						{
+							Timestamp: queryStart.Add(-2 * time.Second).UnixMilli(),
+							Value:     100,
+						},
+					},
+				},
+			},
+			expectedQueryResult:          model.Matrix{},
+			expectedTimestampQueryResult: model.Matrix{},
+		},
 	}
 
 	for testName, tc := range testCases {
@@ -529,6 +550,38 @@ func TestIngesterQuerying(t *testing.T) {
 					result, err = client.QueryRange(timestampQuery, queryStart, queryEnd, queryStep)
 					require.NoError(t, err)
 					require.Equal(t, tc.expectedTimestampQueryResult, result)
+
+					queryRequestCount := func(status string) (float64, error) {
+						counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
+							e2e.WithLabelMatchers(
+								labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+								labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
+							),
+							e2e.WithMetricCount,
+							e2e.SkipMissingMetrics,
+						)
+
+						if err != nil {
+							return 0, err
+						}
+
+						require.Len(t, counts, 1)
+						return counts[0], nil
+					}
+
+					successfulQueryRequests, err := queryRequestCount("2xx")
+					require.NoError(t, err)
+
+					cancelledQueryRequests, err := queryRequestCount("cancel")
+					require.NoError(t, err)
+
+					totalQueryRequests, err := queryRequestCount(".*")
+					require.NoError(t, err)
+
+					// We expect two query requests: the first query request and the timestamp query request
+					require.Equalf(t, 2.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 2.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+					require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 				})
 			}
 		})
@@ -622,6 +675,162 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 			}
 
 			require.Equal(t, 2.0, totalQueryRequests)
+		})
+	}
+}
+
+func TestIngesterReportGRPCStatusCodes(t *testing.T) {
+	query := "foobar"
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 10 * time.Minute
+
+	testCases := map[string]struct {
+		serverReportGRPCStatusCodes         bool
+		ingesterClientReportGRPCStatusCodes bool
+		expectedPushStatusCode              string
+		expectedQueryStatusCode             string
+	}{
+		"when server and ingester client do not report grpc codes, successful push and query give success and 2xx": {
+			serverReportGRPCStatusCodes:         false,
+			ingesterClientReportGRPCStatusCodes: false,
+			expectedPushStatusCode:              "success",
+			expectedQueryStatusCode:             "2xx",
+		},
+		"when server does not report and ingester client reports grpc codes, successful push and query give success and OK": {
+			serverReportGRPCStatusCodes:         false,
+			ingesterClientReportGRPCStatusCodes: true,
+			expectedPushStatusCode:              "success",
+			expectedQueryStatusCode:             "OK",
+		},
+		"when server reports and ingester client does not report grpc codes, successful push and query give OK and 2xx": {
+			serverReportGRPCStatusCodes:         true,
+			ingesterClientReportGRPCStatusCodes: false,
+			expectedPushStatusCode:              "OK",
+			expectedQueryStatusCode:             "2xx",
+		},
+		"when server and ingester client report grpc codes, successful push and query give OK and OK": {
+			serverReportGRPCStatusCodes:         true,
+			ingesterClientReportGRPCStatusCodes: true,
+			expectedPushStatusCode:              "OK",
+			expectedQueryStatusCode:             "OK",
+		},
+	}
+
+	series := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "not_foobar",
+				},
+			},
+			Samples: []prompb.Sample{
+				{
+					Timestamp: queryStart.Add(-2 * time.Second).UnixMilli(),
+					Value:     100,
+				},
+			},
+		},
+	}
+	expectedQueryResult := model.Matrix{}
+
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
+
+			baseFlags := map[string]string{
+				"-distributor.ingestion-tenant-shard-size":                            "0",
+				"-ingester.ring.heartbeat-period":                                     "1s",
+				"-ingester.client.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
+				"-server.report-grpc-codes-in-instrumentation-label-enabled":          strconv.FormatBool(testData.serverReportGRPCStatusCodes),
+			}
+
+			flags := mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				baseFlags,
+			)
+
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+			// Wait until distributor has updated the ring.
+			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			// Wait until querier has updated the ring.
+			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+			require.NoError(t, err)
+
+			res, err := client.Push(series)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+
+			sums, err := ingester.SumMetrics(
+				[]string{"cortex_request_duration_seconds"},
+				e2e.WithLabelMatchers(
+					labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
+					labels.MustNewMatcher(labels.MatchEqual, "status_code", testData.expectedPushStatusCode),
+				),
+				e2e.SkipMissingMetrics,
+				e2e.WithMetricCount,
+			)
+
+			require.NoError(t, err)
+			pushRequests := sums[0]
+			require.Equal(t, pushRequests, 1.0)
+
+			result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
+			require.NoError(t, err)
+			require.Equal(t, expectedQueryResult, result)
+
+			queryRequestCount := func(status string) (float64, error) {
+				counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
+					e2e.WithLabelMatchers(
+						labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+						labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
+					),
+					e2e.WithMetricCount,
+					e2e.SkipMissingMetrics,
+				)
+
+				if err != nil {
+					return 0, err
+				}
+
+				require.Len(t, counts, 1)
+				return counts[0], nil
+			}
+
+			successfulQueryRequests, err := queryRequestCount(testData.expectedQueryStatusCode)
+			require.NoError(t, err)
+
+			cancelledQueryRequests, err := queryRequestCount("cancel")
+			require.NoError(t, err)
+
+			totalQueryRequests, err := queryRequestCount(".*")
+			require.NoError(t, err)
+
+			// We expect two query requests: the first query request and the timestamp query request
+			require.Equalf(t, 1.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+			require.Equalf(t, 1.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+			require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 		})
 	}
 }

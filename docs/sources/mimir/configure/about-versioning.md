@@ -110,8 +110,6 @@ The following features are currently experimental:
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
     - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
-- Ignoring chunks query cancellation
-  - `-ingester.chunks-query-ignore-cancellation`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)

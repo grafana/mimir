@@ -6130,9 +6130,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
 	l := InstanceLimits{
-		MaxIngestionRate:   10,
-		MaxInMemoryTenants: 20,
-		MaxInMemorySeries:  30,
+		MaxIngestionRate:             10,
+		MaxInMemoryTenants:           20,
+		MaxInMemorySeries:            30,
+		MaxInflightPushRequests:      40,
+		MaxInflightPushRequestsBytes: 50,
 	}
 
 	cfg := defaultIngesterTestConfig(t)
@@ -6146,10 +6148,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
 		# TYPE cortex_ingester_instance_limits gauge
-		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 0
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 30
 		cortex_ingester_instance_limits{limit="max_tenants"} 20
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 40
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 50
 	`), "cortex_ingester_instance_limits"))
 
 	l.MaxInMemoryTenants = 1000
@@ -6158,10 +6161,11 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_limits Instance limits used by this ingester.
 		# TYPE cortex_ingester_instance_limits gauge
-		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 0
 		cortex_ingester_instance_limits{limit="max_ingestion_rate"} 10
 		cortex_ingester_instance_limits{limit="max_series"} 2000
 		cortex_ingester_instance_limits{limit="max_tenants"} 1000
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 40
+		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 50
 	`), "cortex_ingester_instance_limits"))
 }
 
@@ -6187,38 +6191,11 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 	startCh := make(chan struct{})
 
+	const targetRequestDuration = time.Second
+
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		const targetRequestDuration = time.Second
-
-		samples := 100000
-		series := 1
-
-		// Find right series&samples count to make sure that push takes given target duration.
-		for {
-			req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d-%d", series, samples)), series, samples)
-
-			start := time.Now()
-			_, err := i.Push(ctx, req)
-			require.NoError(t, err)
-
-			elapsed := time.Since(start)
-			t.Log(series, samples, elapsed)
-			if elapsed > targetRequestDuration {
-				break
-			}
-
-			samples = int(float64(samples) * float64(targetRequestDuration/elapsed) * 1.5) // Adjust number of series to hit our targetRequestDuration push duration.
-			for samples >= int(time.Hour.Milliseconds()) {
-				// We generate one sample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
-				// So we trade samples for series here.
-				samples /= 10
-				series *= 10
-			}
-		}
-
-		// Now repeat push with number of samples calibrated to our target request duration.
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d-%d", series, samples)), series, samples)
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
 		// Signal that we're going to do the real push now.
 		close(startCh)
@@ -6228,6 +6205,8 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	})
 
 	g.Go(func() error {
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+
 		select {
 		case <-ctx.Done():
 		// failed to setup
@@ -6235,8 +6214,9 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 			// we can start the test.
 		}
 
-		time.Sleep(10 * time.Millisecond) // Give first goroutine a chance to start pushing...
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+			return i.inflightPushRequests.Load()
+		})
 
 		_, err := i.Push(ctx, req)
 		require.ErrorIs(t, err, errMaxInflightRequestsReached)
@@ -6259,10 +6239,150 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
 	`), "cortex_ingester_instance_rejected_requests_total"))
+}
+
+func TestIngester_inflightPushRequestsBytes(t *testing.T) {
+	var limitsMx sync.Mutex
+	limits := InstanceLimits{MaxInflightPushRequestsBytes: 0}
+
+	// Create a mocked ingester
+	cfg := defaultIngesterTestConfig(t)
+	cfg.InstanceLimitsFn = func() *InstanceLimits {
+		limitsMx.Lock()
+		defer limitsMx.Unlock()
+
+		// Make a copy
+		il := limits
+		return &il
+	}
+
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	startCh := make(chan int)
+
+	const targetRequestDuration = time.Second
+
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
+
+		// Update instance limits. Set limit to EXACTLY the request size.
+		limitsMx.Lock()
+		limits.MaxInflightPushRequestsBytes = int64(req.Size())
+		limitsMx.Unlock()
+
+		// Signal that we're going to do the real push now.
+		startCh <- req.Size()
+		close(startCh)
+
+		_, err := i.Push(ctx, req)
+		return err
+	})
+
+	g.Go(func() error {
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
+
+		var requestSize int
+		select {
+		case <-ctx.Done():
+		// failed to setup
+		case requestSize = <-startCh:
+			// we can start the test.
+		}
+
+		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+			return i.inflightPushRequests.Load()
+		})
+
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
+			# TYPE cortex_ingester_inflight_push_requests_bytes gauge
+			cortex_ingester_inflight_push_requests_bytes %d
+		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
+
+		// Starting push request fails
+		err = i.StartPushRequest(100)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+		// Starting push request with unknown size fails
+		err = i.StartPushRequest(0)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+		// Sending push request fails
+		_, err := i.Push(ctx, req)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+		var optional middleware.OptionalLogging
+		require.ErrorAs(t, err, &optional)
+		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+		s, ok := status.FromError(err)
+		require.True(t, ok, "expected to be able to convert to gRPC status")
+		require.Equal(t, codes.Unavailable, s.Code())
+
+		return nil
+	})
+
+	require.NoError(t, g.Wait())
+
+	// Ensure the rejected request has been tracked in a metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
+		# TYPE cortex_ingester_instance_rejected_requests_total counter
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 3
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
+		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
+	`), "cortex_ingester_instance_rejected_requests_total"))
+}
+
+func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i *Ingester, targetRequestDuration time.Duration) *mimirpb.WriteRequest {
+	samples := 100000
+	ser := 1
+
+	// Find right series&samples count to make sure that push takes given target duration.
+	for {
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d-%d", ser, samples)), ser, samples)
+
+		start := time.Now()
+		_, err := i.Push(ctx, req)
+		require.NoError(t, err)
+
+		elapsed := time.Since(start)
+		t.Log(ser, samples, elapsed)
+		if elapsed > targetRequestDuration {
+			break
+		}
+
+		samples = int(float64(samples) * float64(targetRequestDuration/elapsed) * 1.5) // Adjust number of series to hit our targetRequestDuration push duration.
+		for samples >= int(time.Hour.Milliseconds()) {
+			// We generate one sample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
+			// So we trade samples for series here.
+			samples /= 10
+			ser *= 10
+		}
+	}
+
+	// Now repeat push with number of samples calibrated to our target request duration.
+	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d-%d", ser, samples)), ser, samples)
+	return req
 }
 
 func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {

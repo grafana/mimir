@@ -386,7 +386,7 @@ _If the alert `MimirIngesterTSDBHeadCompactionFailed` fired as well, then give p
 
 If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
 
-1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refers to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
+1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refer to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
 2. Investigate why the disk capacity has been hit
 
 - Was the disk just too small?
@@ -1028,9 +1028,9 @@ How it **works**:
 How to **investigate**:
 
 - Limit reached in `gateway`:
-  - Check if it's caused by an **high latency on write path**:
+  - Check if it's caused by **high latency on write path**:
     - Check the distributors and ingesters latency in the `Mimir / Writes` dashboard
-    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
+    - High latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus gateway
   - Check if it's caused by a **single tenant**:
     - We don't have a metric tracking the active TCP connections or QPS per tenant
     - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
@@ -1077,8 +1077,8 @@ How to **investigate**:
   kubectl --namespace default get pod --selector='name=prometheus'
   ```
 
-For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_metrics_adapter_scaler_metrics_value` is 0.
-When `keda_metrics_adapter_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
+For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_scaler_metrics_value` is 0.
+When `keda_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
 
 ### MimirAutoscalerKedaFailing
 
@@ -1419,6 +1419,22 @@ How it **works**:
 How to **fix** it:
 
 - Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests` option (or `max_inflight_push_requests` in the runtime config).
+- Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
+- Consider scaling out the ingesters.
+
+### err-mimir-ingester-max-inflight-push-requests-bytes
+
+This error occurs when an ingester rejects a write request because of the maximum size of all in-flight push requests has been reached.
+
+How it **works**:
+
+- The ingester has a per-instance limit on the total size of the in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the ingester from using too much memory for incoming requests in case of high traffic.
+- To configure the limit, set the `-ingester.instance-limits.max-inflight-push-requests-bytes` option (or `max_inflight_push_requests_bytes` in the runtime config).
+
+How to **fix** it:
+
+- Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests-bytes` option (or `max_inflight_push_requests_bytes` in the runtime config), if possible.
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 

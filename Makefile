@@ -212,7 +212,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr6383-54c7fc6702
+LATEST_BUILD_IMAGE_TAG ?= pr6540-8b3fe039e9
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -447,6 +447,9 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building mimir-continuous-test for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
 			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
+			echo "Building markblocks for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/markblocks-$$os-$$arch$$suffix ./tools/markblocks; \
+			sha256sum ./dist/markblocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/markblocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@

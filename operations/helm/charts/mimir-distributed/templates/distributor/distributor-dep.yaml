@@ -8,7 +8,10 @@ metadata:
     {{- toYaml .Values.distributor.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
+  {{- if or (or (kindIs "int64" .Values.distributor.replicas) (kindIs "float64" .Values.distributor.replicas)) (.Values.distributor.replicas) }}
   replicas: {{ .Values.distributor.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 6 }}

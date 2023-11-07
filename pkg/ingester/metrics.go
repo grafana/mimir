@@ -45,13 +45,18 @@ type ingesterMetrics struct {
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
-	maxUsersGauge           prometheus.GaugeFunc
-	maxSeriesGauge          prometheus.GaugeFunc
-	maxIngestionRate        prometheus.GaugeFunc
-	ingestionRate           prometheus.GaugeFunc
-	maxInflightPushRequests prometheus.GaugeFunc
-	inflightRequests        prometheus.GaugeFunc
-	inflightRequestsSummary prometheus.Summary
+	maxUsersGauge                prometheus.GaugeFunc
+	maxSeriesGauge               prometheus.GaugeFunc
+	maxIngestionRate             prometheus.GaugeFunc
+	ingestionRate                prometheus.GaugeFunc
+	maxInflightPushRequests      prometheus.GaugeFunc
+	maxInflightPushRequestsBytes prometheus.GaugeFunc
+	inflightRequests             prometheus.GaugeFunc
+	inflightRequestsBytes        prometheus.GaugeFunc
+	inflightRequestsSummary      prometheus.Summary
+
+	// Local limit metrics
+	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -83,6 +88,7 @@ func newIngesterMetrics(
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
+	inflightRequestsBytes *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -224,6 +230,17 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		maxInflightPushRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInflightPushRequestsBytes)
+			}
+			return 0
+		}),
+
 		ingestionRate: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_ingestion_rate_samples_per_second",
 			Help: "Current ingestion rate in samples/sec that ingester is using to limit access.",
@@ -244,6 +261,16 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		inflightRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_inflight_push_requests_bytes",
+			Help: "Total sum of inflight push request sizes in ingester in bytes.",
+		}, func() float64 {
+			if inflightRequestsBytes != nil {
+				return float64(inflightRequestsBytes.Load())
+			}
+			return 0
+		}),
+
 		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
 			Name:       "cortex_ingester_inflight_push_requests_summary",
 			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
@@ -251,6 +278,12 @@ func newIngesterMetrics(
 			MaxAge:     time.Minute,
 			AgeBuckets: 6,
 		}),
+
+		maxLocalSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_local_limits",
+			Help:        "Local per-user limits used by this ingester.",
+			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
+		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
@@ -341,6 +374,7 @@ func newIngesterMetrics(
 	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
 	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
 
 	return m
 }
@@ -356,6 +390,8 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+
+	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {

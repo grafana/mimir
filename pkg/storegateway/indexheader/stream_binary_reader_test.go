@@ -16,6 +16,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // TODO: fix tests and add config flag test
@@ -48,7 +49,8 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	sparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
 
-	err = r.loadFromSparseIndexHeader(ctx, log.NewNopLogger(), blockID, sparseHeadersPath, sparseData, 3)
+	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
+	err = r.loadFromSparseIndexHeader(logger, blockID, sparseHeadersPath, sparseData, 3)
 	require.NoError(t, err)
 }
 

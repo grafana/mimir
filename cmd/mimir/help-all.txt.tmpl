@@ -7,6 +7,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -alertmanager-storage.azure.account-name string
     	Azure storage account name
+  -alertmanager-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -alertmanager-storage.azure.container-name string
     	Azure storage container name
   -alertmanager-storage.azure.endpoint-suffix string
@@ -275,6 +277,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -blocks-storage.azure.account-name string
     	Azure storage account name
+  -blocks-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -blocks-storage.azure.container-name string
     	Azure storage container name
   -blocks-storage.azure.endpoint-suffix string
@@ -807,6 +811,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
     	Azure storage account name
+  -common.storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -common.storage.azure.container-name string
     	Azure storage container name
   -common.storage.azure.endpoint-suffix string
@@ -1231,8 +1237,6 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
-  -ingester.chunks-query-ignore-cancellation
-    	[experimental] Ignore cancellation when querying chunks.
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -1271,6 +1275,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+    	If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error"
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1293,6 +1299,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.
   -ingester.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited. (default 30000)
+  -ingester.instance-limits.max-inflight-push-requests-bytes int
+    	The sum of the request sizes in bytes of inflight push requests that this ingester can handle. This limit is per-ingester, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -ingester.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.
   -ingester.instance-limits.max-series int
@@ -2087,6 +2095,8 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -ruler-storage.azure.account-name string
     	Azure storage account name
+  -ruler-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
   -ruler-storage.azure.container-name string
     	Azure storage container name
   -ruler-storage.azure.endpoint-suffix string
@@ -2559,8 +2569,10 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-read-header-timeout duration
+    	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration
-    	Read timeout for HTTP server (default 30s)
+    	Read timeout for entire HTTP request, including headers and body. (default 30s)
   -server.http-tls-ca-path string
     	HTTP TLS Client CA path.
   -server.http-tls-cert-path string
@@ -2587,6 +2599,8 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
+  -server.report-grpc-codes-in-instrumentation-label-enabled
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string

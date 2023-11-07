@@ -90,7 +90,7 @@ func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
 	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
 	if cmd.username != "" {
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", rt)
+		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", "", rt)
 	}
 
 	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)

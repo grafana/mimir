@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
@@ -48,7 +47,7 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context, req *client
 	}
 
 	if len(tenantIDs) == 1 {
-		level.Debug(spanlog).Log("msg", "only a single tenant, bypassing federated metadata supplier")
+		spanlog.DebugLog("msg", "only a single tenant, bypassing federated metadata supplier")
 		return m.next.MetricsMetadata(ctx, req)
 	}
 
@@ -60,7 +59,7 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context, req *client
 			return fmt.Errorf("unable to run federated metadata request for %s: %w", tenantID, err)
 		}
 
-		level.Debug(spanlog).Log("msg", "adding results for tenant to merged results", "user", tenantID, "results", len(res))
+		spanlog.DebugLog("msg", "adding results for tenant to merged results", "user", tenantID, "results", len(res))
 		results[idx] = res
 		return nil
 	}

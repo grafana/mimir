@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// nolint:revive // Many unsued function arguments in this file by design.
 package promql
 
 import (
@@ -787,47 +786,47 @@ func funcTan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 	return simpleFunc(vals, enh, math.Tan), nil
 }
 
-// == asin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === asin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAsin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Asin), nil
 }
 
-// == acos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === acos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAcos(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Acos), nil
 }
 
-// == atan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === atan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAtan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Atan), nil
 }
 
-// == sinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === sinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcSinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Sinh), nil
 }
 
-// == cosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === cosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcCosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Cosh), nil
 }
 
-// == tanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === tanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcTanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Tanh), nil
 }
 
-// == asinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === asinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAsinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Asinh), nil
 }
 
-// == acosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === acosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAcosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Acosh), nil
 }
 
-// == atanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
+// === atanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
 func funcAtanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return simpleFunc(vals, enh, math.Atanh), nil
 }

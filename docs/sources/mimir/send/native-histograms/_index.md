@@ -117,7 +117,26 @@ Use the latest version of Prometheus or at least version 2.47.
    in your scrape jobs, to get both histogram version.
 
    {{% admonition type="note" %}}
+   <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
+
    Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Prometheus negotiates a Protobuf protocol transfer in this case.
+   {{% /admonition %}}
+
+   {{% admonition type="note" %}}
+   <!-- Add link to Prometheus 2.48 documentation about labels when released.
+        Issue: https://github.com/prometheus/prometheus/issues/12984 -->
+
+   In certain situations, the protobuf parsing changes the number formatting of
+   the `le` labels of conventional histograms and the `quantile` labels of
+   summaries. Typically, this happens if the scraped target is instrumented with
+   [client_golang](https://github.com/prometheus/client_golang) provided that
+   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
+   is set to `false`. In such a case, integer label values are represented in the
+   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
+   changes the representation to float-like (following the OpenMetrics
+   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
+   ingestion into Prometheus, which changes the identity of the metric compared to
+   what was ingested before via the text format.
    {{% /admonition %}}
 
 1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` to `true` in the remote write configuration, for example:
@@ -130,7 +149,7 @@ Use the latest version of Prometheus or at least version 2.47.
 
 ## Scrape and send native histograms with Grafana Agent
 
-Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) or at least version 0.37.
+Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/flow/) or at least version 0.37.3.
 
 1. To enable scraping native histograms you need to enable the argument `enable_protobuf_negotiation` in the `prometheus.scrape` component:
 
@@ -150,7 +169,26 @@ Use the latest version of the Grafana Agent in [Flow mode](/docs/agent/latest/fl
    ```
 
    {{% admonition type="note" %}}
+   <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->
+
    Native histograms don't have a textual presentation at the moment on the application's `/metrics` endpoint, thus Grafana Agent negotiates a Protobuf protocol transfer in this case.
+   {{% /admonition %}}
+
+   {{% admonition type="note" %}}
+   <!-- Add link to Prometheus 2.48 documentation about labels when released.
+        Issue: https://github.com/prometheus/prometheus/issues/12984 -->
+
+   In certain situations, the protobuf parsing changes the number formatting of
+   the `le` labels of conventional histograms and the `quantile` labels of
+   summaries. Typically, this happens if the scraped target is instrumented with
+   [client_golang](https://github.com/prometheus/client_golang) provided that
+   [promhttp.HandlerOpts.EnableOpenMetrics](https://pkg.go.dev/github.com/prometheus/client_golang/prometheus/promhttp#HandlerOpts)
+   is set to `false`. In such a case, integer label values are represented in the
+   text format as such, e.g. `quantile="1"` or `le="2"`. However, the protobuf parsing
+   changes the representation to float-like (following the OpenMetrics
+   specification), so the examples above become `quantile="1.0"` and `le="2.0"` after
+   ingestion into Prometheus, which changes the identity of the metric compared to
+   what was ingested before via the text format.
    {{% /admonition %}}
 
 1. To be able to send native histograms to a Prometheus remote write compatible receiver, for example Grafana Cloud Metrics, Mimir, etc, set `send_native_histograms` argument to `true` in the `prometheus.remote_write` component, for example:
