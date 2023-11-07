@@ -188,8 +188,7 @@ func (qb *queueBroker) notifyQuerierShutdown(querierID QuerierID) {
 }
 
 func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
-	numDisconnected := qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
-	return numDisconnected
+	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
 func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
@@ -201,8 +200,11 @@ func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int
 	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
 		tenantOrderIndex++
 		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
-			// do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap around this list,
-			// as it could skip tenant IDs if the slice has changed size since the last call
+			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
+			// Tenant list can change size between calls and the querier provides its external view
+			// of the last tenant index it received, which is not updated when this list changes.
+			// If the tenant list shrinks and the querier-provided last tenant index exceeds the
+			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
 			tenantOrderIndex = 0
 		}
 
@@ -273,10 +275,11 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 		}
 	}
 
-	// tenant now either retrieved or created;
-	// tenant queriers need computed for new tenant if sharding enabled,
-	// or if the tenant already existed but its maxQueriers has changed
+	// tenant now either retrieved or created
 	if tenant.maxQueriers != maxQueriers {
+		// tenant queriers need computed/recomputed;
+		// either this is a new tenant with sharding enabled,
+		// or the tenant already existed but its maxQueriers has changed
 		tenant.maxQueriers = maxQueriers
 		tqa.shuffleTenantQueriers(tenantID, nil)
 	}
