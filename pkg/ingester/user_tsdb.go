@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -122,6 +124,9 @@ type userTSDB struct {
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
+
+	ownedSeriesCount    int
+	ownedSeriesCountMtx sync.Mutex
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -292,6 +297,10 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
+
+	u.ownedSeriesCountMtx.Lock()
+	u.ownedSeriesCount++
+	u.ownedSeriesCountMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
 	if err != nil {
@@ -466,4 +475,25 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	if acquireState != forceCompacting {
 		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
 	}
+}
+
+func (u *userTSDB) OwnedSeries() int {
+	return u.ownedSeriesCount
+}
+
+func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger) {
+	b := u.ownedSeriesCount
+
+	start := time.Now()
+	n := u.Head().CountSecondaryHashesInRanges([]uint32{0, math.MaxUint32})
+	dur := time.Since(start)
+
+	a := u.ownedSeriesCount
+
+	// write back new value
+	u.ownedSeriesCountMtx.Lock()
+	u.ownedSeriesCount = n
+	u.ownedSeriesCountMtx.Unlock()
+
+	level.Info(l).Log("msg", "pprus -- recalculated owned series", "user", u.userID, "reason", reason, "before", b, "after", a, "new", n, "duration", dur)
 }
