@@ -126,6 +126,9 @@ func (qb *queueBroker) isEmpty() bool {
 	return qb.tenantQueuesTree.IsEmpty()
 }
 
+// enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
+//
+// Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
 	_, err := qb.tenantQuerierAssignments.getOrAddTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
@@ -137,7 +140,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
-// to the front of the queue when there was a failure in forwarding the querier.
+// to the front of the queue when there was a failure in dispatching to a querier.
 //
 // max tenant queue size checks are skipped even though queue size violations
 // are not expected to occur when re-enqueuing a previously dequeued request.
@@ -191,6 +194,12 @@ func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
+// getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
+//
+// The next tenant for the querier is obtained by rotating through the global tenant order
+// starting just after the last tenant the querier received a request for, until a tenant
+// is found that is assigned to the given querier according to the querier shuffle sharding.
+// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
 func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
 	// check if querier is registered and is not shutting down
 	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
@@ -202,8 +211,8 @@ func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int
 		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
 			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
 			// Tenant list can change size between calls and the querier provides its external view
-			// of the last tenant index it received, which is not updated when this list changes.
-			// If the tenant list shrinks and the querier-provided last tenant index exceeds the
+			// of the lastTenantIndex it received, which is not updated when this list changes.
+			// If the tenant list shrinks and the querier-provided lastTenantIndex exceeds the
 			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
 			tenantOrderIndex = 0
 		}
@@ -235,6 +244,10 @@ func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant,
 	return tenant, nil
 }
 
+// getOrAddTenant adds or updates a tenant into the tenant-querier assignment state and returns it.
+//
+// New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
+// Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
 func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
 	if tenantID == emptyTenantID {
 		// empty tenantID is not allowed; "" is used for free spot
@@ -404,12 +417,12 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) i
 }
 
 func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
-	// Only allocate the scratchpad the first time we need it.
-	// If shuffle-sharding is disabled, it will not be used.
 	var scratchpad querierIDSlice
-
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
+			// shuffle sharding is enabled and the number of queriers exceeds tenant maxQueriers,
+			// meaning tenant querier assignments need computed via shuffle sharding;
+			// allocate the scratchpad the first time this case is hit and it will be reused after
 			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
 		}
 
