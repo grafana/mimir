@@ -15,7 +15,6 @@ package remote
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -170,8 +169,7 @@ func (h *readHandler) remoteReadSamples(
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := err.(HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}
@@ -243,8 +241,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 			}
 			return nil
 		}(); err != nil {
-			var httpErr HTTPError
-			if errors.As(err, &httpErr) {
+			if httpErr, ok := err.(HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.Status())
 				return
 			}

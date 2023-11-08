@@ -145,7 +145,9 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
+	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()

@@ -502,9 +502,9 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 				// If any iterator is reporting an error, abort.
 				return chunkenc.ValNone
 			}
-			continue
+		} else {
+			heap.Push(&c.h, iter)
 		}
-		heap.Push(&c.h, iter)
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
@@ -599,9 +599,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 			if c.curr.Err() != nil {
 				// Abort if we've hit an error.
 				return chunkenc.ValNone
-			}
-
-			if len(c.h) == 0 {
+			} else if len(c.h) == 0 {
 				// No iterator left to iterate.
 				c.curr = nil
 				return chunkenc.ValNone
