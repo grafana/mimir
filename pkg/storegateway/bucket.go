@@ -1262,8 +1262,7 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	// ignore the span context so that we can use the context for cancellation
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.Finish()
 
 	s.blocksMx.RLock()
@@ -1274,7 +1273,8 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
-		indexReaders[b.meta.ULID] = b.loadedIndexReader(s.postingsStrategy, stats)
+		// Unlike below, loadedIndexReader() does not retain the context after it returns.
+		indexReaders[b.meta.ULID] = b.loadedIndexReader(spanCtx, s.postingsStrategy, stats)
 	}
 	if skipChunks {
 		return blocks, indexReaders, nil
@@ -1282,6 +1282,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
 	for _, b := range blocks {
+		// Ignore the span context from this method - chunkReader() retains the context to add spans after openBlocksForReading() returns.
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
@@ -1335,7 +1336,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		indexr := b.loadedIndexReader(s.postingsStrategy, stats)
+		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
@@ -1574,7 +1575,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
 	// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
-	labelValuesReader := b.loadedIndexReader(selectAllStrategy{}, stats)
+	labelValuesReader := b.loadedIndexReader(ctx, selectAllStrategy{}, stats)
 	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
 
 	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
@@ -1918,7 +1919,11 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) loadedIndexReader(postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
+func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
+	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
+	defer span.Finish()
+	span.SetTag("blockID", b.meta.ULID)
+
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
 	_, _ = b.indexHeaderReader.IndexVersion()
