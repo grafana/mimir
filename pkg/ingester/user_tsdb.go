@@ -127,6 +127,7 @@ type userTSDB struct {
 
 	ownedSeriesCount    int
 	ownedSeriesCountMtx sync.Mutex
+	ownedTokenRanges    []uint32
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -485,7 +486,7 @@ func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger) {
 	b := u.ownedSeriesCount
 
 	start := time.Now()
-	n := u.Head().CountSecondaryHashesInRanges([]uint32{0, math.MaxUint32})
+	n := u.Head().CountSecondaryHashesInRanges(u.ownedTokenRanges)
 	dur := time.Since(start)
 
 	a := u.ownedSeriesCount
@@ -496,4 +497,26 @@ func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger) {
 	u.ownedSeriesCountMtx.Unlock()
 
 	level.Info(l).Log("msg", "pprus -- recalculated owned series", "user", u.userID, "reason", reason, "before", b, "after", a, "new", n, "duration", dur)
+}
+
+func (u *userTSDB) UpdateTokenRanges(ranges []uint32) {
+	u.ownedTokenRanges = ranges
+}
+
+func (u *userTSDB) TokenRanges() []uint32 {
+	return u.ownedTokenRanges
+}
+
+// TODO(pprus) -- probably doesn't belong here
+func (u *userTSDB) TokenRangesEqual(newTokens []uint32) bool {
+	if len(newTokens) != len(u.ownedTokenRanges) {
+		return false
+	}
+
+	for i := 0; i < len(newTokens); i++ {
+		if newTokens[i] != u.ownedTokenRanges[i] {
+			return false
+		}
+	}
+	return true
 }
