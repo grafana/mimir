@@ -765,10 +765,7 @@ func (i *Ingester) updateOwnedSeriesMetrics() {
 		if db == nil {
 			continue
 		}
-		count := db.Head().CountSecondaryHashesInRanges([]uint32{0, math.MaxUint32})
-
-		// update metrics
-		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(count))
+		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(db.OwnedSeries()))
 	}
 }
 
@@ -2440,6 +2437,8 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				i.tsdbs[userID] = db
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
+
+				db.RecalculateOwnedSeries("WAL replay", i.logger)
 			}
 
 			return nil
@@ -2765,6 +2764,8 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		i.metrics.compactionsTriggered.Inc()
 
+		b := userDB.Head().MinTime()
+
 		reason := ""
 		switch {
 		case force:
@@ -2788,6 +2789,14 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			level.Warn(i.logger).Log("msg", "TSDB blocks compaction for user has failed", "user", userID, "err", err, "compactReason", reason)
 		} else {
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
+		}
+
+		a := userDB.Head().MinTime()
+
+		// need a way to know if the above actually resulted in a compaction
+		level.Info(i.logger).Log("msg", "pprus -- compacted?", "before", b, "after", a)
+		if a != b {
+			userDB.RecalculateOwnedSeries("compaction", i.logger)
 		}
 
 		return nil
