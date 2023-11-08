@@ -157,7 +157,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// the stream's underlying ClientConn is closed, which can happen if the querier decides that the ingester is no
 			// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 			// a generic 'context canceled' error.
-			return s.ctx.Err()
+			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}

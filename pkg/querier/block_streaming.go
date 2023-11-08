@@ -282,7 +282,7 @@ func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) er
 		// the stream's underlying ClientConn is closed, which can happen if the querier decides that the store-gateway is no
 		// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 		// a generic 'context canceled' error.
-		return s.ctx.Err()
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 	case s.seriesChunksChan <- c:
 		// Batch enqueued successfully, nothing else to do for this batch.
 		return nil
@@ -293,7 +293,7 @@ func (s *storeGatewayStreamReader) sendChunksEstimate(chunksEstimate uint64) err
 	select {
 	case <-s.ctx.Done():
 		// We abort if the context is done for the same reason we do in sendBatch - to avoid leaking the StartBuffering goroutine.
-		return s.ctx.Err()
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 	case s.chunkCountEstimateChan <- int(chunksEstimate):
 		return nil
 	}
