@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
@@ -41,6 +40,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -1394,20 +1394,24 @@ func handleIngesterPushError(err error) error {
 		return nil
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	if ok {
+	stat, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		return errors.Wrap(err, failedPushingToIngesterMessage)
+	}
+	statusCode := stat.Code()
+	if isHTTPStatusCode(statusCode) {
+		// TODO This code is needed for backwards compatibility, since ingesters may still return
+		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
+		// it. This code should be removed in mimir 2.12.0.
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "%s: %s", failedPushingToIngesterMessage, resp.Body)
+		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
 	}
 
-	stat, ok := status.FromError(err)
-	if ok {
-		return newIngesterPushError(stat)
-	}
-	return errors.Wrap(err, failedPushingToIngesterMessage)
+	return newIngesterPushError(stat)
+}
+
+func isHTTPStatusCode(statusCode codes.Code) bool {
+	return int(statusCode) >= 100 && int(statusCode) < 600
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
