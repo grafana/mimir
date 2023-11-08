@@ -475,6 +475,9 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
+	ownedSeriesService := services.NewBasicService(nil, i.ownedSeriesLoop, nil)
+	servs = append(servs, ownedSeriesService)
+
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
 	if err != nil {
@@ -2440,8 +2443,6 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				i.tsdbs[userID] = db
 				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
-
-				db.RecalculateOwnedSeries("WAL replay", i.logger)
 			}
 
 			return nil
@@ -3479,4 +3480,66 @@ type utilizationBasedLimiter interface {
 	services.Service
 
 	LimitingReason() string
+}
+
+func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
+	// At startup, wait for the lifecycler to join the ring and then calculate series.
+	// After that, check the token ranges at regular intervals, and recalculate ownership if they have changed
+	// TODO(pprus) -- concurrency
+
+	// TODO(pprus) -- we compact after replaying the WAL, which might be before we've joined the ring and updated the ranges
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	runOnce := false
+
+	for ctx.Err() == nil {
+		select {
+		case <-ticker.C:
+			if i.lifecycler.GetState() != ring.ACTIVE {
+				level.Info(i.logger).Log("msg", "pprus -- lifecycler not ACTIVE")
+				break
+			}
+
+			// TODO(pprus) -- what to do if we fail for some users?
+
+			for _, userID := range i.getTSDBUsers() {
+				level.Info(i.logger).Log("msg", "pprus -- updating token ranges", "user", userID)
+				db := i.getTSDB(userID)
+				if db == nil {
+					continue
+				}
+
+				// TODO(pprus) should add a mutex and TryLock here and skip this if compaction is currently running
+
+				subr := i.ingestersRing.ShuffleShard(userID, i.limiter.getShardSize(userID))
+				level.Info(i.logger).Log("msg", "pprus -- subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
+
+				// TODO(pprus) -- this seems to fail the first time because the zone has no tokens
+				ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
+				if err != nil {
+					level.Error(i.logger).Log("msg", "pprus -- failed to get token ranges", "error", err)
+					continue
+					// return?
+				}
+
+				// check if ranges changed
+				if !db.TokenRangesEqual(ranges) {
+					level.Info(i.logger).Log("msg", "pprus -- updated token ranges")
+					db.UpdateTokenRanges(ranges)
+					db.RecalculateOwnedSeries("owned range change", i.logger)
+				}
+			}
+
+			// Run less often once we've run the initial calculations
+			if !runOnce {
+				ticker.Reset(time.Minute)
+				runOnce = true
+			}
+
+		case <-ctx.Done():
+			return nil
+		}
+	}
+	return nil
 }
