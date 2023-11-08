@@ -638,7 +638,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.Ring, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1040,7 +1040,7 @@ func (t *Mimir) setupModuleManager() error {
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
 		DistributorService:       {Ring, Overrides, Vault},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
+		IngesterService:          {Ring, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
 		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
