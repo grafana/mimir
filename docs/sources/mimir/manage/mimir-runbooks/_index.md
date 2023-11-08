@@ -1270,7 +1270,7 @@ If you experience this error, [open an issue in the Mimir repository](https://gi
 
 This non-critical error occurs when Mimir receives a write request that contains a sample whose timestamp is in the future compared to the current "real world" time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
-On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
 
 > **Note:** Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 
@@ -1278,7 +1278,7 @@ On a per-tenant basis, you can fine tune the tolerance by configuring the `-vali
 
 This non-critical error occurs when Mimir receives a write request that contains an exemplar whose timestamp is in the future compared to the current "real world" time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
-On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
+On a per-tenant basis, you can fine tune the tolerance by configuring the `creation_grace_period` option.
 
 > **Note:** Only series with invalid samples are skipped during the ingestion. Valid samples within the same request are still ingested.
 
