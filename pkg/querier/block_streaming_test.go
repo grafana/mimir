@@ -316,8 +316,9 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: testCase.messages}
-			reader := newStoreGatewayStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			ctx := context.Background()
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: testCase.messages}
+			reader := newStoreGatewayStreamReader(ctx, mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
 			actualChunksEstimate := reader.EstimateChunkCount()
@@ -336,7 +337,7 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 	}
 }
 
-func TestStoreGatewayStreamReader_AbortsWhenContextCancelled(t *testing.T) {
+func TestStoreGatewayStreamReader_AbortsWhenParentContextCancelled(t *testing.T) {
 	// Ensure that the buffering goroutine is not leaked after context cancellation.
 	test.VerifyNoLeak(t)
 
@@ -382,10 +383,11 @@ func TestStoreGatewayStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 				{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
 			}
 
-			ctx, cancel := context.WithCancel(context.Background())
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
+			streamCtx := context.Background()
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: streamCtx, messages: batchesToMessages(3, batches...)}
 
-			reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			parentCtx, cancel := context.WithCancel(context.Background())
+			reader := newStoreGatewayStreamReader(parentCtx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 			cancel()
 			reader.StartBuffering()
 
@@ -396,13 +398,45 @@ func TestStoreGatewayStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 	}
 }
 
+func TestStoreGatewayStreamReader_DoesNotAbortWhenStreamContextCancelled(t *testing.T) {
+	// Ensure that the buffering goroutine is not leaked.
+	test.VerifyNoLeak(t)
+
+	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
+	batches := []storepb.StreamingChunksBatch{
+		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+		{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
+		{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+	}
+
+	streamCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	const expectedChunksEstimate uint64 = 5
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: streamCtx, messages: batchesToMessages(expectedChunksEstimate, batches...)}
+
+	parentCtx := context.Background()
+	reader := newStoreGatewayStreamReader(parentCtx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	reader.StartBuffering()
+
+	actualChunksEstimate := reader.EstimateChunkCount()
+	require.Equal(t, expectedChunksEstimate, uint64(actualChunksEstimate), "expected EstimateChunkCount to return actual estimate and ignore cancelled stream context")
+
+	for i := 0; i < 3; i++ {
+		_, err := reader.GetChunks(uint64(i))
+		require.NoError(t, err, "expected GetChunks to not report context cancellation error from stream context")
+	}
+
+	require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after stream exhausted")
+}
+
 func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 	batches := []storepb.StreamingChunksBatch{
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	ctx := context.Background()
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
+	reader := newStoreGatewayStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
@@ -416,8 +450,9 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
-	reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	ctx := context.Background()
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
+	reader := newStoreGatewayStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -442,8 +477,9 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
 	}
 
-	mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
-	reader := newStoreGatewayStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+	ctx := context.Background()
+	mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
+	reader := newStoreGatewayStreamReader(ctx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -492,8 +528,9 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 
 	for name, batches := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
-			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
+			ctx := context.Background()
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
+			reader := newStoreGatewayStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
 			s, err := reader.GetChunks(0)
@@ -546,10 +583,11 @@ func TestStoreGatewayStreamReader_ChunksLimits(t *testing.T) {
 				}}}},
 			}
 
-			mockClient := &mockStoreGatewayQueryStreamClient{ctx: context.Background(), messages: batchesToMessages(3, batches...)}
+			ctx := context.Background()
+			mockClient := &mockStoreGatewayQueryStreamClient{ctx: ctx, messages: batchesToMessages(3, batches...)}
 			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
 
-			reader := newStoreGatewayStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), &stats.Stats{}, log.NewNopLogger())
+			reader := newStoreGatewayStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), &stats.Stats{}, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)
