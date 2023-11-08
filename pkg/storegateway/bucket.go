@@ -1262,7 +1262,6 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	// ignore the span context so that we can use the context for cancellation
 	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.Finish()
 
@@ -1274,6 +1273,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
+		// Unlike below, loadedIndexReader() does not retain the context after it returns.
 		indexReaders[b.meta.ULID] = b.loadedIndexReader(spanCtx, s.postingsStrategy, stats)
 	}
 	if skipChunks {
@@ -1282,6 +1282,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
 	for _, b := range blocks {
+		// Ignore the span context from this method - chunkReader() retains the context to add spans after openBlocksForReading() returns.
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
