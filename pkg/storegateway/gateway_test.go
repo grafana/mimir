@@ -57,13 +57,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const (
-	// RingNumTokensDefault is the number of tokens registered in the ring by each store-gateway
-	// instance. We use a safe default instead of exposing to config option to the user
-	// in order to simplify the config.
-	RingNumTokensDefault = 512
-)
-
 func TestConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
 		setup    func(cfg *Config, limits *validation.Limits)
@@ -123,12 +116,12 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 		"instance already in the ring with ACTIVE state and has all tokens": {
 			initialExists: true,
 			initialState:  ring.ACTIVE,
-			initialTokens: generateSortedTokens(RingNumTokensDefault),
+			initialTokens: generateSortedTokens(ringNumTokensDefault),
 		},
 		"instance already in the ring with LEAVING state and has all tokens": {
 			initialExists: true,
 			initialState:  ring.LEAVING,
-			initialTokens: generateSortedTokens(RingNumTokensDefault),
+			initialTokens: generateSortedTokens(ringNumTokensDefault),
 		},
 	}
 
@@ -161,7 +154,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 				// state within the ring.
 				assert.True(t, g.ringLifecycler.IsRegistered())
 				assert.Equal(t, ring.JOINING, g.ringLifecycler.GetState())
-				assert.Equal(t, RingNumTokensDefault, len(g.ringLifecycler.GetTokens()))
+				assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 				assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
 			})
 			bucketClient.MockIter("user-1/", []string{}, nil)
@@ -172,7 +165,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 
 			assert.True(t, g.ringLifecycler.IsRegistered())
 			assert.Equal(t, ring.ACTIVE, g.ringLifecycler.GetState())
-			assert.Equal(t, RingNumTokensDefault, len(g.ringLifecycler.GetTokens()))
+			assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 			assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
 
 			assert.NotNil(t, g.stores.getStore("user-1"))
@@ -547,16 +540,16 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 		expectedNumTokens int
 	}{
 		"stored tokens are less than the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokensDefault - 10),
-			expectedNumTokens: RingNumTokensDefault,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault - 10),
+			expectedNumTokens: ringNumTokensDefault,
 		},
 		"stored tokens are equal to the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokensDefault),
-			expectedNumTokens: RingNumTokensDefault,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault),
+			expectedNumTokens: ringNumTokensDefault,
 		},
 		"stored tokens are more then the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokensDefault + 10),
-			expectedNumTokens: RingNumTokensDefault + 10,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault + 10),
+			expectedNumTokens: ringNumTokensDefault + 10,
 		},
 	}
 
@@ -964,7 +957,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
-			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(RingNumTokensDefault), ring.ACTIVE, time.Now())
+			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now())
 			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 
