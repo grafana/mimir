@@ -76,7 +76,7 @@ func (q *TreeQueue) ItemCount() int {
 // EnqueueBackByPath enqueues an item in the back of the local queue of the node
 // located at a given path through the tree; nodes for the path are created as needed.
 //
-// QueuePath must be relative to the receiver node; providing a QueuePath beginning with
+// childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
 func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
@@ -101,7 +101,7 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 // complete operations on the dequeued item, but failure is not yet final, and the
 // operations should be retried by a subsequent queue consumer.
 //
-// QueuePath must be relative to the receiver node; providing a QueuePath beginning with
+// childPath must be relative to the receiver node; providing a QueuePath beginning with
 // the receiver/parent node name will create a child node of the same name as the parent.
 func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
@@ -112,7 +112,10 @@ func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 	return nil
 }
 
-// getOrAddNode recursively adds tree queue nodes based on given path
+// getOrAddNode recursively adds tree queue nodes based on given relative child path.
+//
+// childPath must be relative to the receiver node; providing a QueuePath beginning with
+// the receiver/parent node name will create a child node of the same name as the parent.
 func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	if len(childPath) == 0 {
 		return q, nil
@@ -168,6 +171,13 @@ func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
 	return nil
 }
 
+// DequeueByPath selects a child node by a given relative child path and calls Dequeue on the node.
+//
+// While the child node will recursively clean up its own empty children during dequeue,
+// nodes cannot delete themselves; DequeueByPath cleans up the child node as well if it is empty.
+// This maintains structural guarantees relied on to make IsEmpty() non-recursive.
+//
+// childPath is relative to the receiver node; pass a zero-length path to refer to the node itself.
 func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 	childQueue := q.getNode(childPath)
 	if childQueue == nil {
@@ -190,6 +200,14 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 	return append(QueuePath{q.name}, append(childPath, dequeuedPathFromChild[1:]...)...), v
 }
 
+// Dequeue removes and returns an item from the front of the next nonempty queue node in the tree.
+//
+// Dequeuing from a node follows the round-robin order of the node's childQueueOrder,
+// dequeuing either from the node's localQueue or selecting the next child node in the order
+// and recursively calling Dequeue on the child nodes until a nonempty queue is found.
+//
+// Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
+// up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
 func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	var dequeuedPath QueuePath
 	var v any
@@ -214,6 +232,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.IsEmpty() {
+				// deleteNode wraps index for us
 				q.deleteNode(QueuePath{childQueueName})
 			} else {
 				q.wrapIndex(true)
@@ -227,7 +246,13 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 	return append(QueuePath{q.name}, dequeuedPath...), v
 }
 
+// deleteNode removes a child node from the tree and the childQueueOrder and corrects the indices.
 func (q *TreeQueue) deleteNode(childPath QueuePath) bool {
+	if len(childPath) == 0 {
+		// node cannot delete itself
+		return false
+	}
+
 	parentPath, childQueueName := childPath[:len(childPath)-1], childPath[len(childPath)-1]
 
 	parentNode := q.getNode(parentPath)

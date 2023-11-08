@@ -340,6 +340,12 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	assert.True(t, root.IsEmpty())
 }
 
+func TestNodeCannotDeleteItself(t *testing.T) {
+	root := NewTreeQueue("root", maxTestQueueLen)
+	assert.False(t, root.deleteNode(QueuePath{}))
+	assert.NotNil(t, root)
+}
+
 func makeBalancedTreeQueue(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimensions int) *TreeQueue {
 	root := NewTreeQueue("root", maxTestQueueLen)
 	require.Equal(t, 1, root.NodeCount())

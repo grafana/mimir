@@ -202,7 +202,6 @@ func TestQueuesConsistency(t *testing.T) {
 				switch r.Int() % 6 {
 				case 0:
 					queue, err := qb.getOrAddTenantQueue(generateTenant(r), 3)
-					//queueTenant, err := qb.tenantQuerierAssignments.getOrAddTenant(generateTenant(r), 3)
 					assert.Nil(t, err)
 					assert.NotNil(t, queue)
 				case 1:
@@ -439,7 +438,7 @@ func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
-	queuePath := QueuePath{qb.tenantQueuesTree.name, string(tenantID)}
+	queuePath := QueuePath{string(tenantID)}
 	return qb.tenantQueuesTree.deleteNode(queuePath)
 }
 
@@ -462,7 +461,6 @@ func isConsistent(qb *queueBroker) error {
 
 	tenantCount := 0
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
-		//tq := qb.tenantQueues[tenantID]
 		if tenantID != "" && qb.getQueue(tenantID) == nil {
 			return fmt.Errorf("tenant %s doesn't have queue", tenantID)
 		}
@@ -494,9 +492,10 @@ func isConsistent(qb *queueBroker) error {
 		}
 	}
 
-	//if tenantCount != len(qb.tenantQueues) {
-	//	return fmt.Errorf("inconsistent number of tenants list and tenant queues")
-	//}
+	tenantQueueCount := qb.tenantQueuesTree.NodeCount() - 1 // exclude root node
+	if tenantCount != tenantQueueCount {
+		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
+	}
 
 	return nil
 }
