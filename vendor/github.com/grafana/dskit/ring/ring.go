@@ -1116,7 +1116,7 @@ func (r *Ring) GetTokenRangesForInstance(instanceID string) ([]uint32, error) {
 	}
 
 	subringTokens, ok := r.ringTokensByZone[zone]
-	if !ok {
+	if !ok || len(subringTokens) == 0 {
 		return nil, errors.New("no tokens for zone")
 	}
 
