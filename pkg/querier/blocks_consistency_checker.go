@@ -33,7 +33,7 @@ func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, 
 		logger:              logger,
 		checksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_total",
-			Help: "Total number of consistency checks run on queried blocks.",
+			Help: "Total number of queries that needed to run with consistency checks. A consistency check is required when querying blocks from store-gateways to make sure that all blocks are queried.",
 		}),
 		checksFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_failed_total",
