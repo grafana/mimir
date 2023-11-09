@@ -492,6 +492,8 @@ func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger) {
 
 	a := u.ownedSeriesCount
 
+	// TODO(pprus) -- do we need to worry about series created while we're counting owned series? is that even possible?
+
 	// write back new value
 	u.ownedSeriesCountMtx.Lock()
 	u.ownedSeriesCount = n
