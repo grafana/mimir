@@ -54,7 +54,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -alertmanager-storage.s3.part-size uint
-    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, a built-in default value is used. (default 67108864)
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
@@ -698,7 +698,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -blocks-storage.s3.part-size uint
-    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, a built-in default value is used. (default 67108864)
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
@@ -860,7 +860,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -common.storage.s3.part-size uint
-    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, a built-in default value is used. (default 67108864)
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -common.storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
@@ -2242,7 +2242,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
   -ruler-storage.s3.part-size uint
-    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, a built-in default value is used. (default 67108864)
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string

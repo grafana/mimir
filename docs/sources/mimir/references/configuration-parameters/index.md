@@ -4514,9 +4514,9 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 [native_aws_auth_enabled: <boolean> | default = false]
 
 # (experimental) The minimum file size in bytes used for multipart uploads. If
-# 0, a built-in default value is used.
+# 0, the value is optimally computed for each object.
 # CLI flag: -<prefix>.s3.part-size
-[part_size: <int> | default = 67108864]
+[part_size: <int> | default = 0]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
