@@ -111,7 +111,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ReplicationFactor, ringFlagsPrefix+"replication-factor", 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
 	f.StringVar(&cfg.TokensFilePath, ringFlagsPrefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, ringFlagsPrefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate blocks across different availability zones."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.NumTokens, ringFlagsPrefix+"num-tokens", 512, "Number of tokens for each store-gateway.")
+	f.IntVar(&cfg.NumTokens, ringFlagsPrefix+"num-tokens", ringNumTokensDefault, "Number of tokens for each store-gateway.")
 	f.BoolVar(&cfg.AutoForgetEnabled, ringFlagsPrefix+"auto-forget-enabled", true, fmt.Sprintf("When enabled, a store-gateway is automatically removed from the ring after failing to heartbeat the ring for a period longer than %d times the configured -%s.", ringAutoForgetUnhealthyPeriods, ringHeartbeatTimeoutFlag))
 
 	// Wait stability flags.
