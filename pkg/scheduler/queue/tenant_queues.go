@@ -161,7 +161,7 @@ func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID Q
 	}
 
 	queuePath := QueuePath{string(tenant.tenantID)}
-	_, queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
+	queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
 
 	queueNodeAfterDequeue := qb.tenantQueuesTree.getNode(queuePath)
 	if queueNodeAfterDequeue == nil {

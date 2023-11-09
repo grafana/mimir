@@ -31,8 +31,8 @@ func TestDequeueBalancedTree(t *testing.T) {
 	dequeuedPathCache := make([]QueuePath, rotationsBeforeRepeat)
 
 	for !root.IsEmpty() {
-		dequeuedPath, v := root.Dequeue()
-		assertDequeuedPathValueMatch(t, dequeuedPath, v)
+		v := root.Dequeue()
+		dequeuedPath := getChildPathFromQueueItem(v)
 
 		// assert dequeued path has not repeated before the expected number of rotations
 		for _, previousDequeuedPath := range dequeuedPathCache {
@@ -73,8 +73,8 @@ func TestDequeueByPathBalancedTree(t *testing.T) {
 	for _, firstDimName := range firstDimensions {
 		firstDimPath := QueuePath{firstDimName}
 		for root.getNode(firstDimPath) != nil {
-			dequeuedPath, v := root.DequeueByPath(firstDimPath)
-			assertDequeuedPathValueMatch(t, dequeuedPath, v)
+			v := root.DequeueByPath(firstDimPath)
+			dequeuedPath := getChildPathFromQueueItem(v)
 
 			// assert dequeued path has not repeated before the expected number of rotations
 			for _, previousDequeuedPath := range dequeuedPathCache {
@@ -103,67 +103,54 @@ func TestDequeueUnbalancedTree(t *testing.T) {
 	root := makeUnbalancedTreeQueue(t)
 
 	// dequeue from root until exhausted
-	dequeuedPath, v := root.Dequeue()
+	v := root.Dequeue()
 	assert.Equal(t, "root:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:0 and any subtrees are exhausted
 	path := QueuePath{"0"}
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:0 was deleted
 	assert.Nil(t, root.getNode(path))
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:1:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:2:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:1:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:2:1:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:1:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:2:0:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:1:0:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:1 and any subtrees are exhausted
 	path = QueuePath{"1"}
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:1 was deleted
 	assert.Nil(t, root.getNode(path))
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:2:1:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.Dequeue()
+	v = root.Dequeue()
 	assert.Equal(t, "root:2:1:val2", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:2 and any subtrees are exhausted
 	path = QueuePath{"2"}
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:2 was deleted
 	assert.Nil(t, root.getNode(path))
 
@@ -185,30 +172,24 @@ func TestDequeueByPathUnbalancedTree(t *testing.T) {
 
 	// dequeue from root:2 until exhausted
 	path := QueuePath{"2"}
-	dequeuedPath, v := root.DequeueByPath(path)
+	v := root.DequeueByPath(path)
 	assert.Equal(t, "root:2:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:0:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:2:1:val2", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:2 is exhausted;
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:2 and its two children root:2:0 and root:2:1 were deleted
 	assert.Nil(t, root.getNode(path))
 	assert.Equal(t, 2, len(root.childQueueMap))
@@ -219,26 +200,21 @@ func TestDequeueByPathUnbalancedTree(t *testing.T) {
 
 	// dequeue from root:1 until exhausted
 	path = QueuePath{"1"}
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:1:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:1:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:1:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:1:0:val1", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:1 is exhausted;
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:1 and its child root:1:0 were deleted
 	assert.Nil(t, root.getNode(path))
 	assert.Equal(t, 1, len(root.childQueueMap))
@@ -249,14 +225,12 @@ func TestDequeueByPathUnbalancedTree(t *testing.T) {
 
 	// dequeue from root:0 until exhausted
 	path = QueuePath{"0"}
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Equal(t, "root:0:val0", v)
-	assertDequeuedPathValueMatch(t, dequeuedPath, v)
 
 	// root:0 is exhausted;
-	dequeuedPath, v = root.DequeueByPath(path)
+	v = root.DequeueByPath(path)
 	assert.Nil(t, v)
-	assert.Nil(t, dequeuedPath)
 	// root:0 was deleted
 	assert.Nil(t, root.getNode(path))
 	assert.Equal(t, 0, len(root.childQueueMap))
@@ -297,18 +271,21 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	assert.Equal(t, []string{"0", "1", "2"}, root.childQueueOrder)
 
 	// dequeue first item
-	dequeuedPath, _ := root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "0"}, dequeuedPath)
+	v := root.Dequeue()
+	dequeuedPath := getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue second item; root:1 is now exhausted and deleted
-	dequeuedPath, _ = root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "1"}, dequeuedPath)
+	v = root.Dequeue()
+	dequeuedPath = getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"1"}, dequeuedPath)
 	assert.Nil(t, root.getNode(QueuePath{"1"}))
 	assert.Equal(t, []string{"0", "2"}, root.childQueueOrder)
 
 	// dequeue third item
-	dequeuedPath, _ = root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "2"}, dequeuedPath)
+	v = root.Dequeue()
+	dequeuedPath = getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// root:1 was previously exhausted; root:0, then root:2 will be next in the rotation
 	// here we insert something new into root:1 to test that it
@@ -320,17 +297,20 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 
 	// dequeue fourth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:0
-	dequeuedPath, _ = root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "0"}, dequeuedPath)
+	v = root.Dequeue()
+	dequeuedPath = getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue fifth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:2
-	dequeuedPath, _ = root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "2"}, dequeuedPath)
+	v = root.Dequeue()
+	dequeuedPath = getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// dequeue sixth item; verifying the order 0->2->1 is being followed
-	dequeuedPath, _ = root.Dequeue()
-	assert.Equal(t, QueuePath{"root", "1"}, dequeuedPath)
+	v = root.Dequeue()
+	dequeuedPath = getChildPathFromQueueItem(v)
+	assert.Equal(t, QueuePath{"1"}, dequeuedPath)
 
 	// all items have been dequeued
 	assert.Equal(t, 0, root.ItemCount())
@@ -491,16 +471,10 @@ func makeQueueItemForChildPath(
 	}
 }
 
-// assertDequeuedPathValueMatch checks a dequeued item and its dequeued path
-// to ensure the item was dequeued from the expected node of the tree, based
-// on the item being generated to match its path via makeQueueItemForChildPath
-func assertDequeuedPathValueMatch(t *testing.T, dequeuedPath QueuePath, v any) {
+// getChildPathFromQueueItem enables assertions on the queue path the item was dequeued from.
+// Assertions require that the queue item value was generated via makeQueueItemForChildPath.
+func getChildPathFromQueueItem(v any) QueuePath {
 	itemPath := strings.Split(v.(string), ":")
-	itemPathPrefix := itemPath[:len(itemPath)-1] // strip value from the end
-
-	require.Equal(t, len(dequeuedPath), len(itemPathPrefix))
-
-	for i, nodeName := range dequeuedPath {
-		require.Equal(t, nodeName, itemPathPrefix[i])
-	}
+	itemPathPrefix := itemPath[1 : len(itemPath)-1] // strip value from the end
+	return itemPathPrefix
 }

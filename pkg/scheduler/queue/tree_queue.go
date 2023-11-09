@@ -178,13 +178,13 @@ func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
 // This maintains structural guarantees relied on to make IsEmpty() non-recursive.
 //
 // childPath is relative to the receiver node; pass a zero-length path to refer to the node itself.
-func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
+func (q *TreeQueue) DequeueByPath(childPath QueuePath) any {
 	childQueue := q.getNode(childPath)
 	if childQueue == nil {
-		return nil, nil
+		return nil
 	}
 
-	dequeuedPathFromChild, v := childQueue.Dequeue()
+	v := childQueue.Dequeue()
 
 	if childQueue.IsEmpty() {
 		// child node will recursively clean up its own empty children during dequeue,
@@ -193,11 +193,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 		q.deleteNode(childPath)
 	}
 
-	if v == nil {
-		// guard against slicing into nil path
-		return nil, nil
-	}
-	return append(QueuePath{q.name}, append(childPath, dequeuedPathFromChild[1:]...)...), v
+	return v
 }
 
 // Dequeue removes and returns an item from the front of the next nonempty queue node in the tree.
@@ -208,8 +204,7 @@ func (q *TreeQueue) DequeueByPath(childPath QueuePath) (QueuePath, any) {
 //
 // Nodes that empty down to the leaf after being dequeued from are deleted as the recursion returns
 // up the stack. This maintains structural guarantees relied on to make IsEmpty() non-recursive.
-func (q *TreeQueue) Dequeue() (QueuePath, any) {
-	var dequeuedPath QueuePath
+func (q *TreeQueue) Dequeue() any {
 	var v any
 	initialLen := len(q.childQueueOrder)
 
@@ -228,7 +223,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 			// pick the child node whose turn it is and recur
 			childQueueName := q.childQueueOrder[q.currentChildQueueIndex]
 			childQueue := q.childQueueMap[childQueueName]
-			dequeuedPath, v = childQueue.Dequeue()
+			v = childQueue.Dequeue()
 
 			// perform cleanup if child node is empty after dequeuing recursively
 			if childQueue.IsEmpty() {
@@ -239,11 +234,7 @@ func (q *TreeQueue) Dequeue() (QueuePath, any) {
 			}
 		}
 	}
-	if v == nil {
-		// don't report path when nothing was dequeued
-		return nil, nil
-	}
-	return append(QueuePath{q.name}, dequeuedPath...), v
+	return v
 }
 
 // deleteNode removes a child node from the tree and the childQueueOrder and corrects the indices.
