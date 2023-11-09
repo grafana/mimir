@@ -37,7 +37,7 @@ func NewBlocksConsistency(uploadGracePeriod, deletionGracePeriod time.Duration, 
 		}),
 		checksFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_consistency_checks_failed_total",
-			Help: "Total number of consistency checks failed on queried blocks. A failed consistency check means that some of the block which had to be queried weren't present in any of the store-gateways.",
+			Help: "Total number of queries that failed consistency checks. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.",
 		}),
 	}
 }
