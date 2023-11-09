@@ -3516,6 +3516,7 @@ func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
 				level.Info(i.logger).Log("msg", "pprus -- subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
 
 				// TODO(pprus) -- this seems to fail the first time because the zone has no tokens
+				// TODO(pprus) -- this will fail if the ingester used to hold this tenant, but they were moved off of this ingester (they'll keep getting returned by getTSDBUsers, but this instance won't be in their subring)
 				ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
 				if err != nil {
 					level.Error(i.logger).Log("msg", "pprus -- failed to get token ranges", "error", err)

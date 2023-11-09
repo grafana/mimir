@@ -280,7 +280,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())) {
+	// TODO(pprus) -- when responding to ring changes, need to delay using the new ingestion shard size as part of the local limit calculation until the owned series are updated
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.ownedSeriesCount)) {
 		return globalerror.MaxSeriesPerUser
 	}
 
