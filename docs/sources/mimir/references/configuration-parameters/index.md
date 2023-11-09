@@ -586,13 +586,23 @@ grpc_tls_config:
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
 
+# If set to true, gRPC statuses will be reported in instrumentation labels with
+# their string representations. Otherwise, they will be reported as "error".
+# CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
 [graceful_shutdown_timeout: <duration> | default = 30s]
 
-# (advanced) Read timeout for HTTP server
+# (advanced) Read timeout for entire HTTP request, including headers and body.
 # CLI flag: -server.http-read-timeout
 [http_server_read_timeout: <duration> | default = 30s]
+
+# Read timeout for HTTP request headers. If set to 0, value of
+# -server.http-read-timeout is used.
+# CLI flag: -server.http-read-header-timeout
+[http_server_read_header_timeout: <duration> | default = 0s]
 
 # (advanced) Write timeout for HTTP server
 # CLI flag: -server.http-write-timeout
@@ -1089,6 +1099,12 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 30000]
 
+  # (advanced) The sum of the request sizes in bytes of inflight push requests
+  # that this ingester can handle. This limit is per-ingester, not per-tenant.
+  # Additional requests will be rejected. 0 = unlimited.
+  # CLI flag: -ingester.instance-limits.max-inflight-push-requests-bytes
+  [max_inflight_push_requests_bytes: <int> | default = 0]
+
 # (advanced) Comma-separated list of metric names, for which the
 # -ingester.max-global-series-per-metric limit will be ignored. Does not affect
 # the -ingester.max-global-series-per-user limit.
@@ -1117,10 +1133,6 @@ instance_limits:
 # all of them.
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
-
-# (experimental) Ignore cancellation when querying chunks.
-# CLI flag: -ingester.chunks-query-ignore-cancellation
-[chunks_query_ignore_cancellation: <boolean> | default = false]
 
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
@@ -2258,6 +2270,12 @@ circuit_breaker:
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
+
+# (advanced) If set to true, gRPC status codes will be reported in "status_code"
+# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
+# they will be reported as "error"
+# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
 ```
 
 ### grpc_client
@@ -4604,6 +4622,12 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # authentication instead.
 # CLI flag: -<prefix>.azure.account-key
 [account_key: <string> | default = ""]
+
+# If `connection-string` is set, the value of `endpoint-suffix` will not be
+# used. Use this method over `account-key` if you need to authenticate via a SAS
+# token. Or if you use the Azurite emulator.
+# CLI flag: -<prefix>.azure.connection-string
+[connection_string: <string> | default = ""]
 
 # Azure storage container name
 # CLI flag: -<prefix>.azure.container-name

@@ -178,7 +178,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 18+len(tt.expectedParams))
+				require.Len(t, msg, 19+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -197,6 +197,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["sharded_queries"])
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
+				require.EqualValues(t, 0, msg["queue_time_seconds"])
 
 				for name, values := range tt.expectedParams {
 					logMessageKey := fmt.Sprintf("param_%v", name)

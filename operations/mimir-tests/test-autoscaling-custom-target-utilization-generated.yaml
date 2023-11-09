@@ -1563,7 +1563,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1617,7 +1617,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1671,7 +1671,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1725,7 +1725,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1937,6 +1937,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1780"
+    name: cortex_alertmanager_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: cortex_alertmanager_memory_hpa_default
@@ -1961,6 +1962,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "9556302233"
+    name: cortex_alertmanager_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -1995,6 +1997,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1780"
+    name: cortex_distributor_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: cortex_distributor_memory_hpa_default
@@ -2019,6 +2022,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "3058016714"
+    name: cortex_distributor_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2046,6 +2050,7 @@ spec:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.75"}[5m]))
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "7"
+    name: cortex_querier_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2080,6 +2085,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1780"
+    name: query_frontend_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: query_frontend_memory_hpa_default
@@ -2104,6 +2110,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "559939584"
+    name: query_frontend_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2138,6 +2145,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "890"
+    name: ruler_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: ruler_memory_hpa_default
@@ -2162,6 +2170,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "5733781340"
+    name: ruler_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2185,7 +2194,7 @@ spec:
     name: ruler-querier
   triggers:
   - metadata:
-      metricName: cortex_ruler_querier_hpa_default
+      metricName: ruler_querier_cpu_hpa_default
       query: |
         max_over_time(
           sum(
@@ -2196,6 +2205,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "178"
+    name: ruler_querier_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: ruler_querier_memory_hpa_default
@@ -2220,6 +2230,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "955630223"
+    name: ruler_querier_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2254,6 +2265,7 @@ spec:
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "1780"
+    name: ruler_query_frontend_cpu_hpa_default
     type: prometheus
   - metadata:
       metricName: ruler_query_frontend_memory_hpa_default
@@ -2278,6 +2290,7 @@ spec:
         )
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "559939584"
+    name: ruler_query_frontend_memory_hpa_default
     type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
@@ -2306,4 +2319,5 @@ spec:
       serverAddress: http://prometheus.default:9090/prometheus
       threshold: "123"
     metricType: Value
+    name: cortex_test_hpa_default
     type: prometheus

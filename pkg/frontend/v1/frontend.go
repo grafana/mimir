@@ -220,7 +220,8 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 		req := reqWrapper.(*request)
 
-		f.queueDuration.Observe(time.Since(req.enqueueTime).Seconds())
+		queueTime := time.Since(req.enqueueTime)
+		f.queueDuration.Observe(queueTime.Seconds())
 		req.queueSpan.Finish()
 
 		/*
@@ -245,9 +246,10 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		errs := make(chan error, 1)
 		go func() {
 			err = server.Send(&frontendv1pb.FrontendToClient{
-				Type:         frontendv1pb.HTTP_REQUEST,
-				HttpRequest:  req.request,
-				StatsEnabled: stats.IsEnabled(req.originalCtx),
+				Type:           frontendv1pb.HTTP_REQUEST,
+				HttpRequest:    req.request,
+				StatsEnabled:   stats.IsEnabled(req.originalCtx),
+				QueueTimeNanos: queueTime.Nanoseconds(),
 			})
 			if err != nil {
 				errs <- err

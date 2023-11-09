@@ -27,6 +27,13 @@ import (
 	"github.com/grafana/dskit/middleware"
 )
 
+var (
+	// DoNotLogErrorHeaderKey is a header key used for marking non-loggable errors. More precisely, if an HTTP response
+	// has a status code 5xx, and contains a header with key DoNotLogErrorHeaderKey and any values, the generated error
+	// will be marked as non-loggable.
+	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
+)
+
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
 // servers must implement.
 type Server struct {
@@ -62,13 +69,18 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 
 	recorder := httptest.NewRecorder()
 	s.handler.ServeHTTP(recorder, req)
+	header := recorder.Header()
 	resp := &httpgrpc.HTTPResponse{
 		Code:    int32(recorder.Code),
-		Headers: fromHeader(recorder.Header()),
+		Headers: fromHeader(header),
 		Body:    recorder.Body.Bytes(),
 	}
 	if recorder.Code/100 == 5 {
-		return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+		err := httpgrpc.ErrorFromHTTPResponse(resp)
+		if _, ok := header[DoNotLogErrorHeaderKey]; ok {
+			err = middleware.DoNotLogError{Err: err}
+		}
+		return nil, err
 	}
 	return resp, nil
 }
@@ -227,6 +239,9 @@ func toHeader(hs []*httpgrpc.Header, header http.Header) {
 func fromHeader(hs http.Header) []*httpgrpc.Header {
 	result := make([]*httpgrpc.Header, 0, len(hs))
 	for k, vs := range hs {
+		if k == DoNotLogErrorHeaderKey {
+			continue
+		}
 		result = append(result, &httpgrpc.Header{
 			Key:    k,
 			Values: vs,

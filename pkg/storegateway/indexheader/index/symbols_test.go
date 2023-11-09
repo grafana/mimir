@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -68,7 +67,7 @@ func TestSymbolsV1(t *testing.T) {
 	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
 
 	reg := prometheus.NewPedanticRegistry()
-	df := streamencoding.NewDecbufFactory(filePath, 0, log.NewNopLogger(), streamencoding.NewDecbufFactoryMetrics(reg))
+	df := streamencoding.NewDecbufFactory(filePath, 0, streamencoding.NewDecbufFactoryMetrics(reg))
 	s, err := NewSymbols(df, index.FormatV1, symbolsStart, true)
 	require.NoError(t, err)
 
@@ -170,7 +169,7 @@ func TestSymbolsV2(t *testing.T) {
 	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
 
 	reg := prometheus.NewPedanticRegistry()
-	df := streamencoding.NewDecbufFactory(filePath, 0, log.NewNopLogger(), streamencoding.NewDecbufFactoryMetrics(reg))
+	df := streamencoding.NewDecbufFactory(filePath, 0, streamencoding.NewDecbufFactoryMetrics(reg))
 	s, err := NewSymbols(df, index.FormatV2, symbolsStart, true)
 	require.NoError(t, err)
 

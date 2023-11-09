@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
@@ -84,10 +85,11 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		HttpRequest:  &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		StatsEnabled: true,
 	})
 
 	{
@@ -101,6 +103,8 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
 		require.Equal(t, "GET", msg2.HttpRequest.Method)
 		require.Equal(t, "/hello", msg2.HttpRequest.Url)
+		require.True(t, msg2.StatsEnabled)
+		require.Greater(t, msg2.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 
@@ -195,7 +199,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 	})
 
 	// Disconnect frontend.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Wait until the frontend has disconnected.
 	test.Poll(t, time.Second, float64(0), func() interface{} {
@@ -228,7 +232,7 @@ func TestCancelRequestInProgress(t *testing.T) {
 
 	// At this point, scheduler assumes that querier is processing the request (until it receives empty QuerierToScheduler message back).
 	// Simulate frontend disconnect.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Add a little sleep to make sure that scheduler notices frontend disconnect.
 	time.Sleep(500 * time.Millisecond)
@@ -415,7 +419,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	require.NoError(t, err)
 
 	// Querier now disconnects, without sending empty message back.
-	require.NoError(t, querierLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	// Verify that frontend was notified about request.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
@@ -483,8 +487,8 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
 
-	require.NoError(t, querierLoop.CloseSend())
 	cancel()
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	require.Eventually(t, func() bool {
 		err := promtest.GatherAndCompare(reg, strings.NewReader(`

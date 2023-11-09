@@ -200,7 +200,7 @@ func getServerConfig(t *testing.T) server.Config {
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
 	}
 	require.NoError(t, cfg.LogLevel.Set("info"))
 	return cfg

@@ -958,7 +958,7 @@ func getServerConfig(t *testing.T, logFormat, logLevel string) server.Config {
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
 		LogFormat:                logFormat,
 		Registerer:               prometheus.NewPedanticRegistry(),
 	}

@@ -145,9 +145,7 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
-	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
@@ -198,7 +196,7 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	return t.discoveredLabels.Copy()
 }
 
-// SetDiscoveredLabels sets new DiscoveredLabels
+// SetDiscoveredLabels sets new DiscoveredLabels.
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()

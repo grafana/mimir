@@ -644,7 +644,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if err != nil {
 			return err
 		}
-		level.Debug(spanLogger).Log(
+		spanLogger.DebugLog(
 			"msg", "sent streaming series",
 			"num_series", streamingSeriesCount,
 			"duration", time.Since(seriesLoadStart),
@@ -686,7 +686,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if req.StreamingChunksBatchSize > 0 {
 		debugMessage = "sent streaming chunks"
 	}
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", debugMessage,
 		"num_series", numSeries,
 		"num_chunks", numChunks,
@@ -980,7 +980,7 @@ func (s *BucketStore) sendStats(srv storepb.Store_SeriesServer, stats *safeQuery
 
 func logSeriesRequestToSpan(ctx context.Context, l log.Logger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger := spanlogger.FromContext(ctx, l)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
 		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
@@ -1262,8 +1262,7 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
-	// ignore the span context so that we can use the context for cancellation
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
+	span, spanCtx := opentracing.StartSpanFromContext(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.Finish()
 
 	s.blocksMx.RLock()
@@ -1274,7 +1273,8 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
 	for _, b := range blocks {
-		indexReaders[b.meta.ULID] = b.loadedIndexReader(s.postingsStrategy, stats)
+		// Unlike below, loadedIndexReader() does not retain the context after it returns.
+		indexReaders[b.meta.ULID] = b.loadedIndexReader(spanCtx, s.postingsStrategy, stats)
 	}
 	if skipChunks {
 		return blocks, indexReaders, nil
@@ -1282,6 +1282,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 
 	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
 	for _, b := range blocks {
+		// Ignore the span context from this method - chunkReader() retains the context to add spans after openBlocksForReading() returns.
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx)
 	}
 
@@ -1335,7 +1336,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		indexr := b.loadedIndexReader(s.postingsStrategy, stats)
+		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label names")
@@ -1459,7 +1460,7 @@ func fetchCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label names entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label names entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
 		return nil, false
 	}
 
@@ -1574,7 +1575,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // so we could also intersect those with each label's postings being each one non-empty and leading to the same result.
 func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy postingsSelectionStrategy, maxSeriesPerBatch int, labelName string, matchers []*labels.Matcher, logger log.Logger, stats *safeQueryStats) ([]string, error) {
 	// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
-	labelValuesReader := b.loadedIndexReader(selectAllStrategy{}, stats)
+	labelValuesReader := b.loadedIndexReader(ctx, selectAllStrategy{}, stats)
 	defer runutil.CloseWithLogOnErr(b.logger, labelValuesReader, "close block index reader")
 
 	values, ok := fetchCachedLabelValues(ctx, b.indexCache, b.userID, b.meta.ULID, labelName, matchers, logger)
@@ -1702,11 +1703,11 @@ func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 		return nil, false
 	}
 	if entry.LabelName != labelName {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label values entry label name doesn't match, possible collision", "cached_label_name", entry.LabelName, "requested_label_name", labelName)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label values entry label name doesn't match, possible collision", "cached_label_name", entry.LabelName, "requested_label_name", labelName)
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label values entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "cached label values entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
 		return nil, false
 	}
 
@@ -1717,7 +1718,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 	// This limit is a workaround for panics in decoding large responses. See https://github.com/golang/go/issues/59172
 	const valuesLimit = 655360
 	if len(values) > valuesLimit {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
+		spanlogger.FromContext(ctx, logger).DebugLog("msg", "skipping storing label values response to cache because it exceeds number of values limit", "limit", valuesLimit, "values_count", len(values))
 		return
 	}
 	entry := labelValuesCacheEntry{
@@ -1918,7 +1919,11 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 	return b.bkt.GetRange(ctx, b.chunkObjs[seq], off, length)
 }
 
-func (b *bucketBlock) loadedIndexReader(postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
+func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
+	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
+	defer span.Finish()
+	span.SetTag("blockID", b.meta.ULID)
+
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
 	_, _ = b.indexHeaderReader.IndexVersion()

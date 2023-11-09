@@ -165,6 +165,10 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 			Result:     extracted,
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
+		// Note that the positions based on the original query may be wrong as the rewritten
+		// query which is actually used is different, but the user does not see the rewritten
+		// query, so we pass in an empty string as the query so the positions will be hidden.
+		Warnings: res.Warnings.AsStrings("", 0),
 	}, nil
 }
 
@@ -263,7 +267,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog log.Logger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -279,7 +283,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	maxRegexpSizeBytes := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.QueryShardingMaxRegexpSizeBytes)
 	if maxRegexpSizeBytes > 0 {
 		if longest := longestRegexpMatcherBytes(queryExpr); longest > maxRegexpSizeBytes {
-			level.Debug(spanLog).Log(
+			spanLog.DebugLog(
 				"msg", "query sharding has been disabled because the query contains a regexp matcher longer than the limit",
 				"longest regexp bytes", longest,
 				"limit bytes", maxRegexpSizeBytes,
@@ -304,7 +308,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		totalShards = util_math.Min(totalShards, int(v.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
 
 		if prevTotalShards != totalShards {
-			level.Debug(spanLog).Log(
+			spanLog.DebugLog(
 				"msg", "number of shards has been adjusted to match the estimated series count",
 				"updated total shards", totalShards,
 				"previous total shards", prevTotalShards,
@@ -339,7 +343,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		totalShards = util_math.Max(1, util_math.Min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
 
 		if prevTotalShards != totalShards {
-			level.Debug(spanLog).Log(
+			spanLog.DebugLog(
 				"msg", "number of shards has been adjusted to honor the max sharded queries limit",
 				"updated total shards", totalShards,
 				"previous total shards", prevTotalShards,
@@ -377,7 +381,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		}
 
 		if prevTotalShards != totalShards {
-			level.Debug(spanLog).Log("msg", "number of shards has been adjusted to be compatible with compactor shards",
+			spanLog.DebugLog("msg", "number of shards has been adjusted to be compatible with compactor shards",
 				"previous total shards", prevTotalShards,
 				"updated total shards", totalShards,
 				"compactor shards", compactorShardCount)

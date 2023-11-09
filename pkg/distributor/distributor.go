@@ -17,11 +17,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/limiter"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -39,13 +40,13 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -1150,7 +1151,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		// We don't know request size yet, will check it later.
 		ctx, rs, err := d.startPushRequest(ctx, -1)
 		if err != nil {
-			return util_log.DoNotLogError{Err: err}
+			return middleware.DoNotLogError{Err: err}
 		}
 
 		rs.pushHandlerPerformsCleanup = true
@@ -1377,13 +1378,14 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 	c := h.(ingester_client.IngesterClient)
 
-	req := mimirpb.WriteRequest{
+	req := &mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     source,
 	}
 
-	_, err = c.Push(ctx, &req)
+	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
+	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
 }
 
@@ -1392,20 +1394,24 @@ func handleIngesterPushError(err error) error {
 		return nil
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	if ok {
+	stat, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		return errors.Wrap(err, failedPushingToIngesterMessage)
+	}
+	statusCode := stat.Code()
+	if isHTTPStatusCode(statusCode) {
+		// TODO This code is needed for backwards compatibility, since ingesters may still return
+		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
+		// it. This code should be removed in mimir 2.12.0.
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "%s: %s", failedPushingToIngesterMessage, resp.Body)
+		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
 	}
 
-	stat, ok := status.FromError(err)
-	if ok {
-		return newIngesterPushError(stat)
-	}
-	return errors.Wrap(err, failedPushingToIngesterMessage)
+	return newIngesterPushError(stat)
+}
+
+func isHTTPStatusCode(statusCode codes.Code) bool {
+	return int(statusCode) >= 100 && int(statusCode) < 600
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
@@ -1496,7 +1502,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 		if err != nil {
 			return nil, err
 		}
-		defer stream.CloseSend() //nolint:errcheck
+		defer util.CloseAndExhaust[*ingester_client.LabelNamesAndValuesResponse](stream) //nolint:errcheck
 		return nil, merger.collectResponses(stream)
 	})
 	if err != nil {
@@ -1653,7 +1659,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		if err != nil {
 			return struct{}{}, err
 		}
-		defer func() { _ = stream.CloseSend() }()
+		defer func() { _ = util.CloseAndExhaust[*ingester_client.LabelValuesCardinalityResponse](stream) }()
 
 		return struct{}{}, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(desc.Zone, stream)
 	}, func(struct{}) {})

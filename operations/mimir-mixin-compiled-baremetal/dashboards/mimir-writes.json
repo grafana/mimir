@@ -459,6 +459,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -467,6 +468,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to distributor.\nRejected requests are requests that distributor fails to handle because of distributor instance limits.\nWhen distributor is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen distributor is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                   "fill": 10,
                   "id": 7,
                   "legend": {
@@ -493,7 +495,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
@@ -697,6 +699,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -705,7 +708,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to ingester.\nRejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests and ingester-max-ingestion-rate).\nWhen ingester is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen ingester is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
+                  "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to ingester.\nRejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests, ingester-max-inflight-push-requests-bytes, ingester-max-ingestion-rate).\nWhen ingester is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen ingester is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                   "fill": 10,
                   "id": 10,
                   "legend": {
@@ -732,7 +735,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
@@ -964,6 +967,11 @@
                      {
                         "alias": "/Current .+/",
                         "fill": 0
+                     },
+                     {
+                        "alias": "/Min .+/",
+                        "dashes": true,
+                        "fill": 0
                      }
                   ],
                   "spaceLength": 10,
@@ -983,6 +991,13 @@
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Current {{ scaletargetref_name }}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "kube_horizontalpodautoscaler_spec_min_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n# Add the scaletargetref_name label for readability\n+ on (cluster, namespace, horizontalpodautoscaler) group_left (scaletargetref_name)\n  0*kube_horizontalpodautoscaler_info{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "Min {{ scaletargetref_name }}",
                         "legendLink": null
                      }
                   ],
@@ -1055,10 +1070,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (scaledObject) (\n  keda_metrics_adapter_scaler_metrics_value{metric=~\".*cpu.*\"}\n  /\n  on(metric) group_left label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n  )\n)\n",
+                        "expr": "sum by (scaler) (\n  label_replace(\n    keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*cpu.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ scaledObject }}",
+                        "legendFormat": "{{ scaler }}",
                         "legendLink": null
                      }
                   ],
@@ -1131,10 +1146,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (scaledObject) (\n  keda_metrics_adapter_scaler_metrics_value{metric=~\".*memory.*\"}\n  /\n  on(metric) group_left label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n  )\n)\n",
+                        "expr": "sum by (scaler) (\n  label_replace(\n    keda_scaler_metrics_value{cluster=~\"$cluster\", exported_namespace=~\"$namespace\", scaler=~\".*memory.*\"},\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.*)\"\n  )\n  /\n  on(cluster, namespace, scaledObject, metric) group_left label_replace(\n    label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"},\n      \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n    ),\n    \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  )\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{ scaledObject }}",
+                        "legendFormat": "{{ scaler }}",
                         "legendLink": null
                      }
                   ],
@@ -1207,10 +1222,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
+                        "expr": "sum by(cluster, namespace, scaler, metric, scaledObject) (\n  label_replace(\n    rate(keda_scaler_errors[$__rate_interval]),\n    \"namespace\", \"$1\", \"exported_namespace\", \"(.+)\"\n  )\n) +\non(cluster, namespace, metric, scaledObject) group_left\nlabel_replace(\n  label_replace(\n      kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=~\"keda-hpa-distributor\"} * 0,\n      \"scaledObject\", \"$1\", \"horizontalpodautoscaler\", \"keda-hpa-(.*)\"\n  ),\n  \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{metric}} failures",
+                        "legendFormat": "{{scaler}} failures",
                         "legendLink": null
                      }
                   ],
@@ -1269,6 +1284,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1303,7 +1319,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
@@ -1454,6 +1470,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1488,7 +1505,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-(lifecycler|ring)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-(lifecycler|ring)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
@@ -1639,6 +1656,7 @@
                      "3xx": "#6ED0E0",
                      "4xx": "#EF843C",
                      "5xx": "#E24D42",
+                     "OK": "#7EB26D",
                      "cancel": "#A9A9A9",
                      "error": "#E24D42",
                      "success": "#7EB26D"
@@ -1673,7 +1691,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", kv_name=~\"ingester-.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", kv_name=~\"ingester-.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",

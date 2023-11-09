@@ -154,9 +154,10 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		}
 	}
 	return &PrometheusResponse{
-		Status:  promRes.Status,
-		Data:    data,
-		Headers: promRes.Headers,
+		Status:   promRes.Status,
+		Data:     data,
+		Headers:  promRes.Headers,
+		Warnings: promRes.Warnings,
 	}
 }
 
@@ -172,8 +173,9 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		}
 	}
 	return &PrometheusResponse{
-		Status: promRes.Status,
-		Data:   data,
+		Status:   promRes.Status,
+		Data:     data,
+		Warnings: promRes.Warnings,
 	}
 }
 

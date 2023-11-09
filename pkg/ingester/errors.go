@@ -13,6 +13,7 @@ import (
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -548,7 +549,7 @@ func handlePushErrorWithGRPC(err error) error {
 			errCode = codes.Unavailable
 		case mimirpb.INSTANCE_LIMIT:
 			errCode = codes.Unavailable
-			wrappedErr = log.DoNotLogError{Err: err}
+			wrappedErr = middleware.DoNotLogError{Err: err}
 		case mimirpb.TSDB_UNAVAILABLE:
 			errCode = codes.Internal
 		}
@@ -569,7 +570,7 @@ func handlePushErrorWithHTTPGRPC(err error) error {
 		case mimirpb.SERVICE_UNAVAILABLE:
 			return newErrorWithStatus(err, codes.Unavailable)
 		case mimirpb.INSTANCE_LIMIT:
-			return newErrorWithStatus(log.DoNotLogError{Err: err}, codes.Unavailable)
+			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
 		}
