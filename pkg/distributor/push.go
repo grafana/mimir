@@ -158,62 +158,24 @@ func handler(
 
 func calculateRetryAfter(req *http.Request, retryCfg *RetryConfig) string {
 	// 0 is no retry, 1 is cost, 2 is linear, 3 is exponential, 4 is random cost, 5 is random linear, 6 is random exponential
-	attemps := req.Header.Get("Retry-Attempt")
-	// default to Retry-Attempt 1
-	attemp := "1"
-	if attemps != "" {
-		attemp = attemps
+	retryAttemp, err := strconv.Atoi(req.Header.Get("Retry-Attempt"))
+	// If retry-attemp is not valid, set it to default 1
+	if err != nil || retryAttemp < 1 {
+		retryAttemp = 1
+	}
+	if retryAttemp > retryCfg.MaxAllowedAttempts {
+		retryAttemp = retryCfg.MaxAllowedAttempts
 	}
 
-	retryAttemp, err := strconv.Atoi(attemp)
-	// If retry-attemp is not valid, set it to default 1
-	if attemp == "" || err != nil || retryAttemp < 1 {
-		retryAttemp = 1
+	if retryCfg.Base.Seconds() <= 0 {
+		retryCfg.Base = 3 * time.Second
 	}
 
 	var minRetry, maxRetry int64
+	minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
+	maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp)))
 
-	switch retryCfg.Strategy {
-	case 0:
-		return ""
-	case 1:
-		minRetry = 1
-		maxRetry = int64(retryCfg.Base.Seconds())
-	case 2:
-		minRetry = 1
-		maxRetry = int64(retryCfg.Base.Seconds()) * int64(retryAttemp)
-	case 3:
-		minRetry = 1
-		maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
-	case 4:
-		minRetry = int64(0.5 * retryCfg.Base.Seconds())
-		maxRetry = int64(1.5 * retryCfg.Base.Seconds())
-	case 5:
-		base := retryCfg.Base * time.Duration(retryAttemp)
-		minRetry = int64(0.5 * base.Seconds())
-		maxRetry = int64(1.5 * base.Seconds())
-	case 6:
-		base := retryCfg.Base * time.Duration(math.Pow(2, float64(retryAttemp-1)))
-		minRetry = int64(0.5 * base.Seconds())
-		maxRetry = int64(1.5 * base.Seconds())
-	case 7:
-		minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
-		maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp)))
-	}
-
-	if maxRetry > int64(retryCfg.MaxDelay.Seconds()) {
-		maxRetry = int64(retryCfg.MaxDelay.Seconds())
-	}
-
-	if minRetry < 1 {
-		minRetry = 1
-	}
-
-	if minRetry >= maxRetry {
-		return strconv.FormatInt(maxRetry, 10)
-	}
-
-	// the delaySeconds is a random number between 1 and base
+	// the delaySeconds is a random number between minRetry and maxRetry
 	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
 
 	return strconv.FormatInt(delaySeconds, 10)
@@ -262,11 +224,12 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, code int, ret
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
 	}
-	if code == http.StatusTooManyRequests || code >= 500 && (retryCfg != nil && retryCfg.Strategy != 0) {
+	var retrySeconds string
+	if code == http.StatusTooManyRequests || code/100 == 5 && (retryCfg != nil && retryCfg.Enabled) {
 		// If we are going to retry, set the Retry-After header.
 		// This is used by the client to determine how long to wait before retrying.
-		retrySeconds := calculateRetryAfter(r, retryCfg)
-		logger.Log("msg", "get retry-after", "retry-after", retrySeconds, "strategy", retryCfg.Strategy, "maxDelay", retryCfg.MaxDelay)
+		retrySeconds = calculateRetryAfter(r, retryCfg)
 		w.Header().Set("Retry-After", retrySeconds)
 	}
+	logger.Log("msg", "set retry-after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts)
 }

@@ -24,8 +24,8 @@ std.manifestYamlDoc({
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
-    enable_grafana_agent: true,
-    enable_prometheus: false,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    enable_grafana_agent: false,
+    enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
   },
 
@@ -42,7 +42,7 @@ std.manifestYamlDoc({
     self.minio +
     (if $._config.enable_prometheus then self.prometheus else {}) +
     self.grafana +
-    (if $._config.enable_grafana_agent then self.grafana_agent_1 else {}) +
+    (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
@@ -310,7 +310,6 @@ std.manifestYamlDoc({
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
         '--enable-feature=native-histograms',
-        '--enable-feature=remote-write-receiver',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -318,7 +317,6 @@ std.manifestYamlDoc({
         '../../operations/mimir-mixin-compiled/rules.yaml:/etc/mixin/mimir-rules.yaml',
       ],
       ports: ['9090:9090'],
-      hostname: 'prometheus',
     },
   },
 
@@ -338,26 +336,14 @@ std.manifestYamlDoc({
     },
   },
 
-  grafana_agent_1:: {
+  grafana_agent:: {
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
-    'grafana-agent-1': {
+    'grafana-agent': {
       image: 'grafana/agent:v0.37.3',
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
-    },
-  },
-
-
-  grafana_agent_2:: {
-    // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
-    // until metadata remote write is not supported by Prometheus).
-    'grafana-agent-2': {
-      image: 'grafana/agent:v0.37.3',
-      command: ['-config.file=/etc/agent-config/grafana-agent2.yaml', '-metrics.wal-directory=/tmp2', '-server.http.address=127.0.0.1:9081'],
-      volumes: ['./config:/etc/agent-config'],
-      ports: ['9081:9081'],
     },
   },
 

@@ -8,10 +8,6 @@ distributor:
       store: consul
       consul:
         host: consul:8500
-  retry:
-    retry_base: 5s
-    retry_max_delay: 1m
-    retry_strategy: 0
 
 ingester_client:
   grpc_client_config:
@@ -167,11 +163,8 @@ limits:
   max_global_exemplars_per_user: 5000
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
-  ingestion_rate: 1000
+  ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
-  # ingestion_burst_size: 1000000
-  out_of_order_time_window: 1h
-  service_overload_status_code_on_rate_limit_enabled: false
 
 runtime_config:
   file: ./config/runtime.yaml

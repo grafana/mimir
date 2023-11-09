@@ -852,6 +852,7 @@ func TestHandler_ErrorWithRetryAfterHeader(t *testing.T) {
 		err                error
 		expectedHTTPStatus int
 		expectRetryAfter   bool
+		valueLowerBound    int
 		valueUpperBound    int
 		retryCfg           *RetryConfig
 		retryAttemp        int
@@ -862,7 +863,7 @@ func TestHandler_ErrorWithRetryAfterHeader(t *testing.T) {
 			err:                context.Canceled,
 			expectedHTTPStatus: statusClientClosedRequest,
 			expectRetryAfter:   false,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 1, MaxDelay: time.Minute},
+			retryCfg:           &RetryConfig{Base: 3 * time.Second, Enabled: true, MaxAllowedAttempts: 2},
 		},
 		{
 			name:               "Generic error, HTTP 500, no Retry-After",
@@ -870,46 +871,39 @@ func TestHandler_ErrorWithRetryAfterHeader(t *testing.T) {
 			err:                fmt.Errorf("something went wrong during the push"),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectRetryAfter:   false,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 0, MaxDelay: time.Minute},
+			retryCfg:           &RetryConfig{Base: 3 * time.Second, Enabled: false, MaxAllowedAttempts: 2},
 		},
 		{
-			name:               "Generic error, HTTP 500, Retry-After with base",
+			name:               "Generic error, HTTP 500, Retry-After with no Retry-Attemps set",
 			parserError:        false,
 			err:                fmt.Errorf("something went wrong during the push"),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectRetryAfter:   true,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 1, MaxDelay: time.Minute},
-			valueUpperBound:    5,
+			retryCfg:           &RetryConfig{Base: 3 * time.Second, Enabled: true, MaxAllowedAttempts: 2},
+			valueLowerBound:    3,
+			valueUpperBound:    6,
 		},
 		{
-			name:               "Generic error, HTTP 500, Retry-After with base * retryAttempts",
+			name:               "Generic error, HTTP 500, Retry-After with Retry-Attemps set",
 			parserError:        false,
 			err:                fmt.Errorf("something went wrong during the push"),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectRetryAfter:   true,
-			retryAttemp:        3,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 2, MaxDelay: time.Minute},
-			valueUpperBound:    15,
+			retryAttemp:        2,
+			retryCfg:           &RetryConfig{Base: 3 * time.Second, Enabled: true, MaxAllowedAttempts: 2},
+			valueLowerBound:    6,
+			valueUpperBound:    12,
 		},
 		{
-			name:               "Generic error, HTTP 500, Retry-After with base * 2^(retryAttempts-1)",
+			name:               "Generic error, HTTP 500, Retry-After with Retry-Attemps set higher than MaxAllowedAttempts",
 			parserError:        false,
 			err:                fmt.Errorf("something went wrong during the push"),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectRetryAfter:   true,
-			retryAttemp:        3,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 3, MaxDelay: time.Minute},
-			valueUpperBound:    20,
-		},
-		{
-			name:               "Generic error, HTTP 500, Retry-After with base * 2^(retryAttempts-1), with max delay set",
-			parserError:        false,
-			err:                fmt.Errorf("something went wrong during the push"),
-			expectedHTTPStatus: http.StatusInternalServerError,
-			expectRetryAfter:   true,
-			retryAttemp:        5,
-			retryCfg:           &RetryConfig{Base: 5 * time.Second, Strategy: 3, MaxDelay: 3 * time.Second},
-			valueUpperBound:    3,
+			retryAttemp:        8,
+			retryCfg:           &RetryConfig{Base: 3 * time.Second, Enabled: true, MaxAllowedAttempts: 2},
+			valueLowerBound:    6,
+			valueUpperBound:    12,
 		},
 	}
 
@@ -946,6 +940,7 @@ func TestHandler_ErrorWithRetryAfterHeader(t *testing.T) {
 				assert.NotEmpty(t, retryAfter)
 				retryAfterInt, err := strconv.Atoi(retryAfter)
 				assert.NoError(t, err)
+				assert.GreaterOrEqual(t, retryAfterInt, tc.valueLowerBound)
 				assert.LessOrEqual(t, retryAfterInt, tc.valueUpperBound)
 			}
 		})
