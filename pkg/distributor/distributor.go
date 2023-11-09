@@ -219,7 +219,6 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 	if err := cfg.HATrackerConfig.Validate(); err != nil {
 		return err
 	}
-
 	return cfg.RetryConfig.Validate()
 }
 
@@ -1214,7 +1213,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		return &mimirpb.WriteResponse{}, nil
 	}
 	handledErr := d.handlePushError(ctx, pushErr)
-
 	return nil, handledErr
 }
 

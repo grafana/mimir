@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package distributor
 
 import (
@@ -25,7 +27,7 @@ type RetryConfig struct {
 func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.Base, "distributor.retry.base", 3*time.Second, "Base time to wait before retrying a 429/5xx request.")
 	f.IntVar(&cfg.MaxAllowedAttempts, "distributor.retry.max-allowed-attempts", 5, "Sets the upper limit on the number of retry attempts considered for calculation. It caps the calculated attempts without rejecting additional attempts. Used for controlling exponential backoff calculations.")
-	f.BoolVar(&cfg.Enabled, "distributor.retry.enabled", false, "Enabled controls inclusion of the \"Retry-After\" header in the response: true includes it for client retry guidance, false omits it.")
+	f.BoolVar(&cfg.Enabled, "distributor.retry.enabled", false, "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
 }
 
 func (cfg *RetryConfig) Validate() error {

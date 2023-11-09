@@ -728,6 +728,23 @@ pool:
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
 
+retry:
+  # (experimental) Base time to wait before retrying a 429/5xx request.
+  # CLI flag: -distributor.retry.base
+  [base: <duration> | default = 3s]
+
+  # (experimental) Enabled controls inclusion of the Retry-After header in the
+  # response: true includes it for client retry guidance, false omits it.
+  # CLI flag: -distributor.retry.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Sets the upper limit on the number of retry attempts
+  # considered for calculation. It caps the calculated attempts without
+  # rejecting additional attempts. Used for controlling exponential backoff
+  # calculations.
+  # CLI flag: -distributor.retry.max-allowed-attempts
+  [max_allowed_attempts: <int> | default = 5]
+
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
   # Prometheus HA replicas gracefully (requires labels).

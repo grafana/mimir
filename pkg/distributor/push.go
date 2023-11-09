@@ -14,15 +14,14 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"time"
 
+	glog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 
-	glog "github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -154,28 +153,31 @@ func handler(
 	})
 }
 
-// think about add another middlewre, in the end of middleware chain, to add retry-after header in response
+/*
+calculateRetryAfter derives the value for the "Retry-After" header based on the provided HTTP request and RetryConfig.
 
+It calculates the delay in seconds for retry attempts, considering factors such as the Retry-Attempt header,
+RetryConfig parameters, and exponential backoff strategy. If Retry-Attempt is not valid or less than 1, it defaults to 1.
+If Retry-Attempt exceeds MaxAllowedAttempts from RetryConfig, it is capped at MaxAllowedAttempts.
+
+The delaySeconds is then calculated as a random number within the range of exponential backoff between minRetry and maxRetry.
+
+Returns: A string representing the calculated value for the "Retry-After" header.
+*/
 func calculateRetryAfter(req *http.Request, retryCfg *RetryConfig) string {
-	// 0 is no retry, 1 is cost, 2 is linear, 3 is exponential, 4 is random cost, 5 is random linear, 6 is random exponential
-	retryAttemp, err := strconv.Atoi(req.Header.Get("Retry-Attempt"))
-	// If retry-attemp is not valid, set it to default 1
-	if err != nil || retryAttemp < 1 {
-		retryAttemp = 1
+	retryAttempt, err := strconv.Atoi(req.Header.Get("Retry-Attempt"))
+	// If retry-attempt is not valid, set it to default 1
+	if err != nil || retryAttempt < 1 {
+		retryAttempt = 1
 	}
-	if retryAttemp > retryCfg.MaxAllowedAttempts {
-		retryAttemp = retryCfg.MaxAllowedAttempts
-	}
-
-	if retryCfg.Base.Seconds() <= 0 {
-		retryCfg.Base = 3 * time.Second
+	if retryAttempt > retryCfg.MaxAllowedAttempts {
+		retryAttempt = retryCfg.MaxAllowedAttempts
 	}
 
 	var minRetry, maxRetry int64
-	minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp-1)))
-	maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttemp)))
+	minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttempt-1)))
+	maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttempt)))
 
-	// the delaySeconds is a random number between minRetry and maxRetry
 	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
 
 	return strconv.FormatInt(delaySeconds, 10)
@@ -194,15 +196,20 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		switch distributorErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
-			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		case mimirpb.INGESTION_RATE_LIMITED:
+			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			return http.StatusTooManyRequests
+		case mimirpb.REQUEST_RATE_LIMITED:
 			serviceOverloadErrorEnabled := false
 			userID, err := tenant.TenantID(ctx)
 			if err == nil {
 				serviceOverloadErrorEnabled = limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 			}
+			// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+			// Client may discard the data or slow down and re-send.
+			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 			if serviceOverloadErrorEnabled {
 				return StatusServiceOverloaded
 			}
@@ -224,12 +231,13 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, code int, ret
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
 	}
-	var retrySeconds string
-	if code == http.StatusTooManyRequests || code/100 == 5 && (retryCfg != nil && retryCfg.Enabled) {
-		// If we are going to retry, set the Retry-After header.
-		// This is used by the client to determine how long to wait before retrying.
-		retrySeconds = calculateRetryAfter(r, retryCfg)
-		w.Header().Set("Retry-After", retrySeconds)
+
+	if (code == http.StatusTooManyRequests || code/100 == 5) && retryCfg != nil {
+		var retrySeconds string
+		if retryCfg.Enabled {
+			retrySeconds = calculateRetryAfter(r, retryCfg)
+			w.Header().Set("Retry-After", retrySeconds)
+		}
+		logger.Log("msg", "set retry-after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts)
 	}
-	logger.Log("msg", "set retry-after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts)
 }
