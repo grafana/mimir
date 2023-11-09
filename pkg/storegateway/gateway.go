@@ -41,8 +41,7 @@ const (
 	ringAutoForgetUnhealthyPeriods = 10
 
 	// ringNumTokensDefault is the number of tokens registered in the ring by each store-gateway
-	// instance. We use a safe default instead of exposing to config option to the user
-	// in order to simplify the config.
+	// instance for testing purposes.
 	ringNumTokensDefault = 512
 )
 
