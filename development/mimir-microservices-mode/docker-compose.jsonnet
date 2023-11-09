@@ -71,6 +71,7 @@ std.manifestYamlDoc({
       httpPort: 8002,
       jaegerApp: 'ingester-1',
       extraVolumes: ['.data-ingester-1:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-a',
     }),
 
     'ingester-2': mimirService({
@@ -79,6 +80,7 @@ std.manifestYamlDoc({
       httpPort: 8003,
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-b',
     }),
 
     'ingester-3': mimirService({
@@ -87,6 +89,34 @@ std.manifestYamlDoc({
       httpPort: 8004,
       jaegerApp: 'ingester-3',
       extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-c',
+    }),
+
+    'ingester-4': mimirService({
+      name: 'ingester-4',
+      target: 'ingester',
+      httpPort: 8102,
+      jaegerApp: 'ingester-4',
+      extraVolumes: ['.data-ingester-4:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-a',
+    }),
+
+    'ingester-5': mimirService({
+      name: 'ingester-5',
+      target: 'ingester',
+      httpPort: 8103,
+      jaegerApp: 'ingester-5',
+      extraVolumes: ['.data-ingester-5:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-b',
+    }),
+
+    'ingester-6': mimirService({
+      name: 'ingester-6',
+      target: 'ingester',
+      httpPort: 8104,
+      jaegerApp: 'ingester-6',
+      extraVolumes: ['.data-ingester-6:/tmp/mimir-tsdb-ingester:delegated'],
+      extraArguments: '-ingester.ring.instance-availability-zone=zone-c',
     }),
   },
 
@@ -214,6 +244,7 @@ std.manifestYamlDoc({
         (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec ./mimir'),
         ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options),
         (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
+        ('-distributor.ingestion-rate-limit=500000'), ('-ingester.ring.zone-awareness-enabled=true'),
         (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
         (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
         std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),

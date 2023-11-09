@@ -5,3 +5,7 @@
 #  mirror_enabled: false
 #  primary: consul
 
+overrides:
+  "anonymous":
+    max_global_series_per_user: 50000
+    ingestion_tenant_shard_size: 3
