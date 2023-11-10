@@ -14,12 +14,12 @@ import (
 	"strconv"
 	"sync"
 
-	glog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
+	"github.com/opentracing/opentracing-go"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -143,10 +143,10 @@ func handler(
 			} else {
 				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
 			}
-			addHeaders(w, err, r, code, retryCfg, logger)
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
+			addHeaders(w, err, r, code, retryCfg)
 			http.Error(w, msg, code)
 		}
 	})
@@ -163,7 +163,7 @@ func calculateRetryAfter(retryAttemptHeader string, retryCfg RetryConfig) string
 	}
 
 	var minRetry, maxRetry int64
-	minRetry = int64(retryCfg.Base.Seconds()) * 1 << (retryAttempt - 1)
+	minRetry = int64(retryCfg.Base.Seconds()) << (retryAttempt - 1)
 	maxRetry = minRetry << 1
 
 	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
@@ -214,7 +214,7 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig, logger glog.Logger) {
+func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
@@ -222,9 +222,15 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode 
 
 	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
 		var retrySeconds string
+		var retryAttempt string
 		if retryCfg.Enabled {
-			retrySeconds = calculateRetryAfter(r.Header.Get("Retry-Attempt"), retryCfg)
+			retryAttempt = r.Header.Get("Retry-Attempt")
+			retrySeconds = calculateRetryAfter(retryAttempt, retryCfg)
 			w.Header().Set("Retry-After", retrySeconds)
+			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
+				sp.SetTag("retry-after", retrySeconds)
+				sp.SetTag("retry-attempt", retryAttempt)
+			}
 		}
 	}
 }

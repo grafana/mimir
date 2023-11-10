@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
@@ -948,7 +947,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 				req.Header.Add("Retry-Attempt", tc.retryAttempt)
 			}
 
-			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg, log.NewNopLogger())
+			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
 
 			retryAfter := recorder.Header().Get("Retry-After")
 			if !tc.expectRetry {

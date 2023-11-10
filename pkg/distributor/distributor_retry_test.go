@@ -29,14 +29,14 @@ func TestRetryConfig_Validate(t *testing.T) {
 				Base:               0,
 				MaxAllowedAttempts: 5,
 			},
-			expectedErr: errNonPositiveRetryBase,
+			expectedErr: errRetryBaseLessThanOneSecond,
 		},
 		"should fail if retry base is negative": {
 			cfg: RetryConfig{
 				Base:               -1,
 				MaxAllowedAttempts: 5,
 			},
-			expectedErr: errNonPositiveRetryBase,
+			expectedErr: errRetryBaseLessThanOneSecond,
 		},
 		"should fail if max allowed attempts is 0": {
 			cfg: RetryConfig{

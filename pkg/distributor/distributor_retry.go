@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	errNonPositiveRetryBase          = errors.New("retry base duration should not be less than 1 second")
+	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
 	errNonPositiveMaxAllowedAttempts = errors.New("maxAllowedAttempts should be a positive value")
 )
 
@@ -29,7 +29,7 @@ func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *RetryConfig) Validate() error {
 	if cfg.Base < 1 {
-		return errNonPositiveRetryBase
+		return errRetryBaseLessThanOneSecond
 	}
 	if cfg.MaxAllowedAttempts < 1 {
 		return errNonPositiveMaxAllowedAttempts

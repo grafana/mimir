@@ -728,22 +728,23 @@ pool:
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
 
-retry:
-  # (experimental) Base duration for calculating the Retry-After header in
-  # responses to 429/5xx errors.
-  # CLI flag: -distributor.retry.base
-  [base: <duration> | default = 3s]
-
+retry_after_header:
   # (experimental) Enabled controls inclusion of the Retry-After header in the
   # response: true includes it for client retry guidance, false omits it.
-  # CLI flag: -distributor.retry.enabled
+  # CLI flag: -distributor.retry-after-header.enabled
   [enabled: <boolean> | default = false]
+
+  # (experimental) Base duration for calculating the Retry-After header in
+  # responses to 429/5xx errors.
+  # CLI flag: -distributor.retry-after-header.base
+  [base: <duration> | default = 3s]
 
   # (experimental) Sets the upper limit on the number of retry attempts
   # considered for calculation. It caps the calculated attempts without
-  # rejecting additional attempts. Used for controlling exponential backoff
-  # calculations.
-  # CLI flag: -distributor.retry.max-allowed-attempts
+  # rejecting additional attempts, controlling exponential backoff calculations.
+  # For example, when the base is set to 3 and max-allowed-attempts to 5, the
+  # maximum retry duration would be 3 * 2^5 = 96 seconds.
+  # CLI flag: -distributor.retry-after-header.max-allowed-attempts
   [max_allowed_attempts: <int> | default = 5]
 
 ha_tracker:
