@@ -134,7 +134,7 @@ std.manifestYamlDoc({
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
       target: 'ruler',
-      httpPort: 8020 + id,
+      httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
     })
     for id in std.range(1, count)
@@ -252,7 +252,7 @@ std.manifestYamlDoc({
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
-        'RULER_HOST=ruler-1:8021',
+        'RULER_HOST=ruler-1:8022',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
         'COMPACTOR_HOST=compactor:8007',
       ],
