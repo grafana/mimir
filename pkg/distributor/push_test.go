@@ -845,6 +845,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 		})
 	}
 }
+
 func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	const (
 		defaultRetryBase      = 3 * time.Second
