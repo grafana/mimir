@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -45,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1773,6 +1775,70 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	return &ingester_client.LabelValuesCardinalityResponse{
 		Items: cardinalityItems,
 	}
+}
+
+// ActiveSeries queries the ingester replication set for active series matching
+// the given selector. It combines and deduplicates the results.
+func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	replicationSet, err := d.GetIngesters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
+	req, err := ingester_client.ToActiveSeriesRequest(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	res := newActiveSeriesResponse()
+
+	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
+		defer log.Finish()
+
+		stream, err := client.ActiveSeries(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
+			if err != nil {
+				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
+			}
+		}()
+
+		for {
+			msg, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				level.Error(log).Log("msg", "error receiving active series response", "err", err)
+				ext.Error.Set(log.Span, true)
+				return nil, err
+			}
+
+			res.add(msg.Metric)
+		}
+
+		return nil, nil
+	}
+
+	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
+
+	return deduplicatedSeries, nil
 }
 
 // approximateFromZones computes a zonal value while factoring in replication.
