@@ -54,7 +54,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	retryCfg *RetryConfig,
+	retryCfg RetryConfig,
 	push PushFunc,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
@@ -83,7 +83,7 @@ func handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
-	retryCfg *RetryConfig,
+	retryCfg RetryConfig,
 	push PushFunc,
 	parser parserFunc,
 ) http.Handler {
@@ -152,7 +152,7 @@ func handler(
 	})
 }
 
-func calculateRetryAfter(retryAttemptHeader string, retryCfg *RetryConfig) string {
+func calculateRetryAfter(retryAttemptHeader string, retryCfg RetryConfig) string {
 	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
 	// If retry-attempt is not valid, set it to default 1
 	if err != nil || retryAttempt < 1 {
@@ -214,20 +214,17 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg *RetryConfig, logger glog.Logger) {
+func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg RetryConfig, logger glog.Logger) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
 	}
 
-	if (responseCode == http.StatusTooManyRequests || responseCode/100 == 5) && retryCfg != nil {
+	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
 		var retrySeconds string
-		var retryAttempt string
 		if retryCfg.Enabled {
-			retryAttempt = r.Header.Get("Retry-Attempt")
-			retrySeconds = calculateRetryAfter(retryAttempt, retryCfg)
+			retrySeconds = calculateRetryAfter(r.Header.Get("Retry-Attempt"), retryCfg)
 			w.Header().Set("Retry-After", retrySeconds)
 		}
-		logger.Log("msg", "set retry_after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts, "currentRetryAttempt", retryAttempt)
 	}
 }

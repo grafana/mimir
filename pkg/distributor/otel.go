@@ -46,7 +46,7 @@ func OTLPHandler(
 	allowSkipLabelNameValidation bool,
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
-	retryCfg *RetryConfig,
+	retryCfg RetryConfig,
 	reg prometheus.Registerer,
 	push PushFunc,
 ) http.Handler {
