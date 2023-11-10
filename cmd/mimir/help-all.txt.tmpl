@@ -1212,7 +1212,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
-    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling distributor.retry.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
@@ -2569,6 +2569,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-log-closed-connections-without-response-enabled
+    	Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.
   -server.http-read-header-timeout duration
     	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration

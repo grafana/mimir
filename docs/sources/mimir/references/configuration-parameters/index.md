@@ -612,6 +612,11 @@ grpc_tls_config:
 # CLI flag: -server.http-idle-timeout
 [http_server_idle_timeout: <duration> | default = 2m]
 
+# Log closed connections that did not receive any response, most likely because
+# client didn't send any request within timeout.
+# CLI flag: -server.http-log-closed-connections-without-response-enabled
+[http_log_closed_connections_without_response_enabled: <boolean> | default = false]
+
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
 # CLI flag: -server.grpc-max-recv-msg-size-bytes

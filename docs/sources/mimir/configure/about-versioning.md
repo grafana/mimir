@@ -150,6 +150,7 @@ The following features are currently experimental:
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
+- Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 
 ## Deprecated features
 

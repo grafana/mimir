@@ -1050,6 +1050,10 @@ func (m *errDistributor) LabelValuesCardinality(context.Context, []model.LabelNa
 	return 0, nil, errDistributorError
 }
 
+func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
+	return nil, errDistributorError
+}
+
 type emptyDistributor struct{}
 
 func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
@@ -1082,6 +1086,10 @@ func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetad
 
 func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
 	return 0, nil, nil
+}
+
+func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
+	return nil, nil
 }
 
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {

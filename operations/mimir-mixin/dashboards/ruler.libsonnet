@@ -137,7 +137,13 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.panel('Consistency checks failed') +
         $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failures / sec') +
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Consistency checks failed',
+          |||
+            Rate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+          |||
+        ),
       )
     )
     .addRow(

@@ -36,6 +36,8 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+
+  rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {};
 }
 
 message LabelNamesAndValuesRequest {
@@ -127,6 +129,10 @@ message ExemplarQueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatchers matchers = 3;
+}
+
+message ActiveSeriesRequest {
+  repeated LabelMatcher matchers = 1;
 }
 
 message QueryResponse {
@@ -224,6 +230,10 @@ message MetricsMetadataRequest {
 
 message MetricsMetadataResponse {
   repeated cortexpb.MetricMetadata metadata = 1;
+}
+
+message ActiveSeriesResponse {
+  repeated cortexpb.Metric metric = 1;
 }
 
 message TimeSeriesChunk {
