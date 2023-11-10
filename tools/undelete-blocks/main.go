@@ -283,7 +283,12 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 
 	// Read the meta (possibly from a noncurrent version)
 	metaName := blockPrefix + objtools.Delim + block.MetaFilename
-	m, metaVersion, err := getMeta(ctx, bkt, metaName, objVersions[metaName])
+	metaVersions, ok := objVersions[metaName]
+	if !ok {
+		logger.Error("no versions found for block meta file")
+		return false, err
+	}
+	m, metaVersion, err := getMeta(ctx, bkt, metaName, metaVersions)
 	if err != nil {
 		logger.Error("failed reading the block meta file")
 		return false, err
