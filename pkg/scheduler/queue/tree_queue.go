@@ -37,7 +37,7 @@ func NewTreeQueue(name string, maxQueueLen int) *TreeQueue {
 	return &TreeQueue{
 		name:                   name,
 		maxQueueLen:            maxQueueLen,
-		localQueue:             list.New(),
+		localQueue:             nil,
 		currentChildQueueIndex: localQueueIndex,
 		childQueueMap:          map[string]*TreeQueue{},
 		childQueueOrder:        nil,
@@ -54,7 +54,7 @@ func (q *TreeQueue) IsEmpty() bool {
 	// In reality a package member could attach empty child queues with getOrAddNode
 	// in order to get a functionally-empty tree that would report false for IsEmpty.
 	// We assume this does not occur or is not relevant during normal operation.
-	return q.localQueue.Len() == 0 && len(q.childQueueMap) == 0
+	return q.LocalQueueLen() == 0 && len(q.childQueueMap) == 0
 }
 
 func (q *TreeQueue) NodeCount() int {
@@ -66,11 +66,19 @@ func (q *TreeQueue) NodeCount() int {
 }
 
 func (q *TreeQueue) ItemCount() int {
-	count := q.localQueue.Len() // count self
+	count := q.LocalQueueLen() // count self
 	for _, childQueue := range q.childQueueMap {
 		count += childQueue.ItemCount()
 	}
 	return count
+}
+
+func (q *TreeQueue) LocalQueueLen() int {
+	localQueueLen := 0
+	if q.localQueue != nil {
+		localQueueLen = q.localQueue.Len()
+	}
+	return localQueueLen
 }
 
 // EnqueueBackByPath enqueues an item in the back of the local queue of the node
@@ -83,10 +91,13 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 	if err != nil {
 		return err
 	}
-	if childQueue.localQueue.Len()+1 > childQueue.maxQueueLen {
+	if childQueue.LocalQueueLen()+1 > childQueue.maxQueueLen {
 		return ErrTooManyRequests
 	}
 
+	if childQueue.localQueue == nil {
+		childQueue.localQueue = list.New()
+	}
 	childQueue.localQueue.PushBack(v)
 	return nil
 }
@@ -107,6 +118,9 @@ func (q *TreeQueue) EnqueueFrontByPath(childPath QueuePath, v any) error {
 	childQueue, err := q.getOrAddNode(childPath)
 	if err != nil {
 		return err
+	}
+	if childQueue.localQueue == nil {
+		childQueue.localQueue = list.New()
 	}
 	childQueue.localQueue.PushFront(v)
 	return nil
@@ -213,9 +227,11 @@ func (q *TreeQueue) Dequeue() any {
 			// dequeuing from local queue; either we have:
 			//  1. reached a leaf node, or
 			//  2. reached an inner node when it is the local queue's turn
-			if elem := q.localQueue.Front(); elem != nil {
-				q.localQueue.Remove(elem)
-				v = elem.Value
+			if q.localQueue != nil {
+				if elem := q.localQueue.Front(); elem != nil {
+					q.localQueue.Remove(elem)
+					v = elem.Value
+				}
 			}
 			q.wrapIndex(true)
 		} else {

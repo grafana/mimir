@@ -37,7 +37,6 @@ func TestQueues(t *testing.T) {
 
 	// [one two]
 	qTwo := getOrAdd(t, qb, "two", 0)
-	assert.NotSame(t, qOne, qTwo)
 
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qTwo, qOne, qTwo, qOne)
 	confirmOrderForQuerier(t, qb, "querier-2", -1, qOne, qTwo, qOne)
