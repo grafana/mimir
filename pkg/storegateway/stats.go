@@ -56,9 +56,6 @@ type queryStats struct {
 	mergedSeriesCount int
 	mergedChunksCount int
 
-	// The total time spent fetching series and chunk refs.
-	streamingSeriesFetchRefsDuration time.Duration
-
 	// The number of batches the Series() request has been split into.
 	streamingSeriesBatchCount int
 
@@ -70,12 +67,13 @@ type queryStats struct {
 	streamingSeriesWaitBatchLoadedDuration time.Duration
 
 	// The Series() request timing breakdown.
-	streamingSeriesExpandPostingsDuration       time.Duration
-	streamingSeriesFetchSeriesAndChunksDuration time.Duration
-	streamingSeriesEncodeResponseDuration       time.Duration
-	streamingSeriesSendResponseDuration         time.Duration
-	streamingSeriesOtherDuration                time.Duration
-	streamingSeriesIndexHeaderLoadDuration      time.Duration
+	streamingSeriesExpandPostingsDuration  time.Duration
+	streamingSeriesEncodeResponseDuration  time.Duration
+	streamingSeriesSendResponseDuration    time.Duration
+	streamingSeriesIndexHeaderLoadDuration time.Duration
+
+	// streamingSeriesAmbientTime is the total WAL time spent serving the request. It includes all other durations.
+	streamingSeriesAmbientTime time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -123,15 +121,13 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
 
-	s.streamingSeriesFetchRefsDuration += o.streamingSeriesFetchRefsDuration
 	s.streamingSeriesBatchCount += o.streamingSeriesBatchCount
 	s.streamingSeriesBatchLoadDuration += o.streamingSeriesBatchLoadDuration
 	s.streamingSeriesWaitBatchLoadedDuration += o.streamingSeriesWaitBatchLoadedDuration
 	s.streamingSeriesExpandPostingsDuration += o.streamingSeriesExpandPostingsDuration
-	s.streamingSeriesFetchSeriesAndChunksDuration += o.streamingSeriesFetchSeriesAndChunksDuration
 	s.streamingSeriesEncodeResponseDuration += o.streamingSeriesEncodeResponseDuration
 	s.streamingSeriesSendResponseDuration += o.streamingSeriesSendResponseDuration
-	s.streamingSeriesOtherDuration += o.streamingSeriesOtherDuration
+	s.streamingSeriesAmbientTime += o.streamingSeriesAmbientTime
 
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 
