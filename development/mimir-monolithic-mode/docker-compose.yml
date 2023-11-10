@@ -57,7 +57,7 @@ services:
     image: grafana/agent:v0.37.3
     environment:
       - AGENT_MODE=flow
-    command: ["run", "--server.http.address=0.0.0.0:9092", "/etc/agent/config.river"]
+    command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
     volumes:
       - ./config/grafana-agent.river:/etc/agent/config.river
     ports:
