@@ -471,6 +471,16 @@
         },
         {
           "kind": "field",
+          "name": "http_log_closed_connections_without_response_enabled",
+          "required": false,
+          "desc": "Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.http-log-closed-connections-without-response-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "grpc_server_max_recv_msg_size",
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
