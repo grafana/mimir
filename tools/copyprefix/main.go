@@ -70,12 +70,12 @@ func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 		return err
 	}
 
-	sourcePrefix := ensureDelimiterSuffix(cfg.sourcePrefix)
+	sourcePrefix := cfg.sourcePrefix
 	var destinationPrefix string
 	if cfg.destinationPrefix == "" { // this assumption prevents up-copying to root, possibly an option could be added for that if needed
 		destinationPrefix = sourcePrefix
 	} else {
-		destinationPrefix = ensureDelimiterSuffix(cfg.destinationPrefix)
+		destinationPrefix = cfg.destinationPrefix
 	}
 
 	sourceNames, err := listNames(ctx, sourceBucket, sourcePrefix)
@@ -126,13 +126,6 @@ func runCopy(ctx context.Context, cfg config, logger *slog.Logger) error {
 	return nil
 }
 
-func ensureDelimiterSuffix(s string) string {
-	if s != "" && !strings.HasSuffix(s, "/") {
-		return s + objtools.Delim
-	}
-	return s
-}
-
 func listNames(ctx context.Context, bucket objtools.Bucket, prefix string) ([]string, error) {
 	listing, err := bucket.List(ctx, objtools.ListOptions{
 		Prefix:    prefix,
@@ -145,7 +138,7 @@ func listNames(ctx context.Context, bucket objtools.Bucket, prefix string) ([]st
 }
 
 func destinationName(sourceName string, sourcePrefix string, destinationPrefix string) (string, error) {
-	if destinationPrefix == "" {
+	if destinationPrefix == sourcePrefix {
 		return sourceName, nil
 	}
 	s, ok := strings.CutPrefix(sourceName, sourcePrefix)
