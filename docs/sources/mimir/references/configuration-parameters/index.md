@@ -729,7 +729,8 @@ pool:
   [health_check_ingesters: <boolean> | default = true]
 
 retry:
-  # (experimental) Base time to wait before retrying a 429/5xx request.
+  # (experimental) Base duration for calculating the Retry-After header in
+  # responses to 429/5xx errors.
   # CLI flag: -distributor.retry.base
   [base: <duration> | default = 3s]
 

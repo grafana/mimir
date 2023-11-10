@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -144,28 +143,17 @@ func handler(
 			} else {
 				code, msg = toHTTPStatus(ctx, err, limits), err.Error()
 			}
+			addHeaders(w, err, r, code, retryCfg, logger)
 			if code != 202 {
 				level.Error(logger).Log("msg", "push error", "err", err)
 			}
-			addHeaders(w, err, r, code, retryCfg, logger)
 			http.Error(w, msg, code)
 		}
 	})
 }
 
-/*
-calculateRetryAfter derives the value for the "Retry-After" header based on the provided HTTP request and RetryConfig.
-
-It calculates the delay in seconds for retry attempts, considering factors such as the Retry-Attempt header,
-RetryConfig parameters, and exponential backoff strategy. If Retry-Attempt is not valid or less than 1, it defaults to 1.
-If Retry-Attempt exceeds MaxAllowedAttempts from RetryConfig, it is capped at MaxAllowedAttempts.
-
-The delaySeconds is then calculated as a random number within the range of exponential backoff between minRetry and maxRetry.
-
-Returns: A string representing the calculated value for the "Retry-After" header.
-*/
-func calculateRetryAfter(req *http.Request, retryCfg *RetryConfig) string {
-	retryAttempt, err := strconv.Atoi(req.Header.Get("Retry-Attempt"))
+func calculateRetryAfter(retryAttemptHeader string, retryCfg *RetryConfig) string {
+	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
 	// If retry-attempt is not valid, set it to default 1
 	if err != nil || retryAttempt < 1 {
 		retryAttempt = 1
@@ -175,8 +163,8 @@ func calculateRetryAfter(req *http.Request, retryCfg *RetryConfig) string {
 	}
 
 	var minRetry, maxRetry int64
-	minRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttempt-1)))
-	maxRetry = int64(retryCfg.Base.Seconds() * math.Pow(2, float64(retryAttempt)))
+	minRetry = int64(retryCfg.Base.Seconds()) * 1 << (retryAttempt - 1)
+	maxRetry = minRetry << 1
 
 	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
 
@@ -226,18 +214,20 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 	return http.StatusInternalServerError
 }
 
-func addHeaders(w http.ResponseWriter, err error, r *http.Request, code int, retryCfg *RetryConfig, logger glog.Logger) {
+func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode int, retryCfg *RetryConfig, logger glog.Logger) {
 	var doNotLogError middleware.DoNotLogError
 	if errors.As(err, &doNotLogError) {
 		w.Header().Set(server.DoNotLogErrorHeaderKey, "true")
 	}
 
-	if (code == http.StatusTooManyRequests || code/100 == 5) && retryCfg != nil {
+	if (responseCode == http.StatusTooManyRequests || responseCode/100 == 5) && retryCfg != nil {
 		var retrySeconds string
+		var retryAttempt string
 		if retryCfg.Enabled {
-			retrySeconds = calculateRetryAfter(r, retryCfg)
+			retryAttempt = r.Header.Get("Retry-Attempt")
+			retrySeconds = calculateRetryAfter(retryAttempt, retryCfg)
 			w.Header().Set("Retry-After", retrySeconds)
 		}
-		logger.Log("msg", "set retry-after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts)
+		logger.Log("msg", "set retry_after", "enabled", retryCfg.Enabled, "retry-after", retrySeconds, "maxAllowedAttemps", retryCfg.MaxAllowedAttempts, "currentRetryAttempt", retryAttempt)
 	}
 }

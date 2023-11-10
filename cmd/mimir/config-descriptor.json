@@ -737,7 +737,7 @@
               "kind": "field",
               "name": "base",
               "required": false,
-              "desc": "Base time to wait before retrying a 429/5xx request.",
+              "desc": "Base duration for calculating the Retry-After header in responses to 429/5xx errors.",
               "fieldValue": null,
               "fieldDefaultValue": 3000000000,
               "fieldFlag": "distributor.retry.base",

@@ -847,8 +847,8 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 }
 func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 	const (
-		DefaultRetryBase      = 3 * time.Second
-		DefaultMaxAllowedAtts = 2
+		defaultRetryBase      = 3 * time.Second
+		defaultMaxAllowedAtts = 2
 	)
 
 	testCases := []struct {
@@ -868,7 +868,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			handlerError:   context.Canceled,
 			expectedStatus: statusClientClosedRequest,
 			expectRetry:    false,
-			retryCfg:       &RetryConfig{Base: DefaultRetryBase, Enabled: true, MaxAllowedAttempts: DefaultMaxAllowedAtts},
+			retryCfg:       &RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
 		},
 		{
 			name:           "Generic error, HTTP 500, no Retry-After",
@@ -876,7 +876,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			handlerError:   fmt.Errorf("something went wrong during the push"),
 			expectedStatus: http.StatusInternalServerError,
 			expectRetry:    false,
-			retryCfg:       &RetryConfig{Base: DefaultRetryBase, Enabled: false, MaxAllowedAttempts: DefaultMaxAllowedAtts},
+			retryCfg:       &RetryConfig{Base: defaultRetryBase, Enabled: false, MaxAllowedAttempts: defaultMaxAllowedAtts},
 		},
 		{
 			name:           "Generic error, HTTP 500, Retry-After with no Retry-Attempts set",
@@ -884,7 +884,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			handlerError:   fmt.Errorf("something went wrong during the push"),
 			expectedStatus: http.StatusInternalServerError,
 			expectRetry:    true,
-			retryCfg:       &RetryConfig{Base: DefaultRetryBase, Enabled: true, MaxAllowedAttempts: DefaultMaxAllowedAtts},
+			retryCfg:       &RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
 			minRetryAfter:  3,
 			maxRetryAfter:  6,
 		},
@@ -895,7 +895,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectRetry:    true,
 			retryAttempt:   2,
-			retryCfg:       &RetryConfig{Base: DefaultRetryBase, Enabled: true, MaxAllowedAttempts: DefaultMaxAllowedAtts},
+			retryCfg:       &RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
 			minRetryAfter:  6,
 			maxRetryAfter:  12,
 		},
@@ -906,7 +906,7 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectRetry:    true,
 			retryAttempt:   8,
-			retryCfg:       &RetryConfig{Base: DefaultRetryBase, Enabled: true, MaxAllowedAttempts: DefaultMaxAllowedAtts},
+			retryCfg:       &RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
 			minRetryAfter:  6,
 			maxRetryAfter:  12,
 		},

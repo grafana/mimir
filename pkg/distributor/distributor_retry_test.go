@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,10 +17,11 @@ func TestRetryConfig_Validate(t *testing.T) {
 		expectedErr error
 	}{
 		"should pass with default config": {
-			cfg: RetryConfig{
-				Base:               3 * time.Second,
-				MaxAllowedAttempts: 5,
-			},
+			cfg: func() RetryConfig {
+				cfg := RetryConfig{}
+				flagext.DefaultValues(&cfg)
+				return cfg
+			}(),
 			expectedErr: nil,
 		},
 		"should fail if retry base is 0": {

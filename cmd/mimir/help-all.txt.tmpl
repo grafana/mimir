@@ -1146,7 +1146,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.request-rate-limit float
     	Per-tenant push request rate limit in requests per second. 0 to disable.
   -distributor.retry.base duration
-    	[experimental] Base time to wait before retrying a 429/5xx request. (default 3s)
+    	[experimental] Base duration for calculating the Retry-After header in responses to 429/5xx errors. (default 3s)
   -distributor.retry.enabled
     	[experimental] Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
   -distributor.retry.max-allowed-attempts int
