@@ -356,7 +356,10 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	sets := make(chan storage.SeriesSet, len(queriers))
 	for _, querier := range queriers {
 		go func(querier storage.Querier) {
-			sets <- querier.Select(ctx, true, sp, matchers...)
+			select {
+			case sets <- querier.Select(ctx, true, sp, matchers...):
+			case <-ctx.Done():
+			}
 		}(querier)
 	}
 
