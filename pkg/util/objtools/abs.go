@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -220,11 +219,7 @@ func unpackBlobItem(blobItem *container.BlobItem, isVersioned bool) ObjectAttrib
 }
 
 func (bkt *azureBucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
-	prefix := options.Prefix
-	if prefix != "" && !strings.HasSuffix(prefix, Delim) {
-		prefix = prefix + Delim
-	}
-
+	prefix := ensureDelimiterSuffix(options.Prefix)
 	include := container.ListBlobsInclude{
 		Versions: options.Versioned,
 		Deleted:  options.Versioned,

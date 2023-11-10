@@ -6,7 +6,6 @@ import (
 	"context"
 	"flag"
 	"io"
-	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -112,10 +111,8 @@ func (bkt *s3Bucket) ClientSideCopy(ctx context.Context, objectName string, dstB
 }
 
 func (bkt *s3Bucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
-	prefix := options.Prefix
-	if prefix != "" && !strings.HasSuffix(prefix, Delim) {
-		prefix = prefix + Delim
-	}
+	prefix := ensureDelimiterSuffix(options.Prefix)
+
 	listing := bkt.client.ListObjects(ctx, bkt.bucketName, minio.ListObjectsOptions{
 		Prefix:       prefix,
 		Recursive:    options.Recursive,

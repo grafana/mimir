@@ -209,3 +209,10 @@ func (c *CopyBucketConfig) toCopyFunc(source Bucket, destination Bucket) CopyFun
 		return source.ServerSideCopy(ctx, objectName, destination, options)
 	}
 }
+
+func ensureDelimiterSuffix(prefix string) string {
+	if prefix != "" && !strings.HasSuffix(prefix, Delim) {
+		return prefix + Delim
+	}
+	return prefix
+}

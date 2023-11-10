@@ -89,10 +89,7 @@ func (bkt *gcsBucket) ClientSideCopy(ctx context.Context, objectName string, dst
 }
 
 func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResult, error) {
-	prefix := options.Prefix
-	if len(prefix) > 0 && prefix[len(prefix)-1:] != Delim {
-		prefix = prefix + Delim
-	}
+	prefix := ensureDelimiterSuffix(options.Prefix)
 
 	q := &storage.Query{
 		Prefix:   prefix,
@@ -108,6 +105,7 @@ func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResul
 	if err != nil {
 		return nil, err
 	}
+
 	var prefixes []string
 	if !options.Recursive {
 		q.Delimiter = Delim
