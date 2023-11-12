@@ -92,7 +92,7 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 		return err
 	}
 	if childQueue.LocalQueueLen()+1 > childQueue.maxQueueLen {
-		return ErrTooManyRequests
+		return ErrMaxQueueLengthExceeded
 	}
 
 	if childQueue.localQueue == nil {
@@ -169,7 +169,6 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	}
 
 	return childQueue.getOrAddNode(childPath[1:])
-
 }
 
 func (q *TreeQueue) getNode(childPath QueuePath) *TreeQueue {
@@ -287,3 +286,13 @@ func (q *TreeQueue) wrapIndex(increment bool) {
 		q.currentChildQueueIndex = localQueueIndex
 	}
 }
+
+type TreeQueueError struct {
+	msg string
+}
+
+func (e TreeQueueError) Error() string {
+	return e.msg
+}
+
+var ErrMaxQueueLengthExceeded = TreeQueueError{msg: "max queue length exceeded"}

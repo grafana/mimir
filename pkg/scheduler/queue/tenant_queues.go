@@ -6,6 +6,7 @@
 package queue
 
 import (
+	"errors"
 	"math/rand"
 	"sort"
 	"time"
@@ -130,13 +131,17 @@ func (qb *queueBroker) isEmpty() bool {
 //
 // Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(request.tenantID, tenantMaxQueriers)
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
 
 	queuePath := QueuePath{string(request.tenantID)}
-	return qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
+	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
+	if errors.Is(err, ErrMaxQueueLengthExceeded) {
+		return errors.Join(err, ErrTooManyRequests)
+	}
+	return err
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
@@ -145,7 +150,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 // max tenant queue size checks are skipped even though queue size violations
 // are not expected to occur when re-enqueuing a previously dequeued request.
 func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(request.tenantID, tenantMaxQueriers)
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
@@ -244,14 +249,14 @@ func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant,
 	return tenant, nil
 }
 
-// getOrAddTenant adds or updates a tenant into the tenant-querier assignment state and returns it.
+// createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
 //
 // New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
 // Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
-func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
+func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, maxQueriers int) error {
 	if tenantID == emptyTenantID {
 		// empty tenantID is not allowed; "" is used for free spot
-		return nil, ErrInvalidTenantID
+		return ErrInvalidTenantID
 	}
 
 	if maxQueriers < 0 {
@@ -290,13 +295,13 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 
 	// tenant now either retrieved or created
 	if tenant.maxQueriers != maxQueriers {
-		// tenant queriers need computed/recomputed;
+		// tenant queriers need to be computed/recomputed;
 		// either this is a new tenant with sharding enabled,
 		// or the tenant already existed but its maxQueriers has changed
 		tenant.maxQueriers = maxQueriers
 		tqa.shuffleTenantQueriers(tenantID, nil)
 	}
-	return tenant, nil
+	return nil
 }
 
 func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {

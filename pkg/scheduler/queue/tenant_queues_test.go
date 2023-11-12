@@ -414,8 +414,9 @@ func getOrAdd(t *testing.T, qb *queueBroker, tenantID TenantID, maxQueriers int)
 	return addedQueue.localQueue
 }
 
+// getOrAddTenantQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*TreeQueue, error) {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriers)
 	if err != nil {
 		return nil, err
 	}
@@ -424,6 +425,7 @@ func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (
 	return qb.tenantQueuesTree.getOrAddNode(queuePath)
 }
 
+// getQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 	tenant, err := qb.tenantQuerierAssignments.getTenant(tenantID)
 	if tenant == nil || err != nil {
@@ -435,6 +437,7 @@ func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
 	return tenantQueue
 }
 
+// removeTenantQueue is a test utility, not intended for use by consumers of queueBroker
 func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
 	qb.tenantQuerierAssignments.removeTenant(tenantID)
 	queuePath := QueuePath{string(tenantID)}
