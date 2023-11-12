@@ -6,8 +6,8 @@ import (
 	"container/list"
 )
 
-type QueuePath []string //nolint:revive
-type QueueIndex int     //nolint:revive
+type QueuePath []string //nolint:revive // disallows types beginning with package name
+type QueueIndex int     //nolint:revive // disallows types beginning with package name
 
 const localQueueIndex = -1
 
@@ -57,6 +57,7 @@ func (q *TreeQueue) IsEmpty() bool {
 	return q.LocalQueueLen() == 0 && len(q.childQueueMap) == 0
 }
 
+// NodeCount counts the TreeQueue node and all its children, recursively.
 func (q *TreeQueue) NodeCount() int {
 	count := 1 // count self
 	for _, childQueue := range q.childQueueMap {
@@ -65,6 +66,7 @@ func (q *TreeQueue) NodeCount() int {
 	return count
 }
 
+// ItemCount counts the queue items in the TreeQueue node and in all its children, recursively.
 func (q *TreeQueue) ItemCount() int {
 	count := q.LocalQueueLen() // count self
 	for _, childQueue := range q.childQueueMap {
