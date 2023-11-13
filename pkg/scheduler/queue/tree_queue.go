@@ -4,6 +4,7 @@ package queue
 
 import (
 	"container/list"
+	"errors"
 )
 
 type QueuePath []string //nolint:revive // disallows types beginning with package name
@@ -289,12 +290,4 @@ func (q *TreeQueue) wrapIndex(increment bool) {
 	}
 }
 
-type TreeQueueError struct {
-	msg string
-}
-
-func (e TreeQueueError) Error() string {
-	return e.msg
-}
-
-var ErrMaxQueueLengthExceeded = TreeQueueError{msg: "max queue length exceeded"}
+var ErrMaxQueueLengthExceeded = errors.New("max queue length exceeded")

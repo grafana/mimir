@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ func TestDequeueBalancedTree(t *testing.T) {
 	secondDimensions := []string{"a", "b", "c"}
 	itemsPerDimension := 5
 	root := makeBalancedTreeQueue(t, firstDimensions, secondDimensions, itemsPerDimension)
-	assert.NotNil(t, root)
+	require.NotNil(t, root)
 
 	count := 0
 	// tree queue will fairly dequeue from all levels of the tree
@@ -34,10 +33,8 @@ func TestDequeueBalancedTree(t *testing.T) {
 		v := root.Dequeue()
 		dequeuedPath := getChildPathFromQueueItem(v)
 
-		// assert dequeued path has not repeated before the expected number of rotations
-		for _, previousDequeuedPath := range dequeuedPathCache {
-			assert.NotEqual(t, previousDequeuedPath, dequeuedPath)
-		}
+		// require dequeued path has not repeated before the expected number of rotations
+		require.NotContains(t, dequeuedPathCache, dequeuedPath)
 
 		dequeuedPathCache = append(dequeuedPathCache[1:], dequeuedPath)
 		count++
@@ -48,10 +45,10 @@ func TestDequeueBalancedTree(t *testing.T) {
 	// count items enqueued to nodes at depth 2
 	expectedSecondDimensionCount := len(firstDimensions) * len(secondDimensions) * itemsPerDimension
 
-	assert.Equal(t, expectedFirstDimensionCount+expectedSecondDimensionCount, count)
+	require.Equal(t, expectedFirstDimensionCount+expectedSecondDimensionCount, count)
 }
 
-// TestDequeueBalancedTree checks dequeuing behavior by path from a balanced tree.
+// TestDequeueByPathBalancedTree checks dequeuing behavior by path from a balanced tree.
 //
 // Dequeuing from a balanced tree allows the test to have a simple looped structures
 // while running checks to ensure that round-robin order is respected.
@@ -60,7 +57,7 @@ func TestDequeueByPathBalancedTree(t *testing.T) {
 	secondDimensions := []string{"a", "b", "c"}
 	itemsPerDimension := 5
 	root := makeBalancedTreeQueue(t, firstDimensions, secondDimensions, itemsPerDimension)
-	assert.NotNil(t, root)
+	require.NotNil(t, root)
 
 	count := 0
 	// tree queue will fairly dequeue from all levels of the tree below the path provided;
@@ -76,10 +73,8 @@ func TestDequeueByPathBalancedTree(t *testing.T) {
 			v := root.DequeueByPath(firstDimPath)
 			dequeuedPath := getChildPathFromQueueItem(v)
 
-			// assert dequeued path has not repeated before the expected number of rotations
-			for _, previousDequeuedPath := range dequeuedPathCache {
-				assert.NotEqual(t, previousDequeuedPath, dequeuedPath)
-			}
+			// require dequeued path has not repeated before the expected number of rotations
+			require.NotContains(t, dequeuedPathCache, dequeuedPath)
 
 			dequeuedPathCache = append(dequeuedPathCache[1:], dequeuedPath)
 			count++
@@ -91,7 +86,7 @@ func TestDequeueByPathBalancedTree(t *testing.T) {
 	// count items enqueued to nodes at depth 2
 	expectedSecondDimensionCount := len(firstDimensions) * len(secondDimensions) * itemsPerDimension
 
-	assert.Equal(t, expectedFirstDimensionCount+expectedSecondDimensionCount, count)
+	require.Equal(t, expectedFirstDimensionCount+expectedSecondDimensionCount, count)
 }
 
 // TestDequeuePathUnbalancedTree checks dequeuing behavior from an unbalanced tree.
@@ -104,62 +99,62 @@ func TestDequeueUnbalancedTree(t *testing.T) {
 
 	// dequeue from root until exhausted
 	v := root.Dequeue()
-	assert.Equal(t, "root:0:val0", v)
+	require.Equal(t, "root:0:val0", v)
 
 	// root:0 and any subtrees are exhausted
 	path := QueuePath{"0"}
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:0 was deleted
-	assert.Nil(t, root.getNode(path))
+	require.Nil(t, root.getNode(path))
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:1:val0", v)
+	require.Equal(t, "root:1:val0", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:2:0:val0", v)
+	require.Equal(t, "root:2:0:val0", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:1:0:val0", v)
+	require.Equal(t, "root:1:0:val0", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:2:1:val0", v)
+	require.Equal(t, "root:2:1:val0", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:1:val1", v)
+	require.Equal(t, "root:1:val1", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:2:0:val1", v)
+	require.Equal(t, "root:2:0:val1", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:1:0:val1", v)
+	require.Equal(t, "root:1:0:val1", v)
 
 	// root:1 and any subtrees are exhausted
 	path = QueuePath{"1"}
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:1 was deleted
-	assert.Nil(t, root.getNode(path))
+	require.Nil(t, root.getNode(path))
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:2:1:val1", v)
+	require.Equal(t, "root:2:1:val1", v)
 
 	v = root.Dequeue()
-	assert.Equal(t, "root:2:1:val2", v)
+	require.Equal(t, "root:2:1:val2", v)
 
 	// root:2 and any subtrees are exhausted
 	path = QueuePath{"2"}
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:2 was deleted
-	assert.Nil(t, root.getNode(path))
+	require.Nil(t, root.getNode(path))
 
 	// all items have been dequeued
-	assert.Equal(t, 0, root.ItemCount())
-	assert.Equal(t, 1, root.NodeCount())
+	require.Equal(t, 0, root.ItemCount())
+	require.Equal(t, 1, root.NodeCount())
 
-	// assert nothing in local or child queues
-	assert.True(t, root.IsEmpty())
+	// require nothing in local or child queues
+	require.True(t, root.IsEmpty())
 }
 
 // TestDequeueByPathUnbalancedTree checks dequeuing behavior from an unbalanced tree by path.
@@ -173,75 +168,75 @@ func TestDequeueByPathUnbalancedTree(t *testing.T) {
 	// dequeue from root:2 until exhausted
 	path := QueuePath{"2"}
 	v := root.DequeueByPath(path)
-	assert.Equal(t, "root:2:0:val0", v)
+	require.Equal(t, "root:2:0:val0", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:2:1:val0", v)
+	require.Equal(t, "root:2:1:val0", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:2:0:val1", v)
+	require.Equal(t, "root:2:0:val1", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:2:1:val1", v)
+	require.Equal(t, "root:2:1:val1", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:2:1:val2", v)
+	require.Equal(t, "root:2:1:val2", v)
 
 	// root:2 is exhausted;
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:2 and its two children root:2:0 and root:2:1 were deleted
-	assert.Nil(t, root.getNode(path))
-	assert.Equal(t, 2, len(root.childQueueMap))
-	assert.Equal(t, 2, len(root.childQueueOrder))
-	assert.Equal(t, 4, root.NodeCount())
+	require.Nil(t, root.getNode(path))
+	require.Equal(t, 2, len(root.childQueueMap))
+	require.Equal(t, 2, len(root.childQueueOrder))
+	require.Equal(t, 4, root.NodeCount())
 	// 5 of 10 items were dequeued
-	assert.Equal(t, 5, root.ItemCount())
+	require.Equal(t, 5, root.ItemCount())
 
 	// dequeue from root:1 until exhausted
 	path = QueuePath{"1"}
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:1:val0", v)
+	require.Equal(t, "root:1:val0", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:1:0:val0", v)
+	require.Equal(t, "root:1:0:val0", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:1:val1", v)
+	require.Equal(t, "root:1:val1", v)
 
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:1:0:val1", v)
+	require.Equal(t, "root:1:0:val1", v)
 
 	// root:1 is exhausted;
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:1 and its child root:1:0 were deleted
-	assert.Nil(t, root.getNode(path))
-	assert.Equal(t, 1, len(root.childQueueMap))
-	assert.Equal(t, 1, len(root.childQueueOrder))
-	assert.Equal(t, 2, root.NodeCount())
+	require.Nil(t, root.getNode(path))
+	require.Equal(t, 1, len(root.childQueueMap))
+	require.Equal(t, 1, len(root.childQueueOrder))
+	require.Equal(t, 2, root.NodeCount())
 	// 9 of 10 items have been dequeued
-	assert.Equal(t, 1, root.ItemCount())
+	require.Equal(t, 1, root.ItemCount())
 
 	// dequeue from root:0 until exhausted
 	path = QueuePath{"0"}
 	v = root.DequeueByPath(path)
-	assert.Equal(t, "root:0:val0", v)
+	require.Equal(t, "root:0:val0", v)
 
 	// root:0 is exhausted;
 	v = root.DequeueByPath(path)
-	assert.Nil(t, v)
+	require.Nil(t, v)
 	// root:0 was deleted
-	assert.Nil(t, root.getNode(path))
-	assert.Equal(t, 0, len(root.childQueueMap))
-	assert.Equal(t, 0, len(root.childQueueOrder))
-	assert.Equal(t, 1, root.NodeCount())
+	require.Nil(t, root.getNode(path))
+	require.Equal(t, 0, len(root.childQueueMap))
+	require.Equal(t, 0, len(root.childQueueOrder))
+	require.Equal(t, 1, root.NodeCount())
 	// 10 of 10 items have been dequeued
-	assert.Equal(t, 0, root.ItemCount())
-	assert.Equal(t, 1, root.NodeCount())
+	require.Equal(t, 0, root.ItemCount())
+	require.Equal(t, 1, root.NodeCount())
 
-	// assert nothing in local or child queues
-	assert.True(t, root.IsEmpty())
+	// require nothing in local or child queues
+	require.True(t, root.IsEmpty())
 }
 
 func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
@@ -261,69 +256,69 @@ func TestEnqueueDuringDequeueRespectsRoundRobin(t *testing.T) {
 	item = makeQueueItemForChildPath(root, childPath, cache)
 	require.NoError(t, root.EnqueueBackByPath(childPath, item))
 
-	// enqueue two items to path root:1
+	// enqueue two items to path root:2
 	childPath = QueuePath{"2"}
 	item = makeQueueItemForChildPath(root, childPath, cache)
 	require.NoError(t, root.EnqueueBackByPath(childPath, item))
 	item = makeQueueItemForChildPath(root, childPath, cache)
 	require.NoError(t, root.EnqueueBackByPath(childPath, item))
 
-	assert.Equal(t, []string{"0", "1", "2"}, root.childQueueOrder)
+	require.Equal(t, []string{"0", "1", "2"}, root.childQueueOrder)
 
 	// dequeue first item
 	v := root.Dequeue()
 	dequeuedPath := getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"0"}, dequeuedPath)
+	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue second item; root:1 is now exhausted and deleted
 	v = root.Dequeue()
 	dequeuedPath = getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"1"}, dequeuedPath)
-	assert.Nil(t, root.getNode(QueuePath{"1"}))
-	assert.Equal(t, []string{"0", "2"}, root.childQueueOrder)
+	require.Equal(t, QueuePath{"1"}, dequeuedPath)
+	require.Nil(t, root.getNode(QueuePath{"1"}))
+	require.Equal(t, []string{"0", "2"}, root.childQueueOrder)
 
 	// dequeue third item
 	v = root.Dequeue()
 	dequeuedPath = getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"2"}, dequeuedPath)
+	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// root:1 was previously exhausted; root:0, then root:2 will be next in the rotation
 	// here we insert something new into root:1 to test that it
 	// does not jump the line in front of root:0 or root:2
 	item = makeQueueItemForChildPath(root, QueuePath{"1"}, cache)
 	require.NoError(t, root.EnqueueBackByPath(QueuePath{"1"}, item))
-	assert.NotNil(t, root.getNode(QueuePath{"1"}))
-	assert.Equal(t, []string{"0", "2", "1"}, root.childQueueOrder)
+	require.NotNil(t, root.getNode(QueuePath{"1"}))
+	require.Equal(t, []string{"0", "2", "1"}, root.childQueueOrder)
 
 	// dequeue fourth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:0
 	v = root.Dequeue()
 	dequeuedPath = getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"0"}, dequeuedPath)
+	require.Equal(t, QueuePath{"0"}, dequeuedPath)
 
 	// dequeue fifth item; the newly-enqueued root:1 item
 	// has not jumped the line in front of root:2
 	v = root.Dequeue()
 	dequeuedPath = getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"2"}, dequeuedPath)
+	require.Equal(t, QueuePath{"2"}, dequeuedPath)
 
 	// dequeue sixth item; verifying the order 0->2->1 is being followed
 	v = root.Dequeue()
 	dequeuedPath = getChildPathFromQueueItem(v)
-	assert.Equal(t, QueuePath{"1"}, dequeuedPath)
+	require.Equal(t, QueuePath{"1"}, dequeuedPath)
 
 	// all items have been dequeued
-	assert.Equal(t, 0, root.ItemCount())
-	assert.Equal(t, 1, root.NodeCount())
+	require.Equal(t, 0, root.ItemCount())
+	require.Equal(t, 1, root.NodeCount())
 
-	// assert nothing in local or child queues
-	assert.True(t, root.IsEmpty())
+	// require nothing in local or child queues
+	require.True(t, root.IsEmpty())
 }
 
 func TestNodeCannotDeleteItself(t *testing.T) {
 	root := NewTreeQueue("root", maxTestQueueLen)
-	assert.False(t, root.deleteNode(QueuePath{}))
-	assert.NotNil(t, root)
+	require.False(t, root.deleteNode(QueuePath{}))
+	require.NotNil(t, root)
 }
 
 func makeBalancedTreeQueue(t *testing.T, firstDimensions, secondDimensions []string, itemsPerDimensions int) *TreeQueue {
