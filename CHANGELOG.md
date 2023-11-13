@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Update otelhttp library to v0.44.0 as a mitigation for CVE-2023-45142. #6634
+
 ## 2.10.3
 
 ### Grafana Mimir
