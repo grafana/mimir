@@ -503,8 +503,7 @@ type ulidWithShardIndex struct {
 // Issue347Error is a type wrapper for errors that should invoke repair process for broken block.
 type Issue347Error struct {
 	err error
-
-	id ulid.ULID
+	id  ulid.ULID
 }
 
 func issue347Error(err error, brokenBlock ulid.ULID) Issue347Error {
@@ -512,7 +511,7 @@ func issue347Error(err error, brokenBlock ulid.ULID) Issue347Error {
 }
 
 func (e Issue347Error) Error() string {
-	return e.err.Error()
+	return fmt.Sprintf("%s (block: %s)", e.err.Error(), e.id.String())
 }
 
 // IsIssue347Error returns true if the base error is a Issue347Error.
@@ -529,7 +528,7 @@ type OutOfOrderChunksError struct {
 }
 
 func (e OutOfOrderChunksError) Error() string {
-	return e.err.Error()
+	return fmt.Sprintf("%s (block: %s)", e.err.Error(), e.id.String())
 }
 
 func outOfOrderChunkError(err error, brokenBlock ulid.ULID) OutOfOrderChunksError {
@@ -550,7 +549,7 @@ type CriticalError struct {
 }
 
 func (e CriticalError) Error() string {
-	return e.err.Error()
+	return fmt.Sprintf("%s (block: %s)", e.err.Error(), e.id.String())
 }
 
 func criticalError(err error, brokenBlock ulid.ULID) CriticalError {
