@@ -3,15 +3,19 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -336,6 +340,137 @@ func TestToGRPCError(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, tc.expectedErrorDetails, errDetails)
 			}
+		})
+	}
+}
+
+func TestHandleIngesterPushError(t *testing.T) {
+	testErrorMsg := "this is a test error message"
+	outputErrorMsgPrefix := "failed pushing to ingester"
+
+	// Ensure that no error gets translated into no error.
+	t.Run("no error gives no error", func(t *testing.T) {
+		err := handleIngesterPushError(nil)
+		require.NoError(t, err)
+	})
+
+	// Ensure that the errors created by httpgrpc get translated into
+	// other errors created by httpgrpc with the same code, and with
+	// a more explanatory message.
+	// TODO: this is needed for backwards compatibility and will be removed
+	// in mimir 2.12.0.
+	httpgrpcTests := map[string]struct {
+		ingesterPushError error
+		expectedStatus    int32
+		expectedMessage   string
+	}{
+		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
+			ingesterPushError: httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
+			expectedStatus:    http.StatusBadRequest,
+			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
+			ingesterPushError: httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
+			expectedStatus:    http.StatusServiceUnavailable,
+			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
+		},
+	}
+	for testName, testData := range httpgrpcTests {
+		t.Run(testName, func(t *testing.T) {
+			err := handleIngesterPushError(testData.ingesterPushError)
+			res, ok := httpgrpc.HTTPResponseFromError(err)
+			require.True(t, ok)
+			require.NotNil(t, res)
+			require.Equal(t, testData.expectedStatus, res.GetCode())
+			require.Equal(t, testData.expectedMessage, string(res.Body))
+		})
+	}
+
+	// Ensure that the errors created by gogo/status package get translated
+	// into ingesterPushError messages.
+	statusTests := map[string]struct {
+		ingesterPushError         error
+		expectedIngesterPushError ingesterPushError
+	}{
+		"a gRPC error with details gives an ingesterPushError with the same details": {
+			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+		},
+		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
+			// This is how context.DeadlineExceeded error is translated into a gRPC error.
+			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
+		},
+		"an Unavailable gRPC error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
+			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+		},
+		"an Internal gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
+			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+		},
+		"an Unknown gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
+			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+		},
+	}
+	for testName, testData := range statusTests {
+		t.Run(testName, func(t *testing.T) {
+			err := handleIngesterPushError(testData.ingesterPushError)
+			ingesterPushErr, ok := err.(ingesterPushError)
+			require.True(t, ok)
+
+			require.Equal(t, testData.expectedIngesterPushError.Error(), ingesterPushErr.Error())
+			require.Equal(t, testData.expectedIngesterPushError.errorCause(), ingesterPushErr.errorCause())
+		})
+	}
+}
+
+func TestIsClientError(t *testing.T) {
+	testCases := map[string]struct {
+		err             error
+		expectedOutcome bool
+	}{
+		"an ingesterPushError with error cause BAD_DATA is a client error": {
+			err:             ingesterPushError{cause: mimirpb.BAD_DATA},
+			expectedOutcome: true,
+		},
+		"an ingesterPushError with error cause different from BAD_DATA is not a client error": {
+			err:             ingesterPushError{cause: mimirpb.SERVICE_UNAVAILABLE},
+			expectedOutcome: false,
+		},
+		"an gRPC error with status code 4xx built by httpgrpc package is a client error": {
+			err:             httpgrpc.Errorf(http.StatusBadRequest, "this is an error"),
+			expectedOutcome: true,
+		},
+		"an gRPC error with status code 4xx built by grpc's status package is a client error": {
+			err:             grpcstatus.Error(http.StatusTooManyRequests, "this is an error"),
+			expectedOutcome: true,
+		},
+		"an gRPC error with status code 4xx built by gogo's status package is a client error": {
+			err:             status.Error(http.StatusTooManyRequests, "this is an error"),
+			expectedOutcome: true,
+		},
+		"an gRPC error with status code different from 4xx built by httpgrpc package is a not client error": {
+			err:             httpgrpc.Errorf(http.StatusInternalServerError, "this is an error"),
+			expectedOutcome: false,
+		},
+		"an gRPC error with status code different from 4xx built by grpc's status package is not a client error": {
+			err:             grpcstatus.Error(http.StatusServiceUnavailable, "this is an error"),
+			expectedOutcome: false,
+		},
+		"an gRPC error with status code different from 4xx built by gogo's status package is not a client error": {
+			err:             status.Error(codes.Internal, "this is an error"),
+			expectedOutcome: false,
+		},
+		"a random non-gRPC and non-ingesterPushError error is not a client error": {
+			err:             errors.New("this is a random error"),
+			expectedOutcome: false,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, testData.expectedOutcome, isClientError(testData.err))
 		})
 	}
 }
