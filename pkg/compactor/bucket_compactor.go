@@ -825,13 +825,16 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// then we can mark the block for no compaction so that the next compaction run
 					// will skip it.
 					if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && c.skipUnhealthyBlocks {
-						if err := block.MarkForNoCompact(
+						err := block.MarkForNoCompact(
 							ctx,
 							c.logger,
 							c.bkt,
 							outOfOrderChunksErr.id,
 							block.OutOfOrderChunksNoCompactReason,
-							"OutofOrderChunk: marking block with out-of-order series/chunks to as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)); err == nil {
+							"OutofOrderChunk: marking block with out-of-order series/chunks to as no compact to unblock compaction",
+							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
+						)
+						if err == nil {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()
@@ -842,13 +845,16 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// In case an unhealthy block is found, we mark it for no compaction
 					// to unblock future compaction run.
 					if ok, criticalErr := IsCriticalError(err); ok && c.skipUnhealthyBlocks {
-						if err := block.MarkForNoCompact(
+						err := block.MarkForNoCompact(
 							ctx,
 							c.logger,
 							c.bkt,
 							criticalErr.id,
 							block.CriticalNoCompactReason,
-							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason)); err == nil {
+							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
+							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
+						)
+						if err == nil {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()
