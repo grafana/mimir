@@ -130,6 +130,12 @@
 * [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
 
+## 2.10.4
+
+### Grafana Mimir
+
+* [BUGFIX] Update otelhttp library to v0.44.0 as a mitigation for CVE-2023-45142. #6634
+
 ## 2.10.3
 
 ### Grafana Mimir
