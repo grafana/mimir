@@ -1647,10 +1647,23 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 		NegativeBuckets: []int64{1, 1, 0},
 	}
 
+	hugeH := &histogram.Histogram{
+		Count:         12,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        -3,
+		PositiveSpans: []histogram.Span{
+			{Offset: -1e6, Length: 1},
+			{Offset: 2e6, Length: 1}, // Further then min schema of -4, bucket with of 64K
+		},
+		PositiveBuckets: []int64{1, 1},
+	}
+
 	tests := map[string]struct {
 		prepareConfig      func(limits *validation.Limits)
 		req                *mimirpb.WriteRequest
-		expectedMetrics    string
+		expectedError      error
 		expectedTimeSeries []mimirpb.PreallocTimeseries
 	}{
 		"should not reduce histogram under bucket limit": {
@@ -1671,6 +1684,14 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 				makeHistogramTimeseries([]string{model.MetricNameLabel, "test"}, 1000, reducedH),
 			},
 		},
+		"should fail if not possible to reduce": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxNativeHistogramBuckets = 1
+			},
+			req:                makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, hugeH),
+			expectedError:      fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce, timestamp: 1000 series: {__name__=\"test\"}, buckets: 2, limit: 1 (not-reducible-native-histogram)"),
+			expectedTimeSeries: []mimirpb.PreallocTimeseries{},
+		},
 	}
 	now := mtime.Now()
 	for testName, tc := range tests {
@@ -1690,10 +1711,15 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 
 			for _, ts := range tc.req.Timeseries {
 				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, 0, 0)
-				assert.NoError(t, err)
+				if tc.expectedError != nil {
+					require.ErrorAs(t, err, &tc.expectedError)
+				} else {
+					assert.NoError(t, err)
+				}
 			}
-
-			assert.Equal(t, tc.expectedTimeSeries, tc.req.Timeseries)
+			if tc.expectedError == nil {
+				assert.Equal(t, tc.expectedTimeSeries, tc.req.Timeseries)
+			}
 		})
 	}
 }

@@ -78,6 +78,10 @@ var (
 		"received a native histogram sample with too many buckets, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
 		globalerror.MaxNativeHistogramBuckets,
 	)
+	notReducibleNativeHistogramMsgFormat = fmt.Sprintf(
+		"received a native histogram sample with too many buckets and cannot reduce, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
+		globalerror.NotReducibleNativeHistogram,
+	)
 	sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
@@ -227,11 +231,15 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
 				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
 			}
-			var err error
-			for bucketCount, err = s.ReduceResolution(); err == nil && bucketCount > bucketLimit; bucketCount, err = s.ReduceResolution() {
-			}
-			if err != nil {
-				return err
+			for {
+				bc, err := s.ReduceResolution()
+				if err != nil {
+					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+				}
+				if bc < bucketLimit {
+					break
+				}
 			}
 		}
 	}
