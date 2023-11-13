@@ -880,7 +880,7 @@ groups:
   - alert: MimirCompactorSkippedUnhealthyBlocks
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{
-        $labels.namespace }} has found and ignored blocks with out of order chunks.
+        $labels.namespace }} has found and ignored unhealthy blocks.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedunhealthyblocks
     expr: |
       increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 0
