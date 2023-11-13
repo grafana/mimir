@@ -21,7 +21,7 @@ To enable ingesting Prometheus native histograms over the [remote write API]({{<
 
 To limit the number of native histogram buckets per sample, set the `-validation.max-native-histogram-buckets` flag on distributors.
 The recommended value is 160 which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms, which are a similar concept in OpenTelemetry.
-Incoming samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the ``-validation.downscale-native-histogram-over-max-buckets` option to `false`.
+At the time of ingestion, samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the ``-validation.downscale-native-histogram-over-max-buckets` option to `false`.
 
 ## Configure native histograms per tenant
 
@@ -29,7 +29,7 @@ To enable ingesting Prometheus native histograms over the [remote write API]({{<
 
 To limit the number of native histogram buckets per sample for a tenant, set the `max_native_histogram_buckets` runtime value.
 The recommended value is 160 which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms, which are a similar concept in OpenTelemetry.
-Incoming samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the ``-validation.downscale-native-histogram-over-max-buckets` option to `false`.
+At the time of ingestion, samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the ``-validation.downscale-native-histogram-over-max-buckets` option to `false`.
 
 ```yaml
 overrides:
