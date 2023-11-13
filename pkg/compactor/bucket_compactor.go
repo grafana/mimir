@@ -691,21 +691,20 @@ var ownAllJobs = func(job *Job) (bool, error) {
 
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
-	logger                         log.Logger
-	sy                             *Syncer
-	grouper                        Grouper
-	comp                           Compactor
-	planner                        Planner
-	compactDir                     string
-	bkt                            objstore.Bucket
-	concurrency                    int
-	skipUnhealthyBlocks            bool
-	skipBlocksWithOutOfOrderChunks bool
-	ownJob                         ownCompactionJobFunc
-	sortJobs                       JobsOrderFunc
-	waitPeriod                     time.Duration
-	blockSyncConcurrency           int
-	metrics                        *BucketCompactorMetrics
+	logger               log.Logger
+	sy                   *Syncer
+	grouper              Grouper
+	comp                 Compactor
+	planner              Planner
+	compactDir           string
+	bkt                  objstore.Bucket
+	concurrency          int
+	skipUnhealthyBlocks  bool
+	ownJob               ownCompactionJobFunc
+	sortJobs             JobsOrderFunc
+	waitPeriod           time.Duration
+	blockSyncConcurrency int
+	metrics              *BucketCompactorMetrics
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -719,7 +718,6 @@ func NewBucketCompactor(
 	bkt objstore.Bucket,
 	concurrency int,
 	skipUnhealthyBlocks bool,
-	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
@@ -730,21 +728,20 @@ func NewBucketCompactor(
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
 	}
 	return &BucketCompactor{
-		logger:                         logger,
-		sy:                             sy,
-		grouper:                        grouper,
-		planner:                        planner,
-		comp:                           comp,
-		compactDir:                     compactDir,
-		bkt:                            bkt,
-		concurrency:                    concurrency,
-		skipUnhealthyBlocks:            skipUnhealthyBlocks,
-		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
-		ownJob:                         ownJob,
-		sortJobs:                       sortJobs,
-		waitPeriod:                     waitPeriod,
-		blockSyncConcurrency:           blockSyncConcurrency,
-		metrics:                        metrics,
+		logger:               logger,
+		sy:                   sy,
+		grouper:              grouper,
+		planner:              planner,
+		comp:                 comp,
+		compactDir:           compactDir,
+		bkt:                  bkt,
+		concurrency:          concurrency,
+		skipUnhealthyBlocks:  skipUnhealthyBlocks,
+		ownJob:               ownJob,
+		sortJobs:             sortJobs,
+		waitPeriod:           waitPeriod,
+		blockSyncConcurrency: blockSyncConcurrency,
+		metrics:              metrics,
 	}, nil
 }
 
@@ -829,7 +826,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// If block has out of order chunk and it has been configured to skip it,
 					// then we can mark the block for no compaction so that the next compaction run
 					// will skip it.
-					if IsOutOfOrderChunkError(err) && c.skipBlocksWithOutOfOrderChunks {
+					if IsOutOfOrderChunkError(err) && c.skipUnhealthyBlocks {
 						if err := block.MarkForNoCompact(
 							ctx,
 							c.logger,

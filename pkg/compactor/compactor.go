@@ -769,7 +769,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		userBucket,
 		c.compactorCfg.CompactionConcurrency,
 		true, // Skip unhealthy blocks, and mark them for no-compaction.
-		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
