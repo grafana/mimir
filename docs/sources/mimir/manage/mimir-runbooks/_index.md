@@ -1258,6 +1258,13 @@ The limit protects the system from using too much memory. To configure the limit
 
 > **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 
+### not-reducible-native-histogram
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets and it is not possible to reduce the buckets further. Since native buckets at the lowest resolution of -4 can cover all 64 bit float observations with a handful of buckets, this indicates that the
+`-validation.max-native-histogram-buckets` option is set too low (<20).
+
+> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
