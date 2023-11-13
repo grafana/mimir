@@ -117,7 +117,7 @@ func (r retry) isTerminalError(err error) bool {
 
 	notRunningError := util.NotRunningError{}
 	if errors.As(err, &notRunningError) {
-		return notRunningError.State == services.Stopping || notRunningError.State == services.Terminated || notRunningError.State == services.Failed
+		return notRunningError.State != services.New && notRunningError.State != services.Starting
 	}
 
 	return false

@@ -52,7 +52,7 @@ type Config struct {
 	ResultsCacheConfig               `yaml:"results_cache"`
 	CacheResults                     bool          `yaml:"cache_results"`
 	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
-	NotRunningBackoff                time.Duration `yaml:"not_running_backoff" category:"experimental"`
+	NotRunningBackoffDuration        time.Duration `yaml:"not_running_backoff_duration" category:"experimental"`
 	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
 	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
@@ -67,7 +67,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
-	f.DurationVar(&cfg.NotRunningBackoff, "query-frontend.not-running-backoff", 500*time.Millisecond, "Time to wait between retries for a request that fails because the query-frontend is still starting up")
+	f.DurationVar(&cfg.NotRunningBackoffDuration, "query-frontend.not-running-backoff-duration", 0, "Time to wait between retries for a request that fails because the query-frontend is still starting up. 0 to disable backoff (ie. retry immediately)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
@@ -298,8 +298,8 @@ func newQueryTripperware(
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, cfg.NotRunningBackoff, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, cfg.NotRunningBackoff, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, cfg.NotRunningBackoffDuration, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, cfg.NotRunningBackoffDuration, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {

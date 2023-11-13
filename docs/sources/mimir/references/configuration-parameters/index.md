@@ -1432,9 +1432,10 @@ results_cache:
 [max_retries: <int> | default = 5]
 
 # (experimental) Time to wait between retries for a request that fails because
-# the query-frontend is still starting up
-# CLI flag: -query-frontend.not-running-backoff
-[not_running_backoff: <duration> | default = 500ms]
+# the query-frontend is still starting up. 0 to disable backoff (ie. retry
+# immediately)
+# CLI flag: -query-frontend.not-running-backoff-duration
+[not_running_backoff_duration: <duration> | default = 0s]
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
