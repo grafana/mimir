@@ -68,8 +68,8 @@ require (
 	github.com/thanos-io/objstore v0.0.0-20230201072718-11ffbc490204
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rc7
-	go.opentelemetry.io/otel v1.14.0
-	go.opentelemetry.io/otel/trace v1.14.0
+	go.opentelemetry.io/otel v1.18.0
+	go.opentelemetry.io/otel/trace v1.18.0
 	go.uber.org/multierr v1.9.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	google.golang.org/api v0.114.0
@@ -139,7 +139,7 @@ require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-errors/errors v1.4.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
 	github.com/go-openapi/errors v0.20.3 // indirect
@@ -225,8 +225,8 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v0.73.0 // indirect
 	go.opentelemetry.io/collector/semconv v0.73.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.40.0 // indirect
-	go.opentelemetry.io/otel/metric v0.37.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.44.0 // indirect
+	go.opentelemetry.io/otel/metric v1.18.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect

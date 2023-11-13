@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.9.3
+
+* [BUGFIX] Update `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` to `0.44` which includes a fix for CVE-2023-45142.
+
 ## 2.9.2
 
 * [BUGFIX] Update grpc-go library to 1.56.3 and `golang.org/x/net` to `0.17`, which include fix for CVE-2023-44487. #6353 #6364
