@@ -3174,12 +3174,12 @@
         },
         {
           "kind": "field",
-          "name": "downscale_native_histogram_over_max_buckets",
+          "name": "reduce_native_histogram_over_max_buckets",
           "required": false,
-          "desc": "Whether to downscale or reject native histogram samples with more buckets than the configured limit.",
+          "desc": "Whether to reduce or reject native histogram samples with more buckets than the configured limit.",
           "fieldValue": null,
           "fieldDefaultValue": true,
-          "fieldFlag": "validation.downscale-native-histogram-over-max-buckets",
+          "fieldFlag": "validation.reduce-native-histogram-over-max-buckets",
           "fieldType": "boolean"
         },
         {

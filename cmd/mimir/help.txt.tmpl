@@ -713,8 +713,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
-  -validation.downscale-native-histogram-over-max-buckets
-    	Whether to downscale or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int
@@ -725,6 +723,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
+  -validation.reduce-native-histogram-over-max-buckets
+    	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -version
     	Print application version and exit.
 

@@ -27,32 +27,32 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                     = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag                   = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                       = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                     = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                      = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag                  = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                      = "querier.max-fetched-series-per-query"
-	MaxEstimatedChunksPerQueryMultiplierFlag   = "querier.max-estimated-fetched-chunks-per-query-multiplier"
-	MaxLabelNamesPerSeriesFlag                 = "validation.max-label-names-per-series"
-	MaxLabelNameLengthFlag                     = "validation.max-length-label-name"
-	MaxLabelValueLengthFlag                    = "validation.max-length-label-value"
-	MaxMetadataLengthFlag                      = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag              = "validation.max-native-histogram-buckets"
-	DownscaleNativeHistogramOverMaxBucketsFlag = "validation.downscale-native-histogram-over-max-buckets"
-	CreationGracePeriodFlag                    = "validation.create-grace-period"
-	maxPartialQueryLengthFlag                  = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag                    = "query-frontend.max-total-query-length"
-	maxQueryExpressionSizeBytesFlag            = "query-frontend.max-query-expression-size-bytes"
-	RequestRateFlag                            = "distributor.request-rate-limit"
-	RequestBurstSizeFlag                       = "distributor.request-burst-size"
-	IngestionRateFlag                          = "distributor.ingestion-rate-limit"
-	IngestionBurstSizeFlag                     = "distributor.ingestion-burst-size"
-	HATrackerMaxClustersFlag                   = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                        = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag     = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	QueryIngestersWithinFlag                   = "querier.query-ingesters-within"
+	MaxSeriesPerMetricFlag                   = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                 = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                     = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                   = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                    = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                    = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	MaxLabelNamesPerSeriesFlag               = "validation.max-label-names-per-series"
+	MaxLabelNameLengthFlag                   = "validation.max-length-label-name"
+	MaxLabelValueLengthFlag                  = "validation.max-length-label-value"
+	MaxMetadataLengthFlag                    = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
+	ReduceNativeHistogramOverMaxBucketsFlag  = "validation.reduce-native-histogram-over-max-buckets"
+	CreationGracePeriodFlag                  = "validation.create-grace-period"
+	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
+	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
+	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
+	RequestRateFlag                          = "distributor.request-rate-limit"
+	RequestBurstSizeFlag                     = "distributor.request-burst-size"
+	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
+	IngestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -83,7 +83,7 @@ type Limits struct {
 	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
 	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
-	DownscaleNativeHistogramOverMaxBuckets      bool                `yaml:"downscale_native_histogram_over_max_buckets" json:"downscale_native_histogram_over_max_buckets"`
+	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
@@ -204,7 +204,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
-	f.BoolVar(&l.DownscaleNativeHistogramOverMaxBuckets, DownscaleNativeHistogramOverMaxBucketsFlag, true, "Whether to downscale or reject native histogram samples with more buckets than the configured limit.")
+	f.BoolVar(&l.ReduceNativeHistogramOverMaxBuckets, ReduceNativeHistogramOverMaxBucketsFlag, true, "Whether to reduce or reject native histogram samples with more buckets than the configured limit.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
@@ -496,10 +496,10 @@ func (o *Overrides) MaxNativeHistogramBuckets(userID string) int {
 	return o.getOverridesForUser(userID).MaxNativeHistogramBuckets
 }
 
-// DownscaleNativeHistogramOverMaxBuckets returns whether to downscale or reject
+// ReduceNativeHistogramOverMaxBuckets returns whether to reduce or reject
 // native histogram samples with more buckets than the configured limit.
-func (o *Overrides) DownscaleNativeHistogramOverMaxBuckets(userID string) bool {
-	return o.getOverridesForUser(userID).DownscaleNativeHistogramOverMaxBuckets
+func (o *Overrides) ReduceNativeHistogramOverMaxBuckets(userID string) bool {
+	return o.getOverridesForUser(userID).ReduceNativeHistogramOverMaxBuckets
 }
 
 // CreationGracePeriod is misnamed, and actually returns how far into the future

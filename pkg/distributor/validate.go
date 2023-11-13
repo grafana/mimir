@@ -111,7 +111,7 @@ var (
 type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
-	DownscaleNativeHistogramOverMaxBuckets(userID string) bool
+	ReduceNativeHistogramOverMaxBuckets(userID string) bool
 }
 
 // sampleValidationMetrics is a collection of metrics used during sample validation.
@@ -227,7 +227,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
 		}
 		if bucketCount > bucketLimit {
-			if !cfg.DownscaleNativeHistogramOverMaxBuckets(userID) {
+			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
 				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
 			}

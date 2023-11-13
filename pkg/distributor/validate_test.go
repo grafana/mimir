@@ -384,8 +384,8 @@ func TestValidateLabelDuplication(t *testing.T) {
 }
 
 type sampleValidationCfg struct {
-	maxNativeHistogramBuckets              int
-	downscaleNativeHistogramOverMaxBuckets bool
+	maxNativeHistogramBuckets           int
+	reduceNativeHistogramOverMaxBuckets bool
 }
 
 func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
@@ -396,8 +396,8 @@ func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
 	return c.maxNativeHistogramBuckets
 }
 
-func (c sampleValidationCfg) DownscaleNativeHistogramOverMaxBuckets(_ string) bool {
-	return c.downscaleNativeHistogramOverMaxBuckets
+func (c sampleValidationCfg) ReduceNativeHistogramOverMaxBuckets(_ string) bool {
+	return c.reduceNativeHistogramOverMaxBuckets
 }
 
 func TestMaxNativeHistorgramBuckets(t *testing.T) {

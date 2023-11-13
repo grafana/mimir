@@ -2709,8 +2709,6 @@ Usage of ./cmd/mimir/mimir:
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future). (default 10m)
-  -validation.downscale-native-histogram-over-max-buckets
-    	Whether to downscale or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
@@ -2723,6 +2721,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
+  -validation.reduce-native-histogram-over-max-buckets
+    	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
   -vault.auth.approle.mount-path string

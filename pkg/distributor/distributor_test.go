@@ -1396,7 +1396,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.CreationGracePeriod = model.Duration(time.Minute)
 			limits.MaxNativeHistogramBuckets = tc.bucketLimit
-			limits.DownscaleNativeHistogramOverMaxBuckets = false
+			limits.ReduceNativeHistogramOverMaxBuckets = false
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
@@ -1699,7 +1699,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			tc.prepareConfig(limits)
-			limits.DownscaleNativeHistogramOverMaxBuckets = true
+			limits.ReduceNativeHistogramOverMaxBuckets = true
 			ds, _, regs := prepare(t, prepConfig{
 				limits:          limits,
 				numDistributors: 1,
