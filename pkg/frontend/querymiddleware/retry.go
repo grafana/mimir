@@ -8,14 +8,17 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -40,26 +43,28 @@ func (m *retryMiddlewareMetrics) Observe(v float64) {
 }
 
 type retry struct {
-	log        log.Logger
-	next       Handler
-	maxRetries int
+	log               log.Logger
+	next              Handler
+	maxRetries        int
+	notRunningBackoff time.Duration
 
 	metrics prometheus.Observer
 }
 
 // newRetryMiddleware returns a middleware that retries requests if they
 // fail with 500 or a non-HTTP error.
-func newRetryMiddleware(log log.Logger, maxRetries int, metrics prometheus.Observer) Middleware {
+func newRetryMiddleware(log log.Logger, maxRetries int, notRunningBackoff time.Duration, metrics prometheus.Observer) Middleware {
 	if metrics == nil {
 		metrics = newRetryMiddlewareMetrics(nil)
 	}
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return retry{
-			log:        log,
-			next:       next,
-			maxRetries: maxRetries,
-			metrics:    metrics,
+			log:               log,
+			next:              next,
+			maxRetries:        maxRetries,
+			notRunningBackoff: notRunningBackoff,
+			metrics:           metrics,
 		}
 	})
 }
@@ -78,7 +83,7 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 			return resp, nil
 		}
 
-		if apierror.IsNonRetryableAPIError(err) || errors.Is(err, context.Canceled) {
+		if r.isTerminalError(err) {
 			return nil, err
 		}
 		// Retry if we get a HTTP 500 or a non-HTTP error.
@@ -87,10 +92,33 @@ func (r retry) Do(ctx context.Context, req Request) (Response, error) {
 			lastErr = err
 			log := util_log.WithContext(ctx, spanlogger.FromContext(ctx, r.log))
 			level.Error(log).Log("msg", "error processing request", "try", tries, "err", err)
+
+			if errors.Is(err, util.NotRunningError{}) && tries < r.maxRetries-1 {
+				// We're still starting up. Wait a little until retrying.
+				time.Sleep(r.notRunningBackoff)
+			}
+
 			continue
 		}
 
 		return nil, err
 	}
 	return nil, lastErr
+}
+
+func (r retry) isTerminalError(err error) bool {
+	if apierror.IsNonRetryableAPIError(err) {
+		return true
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	notRunningError := util.NotRunningError{}
+	if errors.As(err, &notRunningError) {
+		return notRunningError.State == services.Stopping || notRunningError.State == services.Terminated || notRunningError.State == services.Failed
+	}
+
+	return false
 }

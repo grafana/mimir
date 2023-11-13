@@ -11,13 +11,16 @@ import (
 	fmt "fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestRetry(t *testing.T) {
@@ -33,12 +36,19 @@ func TestRetry(t *testing.T) {
 		Body: []byte("Internal Server Error"),
 	})
 
+	errNotRunningNew := util.NotRunningError{Component: "frontend", State: services.New}
+	errNotRunningStarting := util.NotRunningError{Component: "frontend", State: services.Starting}
+	errNotRunningStopping := util.NotRunningError{Component: "frontend", State: services.Stopping}
+	errNotRunningTerminated := util.NotRunningError{Component: "frontend", State: services.Terminated}
+	errNotRunningFailed := util.NotRunningError{Component: "frontend", State: services.Failed}
+
 	for _, tc := range []struct {
 		name            string
 		handler         Handler
 		resp            Response
 		err             error
 		expectedRetries int
+		expectBackoff   bool
 	}{
 		{
 			name:            "retry failures",
@@ -86,15 +96,78 @@ func TestRetry(t *testing.T) {
 			}),
 			err: errBadRequest,
 		},
+		{
+			name:            "retry 'not running: new' errors with backoff",
+			expectedRetries: 5,
+			expectBackoff:   true,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errNotRunningNew
+			}),
+			err: errNotRunningNew,
+		},
+		{
+			name:            "retry 'not running: starting' errors with backoff",
+			expectedRetries: 5,
+			expectBackoff:   true,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errNotRunningStarting
+			}),
+			err: errNotRunningStarting,
+		},
+		{
+			name:            "don't retry 'not running: stopping' errors",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errNotRunningStopping
+			}),
+			err: errNotRunningStopping,
+		},
+		{
+			name:            "don't retry 'not running: terminated' errors",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errNotRunningTerminated
+			}),
+			err: errNotRunningTerminated,
+		},
+		{
+			name:            "don't retry 'not running: failed' errors",
+			expectedRetries: 0,
+			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				return nil, errNotRunningFailed
+			}),
+			err: errNotRunningFailed,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			try.Store(0)
+
+			maxRetries := 5
+			localErrorBackoff := 100 * time.Millisecond
+			lastCall := time.UnixMilli(0)
 			mockMetrics := mockRetryMetrics{}
-			h := newRetryMiddleware(log.NewNopLogger(), 5, &mockMetrics).Wrap(tc.handler)
+			handler := tc.handler
+
+			if tc.expectBackoff {
+				handler = HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+					require.Greater(t, time.Since(lastCall), localErrorBackoff, "expected to be called with backoff")
+					lastCall = time.Now()
+					return tc.handler.Do(ctx, req)
+				})
+			}
+
+			startTime := time.Now()
+			h := newRetryMiddleware(log.NewNopLogger(), maxRetries, localErrorBackoff, &mockMetrics).Wrap(handler)
 			resp, err := h.Do(context.Background(), nil)
+			duration := time.Since(startTime)
+
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
 			require.Equal(t, float64(tc.expectedRetries), mockMetrics.retries)
+
+			if tc.expectBackoff {
+				require.Less(t, duration, localErrorBackoff*time.Duration(maxRetries), "expected to wait four times, once between each attempt, but waited five times or more")
+			}
 		})
 	}
 }
@@ -111,7 +184,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	var try atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
+	_, err := newRetryMiddleware(log.NewNopLogger(), 5, 0, nil).Wrap(
 		HandlerFunc(func(c context.Context, r Request) (Response, error) {
 			try.Inc()
 			return nil, ctx.Err()
@@ -121,7 +194,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	require.Equal(t, ctx.Err(), err)
 
 	ctx, cancel = context.WithCancel(context.Background())
-	_, err = newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
+	_, err = newRetryMiddleware(log.NewNopLogger(), 5, 0, nil).Wrap(
 		HandlerFunc(func(c context.Context, r Request) (Response, error) {
 			try.Inc()
 			cancel()

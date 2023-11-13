@@ -5479,6 +5479,17 @@
         },
         {
           "kind": "field",
+          "name": "not_running_backoff",
+          "required": false,
+          "desc": "Time to wait between retries for a request that fails because the query-frontend is still starting up",
+          "fieldValue": null,
+          "fieldDefaultValue": 500000000,
+          "fieldFlag": "query-frontend.not-running-backoff",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "parallelize_shardable_queries",
           "required": false,
           "desc": "True to enable query sharding.",
