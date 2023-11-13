@@ -526,10 +526,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
             hpa_name: $._config.autoscaling[field].hpa_name,
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
+          |||
+            kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+            # Add the scaletargetref_name label for readability
+            + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+              0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+          ||| % {
+            namespace_matcher: $.namespaceMatcher(),
+            hpa_name: $._config.autoscaling[field].hpa_name,
+            cluster_labels: std.join(', ', $._config.cluster_labels),
+          },
         ],
         [
           'Max {{ scaletargetref_name }}',
           'Current {{ scaletargetref_name }}',
+          'Min {{ scaletargetref_name }}',
         ],
       ) +
       $.panelDescription(
@@ -551,6 +562,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
             alias: '/Current .+/',
             fill: 0,
           },
+          {
+            alias: '/Min .+/',
+            dashes: true,
+            fill: 0,
+          },
         ],
       },
     )
@@ -560,20 +576,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            sum by (scaledObject) (
-              keda_metrics_adapter_scaler_metrics_value{metric=~".*cpu.*"}
+            sum by (scaler) (
+              label_replace(
+                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*cpu.*"},
+                "namespace", "$1", "exported_namespace", "(.*)"
+              )
               /
-              on(metric) group_left label_replace(
+              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
+                label_replace(
                   kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
                   "metric", "$1", "metric_name", "(.+)"
+                ),
+                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
               )
             )
           ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
+            cluster_label: $._config.per_cluster_label,
+            hpa_prefix: $._config.autoscaling_hpa_prefix,
             hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
-          '{{ scaledObject }}',
+          '{{ scaler }}',
         ]
       ) +
       $.panelDescription(
@@ -590,20 +615,29 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            sum by (scaledObject) (
-              keda_metrics_adapter_scaler_metrics_value{metric=~".*memory.*"}
+            sum by (scaler) (
+              label_replace(
+                keda_scaler_metrics_value{%(cluster_label)s=~"$cluster", exported_namespace=~"$namespace", scaler=~".*memory.*"},
+                "namespace", "$1", "exported_namespace", "(.*)"
+              )
               /
-              on(metric) group_left label_replace(
+              on(%(aggregation_labels)s, scaledObject, metric) group_left label_replace(
+                label_replace(
                   kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"},
                   "metric", "$1", "metric_name", "(.+)"
+                ),
+                "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
               )
             )
           ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
+            cluster_label: $._config.per_cluster_label,
+            hpa_prefix: $._config.autoscaling_hpa_prefix,
             hpa_name: $._config.autoscaling[field].hpa_name,
             namespace: $.namespaceMatcher(),
           },
         ], [
-          '{{ scaledObject }}',
+          '{{ scaler }}',
         ]
       ) +
       $.panelDescription(
@@ -618,8 +652,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       local title = 'Autoscaler failures rate';
       $.panel(title) +
       $.queryPanel(
-        $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling[field].hpa_name),
-        '{{metric}} failures'
+        $.filterKedaScalerErrorsByHPA($._config.autoscaling[field].hpa_name),
+        '{{scaler}} failures'
       ) +
       $.panelDescription(
         title,
@@ -1069,18 +1103,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
       namespaceMatcher: $.namespaceMatcher(),
     },
 
-  filterKedaMetricByHPA(query, hpa_name)::
+  filterKedaScalerErrorsByHPA(hpa_name)::
     |||
-      %(query)s +
-      on(metric) group_left
+      sum by(%(aggregation_labels)s, scaler, metric, scaledObject) (
+        label_replace(
+          rate(keda_scaler_errors[$__rate_interval]),
+          "namespace", "$1", "exported_namespace", "(.+)"
+        )
+      ) +
+      on(%(aggregation_labels)s, metric, scaledObject) group_left
       label_replace(
-          kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-          * 0, "metric", "$1", "metric_name", "(.+)"
+        label_replace(
+            kube_horizontalpodautoscaler_spec_target_metric{%(namespace)s, horizontalpodautoscaler=~"%(hpa_name)s"} * 0,
+            "scaledObject", "$1", "horizontalpodautoscaler", "%(hpa_prefix)s(.*)"
+        ),
+        "metric", "$1", "metric_name", "(.+)"
       )
     ||| % {
-      query: query,
       hpa_name: hpa_name,
+      hpa_prefix: $._config.autoscaling_hpa_prefix,
       namespace: $.namespaceMatcher(),
+      aggregation_labels: $._config.alert_aggregation_labels,
     },
 
   // panelAxisPlacement allows to place a series on the right axis.

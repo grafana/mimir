@@ -97,6 +97,8 @@ func (l *LexerRegistry) MatchMimeType(mimeType string) Lexer {
 }
 
 // Match returns the first lexer matching filename.
+//
+// Note that this iterates over all file patterns in all lexers, so is not fast.
 func (l *LexerRegistry) Match(filename string) Lexer {
 	filename = filepath.Base(filename)
 	matched := PrioritisedLexers{}

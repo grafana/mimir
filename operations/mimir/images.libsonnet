@@ -1,7 +1,7 @@
 {
   _images+:: {
     // Various third-party images.
-    memcached: 'memcached:1.6.19-alpine',
+    memcached: 'memcached:1.6.22-alpine',
     memcachedExporter: 'prom/memcached-exporter:v0.13.0',
 
     // Our services.
@@ -28,6 +28,6 @@
     mimir_backend: self.mimir,
 
     // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.8.1',
+    rollout_operator: 'grafana/rollout-operator:v0.8.3',
   },
 }

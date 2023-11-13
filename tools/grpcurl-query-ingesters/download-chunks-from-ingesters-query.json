@@ -1,0 +1,11 @@
+{
+  "start_timestamp_ms": 1698746364317,
+  "end_timestamp_ms": 1698748164317,
+  "matchers": [
+    {
+      "type": 0,
+      "name": "__name__",
+      "value": "test_series"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -21,6 +22,10 @@ import (
 func main() {
 	// Clean up all flags registered via init() methods of 3rd-party libraries.
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	flag.CommandLine.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), os.Args[0], "<wal dir>")
+		flag.CommandLine.PrintDefaults()
+	}
 
 	var (
 		printSeriesEntries           bool
@@ -73,8 +78,12 @@ func printWal(walDir string, printSeriesEntries, printSeriesWithSampleEntries bo
 			return errors.Wrap(err, "replaying checkpoint")
 		}
 		log.Println("checking replay finished")
+
+		// number returned from LastCheckpoint comes from `checkpoint.00385215` filename, but this
+		// checkpoint already contains data from segment `00385215`, so we need to continue with next one.
+		startFrom++
 	} else {
-		log.Println("no checkpoint found, skipping")
+		log.Println("no checkpoint found, skipping loading of checkpoint")
 	}
 
 	// Find the last segment.
@@ -83,9 +92,8 @@ func printWal(walDir string, printSeriesEntries, printSeriesWithSampleEntries bo
 		return errors.Wrap(e, "finding WAL segments")
 	}
 
-	// number returned from LastCheckpoint comes from `checkpoint.00385215` filename, but this
-	// checkpoint already contains data from segment `00385215`, so we need to continue with next one.
-	startFrom++
+	log.Println("will replay segments from", startFrom, "to", endAt)
+
 	for i := startFrom; i <= endAt; i++ {
 		log.Println("replaying WAL segment", i)
 		s, err := wlog.OpenReadSegment(wlog.SegmentName(walDir, i))

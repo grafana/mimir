@@ -10,7 +10,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
@@ -224,7 +223,7 @@ func createDecbufFactoryWithBytes(t testing.TB, filePoolSize uint, len int, enc 
 	require.NoError(t, os.WriteFile(filePath, bytes, 0700))
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := NewDecbufFactory(filePath, filePoolSize, log.NewNopLogger(), NewDecbufFactoryMetrics(reg))
+	factory := NewDecbufFactory(filePath, filePoolSize, NewDecbufFactoryMetrics(reg))
 	t.Cleanup(func() {
 		factory.Stop()
 	})

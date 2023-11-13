@@ -165,6 +165,7 @@ limits:
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
+  cardinality_analysis_enabled: true
 
 runtime_config:
   file: ./config/runtime.yaml

@@ -3,6 +3,7 @@
 package querier
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sort"
@@ -126,6 +127,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type storeGatewayStreamReader struct {
+	ctx                 context.Context
 	client              storegatewaypb.StoreGateway_SeriesClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
@@ -139,8 +141,9 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
+		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
@@ -266,7 +269,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) error {
 	select {
-	case <-s.client.Context().Done():
+	case <-s.ctx.Done():
 		// Why do we abort if the context is done?
 		// We want to make sure that the StartBuffering goroutine is never leaked.
 		// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
@@ -274,7 +277,12 @@ func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) er
 		// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 		// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 		// which is true at the time of writing.
-		return s.client.Context().Err()
+		//
+		// Note that we deliberately don't use the context from the gRPC client here: that context is cancelled when
+		// the stream's underlying ClientConn is closed, which can happen if the querier decides that the store-gateway is no
+		// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
+		// a generic 'context canceled' error.
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 	case s.seriesChunksChan <- c:
 		// Batch enqueued successfully, nothing else to do for this batch.
 		return nil
@@ -283,9 +291,9 @@ func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) er
 
 func (s *storeGatewayStreamReader) sendChunksEstimate(chunksEstimate uint64) error {
 	select {
-	case <-s.client.Context().Done():
+	case <-s.ctx.Done():
 		// We abort if the context is done for the same reason we do in sendBatch - to avoid leaking the StartBuffering goroutine.
-		return s.client.Context().Err()
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 	case s.chunkCountEstimateChan <- int(chunksEstimate):
 		return nil
 	}

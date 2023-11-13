@@ -3,6 +3,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type StreamingSeriesSource struct {
 // SeriesChunksStreamReader is responsible for managing the streaming of chunks from an ingester and buffering
 // chunks in memory until they are consumed by the PromQL engine.
 type SeriesChunksStreamReader struct {
+	ctx                 context.Context
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
@@ -47,8 +49,9 @@ type SeriesChunksStreamReader struct {
 	seriesBatch     []QueryStreamSeriesChunks
 }
 
-func NewSeriesChunksStreamReader(client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
+		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
@@ -141,7 +144,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 
 		select {
-		case <-s.client.Context().Done():
+		case <-s.ctx.Done():
 			// Why do we abort if the context is done?
 			// We want to make sure that this goroutine is never leaked.
 			// This goroutine could be leaked if nothing is reading from the buffer, but this method is still trying to send
@@ -149,7 +152,12 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// So, here, we try to send the series to the buffer if we can, but if the context is cancelled, then we give up.
 			// This only works correctly if the context is cancelled when the query request is complete or cancelled,
 			// which is true at the time of writing.
-			return s.client.Context().Err()
+			//
+			// Note that we deliberately don't use the context from the gRPC client here: that context is cancelled when
+			// the stream's underlying ClientConn is closed, which can happen if the querier decides that the ingester is no
+			// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
+			// a generic 'context canceled' error.
+			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
 		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}

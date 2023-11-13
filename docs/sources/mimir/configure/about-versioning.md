@@ -110,8 +110,6 @@ The following features are currently experimental:
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
     - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
-- Ignoring chunks query cancellation
-  - `-ingester.chunks-query-ignore-cancellation`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
   - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
@@ -152,6 +150,7 @@ The following features are currently experimental:
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
+- Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 
 ## Deprecated features
 
