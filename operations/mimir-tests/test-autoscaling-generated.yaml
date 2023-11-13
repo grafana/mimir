@@ -1976,7 +1976,7 @@ spec:
       behavior:
         scaleDown:
           policies:
-          - periodSeconds: 60
+          - periodSeconds: 600
             type: Percent
             value: 10
   maxReplicaCount: 30
