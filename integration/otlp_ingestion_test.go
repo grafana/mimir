@@ -67,9 +67,18 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
+	sfx := ""
+	if enableSuffixes {
+		sfx = "_foo"
+	}
+
 	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector, expectedMatrix := generateFloatSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	// Fix up the expectation wrt. suffix
+	for _, s := range expectedVector {
+		s.Metric[model.LabelName("__name__")] = model.LabelValue(fmt.Sprintf("series_1%s", sfx))
+	}
 	metadata := []mimirpb.MetricMetadata{
 		{
 			Help: "foo",
@@ -82,7 +91,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query("series_1", now)
+	result, err := c.Query(fmt.Sprintf("series_1%s", sfx), now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -95,7 +104,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange(fmt.Sprintf("series_1%s", sfx), now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -108,10 +117,6 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	metadataResponseBody, err := io.ReadAll(metadataResult.Body)
 	require.NoError(t, err)
 
-	sfx := ""
-	if enableSuffixes {
-		sfx = "_foo"
-	}
 	expectedJSON := fmt.Sprintf(`
 	{
 	   "status":"success",
@@ -135,7 +140,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	result, err = c.Query("series", now)
+	result, err = c.Query(fmt.Sprintf("series%s", sfx), now)
 	require.NoError(t, err)
 
 	want := expectedVector[0]
