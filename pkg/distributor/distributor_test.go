@@ -1659,7 +1659,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 		Schema:        -3,
 		PositiveSpans: []histogram.Span{
 			{Offset: -1e6, Length: 1},
-			{Offset: 2e6, Length: 1}, // Further then min schema of -4, bucket with of 64K
+			{Offset: 2e6, Length: 1}, // Further apart than the min schema of -4 with a bucket width of 64K.
 		},
 		PositiveBuckets: []int64{1, 1},
 	}
