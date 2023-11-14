@@ -790,13 +790,15 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 			// Start all expected distributors
 			distributors, _, regs := prepare(t, prepConfig{
-				numIngesters:             3,
-				happyIngesters:           3,
-				numDistributors:          1,
-				limits:                   limits,
-				maxInflightRequests:      testData.inflightLimit,
-				maxInflightRequestsBytes: testData.inflightBytesLimit,
-				maxIngestionRate:         testData.ingestionRateLimit,
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          limits,
+				configure: func(config *Config) {
+					config.DefaultLimits.MaxIngestionRate = testData.ingestionRateLimit
+					config.DefaultLimits.MaxInflightPushRequests = testData.inflightLimit
+					config.DefaultLimits.MaxInflightPushRequestsBytes = testData.inflightBytesLimit
+				},
 			})
 
 			d := distributors[0]
@@ -1257,11 +1259,13 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:            2,
-				happyIngesters:          2,
-				numDistributors:         1,
-				shuffleShardSize:        0,
-				skipLabelNameValidation: tc.skipLabelNameValidationCfg,
+				numIngesters:     2,
+				happyIngesters:   2,
+				numDistributors:  1,
+				shuffleShardSize: 0,
+				configure: func(config *Config) {
+					config.SkipLabelNameValidation = tc.skipLabelNameValidationCfg
+				},
 			})
 			req := mockWriteRequest(tc.inputLabels, 42, 100000)
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
@@ -2881,10 +2885,12 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
 	ds, _, _ := prepare(t, prepConfig{
-		numDistributors:     1,
-		limits:              &limits,
-		enableTracker:       true,
-		maxInflightRequests: 1,
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+		configure: func(config *Config) {
+			config.DefaultLimits.MaxInflightPushRequests = 1
+		},
 	})
 	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
 
@@ -3080,23 +3086,20 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 }
 
 type prepConfig struct {
-	numIngesters, happyIngesters       int
-	queryDelay                         time.Duration
-	pushDelay                          time.Duration
-	shuffleShardSize                   int
-	limits                             *validation.Limits
-	numDistributors                    int
-	skipLabelNameValidation            bool
-	maxInflightRequests                int
-	maxInflightRequestsBytes           int
-	maxIngestionRate                   float64
+	numIngesters, happyIngesters int
+	queryDelay                   time.Duration
+	pushDelay                    time.Duration
+	shuffleShardSize             int
+	limits                       *validation.Limits
+	numDistributors              int
+
 	replicationFactor                  int
 	enableTracker                      bool
 	ingestersSeriesCountTotal          uint64
 	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
-	preferStreamingChunks              bool
-	minimizeIngesterRequests           bool
+
+	configure func(*Config)
 
 	timeOut bool
 }
@@ -3185,13 +3188,15 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		return ingestersByAddr[inst.Addr], nil
 	})
 
+	if cfg.limits == nil {
+		cfg.limits = &validation.Limits{}
+		flagext.DefaultValues(cfg.limits)
+	}
+	cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
+
 	distributors := make([]*Distributor, 0, cfg.numDistributors)
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
 	for i := 0; i < cfg.numDistributors; i++ {
-		if cfg.limits == nil {
-			cfg.limits = &validation.Limits{}
-			flagext.DefaultValues(cfg.limits)
-		}
 
 		var distributorCfg Config
 		var clientConfig client.Config
@@ -3202,16 +3207,12 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
-		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
-		distributorCfg.DefaultLimits.MaxInflightPushRequests = cfg.maxInflightRequests
-		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
-		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
-		distributorCfg.PreferStreamingChunksFromIngesters = cfg.preferStreamingChunks
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
-		distributorCfg.MinimizeIngesterRequests = cfg.minimizeIngesterRequests
 
-		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
+		if cfg.configure != nil {
+			cfg.configure(&distributorCfg)
+		}
 
 		if cfg.enableTracker {
 			codec := GetReplicaDescCodec()
@@ -4817,12 +4818,14 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// waiting for all ingesters to return. So we want the instance limits to accurately reflect that.
 
 	distributors, ingesters, _ := prepare(t, prepConfig{
-		numIngesters:        3,
-		happyIngesters:      3,
-		numDistributors:     1,
-		maxInflightRequests: 1,
-		replicationFactor:   3,
-		enableTracker:       false,
+		numIngesters:      3,
+		happyIngesters:    3,
+		numDistributors:   1,
+		replicationFactor: 3,
+		enableTracker:     false,
+		configure: func(config *Config) {
+			config.DefaultLimits.MaxInflightPushRequests = 1
+		},
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
@@ -5174,12 +5177,14 @@ func TestStartFinishRequest(t *testing.T) {
 
 			// Prepare distributor and wrap the mock push function with its middlewares.
 			ds, _, _ := prepare(t, prepConfig{
-				numDistributors:          1,
-				limits:                   &limits,
-				enableTracker:            true,
-				maxInflightRequests:      inflightLimit,
-				maxInflightRequestsBytes: inflightBytesLimit,
-				maxIngestionRate:         ingestionRateLimit,
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   true,
+				configure: func(config *Config) {
+					config.DefaultLimits.MaxIngestionRate = ingestionRateLimit
+					config.DefaultLimits.MaxInflightPushRequests = inflightLimit
+					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
+				},
 			})
 			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
 
