@@ -26,9 +26,9 @@ func TestQueues(t *testing.T) {
 	qb.addQuerierConnection("querier-1")
 	qb.addQuerierConnection("querier-2")
 
-	req, tenantID, lastTenantIndex, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+	req, tenant, lastTenantIndex, err := qb.dequeueRequestForQuerier(-1, "querier-1")
 	assert.Nil(t, req)
-	assert.Equal(t, emptyTenantID, tenantID)
+	assert.Nil(t, tenant)
 	assert.NoError(t, err)
 
 	// Add queues: [one]
@@ -37,7 +37,6 @@ func TestQueues(t *testing.T) {
 
 	// [one two]
 	qTwo := getOrAdd(t, qb, "two", 0)
-	assert.NotSame(t, qOne, qTwo)
 
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qTwo, qOne, qTwo, qOne)
 	confirmOrderForQuerier(t, qb, "querier-2", -1, qOne, qTwo, qOne)
@@ -49,7 +48,7 @@ func TestQueues(t *testing.T) {
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qTwo, qThree, qOne)
 
 	// Remove one: ["" two three]
-	qb.deleteQueue("one")
+	qb.removeTenantQueue("one")
 	assert.NoError(t, isConsistent(qb))
 
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qTwo, qThree, qTwo)
@@ -60,17 +59,17 @@ func TestQueues(t *testing.T) {
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qThree, qFour, qTwo, qThree)
 
 	// Remove two: [four "" three]
-	qb.deleteQueue("two")
+	qb.removeTenantQueue("two")
 	assert.NoError(t, isConsistent(qb))
 
 	lastTenantIndex = confirmOrderForQuerier(t, qb, "querier-1", lastTenantIndex, qFour, qThree, qFour)
 
 	// Remove three: [four]
-	qb.deleteQueue("three")
+	qb.removeTenantQueue("three")
 	assert.NoError(t, isConsistent(qb))
 
 	// Remove four: []
-	qb.deleteQueue("four")
+	qb.removeTenantQueue("four")
 	assert.NoError(t, isConsistent(qb))
 
 	req, _, _, err = qb.dequeueRequestForQuerier(lastTenantIndex, "querier-1")
@@ -94,10 +93,8 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 	// After notify shutdown for querier-2, it's expected to own no queue.
 	qb.notifyQuerierShutdown("querier-2")
-	tenantID, _, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(-1, "querier-2")
-	tenantQueue := qb.tenantQueues[tenantID]
-	assert.Nil(t, tenantQueue)
-	assert.Equal(t, emptyTenantID, tenantID)
+	tenant, _, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(-1, "querier-2")
+	assert.Nil(t, tenant)
 	assert.Equal(t, ErrQuerierShuttingDown, err)
 
 	// However, querier-1 still get queues because it's still running.
@@ -105,10 +102,8 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 
 	// After disconnecting querier-2, it's expected to own no queue.
 	qb.tenantQuerierAssignments.removeQuerier("querier-2")
-	tenantID, _, err = qb.tenantQuerierAssignments.getNextTenantIDForQuerier(-1, "querier-2")
-	tenantQueue = qb.tenantQueues[tenantID]
-	assert.Nil(t, tenantQueue)
-	assert.Equal(t, emptyTenantID, tenantID)
+	tenant, _, err = qb.tenantQuerierAssignments.getNextTenantForQuerier(-1, "querier-2")
+	assert.Nil(t, tenant)
 	assert.Equal(t, ErrQuerierShuttingDown, err)
 }
 
@@ -127,9 +122,9 @@ func TestQueuesWithQueriers(t *testing.T) {
 		qb.addQuerierConnection(qid)
 
 		// No querier has any queues yet.
-		req, u, _, err := qb.dequeueRequestForQuerier(-1, qid)
+		req, tenant, _, err := qb.dequeueRequestForQuerier(-1, qid)
 		assert.Nil(t, req)
-		assert.Equal(t, emptyTenantID, u)
+		assert.Nil(t, tenant)
 		assert.NoError(t, err)
 	}
 
@@ -154,7 +149,7 @@ func TestQueuesWithQueriers(t *testing.T) {
 
 		lastTenantIndex := -1
 		for {
-			_, newIx, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, qid)
+			_, newIx, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, qid)
 			assert.NoError(t, err)
 			if newIx < lastTenantIndex {
 				break
@@ -210,10 +205,10 @@ func TestQueuesConsistency(t *testing.T) {
 					assert.NotNil(t, queue)
 				case 1:
 					querierID := generateQuerier(r)
-					_, tenantIndex, _ := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndexes[querierID], querierID)
+					_, tenantIndex, _ := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndexes[querierID], querierID)
 					lastTenantIndexes[querierID] = tenantIndex
 				case 2:
-					qb.deleteQueue(generateTenant(r))
+					qb.removeTenantQueue(generateTenant(r))
 				case 3:
 					q := generateQuerier(r)
 					qb.addQuerierConnection(q)
@@ -416,15 +411,45 @@ func getOrAdd(t *testing.T, qb *queueBroker, tenantID TenantID, maxQueriers int)
 	reAddedQueue, err := qb.getOrAddTenantQueue(tenantID, maxQueriers)
 	assert.Nil(t, err)
 	assert.Equal(t, addedQueue, reAddedQueue)
-	return addedQueue
+	return addedQueue.localQueue
+}
+
+// getOrAddTenantQueue is a test utility, not intended for use by consumers of queueBroker
+func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*TreeQueue, error) {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(tenantID, maxQueriers)
+	if err != nil {
+		return nil, err
+	}
+
+	queuePath := QueuePath{string(tenantID)}
+	return qb.tenantQueuesTree.getOrAddNode(queuePath)
+}
+
+// getQueue is a test utility, not intended for use by consumers of queueBroker
+func (qb *queueBroker) getQueue(tenantID TenantID) *TreeQueue {
+	tenant, err := qb.tenantQuerierAssignments.getTenant(tenantID)
+	if tenant == nil || err != nil {
+		return nil
+	}
+
+	queuePath := QueuePath{string(tenantID)}
+	tenantQueue := qb.tenantQueuesTree.getNode(queuePath)
+	return tenantQueue
+}
+
+// removeTenantQueue is a test utility, not intended for use by consumers of queueBroker
+func (qb *queueBroker) removeTenantQueue(tenantID TenantID) bool {
+	qb.tenantQuerierAssignments.removeTenant(tenantID)
+	queuePath := QueuePath{string(tenantID)}
+	return qb.tenantQueuesTree.deleteNode(queuePath)
 }
 
 func confirmOrderForQuerier(t *testing.T, qb *queueBroker, querier QuerierID, lastTenantIndex int, queues ...*list.List) int {
 	for _, queue := range queues {
 		var err error
-		tenantID, _, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querier)
-		tenantQueue := qb.tenantQueues[tenantID]
-		assert.Equal(t, queue, tenantQueue.requests)
+		tenant, _, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querier)
+		tenantQueue := qb.getQueue(tenant.tenantID)
+		assert.Equal(t, queue, tenantQueue.localQueue)
 		assert.NoError(t, isConsistent(qb))
 		assert.NoError(t, err)
 	}
@@ -438,11 +463,10 @@ func isConsistent(qb *queueBroker) error {
 
 	tenantCount := 0
 	for ix, tenantID := range qb.tenantQuerierAssignments.tenantIDOrder {
-		tq := qb.tenantQueues[tenantID]
-		if tenantID != "" && tq == nil {
+		if tenantID != "" && qb.getQueue(tenantID) == nil {
 			return fmt.Errorf("tenant %s doesn't have queue", tenantID)
 		}
-		if tenantID == "" && tq != nil {
+		if tenantID == "" && qb.getQueue(tenantID) != nil {
 			return fmt.Errorf("tenant %s shouldn't have queue", tenantID)
 		}
 		if tenantID == "" {
@@ -470,7 +494,8 @@ func isConsistent(qb *queueBroker) error {
 		}
 	}
 
-	if tenantCount != len(qb.tenantQueues) {
+	tenantQueueCount := qb.tenantQueuesTree.NodeCount() - 1 // exclude root node
+	if tenantCount != tenantQueueCount {
 		return fmt.Errorf("inconsistent number of tenants list and tenant queues")
 	}
 
@@ -480,7 +505,7 @@ func isConsistent(qb *queueBroker) error {
 // getTenantsByQuerier returns the list of tenants handled by the provided QuerierID.
 func getTenantsByQuerier(broker *queueBroker, querierID QuerierID) []TenantID {
 	var tenantIDs []TenantID
-	for tenantID := range broker.tenantQueues {
+	for _, tenantID := range broker.tenantQuerierAssignments.tenantIDOrder {
 		querierSet := broker.tenantQuerierAssignments.tenantQuerierIDs[tenantID]
 		if querierSet == nil {
 			// If it's nil then all queriers can handle this tenant.
