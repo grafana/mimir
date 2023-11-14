@@ -140,7 +140,8 @@ func TestActiveSeriesRequest_String(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
 			labels.MustNewMatcher(labels.MatchNotEqual, "second", "2"),
 		},
+		accept: "application/json",
 	}
 
-	assert.Equal(t, "first=\"1\"\x01second!=\"2\"", req.String())
+	assert.Equal(t, "first=\"1\"\x01second!=\"2\"\x00application/json", req.String())
 }

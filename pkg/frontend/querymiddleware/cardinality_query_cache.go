@@ -38,7 +38,7 @@ func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
+func (c *cardinalityQueryCache) parseRequest(path string, values url.Values, _ http.Header) (*genericQueryRequest, error) {
 	switch {
 	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
 		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
@@ -61,7 +61,7 @@ func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*g
 			cacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
 		}, nil
 	case strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix):
-		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(values)
+		parsed, err := cardinality.DecodeActiveSeriesFromValuesAndHeaders(values, nil)
 		if err != nil {
 			return nil, err
 		}

@@ -31,7 +31,7 @@ type genericQueryRequest struct {
 
 type genericQueryDelegate interface {
 	// parseRequest parses the input request and returns a genericQueryRequest, or an error if parsing fails.
-	parseRequest(path string, values url.Values) (*genericQueryRequest, error)
+	parseRequest(path string, values url.Values, headers http.Header) (*genericQueryRequest, error)
 
 	// getTTL returns the cache TTL for the input userID.
 	getTTL(userID string) time.Duration
@@ -89,7 +89,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	queryReq, err := c.delegate.parseRequest(req.URL.Path, reqValues)
+	queryReq, err := c.delegate.parseRequest(req.URL.Path, reqValues, req.Header)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.

@@ -144,7 +144,7 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
 					c := &labelsQueryCache{}
-					actual, err := c.parseRequest(requestTypeData.requestPath, testData.params)
+					actual, err := c.parseRequest(requestTypeData.requestPath, testData.params, nil)
 					require.NoError(t, err)
 
 					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.cacheKeyPrefix)

@@ -44,7 +44,7 @@ func (c *labelsQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
+func (c *labelsQueryCache) parseRequest(path string, values url.Values, _ http.Header) (*genericQueryRequest, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string

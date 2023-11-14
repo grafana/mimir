@@ -267,6 +267,7 @@ func extractCountMethod(values url.Values) (countMethod CountMethod, err error) 
 
 type ActiveSeriesRequest struct {
 	Matchers []*labels.Matcher
+	accept   string
 }
 
 // DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.
@@ -275,11 +276,11 @@ func DecodeActiveSeriesRequest(r *http.Request) (*ActiveSeriesRequest, error) {
 		return nil, err
 	}
 
-	return DecodeActiveSeriesRequestFromValues(r.Form)
+	return DecodeActiveSeriesFromValuesAndHeaders(r.Form, r.Header)
 }
 
-// DecodeActiveSeriesRequestFromValues is like DecodeActiveSeriesRequest but takes an url.Values parameter.
-func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesRequest, error) {
+// DecodeActiveSeriesFromValuesAndHeaders is like DecodeActiveSeriesRequest but takes an url.Values parameter.
+func DecodeActiveSeriesFromValuesAndHeaders(values url.Values, headers http.Header) (*ActiveSeriesRequest, error) {
 	var (
 		parsed = &ActiveSeriesRequest{}
 		err    error
@@ -294,6 +295,8 @@ func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesReques
 		return nil, err
 	}
 
+	parsed.accept = headers.Get("Accept")
+
 	return parsed, nil
 }
 
@@ -307,6 +310,9 @@ func (r *ActiveSeriesRequest) String() string {
 		}
 		b.WriteString(matcher.String())
 	}
+
+	b.WriteRune(stringParamSeparator)
+	b.WriteString(r.accept)
 
 	return b.String()
 }

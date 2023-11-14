@@ -91,6 +91,10 @@ message Metric {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
 }
 
+message Series {
+  repeated Metric metric = 1 [(gogoproto.nullable) = false];
+}
+
 message Exemplar {
   // Exemplar labels, different than series labels
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];

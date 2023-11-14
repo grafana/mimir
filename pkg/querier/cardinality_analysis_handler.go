@@ -3,17 +3,22 @@
 package querier
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/textproto"
 	"sort"
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
+	"github.com/munnerz/goautoneg"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -76,37 +81,6 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 		}
 
 		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, cardinalityResponse, cardinalityRequest.Limit))
-	})
-}
-
-func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		// Guarantee request's context is for a single tenant id
-		tenantID, err := tenant.TenantID(ctx)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		if !limits.CardinalityAnalysisEnabled(tenantID) {
-			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
-			return
-		}
-
-		req, err := cardinality.DecodeActiveSeriesRequest(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		res, err := distributor.ActiveSeries(ctx, req.Matchers)
-		if err != nil {
-			respondFromError(err, w)
-			return
-		}
-
-		util.WriteJSONResponse(w, activeSeriesResponse{res})
 	})
 }
 
@@ -238,6 +212,123 @@ type labelValuesCardinalityResponse struct {
 	Labels           []labelNamesCardinality `json:"labels"`
 }
 
-type activeSeriesResponse struct {
-	Data []labels.Labels `json:"data"`
+const (
+	SeriesResponseMimeTypeType    = "application"
+	SeriesResponseMimeTypeSubType = "vnd.mimir.seriesresponse+protobuf"
+	SeriesResponseMimeType        = SeriesResponseMimeTypeType + "/" + SeriesResponseMimeTypeSubType
+)
+
+// activeSeriesHandler is an http.Handler for /api/v1/cardinality/active_series.
+// It returns the set of active series encoded in the requested format. Supported
+// formats are:
+//   - application/json (default)
+//   - application/vnd.mimir.seriesresponse+protobuf (using mimirpb.Series protobuf format)
+type activeSeriesHandler struct {
+	distributor Distributor
+	limits      *validation.Overrides
+	codecs      []responseCodec
+}
+
+func NewActiveSeriesHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
+	return &activeSeriesHandler{
+		distributor: distributor,
+		limits:      limits,
+		codecs:      []responseCodec{jsonCodec{}, protobufCodec{}},
+	}
+}
+
+func (a activeSeriesHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Guarantee request's context is for a single tenant id
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if !a.limits.CardinalityAnalysisEnabled(tenantID) {
+		http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
+		return
+	}
+
+	req, err := cardinality.DecodeActiveSeriesRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	codec, err := a.negotiateContentType(r.Header.Get("Accept"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotAcceptable)
+	}
+
+	res, err := a.distributor.ActiveSeries(ctx, req.Matchers)
+	if err != nil {
+		respondFromError(err, w)
+		return
+	}
+
+	buf, err := codec.Encode(&v1.Response{Data: res})
+	if err != nil {
+		respondFromError(err, w)
+		return
+	}
+
+	w.Header().Set(textproto.CanonicalMIMEHeaderKey("Content-Type"), codec.ContentType().String())
+
+	// If the write fails, there's nothing we can do about it here.
+	_, _ = w.Write(buf)
+}
+
+// negotiateContentType negotiates the response content type based on the formats supported by the handler.
+func (a activeSeriesHandler) negotiateContentType(acceptHeader string) (responseCodec, error) {
+	if acceptHeader == "" {
+		// Default to JSON.
+		return a.codecs[0], nil
+	}
+
+	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
+		for _, codec := range a.codecs {
+			if codec.ContentType().Satisfies(clause) {
+				return codec, nil
+			}
+		}
+	}
+
+	return nil, errors.New("cannot satisfy any of the requested content types")
+}
+
+type responseCodec interface {
+	ContentType() v1.MIMEType
+	Encode(resp *v1.Response) ([]byte, error)
+}
+
+type jsonCodec struct{}
+
+func (j jsonCodec) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: "application", SubType: "json"}
+}
+
+func (j jsonCodec) Encode(resp *v1.Response) ([]byte, error) {
+	return json.Marshal(resp)
+}
+
+type protobufCodec struct{}
+
+func (p protobufCodec) ContentType() v1.MIMEType {
+	return v1.MIMEType{Type: SeriesResponseMimeTypeType, SubType: SeriesResponseMimeTypeSubType}
+}
+
+func (p protobufCodec) Encode(resp *v1.Response) ([]byte, error) {
+	data, ok := resp.Data.([]labels.Labels)
+	if !ok {
+		return nil, errors.New("unexpected response format")
+	}
+
+	s := mimirpb.Series{Metric: make([]mimirpb.Metric, 0, len(data))}
+	for _, metric := range data {
+		s.Metric = append(s.Metric, mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(metric)})
+	}
+
+	return s.Marshal()
 }

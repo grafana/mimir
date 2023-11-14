@@ -13,17 +13,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -787,12 +790,18 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	}
 }
 
+const (
+	jsonMimeType = "application/json"
+)
+
 func TestActiveSeriesCardinalityHandler(t *testing.T) {
+	validParams := map[string][]string{"selector": {`{job="prometheus"}`}}
 	tests := []struct {
-		name                 string
-		requestParams        map[string][]string
-		expectMatcherSetSize int
-		expectError          bool
+		name               string
+		requestParams      map[string][]string
+		expectError        bool
+		acceptContentTypes []string
+		expectContentType  string
 	}{
 		{
 			name:        "should error on missing selector param",
@@ -809,9 +818,33 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			expectError:   true,
 		},
 		{
-			name:                 "valid selector",
-			requestParams:        map[string][]string{"selector": {`{job="prometheus"}`}},
-			expectMatcherSetSize: 1,
+			name:              "valid selector",
+			requestParams:     validParams,
+			expectContentType: jsonMimeType,
+		},
+		{
+			name:               "protobuf response format",
+			requestParams:      validParams,
+			acceptContentTypes: []string{SeriesResponseMimeType},
+			expectContentType:  SeriesResponseMimeType,
+		},
+		{
+			name:               "explicit json response format",
+			requestParams:      validParams,
+			acceptContentTypes: []string{jsonMimeType},
+			expectContentType:  jsonMimeType,
+		},
+		{
+			name:               "multiple content types accepted",
+			requestParams:      validParams,
+			acceptContentTypes: []string{jsonMimeType, SeriesResponseMimeType},
+			expectContentType:  jsonMimeType,
+		},
+		{
+			name:               "respects content type priority",
+			requestParams:      validParams,
+			acceptContentTypes: []string{SeriesResponseMimeType, jsonMimeType},
+			expectContentType:  SeriesResponseMimeType,
 		},
 	}
 
@@ -825,7 +858,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			}
 			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, nil)
 
-			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+			handler := createEnabledHandler(t, NewActiveSeriesHandler, d)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			data := url.Values{}
@@ -837,6 +870,9 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			request, err := http.NewRequestWithContext(ctx, "POST", "/active_series", strings.NewReader(data.Encode()))
 			require.NoError(t, err)
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			for _, contentType := range test.acceptContentTypes {
+				request.Header.Add("Accept", contentType)
+			}
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
@@ -851,24 +887,78 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			body := recorder.Result().Body
 			defer func(body io.ReadCloser) {
 				err := body.Close()
-				if err != nil {
-					require.NoError(t, err)
-				}
+				require.NoError(t, err)
 			}(body)
 			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 
-			resp := activeSeriesResponse{}
-			err = json.Unmarshal(bodyContent, &resp)
+			contentType := recorder.Result().Header.Get("Content-Type")
+			assert.Equal(t, test.expectContentType, contentType)
+			resp := v1.Response{}
+			switch recorder.Result().Header.Get("Content-Type") {
+			case jsonMimeType:
+				err = json.Unmarshal(bodyContent, &resp)
+				require.NoError(t, err)
+			case SeriesResponseMimeType:
+				s := mimirpb.Series{}
+				err = proto.Unmarshal(bodyContent, &s)
+				require.NoError(t, err)
+				resp.Data = make([]labels.Labels, 0, len(s.Metric))
+				for _, metric := range s.Metric {
+					resp.Data = append(resp.Data.([]labels.Labels), mimirpb.FromLabelAdaptersToLabels(metric.Labels))
+				}
+			default:
+				t.Fatalf("unexpected content type: %s", recorder.Result().Header.Get("Content-Type"))
+			}
 			require.NoError(t, err)
-			assert.NotEmpty(t, resp.Data)
+			assert.Len(t, resp.Data, len(series))
 		})
 	}
+}
 
+func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
+	const numResponseSeries = 1000
+
+	d := &mockDistributor{}
+
+	var s []labels.Labels
+	for i := 0; i < numResponseSeries; i++ {
+		s = append(s, labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "instance"+fmt.Sprint(i)))
+	}
+	d.On("ActiveSeries", mock.Anything, mock.Anything).Return(s, nil)
+
+	handler := createEnabledHandler(b, NewActiveSeriesHandler, d)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	for _, bc := range []struct {
+		name   string
+		accept string
+	}{
+		{name: "json encoding", accept: jsonMimeType},
+		{name: "protobuf encoding", accept: SeriesResponseMimeType},
+	} {
+		b.Run(bc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				// Prepare a request.
+				r := httptest.NewRequest("POST", "/active_series", strings.NewReader("selector={job=\"prometheus\"}"))
+				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+				// Set the content type for this benchmark.
+				r.Header.Add("Accept", bc.accept)
+
+				// Run the benchmark.
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, r.WithContext(ctx))
+
+				// Make sure we're not benchmarking error responses.
+				require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
+			}
+		})
+	}
 }
 
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
-func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
+func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{CardinalityAnalysisEnabled: true}
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
