@@ -316,6 +316,20 @@ spec:
       for: 5m
       labels:
         severity: critical
+    - alert: MimirIngesterReachingInflightPushRequestLimit
+      annotations:
+        message: |
+          Ingester {{ $labels.job }}/{{ $labels.pod }} has reached {{ $value | humanizePercentage }} of its inflight push request limit.
+        runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterreachinginflightpushrequestlimit
+      expr: |
+        (
+            (cortex_ingester_inflight_push_requests_summary{quantile="1.0"} / ignoring(limit, quantile) cortex_ingester_instance_limits{limit="max_inflight_push_requests"})
+            and ignoring (limit, quantile)
+            (cortex_ingester_instance_limits{limit="max_inflight_push_requests"} > 0)
+        ) > 0.8
+      for: 5m
+      labels:
+        severity: critical
   - name: mimir-rollout-alerts
     rules:
     - alert: MimirRolloutStuck

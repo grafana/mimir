@@ -466,6 +466,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         },
+        {
+          alert: $.alertName('IngesterReachingInflightPushRequestLimit'),
+          expr: |||
+            (
+                (cortex_ingester_inflight_push_requests_summary{quantile="1.0"} / ignoring(limit, quantile) cortex_ingester_instance_limits{limit="max_inflight_push_requests"})
+                and ignoring (limit, quantile)
+                (cortex_ingester_instance_limits{limit="max_inflight_push_requests"} > 0)
+            ) > 0.8
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
+            ||| % $._config,
+          },
+        },
       ],
     },
     {
