@@ -251,13 +251,11 @@ func newQueryTripperware(
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
-
-	queryInstantMiddleware = append(
-		queryInstantMiddleware,
+	queryInstantMiddleware := []Middleware{
+		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
-	)
+	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
@@ -285,7 +283,8 @@ func newQueryTripperware(
 			registerer,
 		)
 
-		queryRangeMiddleware = append(queryRangeMiddleware,
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
 			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
 		)
