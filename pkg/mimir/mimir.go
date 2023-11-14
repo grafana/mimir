@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
+	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -684,7 +685,8 @@ type Mimir struct {
 	Distributor              *distributor.Distributor
 	Ingester                 *ingester.Ingester
 	Flusher                  *flusher.Flusher
-	Frontend                 *frontendv1.Frontend
+	FrontendV1               *frontendv1.Frontend
+	FrontendV2               *frontendv2.Frontend
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
@@ -704,6 +706,8 @@ type Mimir struct {
 	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
+
+	FrontendInitialized atomic.Bool
 }
 
 // New makes a new Mimir.
@@ -944,8 +948,8 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 
 		// Query Frontend has a special check that makes sure that a querier is attached before it signals
 		// itself as ready
-		if t.Frontend != nil {
-			if err := t.Frontend.CheckReady(r.Context()); err != nil {
+		if t.FrontendV1 != nil {
+			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}

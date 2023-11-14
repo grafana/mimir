@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -188,7 +187,8 @@ func (f *Frontend) stopping(_ error) error {
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	if s := f.State(); s != services.Running {
-		return nil, util.NotRunningError{Component: "frontend", State: s}
+		// This should never happen: requests should be blocked by frontendRunningMiddleware before they get here.
+		return nil, fmt.Errorf("frontend not running: %v", s)
 	}
 
 	tenantIDs, err := tenant.TenantIDs(ctx)

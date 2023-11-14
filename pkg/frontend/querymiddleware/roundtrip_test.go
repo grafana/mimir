@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -77,6 +78,7 @@ func TestRangeTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
+		alwaysRunning,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -128,6 +130,7 @@ func TestInstantTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
+		alwaysRunning,
 	)
 	require.NoError(t, err)
 
@@ -301,6 +304,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				reg,
+				alwaysRunning,
 			)
 			require.NoError(t, err)
 
@@ -407,4 +411,8 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	r.URL.Scheme = "http"
 	r.URL.Host = s.host
 	return s.next.RoundTrip(r)
+}
+
+func alwaysRunning() services.State {
+	return services.Running
 }

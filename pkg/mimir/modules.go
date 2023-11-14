@@ -692,6 +692,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
+		t.getQueryFrontendState,
 	)
 	if err != nil {
 		return nil, err
@@ -718,12 +719,15 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	var frontendSvc services.Service
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
-		t.Frontend = frontendV1
+		t.FrontendV1 = frontendV1
 		frontendSvc = frontendV1
 	} else if frontendV2 != nil {
 		t.API.RegisterQueryFrontend2(frontendV2)
+		t.FrontendV2 = frontendV2
 		frontendSvc = frontendV2
 	}
+
+	t.FrontendInitialized.Store(true)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -749,6 +753,22 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) getQueryFrontendState() services.State {
+	if !t.FrontendInitialized.Load() {
+		return services.New
+	}
+
+	if t.FrontendV1 != nil {
+		return t.FrontendV1.State()
+	}
+
+	if t.FrontendV2 != nil {
+		return t.FrontendV2.State()
+	}
+
+	panic("FrontendInitialized should only be true once either FrontendV1 or FrontendV2 are set in initQueryFrontend()")
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
