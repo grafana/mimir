@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
@@ -31,6 +30,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1304,33 +1305,37 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
-	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		var timeseriesCount, metadataCount int
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadataCount++
-			} else {
-				timeseriesCount++
+	err = ring.DoBatchWithClientError(ctx, ring.WriteNoExtend, subRing, keys,
+		func(ingester ring.InstanceDesc, indexes []int) error {
+			var timeseriesCount, metadataCount int
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadataCount++
+				} else {
+					timeseriesCount++
+				}
 			}
-		}
 
-		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
+			timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
+			metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
-			} else {
-				timeseries = append(timeseries, req.Timeseries[i])
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+				} else {
+					timeseries = append(timeseries, req.Timeseries[i])
+				}
 			}
-		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
-		if errors.Is(err, context.DeadlineExceeded) {
-			return errors.Wrap(err, deadlineExceededWrapMessage)
-		}
-		return err
-	}, func() { pushReq.CleanUp(); cancel() })
+			err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errors.Wrap(err, deadlineExceededWrapMessage)
+			}
+			return err
+		},
+		func() { pushReq.CleanUp(); cancel() },
+		isClientError,
+	)
 
 	return err
 }
@@ -1387,27 +1392,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
-}
-
-func handleIngesterPushError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	if ok {
-		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "%s: %s", failedPushingToIngesterMessage, resp.Body)
-	}
-
-	stat, ok := status.FromError(err)
-	if ok {
-		return newIngesterPushError(stat)
-	}
-	return errors.Wrap(err, failedPushingToIngesterMessage)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
@@ -1769,6 +1753,70 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	return &ingester_client.LabelValuesCardinalityResponse{
 		Items: cardinalityItems,
 	}
+}
+
+// ActiveSeries queries the ingester replication set for active series matching
+// the given selector. It combines and deduplicates the results.
+func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	replicationSet, err := d.GetIngesters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
+	req, err := ingester_client.ToActiveSeriesRequest(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	res := newActiveSeriesResponse()
+
+	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
+		defer log.Finish()
+
+		stream, err := client.ActiveSeries(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
+			if err != nil {
+				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
+			}
+		}()
+
+		for {
+			msg, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				level.Error(log).Log("msg", "error receiving active series response", "err", err)
+				ext.Error.Set(log.Span, true)
+				return nil, err
+			}
+
+			res.add(msg.Metric)
+		}
+
+		return nil, nil
+	}
+
+	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
+
+	return deduplicatedSeries, nil
 }
 
 // approximateFromZones computes a zonal value while factoring in replication.

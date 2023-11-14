@@ -471,6 +471,16 @@
         },
         {
           "kind": "field",
+          "name": "http_log_closed_connections_without_response_enabled",
+          "required": false,
+          "desc": "Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.http-log-closed-connections-without-response-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "grpc_server_max_recv_msg_size",
           "required": false,
           "desc": "Limit on the size of a gRPC message this server can receive (bytes).",
@@ -1764,7 +1774,7 @@
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1789,7 +1799,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1808,7 +1818,7 @@
           "required": false,
           "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1822,7 +1832,7 @@
           "fieldDefaultValue": 3000000000,
           "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -3208,7 +3218,7 @@
           "kind": "field",
           "name": "service_overload_status_code_on_rate_limit_enabled",
           "required": false,
-          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
@@ -9684,6 +9694,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "store-gateway.sharding-ring.tokens-file-path",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "num_tokens",
+              "required": false,
+              "desc": "Number of tokens for each store-gateway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 512,
+              "fieldFlag": "store-gateway.sharding-ring.num-tokens",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",

@@ -3,10 +3,12 @@
 package distributor
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -225,4 +227,46 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 		}
 	}
 	return stat.Err()
+}
+
+func handleIngesterPushError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	stat, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		return errors.Wrap(err, failedPushingToIngesterMessage)
+	}
+	statusCode := stat.Code()
+	if isHTTPStatusCode(statusCode) {
+		// TODO This code is needed for backwards compatibility, since ingesters may still return
+		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
+		// it. This code should be removed in mimir 2.12.0.
+		// Wrap HTTP gRPC error with more explanatory message.
+		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
+	}
+
+	return newIngesterPushError(stat)
+}
+
+func isHTTPStatusCode(statusCode codes.Code) bool {
+	return int(statusCode) >= 100 && int(statusCode) < 600
+}
+
+func isClientError(err error) bool {
+	var ingesterPushErr ingesterPushError
+	if errors.As(err, &ingesterPushErr) {
+		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA
+	}
+
+	// TODO This code is needed for backwards compatibility, since ingesters may still return
+	// errors with HTTP status code created by httpgrpc.Errorf(). If err is one of those errors,
+	// we treat 4xx errors as client errors. This code should be removed in mimir 2.12.0.
+
+	if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
+		return true
+	}
+
+	return false
 }

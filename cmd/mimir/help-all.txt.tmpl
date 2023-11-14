@@ -1218,7 +1218,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
-    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
@@ -1692,11 +1692,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
-    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
+    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
-    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks-from-ingesters
-    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
+    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this. (default true)
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.query-ingesters-within duration
@@ -1768,7 +1768,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.streaming-chunks-per-ingester-buffer-size uint
-    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
+    	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
     	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
@@ -2577,6 +2577,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-log-closed-connections-without-response-enabled
+    	Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.
   -server.http-read-header-timeout duration
     	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration
@@ -2681,6 +2683,8 @@ Usage of ./cmd/mimir/mimir:
     	Primary backend storage used by multi-client.
   -store-gateway.sharding-ring.multi.secondary string
     	Secondary backend storage used by multi-client.
+  -store-gateway.sharding-ring.num-tokens int
+    	Number of tokens for each store-gateway. (default 512)
   -store-gateway.sharding-ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -store-gateway.sharding-ring.replication-factor int

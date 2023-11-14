@@ -160,12 +160,7 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 		switch distributorErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			return http.StatusBadRequest
-		case mimirpb.INGESTION_RATE_LIMITED:
-			// Return a 429 here to tell the client it is going too fast.
-			// Client may discard the data or slow down and re-send.
-			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-			return http.StatusTooManyRequests
-		case mimirpb.REQUEST_RATE_LIMITED:
+		case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
 			serviceOverloadErrorEnabled := false
 			userID, err := tenant.TenantID(ctx)
 			if err == nil {

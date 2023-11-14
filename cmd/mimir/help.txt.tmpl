@@ -665,6 +665,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen address.
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-log-closed-connections-without-response-enabled
+    	Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.
   -server.http-read-header-timeout duration
     	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.log-request-headers

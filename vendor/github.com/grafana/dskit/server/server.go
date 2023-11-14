@@ -103,6 +103,8 @@ type Config struct {
 	HTTPServerWriteTimeout        time.Duration `yaml:"http_server_write_timeout"`
 	HTTPServerIdleTimeout         time.Duration `yaml:"http_server_idle_timeout"`
 
+	HTTPLogClosedConnectionsWithoutResponse bool `yaml:"http_log_closed_connections_without_response_enabled"`
+
 	GRPCOptions                   []grpc.ServerOption            `yaml:"-"`
 	GRPCMiddleware                []grpc.UnaryServerInterceptor  `yaml:"-"`
 	GRPCStreamMiddleware          []grpc.StreamServerInterceptor `yaml:"-"`
@@ -175,6 +177,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HTTPServerReadHeaderTimeout, "server.http-read-header-timeout", 0, "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.")
 	f.DurationVar(&cfg.HTTPServerWriteTimeout, "server.http-write-timeout", 30*time.Second, "Write timeout for HTTP server")
 	f.DurationVar(&cfg.HTTPServerIdleTimeout, "server.http-idle-timeout", 120*time.Second, "Idle timeout for HTTP server")
+	f.BoolVar(&cfg.HTTPLogClosedConnectionsWithoutResponse, "server.http-log-closed-connections-without-response-enabled", false, "Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.")
 	f.IntVar(&cfg.GRPCServerMaxRecvMsgSize, "server.grpc-max-recv-msg-size-bytes", 4*1024*1024, "Limit on the size of a gRPC message this server can receive (bytes).")
 	f.IntVar(&cfg.GRPCServerMaxSendMsgSize, "server.grpc-max-send-msg-size-bytes", 4*1024*1024, "Limit on the size of a gRPC message this server can send (bytes).")
 	f.UintVar(&cfg.GRPCServerMaxConcurrentStreams, "server.grpc-max-concurrent-streams", 100, "Limit on the number of concurrent streams for gRPC calls per client connection (0 = unlimited)")
@@ -263,6 +266,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		return nil, err
 	}
 	httpListener = middleware.CountingListener(httpListener, metrics.TCPConnections.WithLabelValues("http"))
+	if cfg.HTTPLogClosedConnectionsWithoutResponse {
+		httpListener = middleware.NewZeroResponseListener(httpListener, level.Warn(logger))
+	}
 
 	metrics.TCPConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
 	if cfg.HTTPConnLimit > 0 {

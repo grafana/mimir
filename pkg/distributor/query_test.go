@@ -62,12 +62,14 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 
 							// Prepare distributors.
 							ds, ingesters, reg := prepare(t, prepConfig{
-								numIngesters:             3,
-								happyIngesters:           3,
-								numDistributors:          1,
-								limits:                   limits,
-								preferStreamingChunks:    streamingEnabled,
-								minimizeIngesterRequests: minimizeIngesterRequests,
+								numIngesters:    3,
+								happyIngesters:  3,
+								numDistributors: 1,
+								limits:          limits,
+								configure: func(config *Config) {
+									config.PreferStreamingChunksFromIngesters = streamingEnabled
+									config.MinimizeIngesterRequests = minimizeIngesterRequests
+								},
 							})
 
 							// Push a number of series below the max chunks limit. Each series has 1 sample,
@@ -146,11 +148,13 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 			// Prepare distributors.
 			ds, ingesters, reg := prepare(t, prepConfig{
-				numIngesters:             3,
-				happyIngesters:           3,
-				numDistributors:          1,
-				limits:                   limits,
-				minimizeIngesterRequests: minimizeIngesterRequests,
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          limits,
+				configure: func(config *Config) {
+					config.MinimizeIngesterRequests = minimizeIngesterRequests
+				},
 			})
 
 			// Push a number of series below the max series limit.

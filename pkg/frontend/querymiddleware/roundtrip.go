@@ -28,12 +28,13 @@ import (
 )
 
 const (
-	day                              = 24 * time.Hour
-	queryRangePathSuffix             = "/api/v1/query_range"
-	instantQueryPathSuffix           = "/api/v1/query"
-	cardinalityLabelNamesPathSuffix  = "/api/v1/cardinality/label_names"
-	cardinalityLabelValuesPathSuffix = "/api/v1/cardinality/label_values"
-	labelNamesPathSuffix             = "/api/v1/labels"
+	day                               = 24 * time.Hour
+	queryRangePathSuffix              = "/api/v1/query_range"
+	instantQueryPathSuffix            = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix   = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix  = "/api/v1/cardinality/label_values"
+	cardinalityActiveSeriesPathSuffix = "/api/v1/cardinality/active_series"
+	labelNamesPathSuffix              = "/api/v1/labels"
 
 	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
@@ -203,7 +204,7 @@ func newQueryTripperware(
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newQueryStatsMiddleware(registerer),
+		newQueryStatsMiddleware(registerer, engine),
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 	}
@@ -374,7 +375,9 @@ func isInstantQuery(path string) bool {
 }
 
 func isCardinalityQuery(path string) bool {
-	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) || strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
+	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) ||
+		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix) ||
+		strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
 }
 
 func isLabelsQuery(path string) bool {
