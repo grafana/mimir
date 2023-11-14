@@ -790,13 +790,15 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 			// Start all expected distributors
 			distributors, _, regs := prepare(t, prepConfig{
-				numIngesters:             3,
-				happyIngesters:           3,
-				numDistributors:          1,
-				limits:                   limits,
-				maxInflightRequests:      testData.inflightLimit,
-				maxInflightRequestsBytes: testData.inflightBytesLimit,
-				maxIngestionRate:         testData.ingestionRateLimit,
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          limits,
+				configure: func(config *Config) {
+					config.DefaultLimits.MaxIngestionRate = testData.ingestionRateLimit
+					config.DefaultLimits.MaxInflightPushRequests = testData.inflightLimit
+					config.DefaultLimits.MaxInflightPushRequestsBytes = testData.inflightBytesLimit
+				},
 			})
 
 			d := distributors[0]
@@ -1257,11 +1259,13 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:            2,
-				happyIngesters:          2,
-				numDistributors:         1,
-				shuffleShardSize:        0,
-				skipLabelNameValidation: tc.skipLabelNameValidationCfg,
+				numIngesters:     2,
+				happyIngesters:   2,
+				numDistributors:  1,
+				shuffleShardSize: 0,
+				configure: func(config *Config) {
+					config.SkipLabelNameValidation = tc.skipLabelNameValidationCfg
+				},
 			})
 			req := mockWriteRequest(tc.inputLabels, 42, 100000)
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
@@ -2994,10 +2998,12 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
 	ds, _, _ := prepare(t, prepConfig{
-		numDistributors:     1,
-		limits:              &limits,
-		enableTracker:       true,
-		maxInflightRequests: 1,
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+		configure: func(config *Config) {
+			config.DefaultLimits.MaxInflightPushRequests = 1
+		},
 	})
 	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
 
@@ -3193,23 +3199,20 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 }
 
 type prepConfig struct {
-	numIngesters, happyIngesters       int
-	queryDelay                         time.Duration
-	pushDelay                          time.Duration
-	shuffleShardSize                   int
-	limits                             *validation.Limits
-	numDistributors                    int
-	skipLabelNameValidation            bool
-	maxInflightRequests                int
-	maxInflightRequestsBytes           int
-	maxIngestionRate                   float64
+	numIngesters, happyIngesters int
+	queryDelay                   time.Duration
+	pushDelay                    time.Duration
+	shuffleShardSize             int
+	limits                       *validation.Limits
+	numDistributors              int
+
 	replicationFactor                  int
 	enableTracker                      bool
 	ingestersSeriesCountTotal          uint64
 	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
-	preferStreamingChunks              bool
-	minimizeIngesterRequests           bool
+
+	configure func(*Config)
 
 	timeOut bool
 }
@@ -3298,13 +3301,15 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		return ingestersByAddr[inst.Addr], nil
 	})
 
+	if cfg.limits == nil {
+		cfg.limits = &validation.Limits{}
+		flagext.DefaultValues(cfg.limits)
+	}
+	cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
+
 	distributors := make([]*Distributor, 0, cfg.numDistributors)
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
 	for i := 0; i < cfg.numDistributors; i++ {
-		if cfg.limits == nil {
-			cfg.limits = &validation.Limits{}
-			flagext.DefaultValues(cfg.limits)
-		}
 
 		var distributorCfg Config
 		var clientConfig client.Config
@@ -3315,16 +3320,12 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
-		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
-		distributorCfg.DefaultLimits.MaxInflightPushRequests = cfg.maxInflightRequests
-		distributorCfg.DefaultLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
-		distributorCfg.DefaultLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
-		distributorCfg.PreferStreamingChunksFromIngesters = cfg.preferStreamingChunks
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
-		distributorCfg.MinimizeIngesterRequests = cfg.minimizeIngesterRequests
 
-		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
+		if cfg.configure != nil {
+			cfg.configure(&distributorCfg)
+		}
 
 		if cfg.enableTracker {
 			codec := GetReplicaDescCodec()
@@ -4930,12 +4931,14 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	// waiting for all ingesters to return. So we want the instance limits to accurately reflect that.
 
 	distributors, ingesters, _ := prepare(t, prepConfig{
-		numIngesters:        3,
-		happyIngesters:      3,
-		numDistributors:     1,
-		maxInflightRequests: 1,
-		replicationFactor:   3,
-		enableTracker:       false,
+		numIngesters:      3,
+		happyIngesters:    3,
+		numDistributors:   1,
+		replicationFactor: 3,
+		enableTracker:     false,
+		configure: func(config *Config) {
+			config.DefaultLimits.MaxInflightPushRequests = 1
+		},
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
@@ -5021,88 +5024,6 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	assert.Equal(t, series, totalSeries)
 	assert.Equal(t, series, totalMetadata) // each series has unique metric name, and each metric name gets metadata
-}
-
-func TestHandleIngesterPushError(t *testing.T) {
-	testErrorMsg := "this is a test error message"
-	outputErrorMsgPrefix := "failed pushing to ingester"
-
-	// Ensure that no error gets translated into no error.
-	t.Run("no error gives no error", func(t *testing.T) {
-		err := handleIngesterPushError(nil)
-		require.NoError(t, err)
-	})
-
-	// Ensure that the errors created by httpgrpc get translated into
-	// other errors created by httpgrpc with the same code, and with
-	// a more explanatory message.
-	// TODO: this is needed for backwards compatibility and will be removed
-	// in mimir 2.12.0.
-	httpgrpcTests := map[string]struct {
-		ingesterPushError error
-		expectedStatus    int32
-		expectedMessage   string
-	}{
-		"a 4xx HTTP gRPC error gives a 4xx HTTP gRPC error": {
-			ingesterPushError: httpgrpc.Errorf(http.StatusBadRequest, testErrorMsg),
-			expectedStatus:    http.StatusBadRequest,
-			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
-		},
-		"a 5xx HTTP gRPC error gives a 5xx HTTP gRPC error": {
-			ingesterPushError: httpgrpc.Errorf(http.StatusServiceUnavailable, testErrorMsg),
-			expectedStatus:    http.StatusServiceUnavailable,
-			expectedMessage:   fmt.Sprintf("%s: %s", outputErrorMsgPrefix, testErrorMsg),
-		},
-	}
-	for testName, testData := range httpgrpcTests {
-		t.Run(testName, func(t *testing.T) {
-			err := handleIngesterPushError(testData.ingesterPushError)
-			res, ok := httpgrpc.HTTPResponseFromError(err)
-			require.True(t, ok)
-			require.NotNil(t, res)
-			require.Equal(t, testData.expectedStatus, res.GetCode())
-			require.Equal(t, testData.expectedMessage, string(res.Body))
-		})
-	}
-
-	// Ensure that the errors created by gogo/status package get translated
-	// into ingesterPushError messages.
-	statusTests := map[string]struct {
-		ingesterPushError         error
-		expectedIngesterPushError ingesterPushError
-	}{
-		"a gRPC error with details gives an ingesterPushError with the same details": {
-			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
-		},
-		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
-			// This is how context.DeadlineExceeded error is translated into a gRPC error.
-			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
-		},
-		"an Unavailable gRPC error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
-			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
-		},
-		"an Internal gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
-			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
-		},
-		"an Unknown gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
-			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
-		},
-	}
-	for testName, testData := range statusTests {
-		t.Run(testName, func(t *testing.T) {
-			err := handleIngesterPushError(testData.ingesterPushError)
-			ingesterPushErr, ok := err.(ingesterPushError)
-			require.True(t, ok)
-
-			require.Equal(t, testData.expectedIngesterPushError.Error(), ingesterPushErr.Error())
-			require.Equal(t, testData.expectedIngesterPushError.errorCause(), ingesterPushErr.errorCause())
-		})
-	}
 }
 
 func TestHandlePushError(t *testing.T) {
@@ -5369,12 +5290,14 @@ func TestStartFinishRequest(t *testing.T) {
 
 			// Prepare distributor and wrap the mock push function with its middlewares.
 			ds, _, _ := prepare(t, prepConfig{
-				numDistributors:          1,
-				limits:                   &limits,
-				enableTracker:            true,
-				maxInflightRequests:      inflightLimit,
-				maxInflightRequestsBytes: inflightBytesLimit,
-				maxIngestionRate:         ingestionRateLimit,
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   true,
+				configure: func(config *Config) {
+					config.DefaultLimits.MaxIngestionRate = ingestionRateLimit
+					config.DefaultLimits.MaxInflightPushRequests = inflightLimit
+					config.DefaultLimits.MaxInflightPushRequestsBytes = inflightBytesLimit
+				},
 			})
 			wrappedPush := ds[0].wrapPushWithMiddlewares(finishPush)
 
