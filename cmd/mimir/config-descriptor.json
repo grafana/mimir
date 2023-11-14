@@ -407,6 +407,16 @@
         },
         {
           "kind": "field",
+          "name": "report_grpc_codes_in_instrumentation_label_enabled",
+          "required": false,
+          "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.report-grpc-codes-in-instrumentation-label-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "graceful_shutdown_timeout",
           "required": false,
           "desc": "Timeout for graceful shutdowns",
@@ -458,6 +468,16 @@
           "fieldFlag": "server.http-idle-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "http_log_closed_connections_without_response_enabled",
+          "required": false,
+          "desc": "Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.http-log-closed-connections-without-response-enabled",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -1754,7 +1774,7 @@
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1779,7 +1799,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1798,7 +1818,7 @@
           "required": false,
           "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1812,7 +1832,7 @@
           "fieldDefaultValue": 3000000000,
           "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -2202,6 +2222,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "report_grpc_codes_in_instrumentation_label_enabled",
+          "required": false,
+          "desc": "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.client.report-grpc-codes-in-instrumentation-label-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -2956,17 +2987,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.error-sample-rate",
           "fieldType": "int",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "chunks_query_ignore_cancellation",
-          "required": false,
-          "desc": "Ignore cancellation when querying chunks.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.chunks-query-ignore-cancellation",
-          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -9663,6 +9683,17 @@
               "fieldDefaultValue": "",
               "fieldFlag": "store-gateway.sharding-ring.tokens-file-path",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "num_tokens",
+              "required": false,
+              "desc": "Number of tokens for each store-gateway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 512,
+              "fieldFlag": "store-gateway.sharding-ring.num-tokens",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",

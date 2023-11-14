@@ -1149,6 +1149,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -1183,7 +1184,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -6537,6 +6538,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -6571,7 +6573,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -11061,6 +11063,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -11095,7 +11098,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -11342,6 +11345,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -11376,7 +11380,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -13803,6 +13807,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "description": "### Consistency checks failed\nRate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.\n\n",
                       "fill": 1,
                       "id": 18,
                       "legend": {
@@ -20875,6 +20880,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -20909,7 +20915,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -21124,6 +21130,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -21158,7 +21165,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -21488,6 +21495,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -21522,7 +21530,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -21726,6 +21734,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -21760,7 +21769,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -21964,6 +21973,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -21998,7 +22008,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\",route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -22476,6 +22486,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -22510,7 +22521,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\", kv_name=~\"store-gateway\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\", kv_name=~\"store-gateway\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -26297,6 +26308,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -26331,7 +26343,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -26535,6 +26547,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -26569,7 +26582,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -26720,6 +26733,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -26754,7 +26768,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -29417,6 +29431,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -29451,7 +29466,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -29602,6 +29617,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -29636,7 +29652,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*|ruler-querier.*))\", operation=\"/cortex.Ingester/QueryStream\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -29787,6 +29803,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -29821,7 +29838,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", kv_name=~\"ruler\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -30151,6 +30168,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "description": "### Consistency checks failed\nRate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.\n\n",
                       "fill": 1,
                       "id": 15,
                       "legend": {
@@ -39532,6 +39550,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -39540,6 +39559,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
+                      "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to distributor.\nRejected requests are requests that distributor fails to handle because of distributor instance limits.\nWhen distributor is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen distributor is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                       "fill": 10,
                       "id": 7,
                       "legend": {
@@ -39566,7 +39586,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -39770,6 +39790,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -39778,7 +39799,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to ingester.\nRejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests and ingester-max-ingestion-rate).\nWhen ingester is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen ingester is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
+                      "description": "### Requests / sec\nThe rate of successful, failed and rejected requests to ingester.\nRejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests, ingester-max-inflight-push-requests-bytes, ingester-max-ingestion-rate).\nWhen ingester is configured to use \"early\" request rejection, then rejected requests are NOT included in other metrics.\nWhen ingester is not configured to use \"early\" request rejection, then rejected requests are also counted as \"errors\".\n\n",
                       "fill": 10,
                       "id": 10,
                       "legend": {
@@ -39805,7 +39826,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\",route=\"/cortex.Ingester/Push\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -40354,6 +40375,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -40388,7 +40410,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-hatracker\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -40539,6 +40561,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -40573,7 +40596,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-(lifecycler|ring)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", kv_name=~\"distributor-(lifecycler|ring)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",
@@ -40724,6 +40747,7 @@ data:
                          "3xx": "#6ED0E0",
                          "4xx": "#EF843C",
                          "5xx": "#E24D42",
+                         "OK": "#7EB26D",
                          "cancel": "#A9A9A9",
                          "error": "#E24D42",
                          "success": "#7EB26D"
@@ -40758,7 +40782,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", kv_name=~\"ingester-.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", kv_name=~\"ingester-.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
                             "format": "time_series",
                             "intervalFactor": 2,
                             "legendFormat": "{{status}}",

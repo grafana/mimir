@@ -264,3 +264,49 @@ func extractCountMethod(values url.Values) (countMethod CountMethod, err error) 
 		return "", fmt.Errorf("invalid 'count_method' param '%v'. valid options are: [%s]", countMethodParams[0], strings.Join([]string{string(ActiveMethod), string(InMemoryMethod)}, ","))
 	}
 }
+
+type ActiveSeriesRequest struct {
+	Matchers []*labels.Matcher
+}
+
+// DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.
+func DecodeActiveSeriesRequest(r *http.Request) (*ActiveSeriesRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeActiveSeriesRequestFromValues(r.Form)
+}
+
+// DecodeActiveSeriesRequestFromValues is like DecodeActiveSeriesRequest but takes an url.Values parameter.
+func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesRequest, error) {
+	var (
+		parsed = &ActiveSeriesRequest{}
+		err    error
+	)
+
+	if !values.Has("selector") {
+		return nil, fmt.Errorf("missing 'selector' parameter")
+	}
+
+	parsed.Matchers, err = extractSelector(values)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
+
+// String returns a string representation that uniquely identifies the request.
+func (r *ActiveSeriesRequest) String() string {
+	b := strings.Builder{}
+
+	for idx, matcher := range r.Matchers {
+		if idx > 0 {
+			b.WriteRune(stringValueSeparator)
+		}
+		b.WriteString(matcher.String())
+	}
+
+	return b.String()
+}

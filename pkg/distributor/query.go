@@ -312,7 +312,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}

@@ -7211,6 +7211,50 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Check that no active series are returned
+				matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "team", "a")}
+				series, err := listActiveSeries(context.Background(), ingester.getTSDB(userID), matchers)
+				require.NoError(t, err)
+				ts := buildSeriesSet(t, series)
+				assert.Empty(t, ts)
+			},
+		},
+		"active series for cardinality API": {
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				pushWithUser(t, ingester, labelsToPush, userID, req)
+				pushWithUser(t, ingester, labelsToPush, userID2, req)
+				pushWithUser(t, ingester, labelsToPushHist, userID, reqHist)
+				pushWithUser(t, ingester, labelsToPushHist, userID2, reqHist)
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(time.Now())
+
+				// Get a subset of series for team A.
+				matchers := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "team", "a"),
+					labels.MustNewMatcher(labels.MatchEqual, "bool", "true"),
+				}
+				series, err := listActiveSeries(context.Background(), ingester.getTSDB(userID), matchers)
+				require.NoError(t, err)
+
+				var labelSets []labels.Labels
+				labelSets = buildSeriesSet(t, series)
+				// Expect 2 series for team="a"
+				assert.Len(t, labelSets, 2)
+				for _, lbls := range labelSets {
+					assert.Equal(t, "a", lbls.Get("team"))
+				}
+
+				// Fast-forward to make series stale.
+				ingester.updateActiveSeries(time.Now().Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout))
+
+				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), matchers)
+				require.NoError(t, err)
+				labelSets = buildSeriesSet(t, series)
+
+				// No series should be active anymore.
+				assert.Empty(t, labelSets)
 			},
 		},
 	}
@@ -9122,4 +9166,14 @@ func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
 	errWithStatus, ok := err.(errorWithStatus)
 	require.True(t, ok)
 	require.True(t, errWithStatus.equals(expectedErr))
+}
+
+func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
+	var labelSets []labels.Labels
+	for series.Next() {
+		l := series.At()
+		require.NoError(t, series.Err())
+		labelSets = append(labelSets, l)
+	}
+	return labelSets
 }

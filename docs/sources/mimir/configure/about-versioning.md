@@ -110,13 +110,11 @@ The following features are currently experimental:
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
     - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
-- Ignoring chunks query cancellation
-  - `-ingester.chunks-query-ignore-cancellation`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`)
   - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
-  - Ingester query request minimisation (`-querier.minimize-ingester-requests`, `-querier.minimize-ingester-requests-hedging-delay`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
 - Query-frontend
@@ -152,6 +150,7 @@ The following features are currently experimental:
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
+- Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 
 ## Deprecated features
 

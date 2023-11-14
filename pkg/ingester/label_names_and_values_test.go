@@ -16,7 +16,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 
@@ -54,7 +56,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	require.NoError(t, labelNamesAndValues(mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream))
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -390,12 +392,13 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 }
 
 type mockIndex struct {
+	mock.Mock
 	tsdb.IndexReader
 	existingLabels map[string][]string
 	opDelay        time.Duration
 }
 
-func (i mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
+func (i *mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}
@@ -407,14 +410,19 @@ func (i mockIndex) LabelNames(context.Context, ...*labels.Matcher) ([]string, er
 	return l, nil
 }
 
-func (i mockIndex) LabelValues(_ context.Context, name string, _ ...*labels.Matcher) ([]string, error) {
+func (i *mockIndex) LabelValues(_ context.Context, name string, _ ...*labels.Matcher) ([]string, error) {
 	if i.opDelay > 0 {
 		time.Sleep(i.opDelay)
 	}
 	return i.existingLabels[name], nil
 }
 
-func (i mockIndex) Close() error { return nil }
+func (i *mockIndex) Close() error { return nil }
+
+func (i *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	args := i.Called(ref, builder, chks)
+	return args.Error(0)
+}
 
 type mockLabelNamesAndValuesServer struct {
 	client.Ingester_LabelNamesAndValuesServer

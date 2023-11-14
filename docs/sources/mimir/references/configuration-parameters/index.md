@@ -586,6 +586,11 @@ grpc_tls_config:
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
 
+# If set to true, gRPC statuses will be reported in instrumentation labels with
+# their string representations. Otherwise, they will be reported as "error".
+# CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
 [graceful_shutdown_timeout: <duration> | default = 30s]
@@ -606,6 +611,11 @@ grpc_tls_config:
 # (advanced) Idle timeout for HTTP server
 # CLI flag: -server.http-idle-timeout
 [http_server_idle_timeout: <duration> | default = 2m]
+
+# Log closed connections that did not receive any response, most likely because
+# client didn't send any request within timeout.
+# CLI flag: -server.http-log-closed-connections-without-response-enabled
+[http_log_closed_connections_without_response_enabled: <boolean> | default = false]
 
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
@@ -1129,10 +1139,6 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
 
-# (experimental) Ignore cancellation when querying chunks.
-# CLI flag: -ingester.chunks-query-ignore-cancellation
-[chunks_query_ignore_cancellation: <boolean> | default = false]
-
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
 [return_only_grpc_errors: <boolean> | default = false]
@@ -1245,7 +1251,7 @@ store_gateway_client:
 # with a stream of chunks if the target ingester supports this, and this
 # preference will be ignored by ingesters that do not support this.
 # CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = false]
+[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
 
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
@@ -1253,8 +1259,8 @@ store_gateway_client:
 # CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
 [prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
 
-# (experimental) Number of series to buffer per ingester when streaming chunks
-# from ingesters.
+# (advanced) Number of series to buffer per ingester when streaming chunks from
+# ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
@@ -1269,12 +1275,11 @@ store_gateway_client:
 # ingesters. Enabling this option reduces resource consumption for the happy
 # path at the cost of increased latency for the unhappy path.
 # CLI flag: -querier.minimize-ingester-requests
-[minimize_ingester_requests: <boolean> | default = false]
+[minimize_ingester_requests: <boolean> | default = true]
 
-# (experimental) Delay before initiating requests to further ingesters when
-# request minimization is enabled and the initially selected set of ingesters
-# have not all responded. Ignored if -querier.minimize-ingester-requests is not
-# enabled.
+# (advanced) Delay before initiating requests to further ingesters when request
+# minimization is enabled and the initially selected set of ingesters have not
+# all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
@@ -2269,6 +2274,12 @@ circuit_breaker:
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
+
+# (advanced) If set to true, gRPC status codes will be reported in "status_code"
+# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
+# they will be reported as "error"
+# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
 ```
 
 ### grpc_client
@@ -4090,6 +4101,10 @@ sharding_ring:
   # shutdown and restored at startup.
   # CLI flag: -store-gateway.sharding-ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
+
+  # (advanced) Number of tokens for each store-gateway.
+  # CLI flag: -store-gateway.sharding-ring.num-tokens
+  [num_tokens: <int> | default = 512]
 
   # True to enable zone-awareness and replicate blocks across different
   # availability zones. This option needs be set both on the store-gateway,
