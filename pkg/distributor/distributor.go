@@ -1305,7 +1305,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
-	err = ring.DoBatchWithClientError(ctx, ring.WriteNoExtend, subRing, keys,
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
 			var timeseriesCount, metadataCount int
 			for _, i := range indexes {
@@ -1333,8 +1333,10 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			}
 			return err
 		},
-		func() { pushReq.CleanUp(); cancel() },
-		isClientError,
+		ring.DoBatchOptions{
+			Cleanup:       func() { pushReq.CleanUp(); cancel() },
+			IsClientError: isClientError,
+		},
 	)
 
 	return err
