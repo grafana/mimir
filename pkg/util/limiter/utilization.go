@@ -5,8 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -31,222 +30,32 @@ const (
 )
 
 type utilizationScanner interface {
-	// Scan returns CPU time in seconds, memory RSS in bytes, and memory working set in bytes, or an error.
-	Scan() (float64, uint64, uint64, error)
+	// Scan returns CPU time in seconds and Go heap size in bytes, or an error.
+	Scan() (float64, uint64, error)
 }
 
-type procfsScanner struct {
+// combinedScanner scans /proc for CPU utilization and Go runtime for heap size.
+type combinedScanner struct {
 	proc procfs.Proc
 }
 
-func (s procfsScanner) Scan() (float64, uint64, uint64, error) {
+func (s combinedScanner) Scan() (float64, uint64, error) {
 	ps, err := s.proc.Stat()
 	if err != nil {
-		return 0, 0, 0, errors.Wrap(err, "failed to get process stats")
+		return 0, 0, errors.Wrap(err, "failed to get process stats")
 	}
 
-	// We lack a definition of working set via procfs
-	return ps.CPUTime(), uint64(ps.ResidentMemory()), 0, nil
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	return ps.CPUTime(), m.HeapInuse, nil
 }
 
-func newProcfsScanner() (procfsScanner, error) {
+func newCombinedScanner() (combinedScanner, error) {
 	p, err := procfs.Self()
-	return procfsScanner{
+	return combinedScanner{
 		proc: p,
 	}, err
-}
-
-const cgroupV1MemStatPath = "/sys/fs/cgroup/memory/memory.stat"
-
-type cgroupV1Scanner struct {
-	procfsScanner
-}
-
-func (s cgroupV1Scanner) Scan() (float64, uint64, uint64, error) {
-	const memUsagePath = "/sys/fs/cgroup/memory/memory.usage_in_bytes"
-	const memHierarchyPath = "/sys/fs/cgroup/memory/memory.use_hierarchy"
-
-	// For the time being, get CPU utilization from procfs since it's well tested
-	cpuUtil, _, _, err := s.procfsScanner.Scan()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	useHierarchy, err := readUint64FromFile(memHierarchyPath)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-	workingSet, err := readUint64FromFile(memUsagePath)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	memR, err := readFileNoStat(cgroupV1MemStatPath)
-	if err != nil {
-		return 0, 0, 0, errors.Wrapf(err, "failed opening %s", cgroupV1MemStatPath)
-	}
-	defer memR.Close()
-
-	var rss uint64
-	foundRSS := false
-	rssField := "rss"
-	if useHierarchy == 1 {
-		// Hierarchy is enabled for the cgroup
-		rssField = "total_rss"
-	}
-	for {
-		var name string
-		var val uint64
-		if _, err := fmt.Fscanf(memR, "%s %d\n", &name, &val); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return 0, 0, 0, errors.Wrapf(err, "failed scanning %s", cgroupV1MemStatPath)
-		}
-
-		switch name {
-		case "total_inactive_file:":
-			if workingSet < val {
-				workingSet = 0
-			} else {
-				workingSet -= val
-			}
-		case rssField:
-			rss = val
-			foundRSS = true
-		}
-	}
-	if !foundRSS {
-		return 0, 0, 0, fmt.Errorf("failed scanning %s", cgroupV1MemStatPath)
-	}
-
-	return cpuUtil, rss, workingSet, nil
-}
-
-func newCgroupV1Scanner() (cgroupV1Scanner, error) {
-	// Verify that cgroup v1 is available
-	r, err := readFileNoStat(cgroupV1MemStatPath)
-	if err != nil {
-		return cgroupV1Scanner{}, errors.Wrapf(err, "failed opening %s", cgroupV1MemStatPath)
-	}
-	r.Close()
-
-	procfsScanner, err := newProcfsScanner()
-	return cgroupV1Scanner{
-		procfsScanner: procfsScanner,
-	}, err
-}
-
-type cgroupV2Scanner struct {
-	procfsScanner
-}
-
-// This file is v2 only
-const cgroupV2MemUtilPath = "/sys/fs/cgroup/memory.current"
-
-func (s cgroupV2Scanner) Scan() (float64, uint64, uint64, error) {
-	// For the time being, get CPU utilization from procfs since it's well tested
-	cpuUtil, _, _, err := s.procfsScanner.Scan()
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	// For reference, see https://git.kernel.org/pub/scm/linux/kernel/git/tj/cgroup.git/tree/Documentation/admin-guide/cgroup-v2.rst
-	const memStatPath = "/sys/fs/cgroup/memory.stat"
-
-	workingSet, err := readUint64FromFile(cgroupV2MemUtilPath)
-	if err != nil {
-		return 0, 0, 0, err
-	}
-
-	memR, err := readFileNoStat(memStatPath)
-	if err != nil {
-		return 0, 0, 0, errors.Wrapf(err, "failed opening %s", memStatPath)
-	}
-	defer memR.Close()
-
-	var rss uint64
-	foundRSS := false
-	for {
-		var name string
-		var val uint64
-		if _, err := fmt.Fscanf(memR, "%s %d\n", &name, &val); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-
-			return 0, 0, 0, errors.Wrapf(err, "failed scanning %s", memStatPath)
-		}
-
-		switch name {
-		case "anon:":
-			rss = val
-			foundRSS = true
-		case "inactive_file":
-			if val > workingSet {
-				workingSet = 0
-			} else {
-				workingSet -= val
-			}
-		}
-	}
-	if !foundRSS {
-		return 0, 0, 0, fmt.Errorf("failed scanning %s", memStatPath)
-	}
-
-	return cpuUtil, rss, workingSet, nil
-}
-
-func newCgroupV2Scanner() (cgroupV2Scanner, error) {
-	r, err := readFileNoStat(cgroupV2MemUtilPath)
-	if err != nil {
-		return cgroupV2Scanner{}, errors.Wrapf(err, "failed opening %s", cgroupV2MemUtilPath)
-	}
-	r.Close()
-
-	procfsScanner, err := newProcfsScanner()
-	return cgroupV2Scanner{
-		procfsScanner: procfsScanner,
-	}, err
-}
-
-func readUint64FromFile(path string) (uint64, error) {
-	r, err := readFileNoStat(path)
-	if err != nil {
-		return 0, errors.Wrapf(err, "failed opening %s", path)
-	}
-	defer r.Close()
-
-	var val uint64
-	if _, err := fmt.Fscanf(r, "%d\n", &val); err != nil {
-		return 0, errors.Wrapf(err, "failed scanning %s", path)
-	}
-
-	return val, nil
-}
-
-// readFileNoStat returns an io.ReadCloser for fpath.
-//
-// We make sure to avoid calling os.Stat, since many files in /proc and /sys report incorrect file sizes (either 0 or 4096).
-// The reader is limited at 1024 kB.
-func readFileNoStat(fpath string) (io.ReadCloser, error) {
-	const maxBufferSize = 1024 * 1024
-
-	f, err := os.Open(fpath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, err
-		}
-		return nil, errors.Wrapf(err, "failed to open %q", fpath)
-	}
-
-	return readCloser{Reader: io.LimitReader(f, maxBufferSize), Closer: f}, nil
-}
-
-type readCloser struct {
-	io.Reader
-	io.Closer
 }
 
 // UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
@@ -267,12 +76,11 @@ type UtilizationBasedLimiter struct {
 	// The time of the first CPU update.
 	firstCPUUpdate time.Time
 	// The time of the last CPU update.
-	lastCPUUpdate        time.Time
-	cpuMovingAvg         *math.EwmaRate
-	limitingReason       atomic.String
-	currCPUUtil          atomic.Float64
-	currMemoryRSS        atomic.Uint64
-	currMemoryWorkingSet atomic.Uint64
+	lastCPUUpdate  time.Time
+	cpuMovingAvg   *math.EwmaRate
+	limitingReason atomic.String
+	currCPUUtil    atomic.Float64
+	currHeapSize   atomic.Uint64
 	// For logging of input to CPU load EWMA calculation, keep window of source samples
 	cpuSamples *cpuSampleBuffer
 }
@@ -308,19 +116,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 			Name: "utilization_limiter_current_memory_usage_bytes",
 			Help: "Current memory usage calculated by utilization based limiter.",
 		}, func() float64 {
-			return float64(max(l.currMemoryRSS.Load(), l.currMemoryWorkingSet.Load()))
-		})
-		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "utilization_limiter_current_memory_rss_bytes",
-			Help: "Current memory RSS calculated by utilization based limiter.",
-		}, func() float64 {
-			return float64(l.currMemoryRSS.Load())
-		})
-		promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "utilization_limiter_current_memory_working_set_bytes",
-			Help: "Current memory working set calculated by utilization based limiter.",
-		}, func() float64 {
-			return float64(l.currMemoryWorkingSet.Load())
+			return float64(l.currHeapSize.Load())
 		})
 	}
 
@@ -335,15 +131,7 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	var err error
-	l.utilizationScanner, err = newCgroupV2Scanner()
-	if err == nil {
-		return nil
-	}
-	l.utilizationScanner, err = newCgroupV1Scanner()
-	if err == nil {
-		return nil
-	}
-	l.utilizationScanner, err = newProcfsScanner()
+	l.utilizationScanner, err = newCombinedScanner()
 	return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting")
 }
 
@@ -355,7 +143,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
 func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
-	cpuTime, currRSS, currWorkingSet, err := l.utilizationScanner.Scan()
+	cpuTime, currHeapSize, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
@@ -366,8 +154,7 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	// Get wall time after CPU time, in case there's a delay before CPU time is returned,
 	// which would cause us to compute too high of a CPU load
 	now := nowFn()
-	l.currMemoryRSS.Store(currRSS)
-	l.currMemoryWorkingSet.Store(currWorkingSet)
+	l.currHeapSize.Store(currHeapSize)
 
 	// Add the instant CPU utilization to the moving average. The instant CPU
 	// utilization can only be computed starting from the 2nd tick.
@@ -408,13 +195,8 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		l.currCPUUtil.Store(currCPUUtil)
 	}
 
-	// If running in a container, we should be able to measure both memory RSS and working set (otherwise just RSS).
-	// Under Kubernetes, the OOM killer should kill a container if either RSS or working set reaches the memory limit,
-	// so take the max.
-	currMemoryUtil = max(currRSS, currWorkingSet)
-
 	var reason string
-	if l.memoryLimit > 0 && currMemoryUtil >= l.memoryLimit {
+	if l.memoryLimit > 0 && currHeapSize >= l.memoryLimit {
 		reason = "memory"
 	} else if l.cpuLimit > 0 && currCPUUtil >= l.cpuLimit {
 		reason = "cpu"
@@ -434,11 +216,11 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
 		}
 		level.Info(logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currHeapSize),
 			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currHeapSize),
 			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	}
 
