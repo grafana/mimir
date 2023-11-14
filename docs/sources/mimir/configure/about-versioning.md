@@ -130,7 +130,9 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
-- `/api/v1/user_limits` API endpoint
+- API endpoints:
+  - `/api/v1/user_limits`
+  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
