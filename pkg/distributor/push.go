@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
@@ -21,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/log"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -29,7 +30,7 @@ import (
 type PushFunc func(ctx context.Context, req *Request) error
 
 // parserFunc defines how to read the body the request from an HTTP request
-type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
+type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error)
 
 // Wrap a slice in a struct so we can store a pointer in sync.Pool
 type bufHolder struct {
@@ -52,8 +53,9 @@ func Handler(
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
 	push PushFunc,
+	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, _ log.Logger) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
@@ -80,22 +82,23 @@ func handler(
 	allowSkipLabelNameValidation bool,
 	limits *validation.Overrides,
 	push PushFunc,
+	logger log.Logger,
 	parser parserFunc,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		logger := log.WithContext(ctx, log.Logger)
+		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
 				ctx = util.AddSourceIPsToOutgoingContext(ctx, source)
-				logger = log.WithSourceIPs(source, logger)
+				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			bufHolder := bufferPool.Get().(*bufHolder)
 			var req mimirpb.PreallocWriteRequest
-			buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req)
+			buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req, logger)
 			if err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
