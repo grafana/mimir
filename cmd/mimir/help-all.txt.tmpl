@@ -1760,7 +1760,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.minimize-ingester-requests-hedging-delay duration
     	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks-from-store-gateways
-    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
+    	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this. (default true)
   -querier.promql-engine string
     	[experimental] PromQL engine to use, either 'standard' or 'streaming' (default "standard")
   -querier.promql-experimental-functions-enabled
@@ -1838,7 +1838,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
-    	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
+    	Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.active-series-write-timeout duration
