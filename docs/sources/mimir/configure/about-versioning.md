@@ -64,7 +64,7 @@ The following features are currently experimental:
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
   - Set Retry-After header in recoverable error responses
     - `-distributor.retry-after-header.enabled`
-    - `-distributor.retry-after-header.base`
+    - `-distributor.retry-after-header.base-seconds`
     - `-distributor.retry-after-header.max-allowed-attempts`
 - Hash ring
   - Disabling ring heartbeat timeouts

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
@@ -847,11 +848,6 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 }
 
 func TestHandler_HandleRetryAfterHeader(t *testing.T) {
-	const (
-		defaultRetryBase      = 3 * time.Second
-		defaultMaxAllowedAtts = 2
-	)
-
 	testCases := []struct {
 		name          string
 		responseCode  int
@@ -865,29 +861,29 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			name:         "Request canceled, HTTP 499, no Retry-After",
 			responseCode: http.StatusRequestTimeout,
 			retryAttempt: "1",
-			retryCfg:     RetryConfig{Enabled: true, Base: defaultRetryBase, MaxAllowedAttempts: defaultMaxAllowedAtts},
+			retryCfg:     RetryConfig{Enabled: true, Base: 3, MaxBackoffExponent: 2},
 			expectRetry:  false,
 		},
 		{
 			name:         "Generic error, HTTP 500, no Retry-After",
 			responseCode: http.StatusInternalServerError,
-			retryCfg:     RetryConfig{Enabled: false, Base: defaultRetryBase, MaxAllowedAttempts: defaultMaxAllowedAtts},
+			retryCfg:     RetryConfig{Enabled: false, Base: 3, MaxBackoffExponent: 4},
 			expectRetry:  false,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with no Retry-Attempt set, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
-			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			retryCfg:      RetryConfig{Enabled: true, Base: 5, MaxBackoffExponent: 2},
+			minRetryAfter: 5,
+			maxRetryAfter: 10,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is not an integer, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "not-an-integer",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
+			retryCfg:      RetryConfig{Enabled: true, Base: 3, MaxBackoffExponent: 2},
 			minRetryAfter: 3,
 			maxRetryAfter: 6,
 		},
@@ -896,43 +892,43 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "3.50",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
-			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			retryCfg:      RetryConfig{Enabled: true, Base: 2, MaxBackoffExponent: 5},
+			minRetryAfter: 2,
+			maxRetryAfter: 4,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt a list of integers, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "[1, 2, 3]",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
-			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			retryCfg:      RetryConfig{Enabled: true, Base: 1, MaxBackoffExponent: 5},
+			minRetryAfter: 1,
+			maxRetryAfter: 2,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
 			responseCode:  http.StatusInternalServerError,
 			retryAttempt:  "-1",
 			expectRetry:   true,
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
-			minRetryAfter: 3,
-			maxRetryAfter: 6,
+			retryCfg:      RetryConfig{Enabled: true, Base: 4, MaxBackoffExponent: 3},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with valid Retry-Attempts set to 2",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "2",
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
-			minRetryAfter: 6,
-			maxRetryAfter: 12,
+			retryCfg:      RetryConfig{Enabled: true, Base: 2, MaxBackoffExponent: 5},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
 		},
 		{
 			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxAllowedAttempts",
 			responseCode:  http.StatusInternalServerError,
 			expectRetry:   true,
 			retryAttempt:  "8",
-			retryCfg:      RetryConfig{Base: defaultRetryBase, Enabled: true, MaxAllowedAttempts: defaultMaxAllowedAtts},
+			retryCfg:      RetryConfig{Enabled: true, Base: 3, MaxBackoffExponent: 2},
 			minRetryAfter: 6,
 			maxRetryAfter: 12,
 		},
@@ -1133,6 +1129,57 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			msg := tc.err.Error()
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 			assert.Equal(t, tc.expectedErrorMsg, msg)
+		})
+	}
+}
+
+func TestRetryConfig_Validate(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		cfg         RetryConfig
+		expectedErr error
+	}{
+		"should pass with default config": {
+			cfg: func() RetryConfig {
+				cfg := RetryConfig{}
+				flagext.DefaultValues(&cfg)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if retry base is less than 1 second": {
+			cfg: RetryConfig{
+				Base:               0,
+				MaxBackoffExponent: 5,
+			},
+			expectedErr: errRetryBaseLessThanOneSecond,
+		},
+		"should fail if retry base is negative": {
+			cfg: RetryConfig{
+				Base:               -1,
+				MaxBackoffExponent: 5,
+			},
+			expectedErr: errRetryBaseLessThanOneSecond,
+		},
+		"should fail if max allowed attempts is 0": {
+			cfg: RetryConfig{
+				Base:               3,
+				MaxBackoffExponent: 0,
+			},
+			expectedErr: errNonPositiveMaxAllowedAttempts,
+		},
+		"should fail if max allowed attempts is negative": {
+			cfg: RetryConfig{
+				Base:               3,
+				MaxBackoffExponent: -1,
+			},
+			expectedErr: errNonPositiveMaxAllowedAttempts,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
 		})
 	}
 }

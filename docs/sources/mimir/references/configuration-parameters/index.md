@@ -734,18 +734,18 @@ retry_after_header:
   # CLI flag: -distributor.retry-after-header.enabled
   [enabled: <boolean> | default = false]
 
-  # (experimental) Base duration for calculating the Retry-After header in
-  # responses to 429/5xx errors.
-  # CLI flag: -distributor.retry-after-header.base
-  [base: <duration> | default = 3s]
+  # (experimental) Base duration in seconds for calculating the Retry-After
+  # header in responses to 429/5xx errors.
+  # CLI flag: -distributor.retry-after-header.base-seconds
+  [base_seconds: <int> | default = 3]
 
-  # (experimental) Sets the upper limit on the number of retry attempts
-  # considered for calculation. It caps the calculated attempts without
+  # (experimental) Sets the upper limit on the number of Retry-Attempt
+  # considered for calculation. It caps the Retry-Attempt header without
   # rejecting additional attempts, controlling exponential backoff calculations.
-  # For example, when the base is set to 3 and max-allowed-attempts to 5, the
-  # maximum retry duration would be 3 * 2^5 = 96 seconds.
-  # CLI flag: -distributor.retry-after-header.max-allowed-attempts
-  [max_allowed_attempts: <int> | default = 5]
+  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
+  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
+  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
+  [max_backoff_exponent: <int> | default = 5]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from

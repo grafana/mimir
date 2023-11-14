@@ -746,23 +746,23 @@
             },
             {
               "kind": "field",
-              "name": "base",
+              "name": "base_seconds",
               "required": false,
-              "desc": "Base duration for calculating the Retry-After header in responses to 429/5xx errors.",
+              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
               "fieldValue": null,
-              "fieldDefaultValue": 3000000000,
-              "fieldFlag": "distributor.retry-after-header.base",
-              "fieldType": "duration",
+              "fieldDefaultValue": 3,
+              "fieldFlag": "distributor.retry-after-header.base-seconds",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
               "kind": "field",
-              "name": "max_allowed_attempts",
+              "name": "max_backoff_exponent",
               "required": false,
-              "desc": "Sets the upper limit on the number of retry attempts considered for calculation. It caps the calculated attempts without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base is set to 3 and max-allowed-attempts to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
               "fieldValue": null,
               "fieldDefaultValue": 5,
-              "fieldFlag": "distributor.retry-after-header.max-allowed-attempts",
+              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
               "fieldType": "int",
               "fieldCategory": "experimental"
             }

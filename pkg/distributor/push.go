@@ -8,6 +8,7 @@ package distributor
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -39,14 +40,41 @@ type bufHolder struct {
 	buf []byte
 }
 
-var bufferPool = sync.Pool{
-	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
-}
+var (
+	bufferPool = sync.Pool{
+		New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
+	}
+	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
+	errNonPositiveMaxAllowedAttempts = errors.New("maxAllowedAttempts should be a positive value")
+)
 
 const (
 	SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
 	statusClientClosedRequest     = 499
 )
+
+type RetryConfig struct {
+	Enabled            bool `yaml:"enabled" category:"experimental"`
+	Base               int  `yaml:"base_seconds" category:"experimental"`
+	MaxBackoffExponent int  `yaml:"max_backoff_exponent" category:"experimental"`
+}
+
+// RegisterFlags adds the flags required to config this to the given FlagSet.
+func (cfg *RetryConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, "distributor.retry-after-header.enabled", false, "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.")
+	f.IntVar(&cfg.Base, "distributor.retry-after-header.base-seconds", 3, "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.")
+	f.IntVar(&cfg.MaxBackoffExponent, "distributor.retry-after-header.max-backoff-exponent", 5, "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.")
+}
+
+func (cfg *RetryConfig) Validate() error {
+	if cfg.Base < 1 {
+		return errRetryBaseLessThanOneSecond
+	}
+	if cfg.MaxBackoffExponent < 1 {
+		return errNonPositiveMaxAllowedAttempts
+	}
+	return nil
+}
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -152,21 +180,20 @@ func handler(
 	})
 }
 
-func calculateRetryAfter(retryAttemptHeader string, retryCfg RetryConfig) string {
+func calculateRetryAfter(retryAttemptHeader string, baseSeconds int, maxBackoffExponent int) string {
 	retryAttempt, err := strconv.Atoi(retryAttemptHeader)
 	// If retry-attempt is not valid, set it to default 1
 	if err != nil || retryAttempt < 1 {
 		retryAttempt = 1
 	}
-	if retryAttempt > retryCfg.MaxAllowedAttempts {
-		retryAttempt = retryCfg.MaxAllowedAttempts
+	if retryAttempt > maxBackoffExponent {
+		retryAttempt = maxBackoffExponent
 	}
+	var minSeconds, maxSeconds int64
+	minSeconds = int64(baseSeconds) << (retryAttempt - 1)
+	maxSeconds = int64(minSeconds) << 1
 
-	var minRetry, maxRetry int64
-	minRetry = int64(retryCfg.Base.Seconds()) << (retryAttempt - 1)
-	maxRetry = minRetry << 1
-
-	delaySeconds := minRetry + rand.Int63n(maxRetry-minRetry)
+	delaySeconds := minSeconds + rand.Int63n(maxSeconds-minSeconds)
 
 	return strconv.FormatInt(delaySeconds, 10)
 }
@@ -221,15 +248,13 @@ func addHeaders(w http.ResponseWriter, err error, r *http.Request, responseCode 
 	}
 
 	if responseCode == http.StatusTooManyRequests || responseCode/100 == 5 {
-		var retrySeconds string
-		var retryAttempt string
 		if retryCfg.Enabled {
-			retryAttempt = r.Header.Get("Retry-Attempt")
-			retrySeconds = calculateRetryAfter(retryAttempt, retryCfg)
+			retryAttemptHeader := r.Header.Get("Retry-Attempt")
+			retrySeconds := calculateRetryAfter(retryAttemptHeader, retryCfg.Base, retryCfg.MaxBackoffExponent)
 			w.Header().Set("Retry-After", retrySeconds)
 			if sp := opentracing.SpanFromContext(r.Context()); sp != nil {
 				sp.SetTag("retry-after", retrySeconds)
-				sp.SetTag("retry-attempt", retryAttempt)
+				sp.SetTag("retry-attempt", retryAttemptHeader)
 			}
 		}
 	}
