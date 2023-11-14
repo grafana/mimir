@@ -4524,6 +4524,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
 
+# (experimental) The minimum file size in bytes used for multipart uploads. If
+# 0, the value is optimally computed for each object.
+# CLI flag: -<prefix>.s3.part-size
+[part_size: <int> | default = 0]
+
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   # CLI flag: -<prefix>.s3.sse.type

@@ -5651,6 +5651,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.s3.part-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -11526,6 +11537,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler-storage.s3.part-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -13543,6 +13565,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -15807,6 +15840,17 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
                   "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "part_size",
+                  "required": false,
+                  "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "common.storage.s3.part-size",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 },
                 {
