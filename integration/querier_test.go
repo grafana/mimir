@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
-	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -881,8 +880,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	// missing from the storage.
 	_, err = c.Query(series1Name, series1Timestamp)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "500")
-	assert.Contains(t, err.(*promv1.Error).Detail, "failed to fetch some blocks")
+	assert.Contains(t, err.Error(), "get range reader: The specified key does not exist")
 
 	// We expect this to still be queryable as it was not in the cleared storage
 	_, err = c.Query(series2Name, series2Timestamp)
