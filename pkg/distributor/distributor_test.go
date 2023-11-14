@@ -134,6 +134,7 @@ func TestDistributor_Push(t *testing.T) {
 		expectedErrorDetails *mimirpb.WriteErrorDetails
 		expectedMetrics      string
 		timeOut              bool
+		configure            func(*Config)
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -291,6 +292,22 @@ func TestDistributor_Push(t *testing.T) {
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.009
 			`,
+		},
+		"A push to 3 happy ingesters using batch worker gouroutines should succeed": {
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
+			expectedMetrics: `
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.004
+			`,
+			configure: func(cfg *Config) {
+				// 2 workers, so 1 push would need to spawn a new goroutine.
+				cfg.IngesterPushWorkerGoroutines = 2
+			},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

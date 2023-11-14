@@ -901,6 +901,13 @@ instance_limits:
 # (experimental) Use experimental method of limiting push requests.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+
+# (experimental) Number of pre-allocated worker goroutines used to forward push
+# requests to the ingesters. If 0, no workers will be used and a new goroutine
+# will be spawned for each ingester push request. If not enough workers
+# available, new goroutine will be spawned.
+# CLI flag: -distributor.ingester-push-worker-goroutines
+[ingester_push_worker_goroutines: <int> | default = 0]
 ```
 
 ### ingester

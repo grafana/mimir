@@ -1123,6 +1123,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. (default 5s)
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
+  -distributor.ingester-push-worker-goroutines int
+    	[experimental] Number of pre-allocated worker goroutines used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned.
   -distributor.ingestion-burst-size int
     	Per-tenant allowed ingestion burst size (in number of samples). (default 200000)
   -distributor.ingestion-rate-limit float
