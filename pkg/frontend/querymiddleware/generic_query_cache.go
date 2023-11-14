@@ -123,7 +123,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 			return res, err
 		}
 
-		c.storeCachedResponse(cachedRes, hashedCacheKey, cacheTTL)
+		c.storeCachedResponse(ctx, cachedRes, hashedCacheKey, cacheTTL)
 	}
 
 	return res, nil
@@ -136,6 +136,7 @@ func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, h
 		// Not found in the cache.
 		return nil
 	}
+	c.recordCacheHitQueryDetails(ctx, cacheHits)
 
 	// Decode the cached entry.
 	cachedRes := &CachedHTTPResponse{}
@@ -153,15 +154,36 @@ func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, h
 	return DecodeCachedHTTPResponse(cachedRes)
 }
 
-func (c *genericQueryCache) storeCachedResponse(cachedRes *CachedHTTPResponse, hashedCacheKey string, cacheTTL time.Duration) {
+func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *CachedHTTPResponse, hashedCacheKey string, cacheTTL time.Duration) {
 	// Encode the cached entry.
 	encoded, err := cachedRes.Marshal()
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to encode cached query response", "err", err)
 		return
 	}
+	toStore := map[string][]byte{hashedCacheKey: encoded}
+	c.cache.StoreAsync(toStore, cacheTTL)
+	c.recordCacheStoreQueryDetails(ctx, toStore)
+}
 
-	c.cache.StoreAsync(map[string][]byte{hashedCacheKey: encoded}, cacheTTL)
+func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits map[string][]byte) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil {
+		return
+	}
+	for _, val := range hits {
+		details.ResultsCacheHitBytes += len(val)
+	}
+}
+
+func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, toStore map[string][]byte) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil {
+		return
+	}
+	for _, val := range toStore {
+		details.ResultsCacheMissBytes += len(val)
+	}
 }
 
 func generateGenericQueryRequestCacheKey(tenantIDs []string, req *genericQueryRequest) (cacheKey, hashedCacheKey string) {

@@ -54,15 +54,19 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	}
 
 	resp := &client.ActiveSeriesResponse{}
+	currentSize := 0
 	for series.Next() {
 		m := &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(series.At())}
-		if resp.Size()+m.Size() > activeSeriesMaxSizeBytes {
+		mSize := m.Size()
+		if currentSize+mSize > activeSeriesMaxSizeBytes {
 			if err := client.SendActiveSeriesResponse(stream, resp); err != nil {
 				return fmt.Errorf("error sending response: %w", err)
 			}
 			resp = &client.ActiveSeriesResponse{}
+			currentSize = 0
 		}
 		resp.Metric = append(resp.Metric, m)
+		currentSize += mSize
 	}
 	if err := series.Err(); err != nil {
 		return fmt.Errorf("error iterating over series: %w", err)

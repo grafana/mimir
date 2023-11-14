@@ -389,6 +389,11 @@
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,
+      // The write path tends to have a stable amount of traffic (it's not usually bursty) so it's
+      // fine to use a longer scale down period. This avoids scaling down too quickly because
+      // distributors were briefly using less CPU (like when circuit breaking or load shedding)
+      // and causing outages when full traffic returns.
+      scale_down_period=600,
     ),
 
   distributor_deployment: overrideSuperIfExists(

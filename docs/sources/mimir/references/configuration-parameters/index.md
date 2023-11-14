@@ -1251,7 +1251,7 @@ store_gateway_client:
 # with a stream of chunks if the target ingester supports this, and this
 # preference will be ignored by ingesters that do not support this.
 # CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = false]
+[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
 
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
@@ -1259,8 +1259,8 @@ store_gateway_client:
 # CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
 [prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
 
-# (experimental) Number of series to buffer per ingester when streaming chunks
-# from ingesters.
+# (advanced) Number of series to buffer per ingester when streaming chunks from
+# ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
@@ -1275,12 +1275,11 @@ store_gateway_client:
 # ingesters. Enabling this option reduces resource consumption for the happy
 # path at the cost of increased latency for the unhappy path.
 # CLI flag: -querier.minimize-ingester-requests
-[minimize_ingester_requests: <boolean> | default = false]
+[minimize_ingester_requests: <boolean> | default = true]
 
-# (experimental) Delay before initiating requests to further ingesters when
-# request minimization is enabled and the initially selected set of ingesters
-# have not all responded. Ignored if -querier.minimize-ingester-requests is not
-# enabled.
+# (advanced) Delay before initiating requests to further ingesters when request
+# minimization is enabled and the initially selected set of ingesters have not
+# all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
@@ -2920,7 +2919,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) If enabled, rate limit errors will be reported to the client
 # with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used.
+# 429 (Too Many Requests) is used. Enabling
+# -distributor.retry-after-header.enabled before utilizing this option is
+# strongly recommended as it helps prevent premature request retries by the
+# client.
 # CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
 [service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
 
@@ -4103,6 +4105,10 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
+  # (advanced) Number of tokens for each store-gateway.
+  # CLI flag: -store-gateway.sharding-ring.num-tokens
+  [num_tokens: <int> | default = 512]
+
   # True to enable zone-awareness and replicate blocks across different
   # availability zones. This option needs be set both on the store-gateway,
   # querier and ruler when running in microservices mode.
@@ -4517,6 +4523,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # files.
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
+
+# (experimental) The minimum file size in bytes used for multipart uploads. If
+# 0, the value is optimally computed for each object.
+# CLI flag: -<prefix>.s3.part-size
+[part_size: <int> | default = 0]
 
 # (experimental) If enabled, a Content-MD5 header is sent with S3 Put Object
 # requests. Consumes more resources to compute the MD5, but may improve
