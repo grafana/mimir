@@ -967,6 +967,12 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusTooManyRequests,
 			expectedErrorMsg:   ingestionRateLimitedErr.Error(),
 		},
+		"an ingestionRateLimitedError with serviceOverloadErrorEnabled gets translated into an HTTP 529": {
+			err:                         ingestionRateLimitedErr,
+			serviceOverloadErrorEnabled: true,
+			expectedHTTPStatus:          StatusServiceOverloaded,
+			expectedErrorMsg:            ingestionRateLimitedErr.Error(),
+		},
 		"a DoNotLogError of an ingestionRateLimitedError gets translated into an HTTP 429": {
 			err:                middleware.DoNotLogError{Err: ingestionRateLimitedErr},
 			expectedHTTPStatus: http.StatusTooManyRequests,
