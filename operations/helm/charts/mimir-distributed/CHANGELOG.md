@@ -35,6 +35,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
 
+## 5.1.3
+
+* [BUGFIX] Updated Mimir image to 2.10.4 and GEM images to v2.10.4. #6654
+
 ## 5.1.2
 
 * [BUGFIX] Update Mimir image to 2.10.3 and GEM image to v2.10.3. #6427

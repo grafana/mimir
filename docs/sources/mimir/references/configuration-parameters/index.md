@@ -2919,7 +2919,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) If enabled, rate limit errors will be reported to the client
 # with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used.
+# 429 (Too Many Requests) is used. Enabling
+# -distributor.retry-after-header.enabled before utilizing this option is
+# strongly recommended as it helps prevent premature request retries by the
+# client.
 # CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
 [service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
 
@@ -4520,6 +4523,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # files.
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
+
+# (experimental) The minimum file size in bytes used for multipart uploads. If
+# 0, the value is optimally computed for each object.
+# CLI flag: -<prefix>.s3.part-size
+[part_size: <int> | default = 0]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

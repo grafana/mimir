@@ -3218,7 +3218,7 @@
           "kind": "field",
           "name": "service_overload_status_code_on_rate_limit_enabled",
           "required": false,
-          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
@@ -5648,6 +5648,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -11526,6 +11537,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler-storage.s3.part-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -13543,6 +13565,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -15807,6 +15840,17 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
                   "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "part_size",
+                  "required": false,
+                  "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "common.storage.s3.part-size",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 },
                 {
