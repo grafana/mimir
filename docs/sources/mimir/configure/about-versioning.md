@@ -62,6 +62,10 @@ The following features are currently experimental:
     - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
+  - Set Retry-After header in recoverable error responses
+    - `-distributor.retry-after-header.enabled`
+    - `-distributor.retry-after-header.base-seconds`
+    - `-distributor.retry-after-header.max-backoff-exponent`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`

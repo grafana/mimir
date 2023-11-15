@@ -739,6 +739,49 @@
         },
         {
           "kind": "block",
+          "name": "retry_after_header",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.retry-after-header.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "base_seconds",
+              "required": false,
+              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "distributor.retry-after-header.base-seconds",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_backoff_exponent",
+              "required": false,
+              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "ha_tracker",
           "required": false,
           "desc": "",
