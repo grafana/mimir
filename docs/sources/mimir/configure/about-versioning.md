@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
-menuTitle: About versioning
+menuTitle: Versioning
 title: About Grafana Mimir versioning
 weight: 50
 ---
