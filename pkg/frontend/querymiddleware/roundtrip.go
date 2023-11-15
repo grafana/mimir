@@ -202,14 +202,11 @@ func newQueryTripperware(
 	engineOpts.ActiveQueryTracker = nil
 	engine := promql.NewEngine(engineOpts)
 
-	runningMiddleware := newFrontendRunningMiddleware(frontendReadinessAwaiter, cfg.NotRunningTimeout)
-
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 
 	queryRangeMiddleware := []Middleware{
-		runningMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		newQueryStatsMiddleware(registerer),
 		newLimitsMiddleware(limits, log),
@@ -257,7 +254,6 @@ func newQueryTripperware(
 	}
 
 	queryInstantMiddleware := []Middleware{
-		runningMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
@@ -308,18 +304,20 @@ func newQueryTripperware(
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
-		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		nextWithReadinessCheck := newFrontendRunningRoundTripper(next, frontendReadinessAwaiter, cfg.NotRunningTimeout)
+
+		queryrange := newLimitedParallelismRoundTripper(nextWithReadinessCheck, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
-			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
+			newLimitedParallelismRoundTripper(nextWithReadinessCheck, codec, limits, queryInstantMiddleware...),
 		)
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
-		cardinality := next
-		labels := next
+		cardinality := nextWithReadinessCheck
+		labels := nextWithReadinessCheck
 
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, limits, next, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

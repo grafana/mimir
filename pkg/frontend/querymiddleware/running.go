@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,30 +17,26 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func newFrontendRunningMiddleware(readinessAwaiter ReadinessAwaiter, timeout time.Duration) Middleware {
-	return MiddlewareFunc(func(next Handler) Handler {
-		return frontendRunningMiddleware{
-			readinessAwaiter: readinessAwaiter,
-			timeout:          timeout,
-
-			next: next,
-		}
-	})
+func newFrontendRunningRoundTripper(next http.RoundTripper, readinessAwaiter ReadinessAwaiter, timeout time.Duration) http.RoundTripper {
+	return &frontendRunningRoundTripper{
+		readinessAwaiter: readinessAwaiter,
+		timeout:          timeout,
+		next:             next,
+	}
 }
 
-type frontendRunningMiddleware struct {
+type frontendRunningRoundTripper struct {
 	readinessAwaiter ReadinessAwaiter
 	timeout          time.Duration
-
-	next Handler
+	next             http.RoundTripper
 }
 
-func (f frontendRunningMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	if err := f.readinessAwaiter.Await(ctx, f.timeout); err != nil {
+func (f *frontendRunningRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if err := f.readinessAwaiter.Await(request.Context(), f.timeout); err != nil {
 		return nil, apierror.New(apierror.TypeUnavailable, err.Error())
 	}
 
-	return f.next.Do(ctx, r)
+	return f.next.RoundTrip(request)
 }
 
 type ReadinessAwaiter interface {
