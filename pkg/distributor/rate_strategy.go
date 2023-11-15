@@ -43,9 +43,10 @@ func (s *globalIngestionStrategyWithBurstFactor) Limit(tenantID string) float64 
 }
 
 func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
-	if s.limits.IngestionBurstFactor(tenantID) > 0 {
+	burstFactor := s.limits.IngestionBurstFactor(tenantID)
+	if burstFactor > 0 {
 		limit := s.Limit(tenantID)
-		burstByFactor := float64(s.limits.IngestionBurstFactor(tenantID)) * limit
+		burstByFactor := float64(burstFactor) * limit
 		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
 		if burstByFactor >= math.MaxInt {
 			return math.MaxInt
@@ -116,29 +117,6 @@ func (s *requestRateStrategy) Burst(tenantID string) int {
 
 type ingestionRateStrategy struct {
 	limits *validation.Overrides
-}
-
-func newIngestionRateStrategy(limits *validation.Overrides) limiter.RateLimiterStrategy {
-	return &ingestionRateStrategy{
-		limits: limits,
-	}
-}
-
-func (s *ingestionRateStrategy) Limit(tenantID string) float64 {
-	return s.limits.IngestionRate(tenantID)
-}
-
-func (s *ingestionRateStrategy) Burst(tenantID string) int {
-	if s.limits.IngestionBurstFactor(tenantID) > 0 {
-		burstByFactor := float64(s.limits.IngestionBurstFactor(tenantID)) * s.limits.IngestionRate(tenantID)
-		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
-		if burstByFactor >= math.MaxInt {
-			return math.MaxInt
-		} else {
-			return int(burstByFactor)
-		}
-	}
-	return s.limits.IngestionBurstSize(tenantID)
 }
 
 type infiniteStrategy struct{}
