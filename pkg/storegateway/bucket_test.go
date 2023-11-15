@@ -1037,6 +1037,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
+	headOpts.IsolationDisabled = true
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
 	defer func() {
