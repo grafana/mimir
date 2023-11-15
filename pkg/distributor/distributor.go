@@ -154,7 +154,7 @@ type Distributor struct {
 
 	// ingesterDoBatchPushGo is the Go function passed to ring.DoBatchWithOptions.
 	// It can be nil, in which case a simple `go f()` will be used.
-	// See Config.IngesterPushWorkerGoroutines on how to configure this.
+	// See Config.ReusableIngesterPushWorkers on how to configure this.
 	ingesterDoBatchPushGo func(func())
 }
 
@@ -196,7 +196,7 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
-	IngesterPushWorkerGoroutines                int  `yaml:"ingester_push_worker_goroutines" category:"experimental"`
+	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -212,7 +212,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
-	f.IntVar(&cfg.IngesterPushWorkerGoroutines, "distributor.ingester-push-worker-goroutines", 0, "Number of pre-allocated worker goroutines used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned.")
+	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 0, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -437,8 +437,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 
-	if cfg.IngesterPushWorkerGoroutines > 0 {
-		wp := concurrency.NewReusableGoroutinesPool(cfg.IngesterPushWorkerGoroutines)
+	if cfg.ReusableIngesterPushWorkers > 0 {
+		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
 		d.ingesterDoBatchPushGo = wp.Go
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(nil, nil, func(_ error) error { wp.Close(); return nil }))

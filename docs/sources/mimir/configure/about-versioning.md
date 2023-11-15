@@ -79,8 +79,8 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
-  - Ingester push worker goroutines
-    - `-distributor.ingester-push-worker-goroutines`
+  - Reusable ingester push worker
+    - `-distributor.reusable-ingester-push-workers`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)

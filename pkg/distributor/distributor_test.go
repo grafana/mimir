@@ -306,7 +306,7 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 			configure: func(cfg *Config) {
 				// 2 workers, so 1 push would need to spawn a new goroutine.
-				cfg.IngesterPushWorkerGoroutines = 2
+				cfg.ReusableIngesterPushWorkers = 2
 			},
 		},
 	} {
