@@ -1081,8 +1081,8 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
-		}
-		assert.NoError(t, app.Commit())
+			}
+			assert.NoError(t, app.Commit())
 			app = appenderFactory()
 		}
 	}
