@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -43,7 +44,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API))
+	handler := Handler(100000, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -308,7 +309,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				validation.NewMockTenantLimits(tenantLimits),
 			)
 			require.NoError(t, err)
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, tt.verifyFunc)
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, tt.verifyFunc, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -377,7 +378,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
 		return nil
-	})
+	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -424,7 +425,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
 		return nil
-	})
+	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 
@@ -450,7 +451,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		assert.False(t, request.SkipLabelNameValidation)
 		pushReq.CleanUp()
 		return nil
-	})
+	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -471,7 +472,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, false, true, nil, RetryConfig{}, nil, readBodyPushFunc(t))
+	handler := OTLPHandler(140, nil, false, true, nil, RetryConfig{}, nil, readBodyPushFunc(t), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -483,7 +484,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE))
+	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -495,7 +496,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
-	})
+	}, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 499, resp.Code)
 }
@@ -601,7 +602,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler)
+			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -758,7 +759,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, false, nil, RetryConfig{}, pushFunc)
+	handler := Handler(100000, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -806,7 +807,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 	for _, tc := range parserTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
+			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest, log.Logger) ([]byte, error) {
 				return nil, tc.err
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
@@ -814,7 +815,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return err
 			}
 
-			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, parserFunc)
+			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
@@ -873,7 +874,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
+			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest, log.Logger) ([]byte, error) {
 				return nil, nil
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
@@ -883,7 +884,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return tc.err
 			}
-			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, parserFunc)
+			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
 

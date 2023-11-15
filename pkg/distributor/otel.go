@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	kitlog "github.com/go-kit/log"
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -27,7 +27,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -49,13 +48,12 @@ func OTLPHandler(
 	retryCfg RetryConfig,
 	reg prometheus.Registerer,
 	push PushFunc,
+	logger log.Logger,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, _ []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, _ []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
-
-		logger := log.WithContext(ctx, log.Logger)
 
 		contentType := r.Header.Get("Content-Type")
 		switch contentType {
@@ -115,19 +113,19 @@ func OTLPHandler(
 			return body, err
 		}
 
-		log, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
-		defer log.Span.Finish()
+		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
+		defer spanLogger.Span.Finish()
 
-		log.SetTag("content_type", contentType)
-		log.SetTag("content_encoding", contentEncoding)
-		log.SetTag("content_length", r.ContentLength)
+		spanLogger.SetTag("content_type", contentType)
+		spanLogger.SetTag("content_encoding", contentEncoding)
+		spanLogger.SetTag("content_length", r.ContentLength)
 
 		otlpReq, err := decoderFunc(body)
 		if err != nil {
 			return body, err
 		}
 
-		level.Debug(log).Log("msg", "decoding complete, starting conversion")
+		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
 		metrics, err := otelMetricsToTimeseries(ctx, limits, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
@@ -145,7 +143,7 @@ func OTLPHandler(
 			exemplarCount += len(m.Exemplars)
 		}
 
-		level.Debug(log).Log(
+		level.Debug(spanLogger).Log(
 			"msg", "OTLP to Prometheus conversion complete",
 			"metric_count", metricCount,
 			"sample_count", sampleCount,
@@ -226,7 +224,7 @@ func otelMetricsToMetadata(ctx context.Context, limits *validation.Overrides, md
 	return metadata, nil
 }
 
-func otelMetricsToTimeseries(ctx context.Context, limits *validation.Overrides, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, limits *validation.Overrides, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
