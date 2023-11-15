@@ -441,7 +441,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
 		d.ingesterDoBatchPushWorkers = wp.Go
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
-		subservices = append(subservices, services.NewBasicService(nil, nil, func(_ error) error { wp.Close(); return nil }))
+		subservices = append(subservices, services.NewBasicService(
+			nil,
+			func(ctx context.Context) error { <-ctx.Done(); return nil },
+			func(_ error) error { wp.Close(); return nil },
+		))
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
@@ -1351,6 +1355,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ring.DoBatchOptions{
 			Cleanup:       func() { pushReq.CleanUp(); cancel() },
 			IsClientError: isClientError,
+			Go:            d.ingesterDoBatchPushWorkers,
 		},
 	)
 
