@@ -1424,20 +1424,22 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 		}
 		for j, actualSeries := range actualSet.series {
 			expectedSeries := expectedSet.series[j]
-			assert.Truef(t, labels.Equal(actualSeries.lset, expectedSeries.lset), "[%d, %d]: expected labels %s got %s", i, j, expectedSeries.lset, actualSeries.lset)
+			assert.True(t, labels.Equal(actualSeries.lset, expectedSeries.lset), "[%d, %d]: expected labels %s got %s", i, j, expectedSeries.lset, actualSeries.lset)
 			promChunks := storage.NewListChunkSeriesIterator(filterPromChunksByTime(queryPromSeriesChunkMetas(t, actualSeries.lset, promBlock), minT, maxT)...)
 			prevChunkRef, prevChunkLen := chunks.ChunkRef(0), uint64(0)
 
 			for k, actualChunk := range actualSeries.refs {
-				require.Truef(t, promChunks.Next(), "out of prometheus chunks; left %d chunks: %v", len(actualSeries.refs)-k, actualSeries.refs[k:])
+				if !promChunks.Next() {
+					require.Truef(t, false, "out of prometheus chunks; left %d chunks: %v", len(actualSeries.refs)-k, actualSeries.refs[k:])
+				}
 				promChunk := promChunks.At()
-				assert.Equalf(t, blockID, actualChunk.blockID, "blockID [%d, %d, %d]", i, j, k)
-				assert.Equalf(t, promChunk.Ref, actualChunk.ref(), "ref [%d, %d, %d]", i, j, k)
-				assert.Equalf(t, promChunk.MinTime, actualChunk.minTime, "minT [%d, %d, %d]", i, j, k)
-				assert.Equalf(t, promChunk.MaxTime, actualChunk.maxTime, "maxT [%d, %d, %d]", i, j, k)
-				assert.LessOrEqualf(t, uint64(prevChunkRef)+prevChunkLen, uint64(promChunk.Ref),
+				assertEqualf(t, blockID, actualChunk.blockID, "blockID [%d, %d, %d]", i, j, k)
+				assertEqualf(t, promChunk.Ref, actualChunk.ref(), "ref [%d, %d, %d]", i, j, k)
+				assertEqualf(t, promChunk.MinTime, actualChunk.minTime, "minT [%d, %d, %d]", i, j, k)
+				assertEqualf(t, promChunk.MaxTime, actualChunk.maxTime, "maxT [%d, %d, %d]", i, j, k)
+				assert.True(t, uint64(prevChunkRef)+prevChunkLen <= uint64(promChunk.Ref),
 					"estimated length shouldn't extend into the next chunk [%d, %d, %d]", i, j, k)
-				assert.LessOrEqualf(t, actualChunk.length, uint32(tsdb.EstimatedMaxChunkSize),
+				assert.True(t, actualChunk.length <= uint32(tsdb.EstimatedMaxChunkSize),
 					"chunks can be larger than 16KB, but the estimted length should be capped to 16KB to limit the impact of bugs in estimations [%d, %d, %d]", i, j, k)
 
 				prevChunkRef, prevChunkLen = promChunk.Ref, uint64(actualChunk.length)
@@ -1447,6 +1449,13 @@ func assertSeriesChunkRefsSetsEqual(t testing.TB, blockID ulid.ULID, blockDir st
 				assert.False(t, promChunks.Next())
 			}
 		}
+	}
+}
+
+func assertEqualf[T comparable](t testing.TB, a, b T, msg string, args ...any) {
+	if a != b {
+		t.Helper()
+		assert.Equalf(t, a, b, msg, args...)
 	}
 }
 
