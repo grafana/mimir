@@ -1660,28 +1660,6 @@
       "blockEntries": [
         {
           "kind": "field",
-          "name": "iterators",
-          "required": false,
-          "desc": "Use iterators to execute query, as opposed to fully materialising the series in memory.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.iterators",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
-          "name": "batch_iterators",
-          "required": false,
-          "desc": "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "querier.batch-iterators",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "query_store_after",
           "required": false,
           "desc": "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.",

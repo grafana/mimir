@@ -1168,17 +1168,6 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (deprecated) Use iterators to execute query, as opposed to fully materialising
-# the series in memory.
-# CLI flag: -querier.iterators
-[iterators: <boolean> | default = false]
-
-# (deprecated) Use batch iterators to execute query, as opposed to fully
-# materialising the series in memory.  Takes precedent over the
-# -querier.iterators flag.
-# CLI flag: -querier.batch-iterators
-[batch_iterators: <boolean> | default = true]
-
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be

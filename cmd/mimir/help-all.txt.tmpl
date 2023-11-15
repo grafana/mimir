@@ -1611,8 +1611,6 @@ Usage of ./cmd/mimir/mimir:
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -print.config
     	Print the config and exit.
-  -querier.batch-iterators
-    	[deprecated] Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag. (default true)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.default-evaluation-interval duration
@@ -1667,8 +1665,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
-  -querier.iterators
-    	[deprecated] Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
