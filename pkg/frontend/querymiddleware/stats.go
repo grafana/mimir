@@ -117,6 +117,9 @@ type QueryDetails struct {
 	// MinT and MaxT may be zero-valued if the query doesn't process samples.
 	MinT, MaxT time.Time
 	Step       time.Duration
+
+	ResultsCacheMissBytes int
+	ResultsCacheHitBytes  int
 }
 
 type contextKey int

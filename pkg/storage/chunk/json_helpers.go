@@ -15,7 +15,6 @@ import (
 
 func init() {
 	jsoniter.RegisterTypeDecoderFunc("labels.Labels", decodeLabels)
-	jsoniter.RegisterTypeEncoderFunc("labels.Labels", encodeLabels, labelsIsEmpty)
 	jsoniter.RegisterTypeDecoderFunc("model.Time", decodeModelTime)
 	jsoniter.RegisterTypeEncoderFunc("model.Time", encodeModelTime, modelTimeIsEmpty)
 }
@@ -33,28 +32,6 @@ func decodeLabels(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	// output in any order so we have to sort on read in
 	builder.Sort()
 	*labelsPtr = builder.Labels()
-}
-
-// Override Prometheus' labels.Labels encoder which goes via a map
-func encodeLabels(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	labelsPtr := (*labels.Labels)(ptr)
-	stream.WriteObjectStart()
-	i := 0
-	labelsPtr.Range(func(v labels.Label) {
-		if i != 0 {
-			stream.WriteMore()
-		}
-		i++
-		stream.WriteString(v.Name)
-		stream.WriteRaw(`:`)
-		stream.WriteString(v.Value)
-	})
-	stream.WriteObjectEnd()
-}
-
-func labelsIsEmpty(ptr unsafe.Pointer) bool {
-	labelsPtr := (*labels.Labels)(ptr)
-	return labelsPtr.IsEmpty()
 }
 
 // Decode via jsoniter's float64 routine is faster than getting the string data and decoding as two integers

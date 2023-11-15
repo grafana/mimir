@@ -14,11 +14,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
@@ -42,7 +44,7 @@ import (
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, false, nil, verifyWritePushFunc(t, mimirpb.API), log.NewNopLogger())
+	handler := Handler(100000, nil, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -266,7 +268,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				req.Header.Set("Content-Encoding", tt.encoding)
 			}
 
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, nil, nil, tt.verifyFunc, log.NewNopLogger())
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, nil, RetryConfig{}, nil, tt.verifyFunc, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -321,7 +323,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -361,7 +363,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
@@ -387,7 +389,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, true, nil, nil, func(ctx context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
@@ -416,7 +418,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, false, true, nil, nil, readBodyPushFunc(t), log.NewNopLogger())
+	handler := OTLPHandler(140, nil, false, true, nil, RetryConfig{}, nil, readBodyPushFunc(t), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -428,7 +430,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, nil, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
+	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -437,7 +439,7 @@ func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, false, nil, func(_ context.Context, req *Request) error {
+	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
 	}, log.NewNopLogger())
@@ -546,7 +548,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
-			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, nil, tc.verifyReqHandler, log.NewNopLogger())
+			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, nil, RetryConfig{}, tc.verifyReqHandler, log.NewNopLogger())
 			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
@@ -703,7 +705,7 @@ func BenchmarkPushHandler(b *testing.B) {
 		pushReq.CleanUp()
 		return nil
 	}
-	handler := Handler(100000, nil, false, nil, pushFunc, log.NewNopLogger())
+	handler := Handler(100000, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger())
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
@@ -759,7 +761,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				return err
 			}
 
-			h := handler(10, nil, false, nil, pushFunc, log.NewNopLogger(), parserFunc)
+			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
@@ -828,9 +830,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				}
 				return tc.err
 			}
-
-			h := handler(10, nil, false, nil, pushFunc, log.NewNopLogger(), parserFunc)
-
+			h := handler(10, nil, false, nil, RetryConfig{}, pushFunc, log.NewNopLogger(), parserFunc)
 			recorder := httptest.NewRecorder()
 			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
 
@@ -843,6 +843,127 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 				require.Equal(t, "true", header)
 			} else {
 				require.Equal(t, "", header)
+			}
+		})
+	}
+}
+
+func TestHandler_HandleRetryAfterHeader(t *testing.T) {
+	testCases := []struct {
+		name          string
+		responseCode  int
+		retryAttempt  string
+		retryCfg      RetryConfig
+		expectRetry   bool
+		minRetryAfter int
+		maxRetryAfter int
+	}{
+		{
+			name:         "Request canceled, HTTP 499, no Retry-After",
+			responseCode: http.StatusRequestTimeout,
+			retryAttempt: "1",
+			retryCfg:     RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			expectRetry:  false,
+		},
+		{
+			name:         "Generic error, HTTP 500, no Retry-After",
+			responseCode: http.StatusInternalServerError,
+			retryCfg:     RetryConfig{Enabled: false, BaseSeconds: 3, MaxBackoffExponent: 4},
+			expectRetry:  false,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with no Retry-Attempt set, default Retry-Attempt to 1",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 5, MaxBackoffExponent: 2},
+			minRetryAfter: 5,
+			maxRetryAfter: 10,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is not an integer, default Retry-Attempt to 1",
+			responseCode:  http.StatusInternalServerError,
+			retryAttempt:  "not-an-integer",
+			expectRetry:   true,
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			minRetryAfter: 3,
+			maxRetryAfter: 6,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is float, default Retry-Attempt to 1",
+			responseCode:  http.StatusInternalServerError,
+			retryAttempt:  "3.50",
+			expectRetry:   true,
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
+			minRetryAfter: 2,
+			maxRetryAfter: 4,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt a list of integers, default Retry-Attempt to 1",
+			responseCode:  http.StatusInternalServerError,
+			retryAttempt:  "[1, 2, 3]",
+			expectRetry:   true,
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 1, MaxBackoffExponent: 5},
+			minRetryAfter: 1,
+			maxRetryAfter: 2,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempt is negative, default Retry-Attempt to 1",
+			responseCode:  http.StatusInternalServerError,
+			retryAttempt:  "-1",
+			expectRetry:   true,
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 4, MaxBackoffExponent: 3},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with valid Retry-Attempts set to 2",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "2",
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
+			minRetryAfter: 4,
+			maxRetryAfter: 8,
+		},
+		{
+			name:          "Generic error, HTTP 429, Retry-After with valid Retry-Attempts set to 3",
+			responseCode:  StatusServiceOverloaded,
+			expectRetry:   true,
+			retryAttempt:  "3",
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 2, MaxBackoffExponent: 5},
+			minRetryAfter: 8,
+			maxRetryAfter: 16,
+		},
+		{
+			name:          "Generic error, HTTP 500, Retry-After with Retry-Attempts set higher than MaxAllowedAttempts",
+			responseCode:  http.StatusInternalServerError,
+			expectRetry:   true,
+			retryAttempt:  "8",
+			retryCfg:      RetryConfig{Enabled: true, BaseSeconds: 3, MaxBackoffExponent: 2},
+			minRetryAfter: 6,
+			maxRetryAfter: 12,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}})
+
+			if tc.retryAttempt != "" {
+				req.Header.Add("Retry-Attempt", tc.retryAttempt)
+			}
+
+			addHeaders(recorder, nil, req, tc.responseCode, tc.retryCfg)
+
+			retryAfter := recorder.Header().Get("Retry-After")
+			if !tc.expectRetry {
+				assert.Empty(t, retryAfter)
+			} else {
+				assert.NotEmpty(t, retryAfter)
+				retryAfterInt, err := strconv.Atoi(retryAfter)
+				assert.NoError(t, err)
+				assert.GreaterOrEqual(t, retryAfterInt, tc.minRetryAfter)
+				assert.LessOrEqual(t, retryAfterInt, tc.maxRetryAfter)
 			}
 		})
 	}
@@ -1024,6 +1145,57 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			msg := tc.err.Error()
 			assert.Equal(t, tc.expectedHTTPStatus, status)
 			assert.Equal(t, tc.expectedErrorMsg, msg)
+		})
+	}
+}
+
+func TestRetryConfig_Validate(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		cfg         RetryConfig
+		expectedErr error
+	}{
+		"should pass with default config": {
+			cfg: func() RetryConfig {
+				cfg := RetryConfig{}
+				flagext.DefaultValues(&cfg)
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if retry base is less than 1 second": {
+			cfg: RetryConfig{
+				BaseSeconds:        0,
+				MaxBackoffExponent: 5,
+			},
+			expectedErr: errRetryBaseLessThanOneSecond,
+		},
+		"should fail if retry base is negative": {
+			cfg: RetryConfig{
+				BaseSeconds:        -1,
+				MaxBackoffExponent: 5,
+			},
+			expectedErr: errRetryBaseLessThanOneSecond,
+		},
+		"should fail if max allowed attempts is 0": {
+			cfg: RetryConfig{
+				BaseSeconds:        3,
+				MaxBackoffExponent: 0,
+			},
+			expectedErr: errNonPositiveMaxBackoffExponent,
+		},
+		"should fail if max allowed attempts is negative": {
+			cfg: RetryConfig{
+				BaseSeconds:        3,
+				MaxBackoffExponent: -1,
+			},
+			expectedErr: errNonPositiveMaxBackoffExponent,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expectedErr, testData.cfg.Validate())
 		})
 	}
 }

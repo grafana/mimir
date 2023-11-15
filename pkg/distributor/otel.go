@@ -45,13 +45,14 @@ func OTLPHandler(
 	allowSkipLabelNameValidation bool,
 	enableOtelMetadataStorage bool,
 	limits *validation.Overrides,
+	retryCfg RetryConfig,
 	reg prometheus.Registerer,
 	push PushFunc,
 	logger log.Logger,
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
 		contentType := r.Header.Get("Content-Type")
