@@ -65,7 +65,7 @@ The following features are currently experimental:
   - Set Retry-After header in recoverable error responses
     - `-distributor.retry-after-header.enabled`
     - `-distributor.retry-after-header.base-seconds`
-    - `-distributor.retry-after-header.max-allowed-attempts`
+    - `-distributor.retry-after-header.max-backoff-exponent`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
