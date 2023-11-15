@@ -440,7 +440,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngesterPushWorkerGoroutines > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.IngesterPushWorkerGoroutines)
 		d.ingesterDoBatchPushGo = wp.Go
-		// Close the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
+		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(nil, nil, func(_ error) error { wp.Close(); return nil }))
 	}
 
