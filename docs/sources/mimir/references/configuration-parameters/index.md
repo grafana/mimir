@@ -3570,19 +3570,6 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
 
-  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
-  # allocations. The pool is shared across all tenants. 0 to disable the limit.
-  # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
-  [max_chunk_pool_bytes: <int> | default = 2147483648]
-
-  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
-  [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
-
-  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
-  [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
-
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.

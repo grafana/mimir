@@ -303,10 +303,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time). (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
-  -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes int
-    	[deprecated] Size - in bytes - of the largest chunks pool bucket. (default 50000000)
-  -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
-    	[deprecated] Size - in bytes - of the smallest chunks pool bucket. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
@@ -527,8 +523,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header. (default true)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
-  -blocks-storage.bucket-store.max-chunk-pool-bytes uint
-    	[deprecated] Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
   -blocks-storage.bucket-store.meta-sync-concurrency int

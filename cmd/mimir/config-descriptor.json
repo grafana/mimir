@@ -8120,39 +8120,6 @@
             },
             {
               "kind": "field",
-              "name": "max_chunk_pool_bytes",
-              "required": false,
-              "desc": "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.",
-              "fieldValue": null,
-              "fieldDefaultValue": 2147483648,
-              "fieldFlag": "blocks-storage.bucket-store.max-chunk-pool-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "chunk_pool_min_bucket_size_bytes",
-              "required": false,
-              "desc": "Size - in bytes - of the smallest chunks pool bucket.",
-              "fieldValue": null,
-              "fieldDefaultValue": 16000,
-              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "chunk_pool_max_bucket_size_bytes",
-              "required": false,
-              "desc": "Size - in bytes - of the largest chunks pool bucket.",
-              "fieldValue": null,
-              "fieldDefaultValue": 50000000,
-              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",

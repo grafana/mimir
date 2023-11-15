@@ -28,6 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Remove deprecated configuration parameter `blocks_storage.bucket_store.max_chunk_pool_bytes`. #6673
 * [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500 for ingester and to 100 for all components. #5666
 * [CHANGE] Changed default `clusterDomain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.9.2`. #6022 #6110 #6558
