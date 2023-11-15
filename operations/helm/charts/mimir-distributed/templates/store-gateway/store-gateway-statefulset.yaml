@@ -15,6 +15,11 @@ metadata:
 spec:
   podManagementPolicy: {{ .Values.store_gateway.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.store_gateway.persistentVolume.enableStatefulSetAutoDeletePVC)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.store_gateway.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.store_gateway.persistentVolume.whenScaled }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}
@@ -73,7 +78,7 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
-      nodeSelector:
+      nodeSelector:store-gateway
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}

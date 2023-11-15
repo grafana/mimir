@@ -15,7 +15,7 @@ metadata:
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
-  {{- if and (semverCompare ">= 1.27.x" (include "mimir.kubeVersion" .)) (.Values.ingester.persistentVolume.enableStatefulSetAutoDeletePVC)  }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.ingester.persistentVolume.enableStatefulSetAutoDeletePVC)  }}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.ingester.persistentVolume.whenScaled }}

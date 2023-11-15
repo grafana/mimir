@@ -9,6 +9,11 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.compactor.podManagementPolicy }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.compactor.persistentVolume.enableStatefulSetAutoDeletePVC)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.compactor.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.compactor.persistentVolume.whenScaled }}
+  {{- end }}
   replicas: {{ .Values.compactor.replicas }}
   selector:
     matchLabels:
