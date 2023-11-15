@@ -472,6 +472,14 @@
 * [BUGFIX] Store-gateway: panics when decoding LabelValues responses that contain more than 655360 values. These responses are no longer cached. #5021
 * [BUGFIX] Querier: don't leak memory when processing query requests from query-frontends (ie. when the query-scheduler is disabled). #5199
 
+### Mimirtool
+
+* [ENHANCEMENT] `analyze dashboard` and `analyze grafana` command have dashboard uid filtering added, also queries array added to dashboard report. #4790
+
+### Mimirtool
+
+* [ENHANCEMENT] Generic panel type support in `mimirtool analyze dashboard` + support for queries with variables. #4726
+
 ### Documentation
 
 * [ENHANCEMENT] Improve `MimirIngesterReachingTenantsLimit` runbook. #4744 #4752

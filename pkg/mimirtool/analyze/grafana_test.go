@@ -26,7 +26,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo": {}}, metrics)
@@ -45,7 +45,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_query_result_total": {}}, metrics)
@@ -64,7 +64,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_label_values_total": {}}, metrics)
@@ -83,7 +83,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -101,7 +101,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -123,7 +123,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -142,7 +142,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -162,7 +162,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, "")
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})

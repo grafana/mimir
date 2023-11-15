@@ -22,10 +22,15 @@ import (
 )
 
 var (
-	lvRegexp        = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
-	lvNoQueryRegexp = regexp.MustCompile(`(?s)label_values\((.+)\)`)
-	qrRegexp        = regexp.MustCompile(`(?s)query_result\((.+)\)`)
-	validMetricName = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	lvRegexp         = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
+	lvNoQueryRegexp  = regexp.MustCompile(`(?s)label_values\((.+)\)`)
+	qrRegexp         = regexp.MustCompile(`(?s)query_result\((.+)\)`)
+	validMetricName  = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	durationRegexp   = regexp.MustCompile(`\[\$.+\]`)
+	var1LabelRegexp  = regexp.MustCompile(`=\${[a-zA-Z0-9_]+(:[a-zA-Z0-9]+)?}`)
+	var2LabelRegexp  = regexp.MustCompile(`=\$[a-zA-Z0-9_]+`)
+	var1MetricRegexp = regexp.MustCompile(`\${[a-zA-Z0-9_]+(:[a-zA-Z0-9]+)?}`)
+	var2MetricRegexp = regexp.MustCompile(`\$[a-zA-Z0-9_]+`)
 )
 
 type MetricsInGrafana struct {
@@ -40,18 +45,20 @@ type DashboardMetrics struct {
 	Title       string   `json:"title"`
 	Metrics     []string `json:"metrics"`
 	ParseErrors []string `json:"parse_errors"`
+	Queries     []string `json:"queries"`
 }
 
-func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
+func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board, datasourceUID string) {
 	var parseErrors []error
 	metrics := make(map[string]struct{})
+	queries := make(map[string]struct{})
 
 	// Iterate through all the panels and collect metrics
 	for _, panel := range board.Panels {
-		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics)...)
+		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics, queries, datasourceUID)...)
 		if panel.RowPanel != nil {
 			for _, subPanel := range panel.RowPanel.Panels {
-				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics)...)
+				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics, queries, datasourceUID)...)
 			}
 		}
 	}
@@ -59,12 +66,12 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Iterate through all the rows and collect metrics
 	for _, row := range board.Rows {
 		for _, panel := range row.Panels {
-			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics)...)
+			parseErrors = append(parseErrors, metricsFromPanel(panel, metrics, queries, datasourceUID)...)
 		}
 	}
 
 	// Process metrics in templating
-	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics)...)
+	parseErrors = append(parseErrors, metricsFromTemplating(board.Templating, metrics, datasourceUID)...)
 
 	parseErrs := make([]string, 0, len(parseErrors))
 	for _, err := range parseErrors {
@@ -82,12 +89,22 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	}
 	slices.Sort(metricsInBoard)
 
+	queriesInBoard := make([]string, 0, len(queries))
+	for query := range queries {
+		if query == "" {
+			continue
+		}
+		queriesInBoard = append(queriesInBoard, query)
+	}
+	slices.Sort(queriesInBoard)
+
 	mig.Dashboards = append(mig.Dashboards, DashboardMetrics{
 		Slug:        board.Slug,
 		UID:         board.UID,
 		Title:       board.Title,
 		Metrics:     metricsInBoard,
 		ParseErrors: parseErrs,
+		Queries:     queriesInBoard,
 	})
 }
 
@@ -105,11 +122,24 @@ func getQueryFromTemplating(name string, q interface{}) (string, error) {
 	return "", fmt.Errorf("templating type error: name=%v", name)
 }
 
-func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {
+func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}, datasourceUID string) []error {
 	parseErrors := []error{}
 	for _, templateVar := range templating.List {
 		if templateVar.Type != "query" {
 			continue
+		}
+
+		if datasourceUID != "" && templateVar.Datasource != nil {
+			// legacy DS
+			if templateVar.Datasource.LegacyName != "" && templateVar.Datasource.LegacyName != datasourceUID {
+				log.Debugln("metricsFromTemplating", "Legacy Datasource", templateVar.Datasource.LegacyName, "not matching target ds", datasourceUID)
+				continue
+			} else {
+				if templateVar.Datasource.UID != datasourceUID {
+					log.Debugln("metricsFromTemplating", "Datasource UID", templateVar.Datasource.UID, "not matching target ds", datasourceUID)
+					continue
+				}
+			}
 		}
 
 		query, err := getQueryFromTemplating(templateVar.Name, templateVar.Query)
@@ -147,9 +177,28 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 
 // Workaround to support Grafana "timeseries" panel. This should
 // be implemented in grafana/tools-sdk, and removed from here.
-func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
+func getCustomPanelTargets(panel minisdk.Panel, datasourceUID string) *[]minisdk.Target {
 	if panel.CommonPanel.Type != "timeseries" {
 		return nil
+	}
+	if datasourceUID != "" {
+		if panel.Datasource != nil {
+			// legacy datasource ("datasource":"xxxxx")
+			if panel.Datasource.LegacyName != "" && panel.Datasource.LegacyName != datasourceUID {
+				log.Debugln("getCustomPanelTargets", "Legacy datasource", panel.Datasource.LegacyName, "not matching target ds", datasourceUID)
+				return nil
+			} else {
+				// normal datasource (with type and uid)
+				// we'll filter mixed targets later
+				if panel.Datasource.Type != "datasource" && panel.Datasource.UID != datasourceUID {
+					log.Debugln("getCustomPanelTargets", "Datasource UID", panel.Datasource.UID, "not matching target ds", datasourceUID)
+					return nil
+				}
+			}
+		} else {
+			// if datasourceUID is defined we'll filter out null datasource too
+			return nil
+		}
 	}
 
 	// Heavy handed approach to re-marshal the panel and parse it again
@@ -175,14 +224,18 @@ func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
 	return &parsedPanel.Targets
 }
 
-func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
+func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}, queries map[string]struct{}, datasourceUID string) []error {
 	var parseErrors []error
 
-	targets := panel.GetTargets()
+	targets := panel.GetTargets(datasourceUID)
 	if targets == nil {
-		targets = getCustomPanelTargets(panel)
+		targets = getCustomPanelTargets(panel, datasourceUID)
 		if targets == nil {
-			parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type))
+			if datasourceUID != "" {
+				parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q or all metrics filtered out by datasourceUID: %s", panel.CommonPanel.Type, datasourceUID))
+			} else {
+				parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type))
+			}
 			return parseErrors
 		}
 	}
@@ -192,12 +245,27 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 		if target.Expr == "" {
 			continue
 		}
+		// filter datasource in mixed targets
+		if datasourceUID != "" && target.Datasource != nil {
+			// legacy datasource ("datasource":"xxxxx")
+			if target.Datasource.LegacyName != "" && target.Datasource.LegacyName != datasourceUID {
+				log.Debugln("metricsFromPanel", "Legacy datasource", target.Datasource.LegacyName, "not matching target ds", datasourceUID)
+				continue
+			} else {
+				if target.Datasource.UID != datasourceUID {
+					log.Debugln("metricsFromPanel", "Datasource UID", target.Datasource.UID, "not matching target ds", datasourceUID)
+					continue
+				}
+			}
+		}
 		query := target.Expr
 		err := parseQuery(query, metrics)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
 			log.Debugln("msg", "promql parse error", "err", err, "query", query)
 			continue
+		} else {
+			queries[query] = struct{}{}
 		}
 	}
 
@@ -205,6 +273,7 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 }
 
 func parseQuery(query string, metrics map[string]struct{}) error {
+	// replace standard Grafana Prometheus macros
 	query = strings.ReplaceAll(query, `$__interval`, "5m")
 	query = strings.ReplaceAll(query, `$interval`, "5m")
 	query = strings.ReplaceAll(query, `$resolution`, "5s")
@@ -212,6 +281,17 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 	query = strings.ReplaceAll(query, "$__range", "1d")
 	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
 	query = strings.ReplaceAll(query, "${__range_s}", "30")
+	// replace duration variable, e.g. [$agregation_window]
+	query = durationRegexp.ReplaceAllString(query, "[5m]")
+	// replace label variable, e.g. metric{label=${value}} or metric{label=${value:format}}
+	query = var1LabelRegexp.ReplaceAllString(query, `="variable"`)
+	// replace label variable, e.g. metric{label=$value}
+	query = var2LabelRegexp.ReplaceAllString(query, `="variable"`)
+	// replace metric variable, e.g. ${metric}{} or ${metric:format}{}
+	query = var1MetricRegexp.ReplaceAllString(query, `variable`)
+	// replace metric variable, e.g. $metric{}
+	query = var2MetricRegexp.ReplaceAllString(query, `variable`)
+
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return err

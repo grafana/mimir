@@ -30,9 +30,7 @@ var dashboardMetrics = []string{
 	"workqueue_queue_duration_seconds_bucket",
 }
 
-var expectedParseErrors = []string{
-	"unsupported panel type: \"text\"",
-}
+var expectedParseErrors = []string{}
 
 func TestParseMetricsInBoard(t *testing.T) {
 	var board minisdk.Board
@@ -45,7 +43,7 @@ func TestParseMetricsInBoard(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	analyze.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board, "")
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 	assert.Equal(t, expectedParseErrors, output.Dashboards[0].ParseErrors)
 }
@@ -68,7 +66,7 @@ func BenchmarkParseMetricsInBoard(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, "")
 	}
 }
 
@@ -83,6 +81,39 @@ func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	analyze.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board, "")
 	assert.Equal(t, []string{"my_lovely_metric"}, output.Dashboards[0].Metrics)
+}
+
+func TestFilterMetricsInBoardByDatasourceUid(t *testing.T) {
+	var allMetrics = []string{
+		"cpu_usage_idle",
+		"disk_free",
+		"diskio_reads",
+		"diskio_writes",
+		"up",
+	}
+	outputAll := &analyze.MetricsInGrafana{}
+	outputAll.OverallMetrics = make(map[string]struct{})
+
+	var filteredMetrics = []string{
+		"diskio_writes",
+		"up",
+	}
+	outputFilt := &analyze.MetricsInGrafana{}
+	outputFilt.OverallMetrics = make(map[string]struct{})
+
+	var board minisdk.Board
+
+	buf, err := loadFile("testdata/complex_db.json")
+	require.NoError(t, err)
+
+	err = json.Unmarshal(buf, &board)
+	require.NoError(t, err)
+
+	analyze.ParseMetricsInBoard(outputAll, board, "")
+	assert.Equal(t, allMetrics, outputAll.Dashboards[0].Metrics)
+
+	analyze.ParseMetricsInBoard(outputFilt, board, "000000005")
+	assert.Equal(t, filteredMetrics, outputFilt.Dashboards[0].Metrics)
 }

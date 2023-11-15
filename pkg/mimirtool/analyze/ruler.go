@@ -6,6 +6,8 @@
 package analyze
 
 import (
+	"sort"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -22,7 +24,7 @@ type MetricsInRuler struct {
 }
 
 type RuleGroupMetrics struct {
-	Namespace   string   `json:"namspace"`
+	Namespace   string   `json:"namespace"`
 	GroupName   string   `json:"name"`
 	Metrics     []string `json:"metrics"`
 	ParseErrors []string `json:"parse_errors"`
@@ -84,6 +86,13 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		Metrics:     metricsInGroup,
 		ParseErrors: parseErrs,
 	})
+
+	var metricsUsed model.LabelValues
+	for metric := range mir.OverallMetrics {
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
+	}
+	sort.Sort(metricsUsed)
+	mir.MetricsUsed = metricsUsed
 
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,10 +25,13 @@ import (
 )
 
 type GrafanaAnalyzeCommand struct {
-	address     string
-	apiKey      string
-	readTimeout time.Duration
-	folders     folderTitles
+	address       string
+	apiKey        string
+	readTimeout   time.Duration
+	folders       folderTitles
+	folderUIDs    folderUIDs
+	dashboardIDs  dashboardIDs
+	datasourceUID string
 
 	outputFile string
 }
@@ -47,13 +51,43 @@ func (f folderTitles) IsCumulative() bool {
 	return true
 }
 
+type folderUIDs []string
+
+func (f *folderUIDs) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func (f folderUIDs) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f folderUIDs) IsCumulative() bool {
+	return true
+}
+
+type dashboardIDs []string
+
+func (f *dashboardIDs) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+func (f dashboardIDs) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f dashboardIDs) IsCumulative() bool {
+	return true
+}
+
 func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	c, err := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
 	if err != nil {
 		return err
 	}
 
-	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout)
+	output, err := AnalyzeGrafana(context.Background(), c, cmd.folders, cmd.readTimeout, cmd.folderUIDs, cmd.dashboardIDs, cmd.datasourceUID)
 	if err != nil {
 		return err
 	}
@@ -66,7 +100,7 @@ func (cmd *GrafanaAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeGrafana analyze grafana's dashboards and return the list metrics used in them.
-func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration) (*analyze.MetricsInGrafana, error) {
+func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTimeout time.Duration, folderUIDs []string, dashboardIDs []string, datasourceUID string) (*analyze.MetricsInGrafana, error) {
 
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
@@ -77,13 +111,22 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 	}
 
 	filterOnFolders := len(folders) > 0
+	filterOnFolderUIDs := len(folderUIDs) > 0
+	filterOnDashboardIDs := len(dashboardIDs) > 0
 
 	for _, link := range boardLinks {
 		if filterOnFolders && !slices.Contains(folders, link.FolderTitle) {
 			continue
 		}
-
-		err := processDashboard(ctx, c, link, output, readTimeout)
+		// TODO: FolderUID filter can be moved to getAllDashboards
+		if filterOnFolderUIDs && !slices.Contains(folderUIDs, link.FolderUID) {
+			continue
+		}
+		// TODO: DashboardID filter can be moved to getAllDashboards
+		if filterOnDashboardIDs && !slices.Contains(dashboardIDs, strconv.Itoa(int(link.ID))) {
+			continue
+		}
+		err := processDashboard(ctx, c, link, output, readTimeout, datasourceUID)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 		}
@@ -100,7 +143,7 @@ func AnalyzeGrafana(ctx context.Context, c *sdk.Client, folders []string, readTi
 }
 
 // processDashboard fetches and processes a single Grafana dashboard.
-func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration) error {
+func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, output *analyze.MetricsInGrafana, readTimeout time.Duration, datasourceUID string) error {
 	fetchCtx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
 
@@ -114,7 +157,7 @@ func processDashboard(ctx context.Context, c *sdk.Client, link sdk.FoundBoard, o
 		return err
 	}
 
-	analyze.ParseMetricsInBoard(output, board)
+	analyze.ParseMetricsInBoard(output, board, datasourceUID)
 	return nil
 }
 

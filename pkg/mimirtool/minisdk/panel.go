@@ -9,6 +9,8 @@ package minisdk
 import (
 	"encoding/json"
 	"fmt"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Each panel may be one of these types.
@@ -27,6 +29,7 @@ const (
 	HeatmapType
 	TimeseriesType
 	GaugeType
+	LogsType
 )
 
 type (
@@ -48,6 +51,7 @@ type (
 		*HeatmapPanel
 		*TimeseriesPanel
 		*GaugePanel
+		*LogsPanel
 		*CustomPanel
 	}
 	panelType   int8
@@ -64,21 +68,30 @@ type (
 	TablePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	TextPanel       struct{}
+	TextPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 	SinglestatPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	StatPanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	DashlistPanel   struct{}
-	PluginlistPanel struct{}
-	AlertlistPanel  struct{}
-	BarGaugePanel   struct {
+	DashlistPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	PluginlistPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	AlertlistPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	BarGaugePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
 	RowPanel struct {
-		Panels []Panel `json:"panels"`
+		Panels  []Panel  `json:"panels"`
+		Targets []Target `json:"targets,omitempty"`
 	}
 	HeatmapPanel struct {
 		Targets []Target `json:"targets,omitempty"`
@@ -89,7 +102,12 @@ type (
 	GaugePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	CustomPanel map[string]interface{}
+	LogsPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
+	CustomPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 )
 
 // for an any panel
@@ -100,7 +118,32 @@ type Target struct {
 
 // GetTargets is iterate over all panel targets. It just returns nil if
 // no targets defined for panel of concrete type.
-func (p *Panel) GetTargets() *[]Target {
+func (p *Panel) GetTargets(datasourceUID string) *[]Target {
+	// filtering datasources
+	if datasourceUID != "" {
+		if p.Datasource != nil {
+			log.Debugln("GetTargets", "Incoming panel ID", p.ID, "'", p.Title, "' of type", p.Type)
+			//log.Debugln("GetTargets", "p.Datasource.LegacyName", p.Datasource.LegacyName)
+			//log.Debugln("GetTargets", "p.Datasource.Type", p.Datasource.Type)
+			//log.Debugln("GetTargets", "p.Datasource.UID", p.Datasource.UID)
+			// legacy datasource ("datasource":"xxxxx")
+			if p.Datasource.LegacyName != "" && p.Datasource.LegacyName != datasourceUID {
+				log.Debugln("GetTargets", "Legacy datasource", p.Datasource.LegacyName, "not matching target ds", datasourceUID)
+				return nil
+			} else {
+				// normal datasource (with type and uid)
+				// we'll filter mixed targets (p.Datasource.Type  "datasource") later
+				if p.Datasource.Type != "datasource" && p.Datasource.UID != datasourceUID {
+					log.Debugln("GetTargets", "Datasource UID", p.Datasource.UID, "not matching target ds", datasourceUID)
+					return nil
+				}
+			}
+		} else {
+			// if datasourceUID is defined we'll filter out null datasource too
+			return nil
+		}
+	}
+	log.Debugln("GetTargets", "Filtered panel ID", p.ID, "'", p.Title, "' of type", p.Type)
 	switch p.OfType {
 	case GraphType:
 		return &p.GraphPanel.Targets
@@ -118,6 +161,20 @@ func (p *Panel) GetTargets() *[]Target {
 		return &p.TimeseriesPanel.Targets
 	case GaugeType:
 		return &p.GaugePanel.Targets
+	case RowType:
+		return &p.RowPanel.Targets
+	case TextType:
+		return &p.TextPanel.Targets
+	case LogsType:
+		return &[]Target{}
+	case DashlistType:
+		return &p.DashlistPanel.Targets
+	case PluginlistType:
+		return &p.PluginlistPanel.Targets
+	case AlertlistType:
+		return &p.AlertlistPanel.Targets
+	case CustomType:
+		return &p.CustomPanel.Targets
 	default:
 		return nil
 	}
@@ -202,8 +259,14 @@ func (p *Panel) UnmarshalJSON(b []byte) (err error) {
 		if err = json.Unmarshal(b, &gauge); err == nil {
 			p.GaugePanel = &gauge
 		}
+	case "logs":
+		var logs LogsPanel
+		p.OfType = LogsType
+		if err = json.Unmarshal(b, &logs); err == nil {
+			p.LogsPanel = &logs
+		}
 	default:
-		var custom = make(CustomPanel)
+		var custom CustomPanel
 		p.OfType = CustomType
 		if err = json.Unmarshal(b, &custom); err == nil {
 			p.CustomPanel = &custom
