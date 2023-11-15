@@ -297,6 +297,10 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		if !details.MaxT.IsZero() {
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
+		logMessage = append(logMessage,
+			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
+			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+		)
 	}
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
