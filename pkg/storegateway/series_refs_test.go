@@ -1077,12 +1077,15 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
 			appender := appenderFactory()
+			lbls := labels.FromStrings("l1", fmt.Sprintf("v%d", i))
+			var ref storage.SeriesRef
 			const numSamples = 240 // Write enough samples to have two chunks per series
 			for j := 0; j < numSamples; j++ {
-				_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10+j), float64(j))
+				var err error
+				ref, err = appender.Append(ref, lbls, int64(i*10+j), float64(j))
 				assert.NoError(t, err)
-		}
-		assert.NoError(t, appender.Commit())
+			}
+			assert.NoError(t, appender.Commit())
 		}
 	})
 
