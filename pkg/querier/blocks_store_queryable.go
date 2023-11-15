@@ -209,27 +209,13 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	bucketClient = cachingBucket
 
 	// Create the blocks finder.
-	var finder BlocksFinder
-	if storageCfg.BucketStore.BucketIndex.DeprecatedEnabled {
-		finder = NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
-			IndexLoader: bucketindex.LoaderConfig{
-				CheckInterval:         time.Minute,
-				UpdateOnStaleInterval: storageCfg.BucketStore.SyncInterval,
-				UpdateOnErrorInterval: storageCfg.BucketStore.BucketIndex.UpdateOnErrorInterval,
-				IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
-			},
-			MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-			IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
-		}, bucketClient, limits, logger, reg)
-	} else {
-		finder = NewBucketScanBlocksFinder(BucketScanBlocksFinderConfig{
-			ScanInterval:             storageCfg.BucketStore.SyncInterval,
-			TenantsConcurrency:       storageCfg.BucketStore.TenantSyncConcurrency,
-			MetasConcurrency:         storageCfg.BucketStore.MetaSyncConcurrency,
-			CacheDir:                 storageCfg.BucketStore.SyncDir,
-			IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
-		}, bucketClient, limits, logger, reg)
-	}
+	finder := NewBucketScanBlocksFinder(BucketScanBlocksFinderConfig{
+		ScanInterval:             storageCfg.BucketStore.SyncInterval,
+		TenantsConcurrency:       storageCfg.BucketStore.TenantSyncConcurrency,
+		MetasConcurrency:         storageCfg.BucketStore.MetaSyncConcurrency,
+		CacheDir:                 storageCfg.BucketStore.SyncDir,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
+	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
 	storesRingBackend, err := kv.NewClient(

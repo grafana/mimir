@@ -573,7 +573,6 @@ func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 
 	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.BucketStore.BucketIndex.DeprecatedEnabled = false
 	cfg.BucketStore.SyncDir = tmpDir
 
 	return cfg

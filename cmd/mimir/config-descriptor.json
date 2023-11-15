@@ -8061,17 +8061,6 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "enabled",
-                  "required": false,
-                  "desc": "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "blocks-storage.bucket-store.bucket-index.enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
                   "name": "update_on_error_interval",
                   "required": false,
                   "desc": "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.",

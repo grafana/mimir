@@ -3538,12 +3538,6 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # (deprecated) If enabled, queriers and store-gateways discover blocks by
-    # reading a bucket index (created and updated by the compactor) instead of
-    # periodically scanning the bucket.
-    # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
-    [enabled: <boolean> | default = true]
-
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.update-on-error-interval
