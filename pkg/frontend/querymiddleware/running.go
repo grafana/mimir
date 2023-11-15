@@ -35,19 +35,11 @@ type frontendRunningMiddleware struct {
 }
 
 func (f frontendRunningMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	if err := f.waitForRunning(ctx); err != nil {
-		return nil, err
+	if err := f.readinessAwaiter.Await(ctx, f.timeout); err != nil {
+		return nil, apierror.New(apierror.TypeUnavailable, err.Error())
 	}
 
 	return f.next.Do(ctx, r)
-}
-
-func (f frontendRunningMiddleware) waitForRunning(ctx context.Context) (err error) {
-	if err := f.readinessAwaiter.Await(ctx, f.timeout); err != nil {
-		return apierror.New(apierror.TypeUnavailable, err.Error())
-	}
-
-	return nil
 }
 
 type ReadinessAwaiter interface {
