@@ -472,31 +472,6 @@ func TestConfig_ValidateLimits(t *testing.T) {
 	}
 }
 
-// Temporary behavior to keep supporting global query-ingesters-within flag for two Mimir versions
-// TODO: Remove in Mimir 2.11.0
-func TestQueryIngestersWithinGlobalConfigIsUsedInsteadOfDefaultLimitConfig(t *testing.T) {
-	dir := t.TempDir()
-
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
-
-	cfg.Querier.QueryIngestersWithin = 5 * time.Hour
-	cfg.Target = []string{Overrides}
-
-	cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
-
-	c, err := New(cfg, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
-
-	_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	defer c.Server.Stop()
-
-	duration := c.Overrides.QueryIngestersWithin("test")
-
-	require.Equal(t, 5*time.Hour, duration)
-}
-
 func TestConfig_validateFilesystemPaths(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)

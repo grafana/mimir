@@ -40,9 +40,8 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators" category:"deprecated"`                         // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
-	BatchIterators       bool          `yaml:"batch_iterators" category:"deprecated"`                   // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0
+	Iterators      bool `yaml:"iterators" category:"deprecated"`       // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
+	BatchIterators bool `yaml:"batch_iterators" category:"deprecated"` // Deprecated: Deprecated in Mimir 2.9.0, remove in Mimir 2.11.0 (https://github.com/grafana/mimir/issues/5107)
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -97,11 +96,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
-
-	// The querier.query-ingesters-within flag has been moved to the limits.go file
-	// We still need to set a default value for cfg.QueryIngestersWithin since we need to keep supporting the querier yaml field until Mimir 2.11.0
-	// TODO: Remove in Mimir 2.11.0
-	cfg.QueryIngestersWithin = DefaultQuerierCfgQueryIngestersWithin
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
