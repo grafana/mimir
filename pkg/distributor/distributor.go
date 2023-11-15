@@ -634,13 +634,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
-	for _, h := range ts.Histograms {
+	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
 		if delta > 0 {
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
 			return err
 		}
 	}
