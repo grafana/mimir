@@ -990,7 +990,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appenderFactory func() storage.Appender)) func() *bucketBlock {
 	tmpDir := tb.TempDir()
 	bucketDir := filepath.Join(tmpDir, "bkt")
 
@@ -1033,7 +1033,7 @@ type localBucket struct {
 	dir string
 }
 
-func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
+func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appenderFactory func() storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
@@ -1047,7 +1047,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	logger := log.NewNopLogger()
 
 	for _, setup := range dataSetup {
-		setup(t, h.Appender(context.Background()))
+		setup(t, func() storage.Appender { return h.Appender(context.Background()) })
 	}
 
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
@@ -1063,8 +1063,9 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	return id, h.MinTime(), h.MaxTime()
 }
 
-func appendTestSeries(series int) func(testing.TB, storage.Appender) {
-	return func(t testing.TB, app storage.Appender) {
+func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
+	return func(t testing.TB, appenderFactory func() storage.Appender) {
+		app := appenderFactory()
 		addSeries := func(l labels.Labels) {
 			_, err := app.Append(0, l, 0, 0)
 			assert.NoError(t, err)
@@ -1080,9 +1081,10 @@ func appendTestSeries(series int) func(testing.TB, storage.Appender) {
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
 				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
-			}
 		}
 		assert.NoError(t, app.Commit())
+			app = appenderFactory()
+		}
 	}
 }
 

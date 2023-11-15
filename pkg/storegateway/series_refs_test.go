@@ -1064,7 +1064,8 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 }
 
 func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
-	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+	defaultTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
+		appender := appenderFactory()
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
 			assert.NoError(t, err)
@@ -1073,15 +1074,16 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	})
 
 	const largerTestBlockSeriesCount = 100_000
-	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+	largerTestBlockFactory := prepareTestBlock(test.NewTB(t), func(t testing.TB, appenderFactory func() storage.Appender) {
 		for i := 0; i < largerTestBlockSeriesCount; i++ {
+			appender := appenderFactory()
 			const numSamples = 240 // Write enough samples to have two chunks per series
 			for j := 0; j < numSamples; j++ {
 				_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10+j), float64(j))
 				assert.NoError(t, err)
-			}
 		}
 		assert.NoError(t, appender.Commit())
+		}
 	})
 
 	type testCase struct {
@@ -1452,7 +1454,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.Appender) {
 		const (
 			samplesFor1Chunk   = 100                  // not a complete chunk
 			samplesFor2Chunks  = samplesFor1Chunk * 2 // not a complete chunk
@@ -1468,6 +1470,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			labels.FromStrings("a", "2", "b", "1"),
 			labels.FromStrings("a", "2", "b", "2"),
 		}
+		appender := appenderFactory()
 		for i := int64(0); i < samplesFor2Chunks; i++ { // write 200 samples, so we get two chunks
 			for _, s := range earlySeries {
 				_, err := appender.Append(0, s, i, 0)
@@ -1957,7 +1960,7 @@ func TestMetasToChunkRefs(t *testing.T) {
 // TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
 // If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appenderFactory func() storage.Appender) {
 		existingSeries := []labels.Labels{
 			labels.FromStrings("a", "1", "b", "1"), // series ref 32
 			labels.FromStrings("a", "1", "b", "2"), // series ref 48
@@ -1966,6 +1969,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 			labels.FromStrings("a", "3", "b", "1"), // series ref 96
 			labels.FromStrings("a", "3", "b", "2"), // series ref 112
 		}
+		appender := appenderFactory()
 		for ts := int64(0); ts < 10; ts++ {
 			for _, s := range existingSeries {
 				_, err := appender.Append(0, s, ts, 0)
