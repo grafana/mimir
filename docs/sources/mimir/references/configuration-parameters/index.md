@@ -1433,7 +1433,7 @@ results_cache:
 
 # (experimental) Maximum time to wait for the query-frontend to become ready
 # before rejecting requests received before the frontend was ready. 0 to disable
-# (ie. fail immediately if a request is received while the frontend is still
+# (i.e. fail immediately if a request is received while the frontend is still
 # starting up)
 # CLI flag: -query-frontend.not-running-timeout
 [not_running_timeout: <duration> | default = 0s]

@@ -5481,7 +5481,7 @@
           "kind": "field",
           "name": "not_running_timeout",
           "required": false,
-          "desc": "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (ie. fail immediately if a request is received while the frontend is still starting up)",
+          "desc": "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.not-running-timeout",
