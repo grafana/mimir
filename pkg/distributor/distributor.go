@@ -157,6 +157,7 @@ type Distributor struct {
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
+	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
@@ -200,6 +201,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
+	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
@@ -215,7 +217,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	return cfg.HATrackerConfig.Validate()
+	if err := cfg.HATrackerConfig.Validate(); err != nil {
+		return err
+	}
+	return cfg.RetryConfig.Validate()
 }
 
 const (
@@ -629,13 +634,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
-	for _, h := range ts.Histograms {
+	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
 		if delta > 0 {
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
 			return err
 		}
 	}
