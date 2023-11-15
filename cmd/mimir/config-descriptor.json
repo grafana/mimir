@@ -5479,12 +5479,12 @@
         },
         {
           "kind": "field",
-          "name": "not_running_backoff_duration",
+          "name": "not_running_timeout",
           "required": false,
-          "desc": "Time to wait between retries for a request that fails because the query-frontend is still starting up. 0 to disable backoff (ie. retry immediately)",
+          "desc": "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (ie. fail immediately if a request is received while the frontend is still starting up)",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.not-running-backoff-duration",
+          "fieldFlag": "query-frontend.not-running-timeout",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

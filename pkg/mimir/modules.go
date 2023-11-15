@@ -692,7 +692,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
-		t.getQueryFrontendState,
+		t.awaitQueryFrontendReady,
 	)
 	if err != nil {
 		return nil, err
@@ -723,11 +723,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		frontendSvc = frontendV1
 	} else if frontendV2 != nil {
 		t.API.RegisterQueryFrontend2(frontendV2)
-		t.FrontendV2 = frontendV2
 		frontendSvc = frontendV2
 	}
-
-	t.FrontendInitialized.Store(true)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
@@ -755,20 +752,32 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}), nil
 }
 
-func (t *Mimir) getQueryFrontendState() services.State {
-	if !t.FrontendInitialized.Load() {
-		return services.New
+func (t *Mimir) awaitQueryFrontendReady(ctx context.Context, timeout time.Duration) error {
+	service := t.ServiceMap[QueryFrontend]
+
+	if state := service.State(); state == services.Running {
+		// Fast path: frontend is already running, nothing more to do.
+		return nil
+	} else if timeout == 0 {
+		// If waiting for the frontend to be ready is disabled by config, and it's not ready, abort now.
+		return fmt.Errorf("frontend not running: %v", state)
 	}
 
-	if t.FrontendV1 != nil {
-		return t.FrontendV1.State()
+	span, ctx := opentracing.StartSpanFromContext(ctx, "awaitQueryFrontendReady")
+	defer span.Finish()
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	if err := service.AwaitRunning(ctx); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("frontend not running (is %v), timed out waiting for it to be running after %v", service.State(), timeout)
+		}
+
+		return fmt.Errorf("frontend not running: %w", err)
 	}
 
-	if t.FrontendV2 != nil {
-		return t.FrontendV2.State()
-	}
-
-	panic("FrontendInitialized should only be true once either FrontendV1 or FrontendV2 are set in initQueryFrontend()")
+	return nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {

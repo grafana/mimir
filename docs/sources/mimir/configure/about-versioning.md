@@ -123,7 +123,7 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
-  - Backoff and retry requests received while the query-frontend is starting up (`-query-frontend.not-running-backoff-duration`)
+  - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

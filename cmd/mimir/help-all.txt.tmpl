@@ -1843,8 +1843,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
-  -query-frontend.not-running-backoff-duration duration
-    	[experimental] Time to wait between retries for a request that fails because the query-frontend is still starting up. 0 to disable backoff (ie. retry immediately)
+  -query-frontend.not-running-timeout duration
+    	[experimental] Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (ie. fail immediately if a request is received while the frontend is still starting up)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration

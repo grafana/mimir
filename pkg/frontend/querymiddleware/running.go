@@ -4,24 +4,18 @@ package querymiddleware
 
 import (
 	"context"
-	"fmt"
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/services"
-
-	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func newFrontendRunningMiddleware(frontendState func() services.State, notRunningBackoffDuration time.Duration, maxRetries int, log log.Logger) Middleware {
+func newFrontendRunningMiddleware(awaitFrontendReady func(ctx context.Context, timeout time.Duration) error, timeout time.Duration, log log.Logger) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
 		return frontendRunningMiddleware{
-			frontendState:             frontendState,
-			notRunningBackoffDuration: notRunningBackoffDuration,
-			maxRetries:                maxRetries,
-			log:                       log,
+			awaitFrontendReady: awaitFrontendReady,
+			timeout:            timeout,
+			log:                log,
 
 			next: next,
 		}
@@ -29,10 +23,9 @@ func newFrontendRunningMiddleware(frontendState func() services.State, notRunnin
 }
 
 type frontendRunningMiddleware struct {
-	frontendState             func() services.State
-	notRunningBackoffDuration time.Duration
-	maxRetries                int
-	log                       log.Logger
+	awaitFrontendReady func(ctx context.Context, timeout time.Duration) error
+	timeout            time.Duration
+	log                log.Logger
 
 	next Handler
 }
@@ -46,33 +39,9 @@ func (f frontendRunningMiddleware) Do(ctx context.Context, r Request) (Response,
 }
 
 func (f frontendRunningMiddleware) waitForRunning(ctx context.Context) (err error) {
-	spanLog, _ := spanlogger.NewWithLogger(ctx, f.log, "waitForRunning")
-	defer spanLog.Finish()
-
-	attempt := 1
-
-	for {
-		state := f.frontendState()
-
-		switch state {
-		case services.Running:
-			return nil
-		case services.Stopping, services.Terminated, services.Failed:
-			level.Error(spanLog).Log("msg", "returning error: frontend is shutting down", "state", state)
-			return apierror.New(apierror.TypeUnavailable, fmt.Sprintf("frontend shutting down: %v", state))
-		}
-
-		if f.notRunningBackoffDuration == 0 {
-			// Retries disabled, stop now.
-			level.Error(spanLog).Log("msg", "returning error: frontend is not running and backoff / retry is disabled", "state", state)
-			return apierror.New(apierror.TypeUnavailable, fmt.Sprintf("frontend not running: %v", state))
-		} else if attempt >= f.maxRetries {
-			level.Error(spanLog).Log("msg", "returning error: frontend is still not running after backoff / retry", "state", state)
-			return apierror.New(apierror.TypeUnavailable, fmt.Sprintf("frontend not running after %v: %v", time.Duration(f.maxRetries-1)*f.notRunningBackoffDuration, state))
-		}
-
-		level.Warn(spanLog).Log("msg", "frontend is not running, will back off and check again", "state", state, "attempt", attempt)
-		attempt++
-		time.Sleep(f.notRunningBackoffDuration)
+	if err := f.awaitFrontendReady(ctx, f.timeout); err != nil {
+		return apierror.New(apierror.TypeUnavailable, err.Error())
 	}
+
+	return nil
 }
