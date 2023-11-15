@@ -29,7 +29,9 @@ func queryPromSeriesChunkMetas(t testing.TB, series labels.Labels, block promtsd
 	ctx := context.Background()
 
 	promReader, err := block.Index()
-	require.NoError(t, err)
+	if err != nil {
+		require.NoError(t, err)
+	}
 	defer promReader.Close()
 
 	matchers := make([]*labels.Matcher, 0, series.Len())
@@ -37,15 +39,23 @@ func queryPromSeriesChunkMetas(t testing.TB, series labels.Labels, block promtsd
 		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
 	})
 	postings, err := promReader.PostingsForMatchers(ctx, false, matchers...)
-	require.NoError(t, err)
+	if err != nil {
+		require.NoError(t, err)
+	}
 
-	require.Truef(t, postings.Next(), "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))
+	if !postings.Next() {
+		require.Truef(t, false, "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))
+	}
 
 	var metas []chunks.Meta
 	err = promReader.Series(postings.At(), &labels.ScratchBuilder{}, &metas)
-	require.NoError(t, err)
+	if err != nil {
+		require.NoError(t, err)
+	}
 
-	require.Falsef(t, postings.Next(), "selecting %s returned more series than expected", util.MatchersStringer(matchers))
+	if postings.Next() {
+		require.Falsef(t, true, "selecting %s returned more series than expected", util.MatchersStringer(matchers))
+	}
 	return metas
 }
 
