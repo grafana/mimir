@@ -41,6 +41,9 @@ type Rule struct {
 	// Length of chain for MaxEvalTime. If rule doesn't depend on other rules, this is 0.
 	MaxEvalTimeChain int
 
+	// An element from DependsOn which leads to MaxEvalTime and MaxEvalTimeChain
+	MaxEvalTimeDep *Rule
+
 	// Only same rule group
 	DependsOn []*Rule
 }
@@ -166,17 +169,19 @@ func findDependencyChainsForRule(rule *Rule, visited map[*Rule]bool) {
 
 	maxDepEval := time.Duration(-1)
 	maxDepEvalChain := 0
+	var maxDepEvalRule *Rule
 	for _, dep := range rule.DependsOn {
 		if dep.MaxEvalTime == -1 {
 			findDependencyChainsForRule(dep, visited)
 		}
 		if maxDepEval < dep.MaxEvalTime {
-			maxDepEval, maxDepEvalChain = dep.MaxEvalTime, dep.MaxEvalTimeChain
+			maxDepEval, maxDepEvalChain, maxDepEvalRule = dep.MaxEvalTime, dep.MaxEvalTimeChain, dep
 		}
 	}
 
 	rule.MaxEvalTimeChain = maxDepEvalChain + 1
 	rule.MaxEvalTime = maxDepEval + time.Duration(rule.EvaluationTimeSeconds*float64(time.Second))
+	rule.MaxEvalTimeDep = maxDepEvalRule
 }
 
 // printEvaluationSlack takes each rule in a group and prints the latency you can add to every rule evaluation
@@ -184,9 +189,10 @@ func printEvaluationSlack(groups []Group) {
 	for _, group := range groups {
 		maxDepEval := group.Rules[0].MaxEvalTime
 		maxDepEvalChain := group.Rules[0].MaxEvalTimeChain
-		for _, rule := range group.Rules[1:] {
+		maxDepEvalRule := &group.Rules[0]
+		for ruleIdx, rule := range group.Rules[1:] {
 			if rule.MaxEvalTime > maxDepEval {
-				maxDepEval, maxDepEvalChain = rule.MaxEvalTime, rule.MaxEvalTimeChain
+				maxDepEval, maxDepEvalChain, maxDepEvalRule = rule.MaxEvalTime, rule.MaxEvalTimeChain, &group.Rules[ruleIdx+1]
 			}
 		}
 		if maxDepEvalChain == 0 {
@@ -196,13 +202,25 @@ func printEvaluationSlack(groups []Group) {
 		evalInterval := time.Duration(group.IntervalSeconds * float64(time.Second))
 		fmt.Println(
 			((evalInterval - maxDepEval) / time.Duration(maxDepEvalChain)).Seconds(),
-			//evalInterval,
+			evalInterval,
 			//len(group.Rules),
-			//maxDepEval,
+			maxDepEvalRule.MaxEvalTime,
 			maxDepEvalChain,
+			formatMaxEvalTimeRuleChain(maxDepEvalRule),
 			//group.Name,
 		)
 	}
+}
+
+func formatMaxEvalTimeRuleChain(rule *Rule) string {
+	const delim = " -> "
+	var str string
+	for rule != nil {
+		str += fmt.Sprintf("%s (%s)%s", rule.Name, time.Duration(float64(time.Second)*rule.EvaluationTimeSeconds), delim)
+		rule = rule.MaxEvalTimeDep
+	}
+	str = str[:len(str)-len(delim)]
+	return str
 }
 
 func noErr(err error) {
