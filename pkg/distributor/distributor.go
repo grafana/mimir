@@ -152,10 +152,10 @@ type Distributor struct {
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
 
-	// ingesterDoBatchPushGo is the Go function passed to ring.DoBatchWithOptions.
+	// ingesterDoBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
 	// It can be nil, in which case a simple `go f()` will be used.
 	// See Config.ReusableIngesterPushWorkers on how to configure this.
-	ingesterDoBatchPushGo func(func())
+	ingesterDoBatchPushWorkers func(func())
 }
 
 // Config contains the configuration required to
@@ -439,7 +439,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	if cfg.ReusableIngesterPushWorkers > 0 {
 		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
-		d.ingesterDoBatchPushGo = wp.Go
+		d.ingesterDoBatchPushWorkers = wp.Go
 		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
 		subservices = append(subservices, services.NewBasicService(nil, nil, func(_ error) error { wp.Close(); return nil }))
 	}
