@@ -49,6 +49,7 @@ const (
 	RequestBurstSizeFlag                     = "distributor.request-burst-size"
 	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
 	IngestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	IngestionBurstFactorFlag                 = "distributor.ingestion-burst-factor"
 	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
 	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
@@ -73,6 +74,7 @@ type Limits struct {
 	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
 	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
 	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor                        int                 `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
@@ -197,6 +199,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, IngestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
+	f.IntVar(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate. If this is set it will override the `ingestion-burst-size` option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
@@ -445,6 +448,10 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 // IngestionBurstSize returns the burst size for ingestion rate.
 func (o *Overrides) IngestionBurstSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionBurstSize
+}
+
+func (o *Overrides) IngestionBurstFactor(userID string) int{
+	return o.getOverridesForUser(userID).IngestionBurstFactor
 }
 
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.

@@ -19,6 +19,44 @@ type ReadLifecycler interface {
 	HealthyInstancesCount() int
 }
 
+type globalIngestionStrategyWithBurstFactor struct {
+	limits *validation.Overrides
+	ring   ReadLifecycler
+}
+// We want a rate limiter that can use the burst factor if it's set for ingest rate limiting.
+func newGlobalRateStrategyWithBurstFactor(limits *validation.Overrides, ring ReadLifecycler) limiter.RateLimiterStrategy {
+	return &globalIngestionStrategyWithBurstFactor{
+		limits: limits,
+		ring:   ring,
+	}
+}
+
+func (s *globalIngestionStrategyWithBurstFactor) Limit(tenantID string) float64 {
+	numDistributors := s.ring.HealthyInstancesCount()
+
+	limit := s.limits.IngestionRate(tenantID)
+
+	if numDistributors == 0 || limit == float64(rate.Inf) {
+		return limit
+	}
+	return limit / float64(numDistributors)
+}
+
+func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
+	if s.limits.IngestionBurstFactor(tenantID) > 0 {
+		limit := s.Limit(tenantID)
+		burstByFactor := float64(s.limits.IngestionBurstFactor(tenantID)) * limit
+		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
+		if burstByFactor >= math.MaxInt {
+			return math.MaxInt
+		} else {
+			return int(burstByFactor)
+		}
+	} else {
+		return s.limits.IngestionBurstSize(tenantID)
+	}
+}
+
 type globalStrategy struct {
 	baseStrategy limiter.RateLimiterStrategy
 	ring         ReadLifecycler
@@ -91,6 +129,15 @@ func (s *ingestionRateStrategy) Limit(tenantID string) float64 {
 }
 
 func (s *ingestionRateStrategy) Burst(tenantID string) int {
+	if s.limits.IngestionBurstFactor(tenantID) > 0 {
+		burstByFactor := float64(s.limits.IngestionBurstFactor(tenantID)) * s.limits.IngestionRate(tenantID)
+		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
+		if burstByFactor >= math.MaxInt {
+			return math.MaxInt
+		} else {
+			return int(burstByFactor)
+		}
+	}
 	return s.limits.IngestionBurstSize(tenantID)
 }
 
