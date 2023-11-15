@@ -1455,6 +1455,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.CreationGracePeriod = model.Duration(time.Minute)
 			limits.MaxNativeHistogramBuckets = tc.bucketLimit
+			limits.ReduceNativeHistogramOverMaxBuckets = false
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     2,
@@ -1666,6 +1667,118 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
 			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), "cortex_discarded_exemplars_total"))
+		})
+	}
+}
+
+func TestDistributor_HistogramReduction(t *testing.T) {
+	h := &histogram.Histogram{
+		Count:         12,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0}, // 1 in 0(0.5, 1], 2 in 1(1, 2], 1 in 3(4, 8], 1 in 4(8, 16]
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{1, 1, -1, 0}, // 1 in -4[-16, -8), 1 in -3[-8, -4), 2 in -1[-2, -1), 1 in -0[-1, -0.5)
+	}
+
+	reducedH := &histogram.Histogram{
+		Count:         12,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        -1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 1, 0}, // 1 in 0(0.25, 1], 2 in 1(1, 4], 2 in 2(4, 16]
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 3},
+		},
+		NegativeBuckets: []int64{1, 1, 0},
+	}
+
+	hugeH := &histogram.Histogram{
+		Count:         12,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           18.4,
+		Schema:        -3,
+		PositiveSpans: []histogram.Span{
+			{Offset: -1e6, Length: 1},
+			{Offset: 2e6, Length: 1}, // Further apart than the min schema of -4 with a bucket width of 64K.
+		},
+		PositiveBuckets: []int64{1, 1},
+	}
+
+	tests := map[string]struct {
+		prepareConfig      func(limits *validation.Limits)
+		req                *mimirpb.WriteRequest
+		expectedError      error
+		expectedTimeSeries []mimirpb.PreallocTimeseries
+	}{
+		"should not reduce histogram under bucket limit": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxNativeHistogramBuckets = 8
+			},
+			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, h),
+			expectedTimeSeries: []mimirpb.PreallocTimeseries{
+				makeHistogramTimeseries([]string{model.MetricNameLabel, "test"}, 1000, h),
+			},
+		},
+		"should reduce histogram over bucket limit": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxNativeHistogramBuckets = 7
+			},
+			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, h),
+			expectedTimeSeries: []mimirpb.PreallocTimeseries{
+				makeHistogramTimeseries([]string{model.MetricNameLabel, "test"}, 1000, reducedH),
+			},
+		},
+		"should fail if not possible to reduce": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxNativeHistogramBuckets = 1
+			},
+			req:                makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, hugeH),
+			expectedError:      fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce, timestamp: 1000 series: {__name__=\"test\"}, buckets: 2, limit: 1 (not-reducible-native-histogram)"),
+			expectedTimeSeries: []mimirpb.PreallocTimeseries{},
+		},
+	}
+	now := mtime.Now()
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			tc.prepareConfig(limits)
+			limits.ReduceNativeHistogramOverMaxBuckets = true
+			ds, _, regs := prepare(t, prepConfig{
+				limits:          limits,
+				numDistributors: 1,
+			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
+			for _, ts := range tc.req.Timeseries {
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, 0, 0)
+				if tc.expectedError != nil {
+					require.ErrorAs(t, err, &tc.expectedError)
+				} else {
+					assert.NoError(t, err)
+				}
+			}
+			if tc.expectedError == nil {
+				assert.Equal(t, tc.expectedTimeSeries, tc.req.Timeseries)
+			}
 		})
 	}
 }

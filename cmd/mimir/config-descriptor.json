@@ -739,6 +739,49 @@
         },
         {
           "kind": "block",
+          "name": "retry_after_header",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.retry-after-header.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "base_seconds",
+              "required": false,
+              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "distributor.retry-after-header.base-seconds",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_backoff_exponent",
+              "required": false,
+              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "ha_tracker",
           "required": false,
           "desc": "",
@@ -3182,6 +3225,16 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "validation.max-native-histogram-buckets",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "reduce_native_histogram_over_max_buckets",
+          "required": false,
+          "desc": "Whether to reduce or reject native histogram samples with more buckets than the configured limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "validation.reduce-native-histogram-over-max-buckets",
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -5659,6 +5712,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -11537,6 +11601,17 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler-storage.s3.part-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -13554,6 +13629,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -15818,6 +15904,17 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
                   "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "part_size",
+                  "required": false,
+                  "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "common.storage.s3.part-size",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 },
                 {

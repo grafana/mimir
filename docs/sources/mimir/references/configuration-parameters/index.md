@@ -733,6 +733,25 @@ pool:
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
 
+retry_after_header:
+  # (experimental) Enabled controls inclusion of the Retry-After header in the
+  # response: true includes it for client retry guidance, false omits it.
+  # CLI flag: -distributor.retry-after-header.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Base duration in seconds for calculating the Retry-After
+  # header in responses to 429/5xx errors.
+  # CLI flag: -distributor.retry-after-header.base-seconds
+  [base_seconds: <int> | default = 3]
+
+  # (experimental) Sets the upper limit on the number of Retry-Attempt
+  # considered for calculation. It caps the Retry-Attempt header without
+  # rejecting additional attempts, controlling exponential backoff calculations.
+  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
+  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
+  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
+  [max_backoff_exponent: <int> | default = 5]
+
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
   # Prometheus HA replicas gracefully (requires labels).
@@ -2899,6 +2918,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
+# Whether to reduce or reject native histogram samples with more buckets than
+# the configured limit.
+# CLI flag: -validation.reduce-native-histogram-over-max-buckets
+[reduce_native_histogram_over_max_buckets: <boolean> | default = true]
+
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
@@ -4531,6 +4555,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # files.
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
+
+# (experimental) The minimum file size in bytes used for multipart uploads. If
+# 0, the value is optimally computed for each object.
+# CLI flag: -<prefix>.s3.part-size
+[part_size: <int> | default = 0]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
