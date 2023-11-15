@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package querymiddleware
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
+	"github.com/stretchr/testify/require"
+)
+
+func TestServiceReadinessAwaiter_ServiceIsReady(t *testing.T) {
+	run := func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	}
+
+	service := services.NewBasicService(nil, run, nil)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), service))
+	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
+
+	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
+	err := awaiter.Await(context.Background(), 0)
+	require.NoError(t, err)
+}
+
+func TestServiceReadinessAwaiter_ServiceIsNotReadyWaitDisabled(t *testing.T) {
+	startChan := make(chan struct{})
+	start := func(ctx context.Context) error {
+		<-startChan
+		return nil
+	}
+
+	service := services.NewBasicService(start, nil, nil)
+	require.NoError(t, service.StartAsync(context.Background()))
+	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
+
+	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
+	err := awaiter.Await(context.Background(), 0)
+	require.EqualError(t, err, "frontend not running: Starting")
+
+	close(startChan)
+}
+
+func TestServiceReadinessAwaiter_ServiceIsNotReadyInitially(t *testing.T) {
+	startChan := make(chan struct{})
+	start := func(ctx context.Context) error {
+		<-startChan
+		return nil
+	}
+	run := func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	}
+
+	service := services.NewBasicService(start, run, nil)
+	require.NoError(t, service.StartAsync(context.Background()))
+	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
+
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		close(startChan)
+	}()
+
+	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
+	err := awaiter.Await(context.Background(), time.Second)
+	require.NoError(t, err)
+}
+
+func TestServiceReadinessAwaiter_ServiceIsNotReadyAfterTimeout(t *testing.T) {
+	serviceChan := make(chan struct{})
+	start := func(ctx context.Context) error {
+		<-serviceChan
+		return nil
+	}
+
+	service := services.NewBasicService(start, nil, nil)
+	require.NoError(t, service.StartAsync(context.Background()))
+	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
+
+	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
+	err := awaiter.Await(context.Background(), 100*time.Millisecond)
+	require.EqualError(t, err, "frontend not running (is Starting), timed out waiting for it to be running after 100ms")
+
+	close(serviceChan)
+}

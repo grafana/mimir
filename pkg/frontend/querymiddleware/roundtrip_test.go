@@ -20,7 +20,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/middleware"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -78,7 +77,7 @@ func TestRangeTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
-		alwaysRunning,
+		&alwaysRunningServiceAwaiter{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +129,7 @@ func TestInstantTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
-		alwaysRunning,
+		&alwaysRunningServiceAwaiter{},
 	)
 	require.NoError(t, err)
 
@@ -304,7 +303,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				reg,
-				alwaysRunning,
+				&alwaysRunningServiceAwaiter{},
 			)
 			require.NoError(t, err)
 
@@ -413,6 +412,8 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	return s.next.RoundTrip(r)
 }
 
-func alwaysRunning() services.State {
-	return services.Running
+type alwaysRunningServiceAwaiter struct{}
+
+func (a *alwaysRunningServiceAwaiter) Await(context.Context, time.Duration) error {
+	return nil
 }

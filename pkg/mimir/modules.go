@@ -684,6 +684,10 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
+	// This indirection is necessary because the query-frontend service depends on the query-frontend tripperware service, so
+	// doesn't exist at the point where this method is called.
+	getQueryFrontendService := func() services.Service { return t.ServiceMap[QueryFrontend] }
+
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
@@ -692,7 +696,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
-		t.awaitQueryFrontendReady,
+		querymiddleware.NewServiceReadinessAwaiter(util_log.Logger, getQueryFrontendService),
 	)
 	if err != nil {
 		return nil, err
@@ -750,34 +754,6 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 		return nil
 	}), nil
-}
-
-func (t *Mimir) awaitQueryFrontendReady(ctx context.Context, timeout time.Duration) error {
-	service := t.ServiceMap[QueryFrontend]
-
-	if state := service.State(); state == services.Running {
-		// Fast path: frontend is already running, nothing more to do.
-		return nil
-	} else if timeout == 0 {
-		// If waiting for the frontend to be ready is disabled by config, and it's not ready, abort now.
-		return fmt.Errorf("frontend not running: %v", state)
-	}
-
-	span, ctx := opentracing.StartSpanFromContext(ctx, "awaitQueryFrontendReady")
-	defer span.Finish()
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	if err := service.AwaitRunning(ctx); err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("frontend not running (is %v), timed out waiting for it to be running after %v", service.State(), timeout)
-		}
-
-		return fmt.Errorf("frontend not running: %w", err)
-	}
-
-	return nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {

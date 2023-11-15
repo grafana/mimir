@@ -176,9 +176,9 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-	awaitFrontendReady func(ctx context.Context, timeout time.Duration) error,
+	frontendReadinessAwaiter ReadinessAwaiter,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer, awaitFrontendReady)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer, frontendReadinessAwaiter)
 	if err != nil {
 		return nil, err
 	}
@@ -196,13 +196,13 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-	awaitFrontendReady func(ctx context.Context, timeout time.Duration) error,
+	frontendReadinessAwaiter ReadinessAwaiter,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
 	engineOpts.ActiveQueryTracker = nil
 	engine := promql.NewEngine(engineOpts)
 
-	runningMiddleware := newFrontendRunningMiddleware(awaitFrontendReady, cfg.NotRunningTimeout, log)
+	runningMiddleware := newFrontendRunningMiddleware(frontendReadinessAwaiter, cfg.NotRunningTimeout)
 
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
