@@ -107,21 +107,25 @@
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
+    memcached_cache_connection_limit: 16384,
     cache_frontend_backend: 'memcached',
     memcached_frontend_mtls_enabled: false,
 
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
+    memcached_cache_connection_limit: 16384,
     cache_index_queries_backend: 'memcached',
     memcached_index_queries_mtls_enabled: false,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
+    memcached_cache_connection_limit: 16384,
     cache_chunks_backend: 'memcached',
     memcached_chunks_mtls_enabled: false,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
+    memcached_cache_connection_limit: 16384,
     cache_metadata_backend: 'memcached',
     memcached_metadata_mtls_enabled: false,
 

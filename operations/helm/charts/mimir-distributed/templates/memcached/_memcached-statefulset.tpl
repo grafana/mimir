@@ -90,7 +90,7 @@ spec:
             - -m {{ .allocatedMemory }}
             - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
-            - -c 16384
+            - -c {{ .connectionLimit }}
             - -v
             - -u {{ .port }}
             {{- range $key, $value := .extraArgs }}
