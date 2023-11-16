@@ -1307,6 +1307,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	err = ring.DoBatchWithClientError(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
+			growStack()
+
 			var timeseriesCount, metadataCount int
 			for _, i := range indexes {
 				if i >= initialMetadataIndex {
@@ -1338,6 +1340,24 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	)
 
 	return err
+}
+
+// growStack is copied from https://github.com/golang/go/issues/18138
+//
+//go:noinline
+func growStack() {
+	// Goroutine stacks currently start at 2 KB in size. The code paths through
+	// the storage package often need a stack that is 32 KB in size. The stack
+	// growth is mildly expensive making it useful to trick the runtime into
+	// growing the stack early. Since goroutine stacks grow in multiples of 2 and
+	// start at 2 KB in size, by placing a 16 KB object on the stack early in the
+	// lifetime of a goroutine we force the runtime to use a 32 KB stack for the
+	// goroutine.
+	var buf [16 << 10] /* 16 KB */ byte
+	// Make sure the compiler doesn't optimize away buf.
+	for i := range buf {
+		buf[i] = byte(i)
+	}
 }
 
 func preallocSliceIfNeeded[T any](size int) []T {
