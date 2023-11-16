@@ -739,6 +739,49 @@
         },
         {
           "kind": "block",
+          "name": "retry_after_header",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.retry-after-header.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "base_seconds",
+              "required": false,
+              "desc": "Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "distributor.retry-after-header.base-seconds",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_backoff_exponent",
+              "required": false,
+              "desc": "Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
           "name": "ha_tracker",
           "required": false,
           "desc": "",
@@ -1774,7 +1817,7 @@
           "required": false,
           "desc": "Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.prefer-streaming-chunks-from-ingesters",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1799,7 +1842,7 @@
           "fieldDefaultValue": 256,
           "fieldFlag": "querier.streaming-chunks-per-ingester-buffer-size",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1818,7 +1861,7 @@
           "required": false,
           "desc": "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.minimize-ingester-requests",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1832,7 +1875,7 @@
           "fieldDefaultValue": 3000000000,
           "fieldFlag": "querier.minimize-ingester-requests-hedging-delay",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -3174,6 +3217,16 @@
         },
         {
           "kind": "field",
+          "name": "reduce_native_histogram_over_max_buckets",
+          "required": false,
+          "desc": "Whether to reduce or reject native histogram samples with more buckets than the configured limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "validation.reduce-native-histogram-over-max-buckets",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "creation_grace_period",
           "required": false,
           "desc": "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).",
@@ -3218,7 +3271,7 @@
           "kind": "field",
           "name": "service_overload_status_code_on_rate_limit_enabled",
           "required": false,
-          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.",
+          "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.service-overload-status-code-on-rate-limit-enabled",
@@ -5659,6 +5712,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -9697,6 +9761,17 @@
             },
             {
               "kind": "field",
+              "name": "num_tokens",
+              "required": false,
+              "desc": "Number of tokens for each store-gateway.",
+              "fieldValue": null,
+              "fieldDefaultValue": 512,
+              "fieldFlag": "store-gateway.sharding-ring.num-tokens",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "zone_awareness_enabled",
               "required": false,
               "desc": "True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
@@ -11523,6 +11598,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ruler-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -13543,6 +13629,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "alertmanager-storage.s3.native-aws-auth-enabled",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "part_size",
+              "required": false,
+              "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager-storage.s3.part-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             },
             {
@@ -15807,6 +15904,17 @@
                   "fieldDefaultValue": false,
                   "fieldFlag": "common.storage.s3.native-aws-auth-enabled",
                   "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "part_size",
+                  "required": false,
+                  "desc": "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0,
+                  "fieldFlag": "common.storage.s3.part-size",
+                  "fieldType": "int",
                   "fieldCategory": "experimental"
                 },
                 {

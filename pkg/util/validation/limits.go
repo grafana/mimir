@@ -40,6 +40,7 @@ const (
 	MaxLabelValueLengthFlag                  = "validation.max-length-label-value"
 	MaxMetadataLengthFlag                    = "validation.max-metadata-length"
 	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
+	ReduceNativeHistogramOverMaxBucketsFlag  = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                  = "validation.create-grace-period"
 	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
 	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
@@ -82,6 +83,7 @@ type Limits struct {
 	MaxLabelNamesPerSeries                      int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength                           int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
 	MaxNativeHistogramBuckets                   int                 `yaml:"max_native_histogram_buckets" json:"max_native_histogram_buckets"`
+	ReduceNativeHistogramOverMaxBuckets         bool                `yaml:"reduce_native_histogram_over_max_buckets" json:"reduce_native_histogram_over_max_buckets"`
 	CreationGracePeriod                         model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period" category:"advanced"`
 	EnforceMetadataMetricName                   bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name" category:"advanced"`
 	IngestionTenantShardSize                    int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
@@ -202,10 +204,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesPerSeries, MaxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, MaxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	f.IntVar(&l.MaxNativeHistogramBuckets, maxNativeHistogramBucketsFlag, 0, "Maximum number of buckets per native histogram sample. 0 to disable the limit.")
+	f.BoolVar(&l.ReduceNativeHistogramOverMaxBuckets, ReduceNativeHistogramOverMaxBucketsFlag, true, "Whether to reduce or reject native histogram samples with more buckets than the configured limit.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, CreationGracePeriodFlag, "Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + grace_period)'. This configuration is enforced in the distributor, ingester and query-frontend (to avoid querying too far into the future).")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
-	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.")
+	f.BoolVar(&l.ServiceOverloadStatusCodeOnRateLimitEnabled, "distributor.service-overload-status-code-on-rate-limit-enabled", false, "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -491,6 +494,12 @@ func (o *Overrides) MaxMetadataLength(userID string) int {
 // histogram sample.
 func (o *Overrides) MaxNativeHistogramBuckets(userID string) int {
 	return o.getOverridesForUser(userID).MaxNativeHistogramBuckets
+}
+
+// ReduceNativeHistogramOverMaxBuckets returns whether to reduce or reject
+// native histogram samples with more buckets than the configured limit.
+func (o *Overrides) ReduceNativeHistogramOverMaxBuckets(userID string) bool {
+	return o.getOverridesForUser(userID).ReduceNativeHistogramOverMaxBuckets
 }
 
 // CreationGracePeriod is misnamed, and actually returns how far into the future

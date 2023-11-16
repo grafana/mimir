@@ -732,6 +732,9 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
+			Header: map[string][]string{
+				"Content-Type": {"application/json"},
+			},
 		}, nil, log.NewNopLogger())
 		require.NoError(b, err)
 	}

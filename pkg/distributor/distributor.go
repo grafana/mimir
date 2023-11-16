@@ -41,7 +41,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -158,6 +157,7 @@ type Distributor struct {
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
+	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
@@ -201,6 +201,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
+	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
@@ -216,7 +217,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	return cfg.HATrackerConfig.Validate()
+	if err := cfg.HATrackerConfig.Validate(); err != nil {
+		return err
+	}
+	return cfg.RetryConfig.Validate()
 }
 
 const (
@@ -630,13 +634,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
-	for _, h := range ts.Histograms {
+	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
 		if delta > 0 {
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
 			return err
 		}
 	}
@@ -1306,33 +1310,37 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
-	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		var timeseriesCount, metadataCount int
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadataCount++
-			} else {
-				timeseriesCount++
+	err = ring.DoBatchWithClientError(ctx, ring.WriteNoExtend, subRing, keys,
+		func(ingester ring.InstanceDesc, indexes []int) error {
+			var timeseriesCount, metadataCount int
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadataCount++
+				} else {
+					timeseriesCount++
+				}
 			}
-		}
 
-		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
+			timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
+			metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
-			} else {
-				timeseries = append(timeseries, req.Timeseries[i])
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+				} else {
+					timeseries = append(timeseries, req.Timeseries[i])
+				}
 			}
-		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
-		if errors.Is(err, context.DeadlineExceeded) {
-			return errors.Wrap(err, deadlineExceededWrapMessage)
-		}
-		return err
-	}, func() { pushReq.CleanUp(); cancel() })
+			err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errors.Wrap(err, deadlineExceededWrapMessage)
+			}
+			return err
+		},
+		func() { pushReq.CleanUp(); cancel() },
+		isClientError,
+	)
 
 	return err
 }
@@ -1389,31 +1397,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
-}
-
-func handleIngesterPushError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	stat, ok := grpcutil.ErrorToStatus(err)
-	if !ok {
-		return errors.Wrap(err, failedPushingToIngesterMessage)
-	}
-	statusCode := stat.Code()
-	if isHTTPStatusCode(statusCode) {
-		// TODO This code is needed for backwards compatibility, since ingesters may still return
-		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-		// it. This code should be removed in mimir 2.12.0.
-		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
-	}
-
-	return newIngesterPushError(stat)
-}
-
-func isHTTPStatusCode(statusCode codes.Code) bool {
-	return int(statusCode) >= 100 && int(statusCode) < 600
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.

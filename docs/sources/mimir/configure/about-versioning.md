@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
-menuTitle: About versioning
+menuTitle: Versioning
 title: About Grafana Mimir versioning
 weight: 50
 ---
@@ -62,6 +62,10 @@ The following features are currently experimental:
     - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
+  - Set Retry-After header in recoverable error responses
+    - `-distributor.retry-after-header.enabled`
+    - `-distributor.retry-after-header.base-seconds`
+    - `-distributor.retry-after-header.max-backoff-exponent`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -112,9 +116,9 @@ The following features are currently experimental:
     - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`)
   - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
-  - Ingester query request minimisation (`-querier.minimize-ingester-requests`, `-querier.minimize-ingester-requests-hedging-delay`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
 - Query-frontend
@@ -131,7 +135,9 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
-- `/api/v1/user_limits` API endpoint
+- API endpoints:
+  - `/api/v1/user_limits`
+  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`

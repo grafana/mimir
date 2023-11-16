@@ -10,6 +10,8 @@
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
 * [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
 * [CHANGE] Query-frontend: removed `cortex_query_frontend_workers_enqueued_requests_total`. Use `cortex_query_frontend_enqueue_duration_seconds_count` instead. #6121
+* [CHANGE] Ingester / querier: enable ingester to querier chunks streaming by default and mark it as stable. #6174
+* [CHANGE] Ingester / querier: enable ingester query request minimisation by default and mark it as stable. #6174
 * [CHANGE] Ingester: changed the default value for the experimental configuration parameter `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage` from 10 to 15. #6186
 * [CHANGE] Ingester: `/ingester/push` HTTP endpoint has been removed. This endpoint was added for testing and troubleshooting, but was never documented or used for anything. #6299
 * [CHANGE] Experimental setting `-log.rate-limit-logs-per-second-burst` renamed to `-log.rate-limit-logs-burst-size`. #6230
@@ -22,9 +24,11 @@
   * `http.StatusServiceUnavailable` (503) and `codes.Unknown` are replaced with `codes.Internal`.
 * [CHANGE] Upgrade Node.js to v20. #6540
 * [CHANGE] Querier: `cortex_querier_blocks_consistency_checks_failed_total` is now incremented when a block couldn't be queried from any attempted store-gateway as opposed to incremented after each attempt. Also `cortex_querier_blocks_consistency_checks_total` is incremented once per query as opposed to once per attempt (with 3 attempts). #6590
+* [FEATURE] Distributor: added option `-distributor.retry-after-header.enabled` to include the `Retry-After` header in recoverable error responses. #6608
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
-* [FEATURE] Add experimental endpoint `/api/v1/cardinality/active_series` to return the set of active series for a given selector. #6536
+* [FEATURE] Add experimental endpoint `/api/v1/cardinality/active_series` to return the set of active series for a given selector. #6536 #6619 #6651
+* [FEATURE] Added `-<prefix>.s3.part-size` flag to configure the S3 minimum file size in bytes used for multipart uploads. #6592
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. When query-scheduler is in use, the metric has the `scheduler_address` label to differentiate the enqueue duration by query-scheduler backend. #5879 #6087 #6120
@@ -55,6 +59,7 @@
 * [ENHANCEMENT] Querier: clarify log messages and span events emitted while querying ingesters, and include both ingester name and address when relevant. #6381
 * [ENHANCEMENT] Memcached: introduce new experimental configuration parameters `-<prefix>.memcached.write-buffer-size-bytes` `-<prefix>.memcached.read-buffer-size-bytes` to customise the memcached client write and read buffer size (the buffer is allocated for each memcached connection). #6468
 * [ENHANCEMENT] Ingester, Distributor: added experimental support for rejecting push requests received via gRPC before reading them into memory, if ingester or distributor is unable to accept the request. This is activated by using `-ingester.limit-inflight-requests-using-grpc-method-limiter` for ingester, and `-distributor.limit-inflight-requests-using-grpc-method-limiter` for distributor. #5976 #6300
+* [ENHANCEMENT] Add capability in store-gateways to accept number of tokens through config. `-store-gateway.sharding-ring.num-tokens`, `default-value=512` #4863
 * [ENHANCEMENT] Query-frontend: return warnings generated during query evaluation. #6391
 * [ENHANCEMENT] Server: Add the option `-server.http-read-header-timeout` to enable specifying a timeout for reading HTTP request headers. It defaults to 0, in which case reading of headers can take up to `-server.http-read-timeout`, leaving no time for reading body, if there's any. #6517
 * [ENHANCEMENT] Add connection-string option, `-<prefix>.azure.connection-string`, for Azure Blob Storage. #6487
@@ -64,7 +69,11 @@
 * [ENHANCEMENT] Server: Add `-server.report-grpc-codes-in-instrumentation-label-enabled` CLI flag to specify whether gRPC status codes should be used in `status_code` label of `cortex_request_duration_seconds` metric. It defaults to false, meaning that successful and erroneous gRPC status codes are represented with `success` and `error` respectively. #6562
 * [ENHANCEMENT] Server: Add `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled` CLI flag to specify whether gRPC status codes should be used in `status_code` label of `cortex_ingester_client_request_duration_seconds` metric. It defaults to false, meaning that successful and erroneous gRPC status codes are represented with `2xx` and `error` respectively. #6562
 * [ENHANCEMENT] Server: Add `-server.http-log-closed-connections-without-response-enabled` option to log details about connections to HTTP server that were closed before any data was sent back. This can happen if client doesn't manage to send complete HTTP headers before timeout. #6612
+* [ENHANCEMENT] Query-frontend: include length of query, time since the earliest and latest points of a query, time since the earliest and latest points of a query, cached/uncached bytes in "query stats" logs. Time parameters (start/end/time) are always formatted as RFC3339 now. #6473 #6477
+* [ENHANCEMENT] Distributor: added support for reducing the resolution of native histogram samples upon ingestion if the sample has too many buckets compared to `-validation.max-native-histogram-buckets`. This is enabled by default and can be turned off by setting `-validation.reduce-native-histogram-over-max-buckets` to `false`. #6535
 * [ENHANCEMENT] Query-frontend: optionally wait for the frontend to complete startup if requests are received while the frontend is still starting. Disabled by default, set `-query-frontend.not-running-timeout` to a non-zero value to enable. #6621
+* [ENHANCEMENT] Distributor: Include source IPs in OTLP push handler logs. #6652
+* [BUGFIX] Distributor: return server overload error in the event of exceeding the ingestion rate limit. #6549
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
 * [BUGFIX] Ingester: prevent query logic from continuing to execute after queries are canceled. #6085
@@ -78,6 +87,7 @@
 * [BUGFIX] All: fix issue where traces for some inter-component gRPC calls would incorrectly show the call as failing due to cancellation. #6470
 * [BUGFIX] Querier: correctly mark streaming requests to ingesters or store-gateways as successful, not cancelled, in metrics and traces. #6471 #6505
 * [BUGFIX] Querier: fix issue where queries fail with "context canceled" error when an ingester or store-gateway fails healthcheck while the query is in progress. #6550
+* [BUGFIX] Tracing: When creating an OpenTelemetry tracing span, add it to the context for later retrieval. #6614
 
 ### Mixin
 
@@ -95,6 +105,7 @@
 * [CHANGE] Ingester: reduce `-server.grpc-max-concurrent-streams` to 500. #5666
 * [CHANGE] Changed default `_config.cluster_domain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [CHANGE] Query-frontend: changed default `_config.autoscaling_query_frontend_cpu_target_utilization` from `1` to `0.75`. #6395
+* [CHANGE] Distributor: Increase HPA scale down period such that distributors are slower to scale down after autoscaling up. #6589
 * [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 * [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
   * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)
@@ -111,6 +122,7 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] Analyze Grafana: Improve support for variables in range. #6657
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 * [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
 * [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6009
@@ -129,6 +141,12 @@
 * [CHANGE] tsdb-index: Rename tool to tsdb-series. #6317
 * [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
+
+## 2.10.4
+
+### Grafana Mimir
+
+* [BUGFIX] Update otelhttp library to v0.44.0 as a mitigation for CVE-2023-45142. #6634
 
 ## 2.10.3
 
@@ -374,6 +392,10 @@
 * [ENHANCEMENT] tsdb-index-toc: added index-header size estimates. #5652
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
+
+## 2.9.3
+
+* [BUGFIX] Update `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` to `0.44` which includes a fix for CVE-2023-45142. #6637
 
 ## 2.9.2
 

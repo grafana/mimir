@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -164,13 +165,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mtx.Unlock()
 	}()
 
-	var stats *querier_stats.Stats
+	var queryDetails *querymiddleware.QueryDetails
 
-	// Initialise the stats in the context and make sure it's propagated
+	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	if f.cfg.QueryStatsEnabled {
 		var ctx context.Context
-		stats, ctx = querier_stats.ContextWithEmptyStats(r.Context())
+		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
 	}
 
@@ -195,7 +196,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, err)
 		return
 	}
 
@@ -205,7 +206,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if f.cfg.QueryStatsEnabled {
-		writeServiceTimingHeader(queryResponseTime, hs, stats)
+		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -213,22 +214,22 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
-		f.reportSlowQuery(r, params, queryResponseTime)
+		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
-func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration) {
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
 	logMessage := append([]interface{}{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
-	}, formatQueryString(queryString)...)
+	}, formatQueryString(details, queryString)...)
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
@@ -237,12 +238,16 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryStartTime time.Time, queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
+	var stats *querier_stats.Stats
+	if details != nil {
+		stats = details.QuerierStats
+	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
@@ -278,8 +283,25 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
-	}, formatQueryString(queryString)...)
+	}, formatQueryString(details, queryString)...)
 
+	if details != nil {
+		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
+		// or if the query was a constant expression and didn't need to process samples.
+		if !details.MinT.IsZero() && !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "length", details.MaxT.Sub(details.MinT).String())
+		}
+		if !details.MinT.IsZero() {
+			logMessage = append(logMessage, "time_since_min_time", queryStartTime.Sub(details.MinT))
+		}
+		if !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
+		}
+		logMessage = append(logMessage,
+			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
+			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+		)
+	}
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
 	}
@@ -303,9 +325,23 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func formatQueryString(queryString url.Values) (fields []interface{}) {
+// formatQueryString prefers printing start, end, and step from details if they are not nil.
+func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []interface{}) {
 	for k, v := range queryString {
-		fields = append(fields, fmt.Sprintf("param_%s", k), strings.Join(v, ","))
+		var formattedValue string
+		if details != nil && (k == "start" || k == "end" || k == "step" || k == "time") {
+			switch k {
+			case "start", "time":
+				formattedValue = details.Start.Format(time.RFC3339Nano)
+			case "end":
+				formattedValue = details.End.Format(time.RFC3339Nano)
+			case "step":
+				formattedValue = strconv.FormatInt(details.Step.Milliseconds(), 10)
+			}
+		} else {
+			formattedValue = strings.Join(v, ",")
+		}
+		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
 	}
 	return fields
 }

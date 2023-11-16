@@ -116,12 +116,12 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 		"instance already in the ring with ACTIVE state and has all tokens": {
 			initialExists: true,
 			initialState:  ring.ACTIVE,
-			initialTokens: generateSortedTokens(RingNumTokens),
+			initialTokens: generateSortedTokens(ringNumTokensDefault),
 		},
 		"instance already in the ring with LEAVING state and has all tokens": {
 			initialExists: true,
 			initialState:  ring.LEAVING,
-			initialTokens: generateSortedTokens(RingNumTokens),
+			initialTokens: generateSortedTokens(ringNumTokensDefault),
 		},
 	}
 
@@ -154,7 +154,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 				// state within the ring.
 				assert.True(t, g.ringLifecycler.IsRegistered())
 				assert.Equal(t, ring.JOINING, g.ringLifecycler.GetState())
-				assert.Equal(t, RingNumTokens, len(g.ringLifecycler.GetTokens()))
+				assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 				assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
 			})
 			bucketClient.MockIter("user-1/", []string{}, nil)
@@ -165,7 +165,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 
 			assert.True(t, g.ringLifecycler.IsRegistered())
 			assert.Equal(t, ring.ACTIVE, g.ringLifecycler.GetState())
-			assert.Equal(t, RingNumTokens, len(g.ringLifecycler.GetTokens()))
+			assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 			assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
 
 			assert.NotNil(t, g.stores.getStore("user-1"))
@@ -540,16 +540,16 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 		expectedNumTokens int
 	}{
 		"stored tokens are less than the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokens - 10),
-			expectedNumTokens: RingNumTokens,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault - 10),
+			expectedNumTokens: ringNumTokensDefault,
 		},
 		"stored tokens are equal to the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokens),
-			expectedNumTokens: RingNumTokens,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault),
+			expectedNumTokens: ringNumTokensDefault,
 		},
 		"stored tokens are more then the configured ones": {
-			storedTokens:      generateSortedTokens(RingNumTokens + 10),
-			expectedNumTokens: RingNumTokens + 10,
+			storedTokens:      generateSortedTokens(ringNumTokensDefault + 10),
+			expectedNumTokens: ringNumTokensDefault + 10,
 		},
 	}
 
@@ -957,7 +957,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
-			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(RingNumTokens), ring.ACTIVE, time.Now())
+			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now())
 			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 

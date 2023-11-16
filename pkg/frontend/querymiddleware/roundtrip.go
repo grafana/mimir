@@ -208,7 +208,7 @@ func newQueryTripperware(
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newQueryStatsMiddleware(registerer),
+		newQueryStatsMiddleware(registerer, engine),
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 	}
