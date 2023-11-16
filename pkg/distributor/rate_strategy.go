@@ -51,9 +51,8 @@ func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
 		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
 		if burstByFactor >= math.MaxInt {
 			return math.MaxInt
-		} else {
-			return int(math.Ceil(burstByFactor))
 		}
+		return int(math.Ceil(burstByFactor))
 	}
 	return s.limits.IngestionBurstSize(tenantID)
 }

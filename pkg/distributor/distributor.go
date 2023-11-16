@@ -974,7 +974,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			burstSize := d.limits.IngestionBurstSize(userID)
 			if d.limits.IngestionBurstFactor(userID) > 0 {
-				burstSize = int(d.limits.IngestionRate(userID)*d.limits.IngestionBurstFactor(userID))
+				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
 			}
 			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
 		}
