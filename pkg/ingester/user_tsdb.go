@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -125,8 +126,11 @@ type userTSDB struct {
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
 
-	ownedSeriesCount    int
-	ownedSeriesCountMtx sync.Mutex
+	ownedSeriesMtx       sync.Mutex
+	ownedSeriesCount     int // Number of "owned" series, based on current ring.
+	ownedSeriesShardSize int // Shard size used when computing "owned" series. Also used when checking series limit.
+
+	ownedTokenRangesMtx sync.Mutex
 	ownedTokenRanges    []uint32
 }
 
@@ -280,8 +284,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	// TODO(pprus) -- when responding to ring changes, need to delay using the new ingestion shard size as part of the local limit calculation until the owned series are updated
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, int(u.ownedSeriesCount)) {
+	count, shards := u.OwnedSeriesAndShards()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, count, shards) {
 		return globalerror.MaxSeriesPerUser
 	}
 
@@ -300,9 +304,9 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
-	u.ownedSeriesCountMtx.Lock()
+	u.ownedSeriesMtx.Lock()
 	u.ownedSeriesCount++
-	u.ownedSeriesCountMtx.Unlock()
+	u.ownedSeriesMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
 	if err != nil {
@@ -479,47 +483,111 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	}
 }
 
-func (u *userTSDB) OwnedSeries() int {
-	return u.ownedSeriesCount
+func (u *userTSDB) OwnedSeriesAndShards() (int, int) {
+	u.ownedSeriesMtx.Lock()
+	defer u.ownedSeriesMtx.Unlock()
+
+	return u.ownedSeriesCount, u.ownedSeriesShardSize
 }
 
-func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger) {
-	b := u.ownedSeriesCount
-
+func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger, shardSize int) {
 	start := time.Now()
-	n := u.Head().CountSecondaryHashesInRanges(u.ownedTokenRanges)
+	repeats := 0
+
+	ownedPrev, shardSizePrev := u.OwnedSeriesAndShards()
+
+	var ownedNew int
+	for {
+		ownedNew = u.computeOwnedSeries()
+
+		// Try to update the values, but only if no new series was added in the meantime.
+		u.ownedSeriesMtx.Lock()
+		if u.ownedSeriesCount == ownedPrev {
+			// No new series was added while computing owned series.
+			u.ownedSeriesCount = ownedNew
+			if shardSize > 0 {
+				u.ownedSeriesShardSize = shardSize
+			}
+			u.ownedSeriesMtx.Unlock()
+			break
+		}
+
+		// If some series was created in the meantime, our new number of owned series may be wrong
+		// (it may or may not include the new series, we don't know). In that case, just run the computation again.
+		ownedPrev = u.ownedSeriesCount
+		shardSizePrev = u.ownedSeriesShardSize
+
+		u.ownedSeriesMtx.Unlock()
+		repeats++
+	}
+
 	dur := time.Since(start)
 
-	a := u.ownedSeriesCount
-
-	// TODO(pprus) -- do we need to worry about series created while we're counting owned series? is that even possible?
-
-	// write back new value
-	u.ownedSeriesCountMtx.Lock()
-	u.ownedSeriesCount = n
-	u.ownedSeriesCountMtx.Unlock()
-
-	level.Info(l).Log("msg", "pprus -- recalculated owned series", "user", u.userID, "reason", reason, "before", b, "after", a, "new", n, "duration", dur)
+	level.Info(l).Log("msg", "pprus -- recalculated owned series", "user", u.userID, "reason", reason, "seriesCountBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "newSeriesCount", ownedNew, "newShardSize", shardSize, "duration", dur, "repeats", repeats)
 }
 
-func (u *userTSDB) UpdateTokenRanges(ranges []uint32) {
-	u.ownedTokenRanges = ranges
+// UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+func (u *userTSDB) UpdateTokenRanges(newTokenRanges []uint32) bool {
+	// Check for changes outside critical section.
+	u.ownedTokenRangesMtx.Lock()
+	prev := u.ownedTokenRanges
+	u.ownedTokenRanges = newTokenRanges
+	u.ownedTokenRangesMtx.Unlock()
+
+	if len(newTokenRanges) != len(prev) {
+		return true
+	}
+
+	for i := 0; i < len(newTokenRanges); i++ {
+		if newTokenRanges[i] != u.ownedTokenRanges[i] {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (u *userTSDB) TokenRanges() []uint32 {
+	u.ownedTokenRangesMtx.Lock()
+	defer u.ownedTokenRangesMtx.Unlock()
+
 	return u.ownedTokenRanges
 }
 
-// TODO(pprus) -- probably doesn't belong here
-func (u *userTSDB) TokenRangesEqual(newTokens []uint32) bool {
-	if len(newTokens) != len(u.ownedTokenRanges) {
+func (u *userTSDB) computeOwnedSeries() int {
+	u.ownedTokenRangesMtx.Lock()
+	defer u.ownedTokenRangesMtx.Unlock()
+
+	count := 0
+	u.Head().ForEachSecondaryHash(func(secondaryHash uint32) {
+		if hashInRanges(secondaryHash, u.ownedTokenRanges) {
+			count++
+		}
+	})
+	return count
+}
+
+func hashInRanges(hash uint32, ranges []uint32) bool {
+	switch {
+	case len(ranges) == 0:
+		return false
+	case hash < ranges[0]:
+		// hash comes before the first range
+		return false
+	case hash > ranges[len(ranges)-1]:
+		// hash comes after the last range
 		return false
 	}
 
-	for i := 0; i < len(newTokens); i++ {
-		if newTokens[i] != u.ownedTokenRanges[i] {
-			return false
-		}
+	index, found := slices.BinarySearch(ranges, hash)
+	switch {
+	case found:
+		// ranges are closed
+		return true
+	case index%2 == 1:
+		// hash would be inserted after the start of a range (even index)
+		return true
+	default:
+		return false
 	}
-	return true
 }

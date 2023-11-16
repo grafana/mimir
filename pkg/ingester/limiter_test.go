@@ -46,7 +46,7 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 	}
 
 	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxSeriesPerUser("test")
+		return limiter.maxSeriesPerUser("test", limiter.getShardSize("test"))
 	}
 
 	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
@@ -460,7 +460,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			require.NoError(t, err)
 
 			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
-			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, limiter.getShardSize("test"))
 
 			assert.Equal(t, testData.expected, actual)
 		})

@@ -708,7 +708,7 @@ func (i *Ingester) updateUsageStats() {
 func (i *Ingester) applyTSDBSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
-		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
+		localValue := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), globalValue)
 
 		oooTW := i.limits.OutOfOrderTimeWindow(userID)
 		if oooTW < 0 {
@@ -747,7 +747,8 @@ func (i *Ingester) applyTSDBSettings() {
 
 func (i *Ingester) updateLocalLimitMetrics() {
 	for _, userID := range i.getTSDBUsers() {
-		localValue := i.limiter.maxSeriesPerUser(userID)
+		// TODO: use owned shard size, if used.
+		localValue := i.limiter.maxSeriesPerUser(userID, i.limiter.getShardSize(userID))
 
 		// update metrics
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
@@ -760,7 +761,8 @@ func (i *Ingester) updateOwnedSeriesMetrics() {
 		if db == nil {
 			continue
 		}
-		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(db.OwnedSeries()))
+		c, _ := db.OwnedSeriesAndShards()
+		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(c))
 	}
 }
 
@@ -2235,7 +2237,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
 	}
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
@@ -2758,7 +2760,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		// need a way to know if the above actually resulted in a compaction
 		level.Info(i.logger).Log("msg", "pprus -- compacted?", "before", b, "after", a)
 		if a != b {
-			userDB.RecalculateOwnedSeries("compaction", i.logger)
+			userDB.RecalculateOwnedSeries("compaction", i.logger, -1)
 		}
 
 		return nil
@@ -3460,11 +3462,13 @@ func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
 		case <-ticker.C:
 			// TODO(pprus) -- use ring.WaitInstanceState instead
 			if i.lifecycler.GetState() != ring.ACTIVE {
-				level.Info(i.logger).Log("msg", "pprus -- lifecycler not ACTIVE")
-				break
+				level.Warn(i.logger).Log("msg", "ingester is not ACTIVE, cannot compute owned series.")
+				continue
 			}
 
-			// TODO(pprus) -- what to do if we fail for some users?
+			// TODO(pprus) -- what to do if we fail for some users? TODO: We set limit based on their tenant overrides.
+
+			start := time.Now()
 
 			for _, userID := range i.getTSDBUsers() {
 				level.Info(i.logger).Log("msg", "pprus -- updating token ranges", "user", userID)
@@ -3475,7 +3479,8 @@ func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
 
 				// TODO(pprus) should add a mutex and TryLock here and skip this if compaction is currently running
 
-				subr := i.ingestersRing.ShuffleShard(userID, i.limiter.getShardSize(userID))
+				shardSize := i.limiter.getShardSize(userID)
+				subr := i.ingestersRing.ShuffleShard(userID, shardSize)
 				level.Info(i.logger).Log("msg", "pprus -- subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
 
 				// TODO(pprus) -- this seems to fail the first time because the zone has no tokens
@@ -3487,13 +3492,13 @@ func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
 					// return?
 				}
 
-				// check if ranges changed
-				if !db.TokenRangesEqual(ranges) {
-					level.Info(i.logger).Log("msg", "pprus -- updated token ranges")
-					db.UpdateTokenRanges(ranges)
-					db.RecalculateOwnedSeries("owned range change", i.logger)
+				level.Info(i.logger).Log("msg", "pprus -- updated token ranges")
+				if db.UpdateTokenRanges(ranges) {
+					db.RecalculateOwnedSeries("owned range change", i.logger, shardSize)
 				}
 			}
+
+			level.Info(i.logger).Log("msg", "updated owned series for all users", "duration", time.Since(start))
 
 			// Run less often once we've run the initial calculations
 			if !runOnce {
