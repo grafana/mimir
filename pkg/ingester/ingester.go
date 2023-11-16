@@ -175,6 +175,9 @@ type Config struct {
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
 	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
+
+	UseIngesterOwnedSeriesForLimits bool `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
+	UpdateIngesterOwnedSeries       bool `yaml:"track_ingester_owned_series" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -194,6 +197,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
+	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
+	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 }
 
 func (cfg *Config) Validate() error {
@@ -464,8 +469,10 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	ownedSeriesService := services.NewBasicService(nil, i.ownedSeriesLoop, nil)
-	servs = append(servs, ownedSeriesService)
+	if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
+		ownedSeriesService := services.NewBasicService(nil, i.ownedSeriesLoop, nil)
+		servs = append(servs, ownedSeriesService)
+	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
 	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
@@ -562,8 +569,12 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	localLimitMetricUpdateTicker := time.NewTicker(time.Second * 15)
 	defer localLimitMetricUpdateTicker.Stop()
 
-	ownedSeriesUpdateTicker := time.NewTicker(time.Second * 15)
-	defer ownedSeriesUpdateTicker.Stop()
+	var ownedSeriesUpdateTickerCh <-chan time.Time
+	if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
+		ownedSeriesUpdateTicker := time.NewTicker(time.Second * 15)
+		defer ownedSeriesUpdateTicker.Stop()
+		ownedSeriesUpdateTickerCh = ownedSeriesUpdateTicker.C
+	}
 
 	for {
 		select {
@@ -586,7 +597,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.updateUsageStats()
 		case <-localLimitMetricUpdateTicker.C:
 			i.updateLocalLimitMetrics()
-		case <-ownedSeriesUpdateTicker.C:
+		case <-ownedSeriesUpdateTickerCh:
 			i.updateOwnedSeriesMetrics()
 		case <-ctx.Done():
 			return nil
@@ -2226,15 +2237,16 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
 	userDB := &userTSDB{
-		userID:              userID,
-		activeSeries:        activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
-		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
-		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		instanceLimitsFn:    i.getInstanceLimits,
-		instanceSeriesCount: &i.seriesCount,
-		instanceErrors:      i.metrics.rejected,
-		blockMinRetention:   i.cfg.BlocksStorageConfig.TSDB.Retention,
+		userID:                  userID,
+		activeSeries:            activeseries.NewActiveSeries(activeseries.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout),
+		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
+		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		instanceLimitsFn:        i.getInstanceLimits,
+		instanceSeriesCount:     &i.seriesCount,
+		instanceErrors:          i.metrics.rejected,
+		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
+		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
@@ -2728,7 +2740,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 
 		i.metrics.compactionsTriggered.Inc()
 
-		b := userDB.Head().MinTime()
+		minTimeBefore := userDB.Head().MinTime()
 
 		reason := ""
 		switch {
@@ -2755,11 +2767,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
 		}
 
-		a := userDB.Head().MinTime()
+		minTimeAfter := userDB.Head().MinTime()
 
-		// need a way to know if the above actually resulted in a compaction
-		level.Info(i.logger).Log("msg", "pprus -- compacted?", "before", b, "after", a)
-		if a != b {
+		// If head was compacted, its MinTime has changed. We need to recalculate series owned by this ingester,
+		// because in-memory series are removed during compaction.
+		if minTimeBefore != minTimeAfter {
 			userDB.RecalculateOwnedSeries("compaction", i.logger, -1)
 		}
 

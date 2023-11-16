@@ -126,6 +126,9 @@ type userTSDB struct {
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
 
+	useOwnedSeriesForLimits bool
+
+	// We use mutex, so that we can update count and shard size at the same time (when shard size changes).
 	ownedSeriesMtx       sync.Mutex
 	ownedSeriesCount     int // Number of "owned" series, based on current ring.
 	ownedSeriesShardSize int // Shard size used when computing "owned" series. Also used when checking series limit.
@@ -284,7 +287,14 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	count, shards := u.OwnedSeriesAndShards()
+	var count, shards int
+	if u.useOwnedSeriesForLimits {
+		count, shards = u.OwnedSeriesAndShards()
+	} else {
+		count = int(u.Head().NumSeries())
+		shards = u.limiter.getShardSize(u.userID)
+	}
+
 	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, count, shards) {
 		return globalerror.MaxSeriesPerUser
 	}
@@ -304,6 +314,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
 
+	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
+	// but we will recompute owned series when ingester joins the ring.)
 	u.ownedSeriesMtx.Lock()
 	u.ownedSeriesCount++
 	u.ownedSeriesMtx.Unlock()
@@ -327,6 +339,9 @@ func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) 
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
+
+	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.
+	// Instead, we recompute owned series after each compaction.
 
 	u.activeSeries.PostDeletion(metrics)
 }
