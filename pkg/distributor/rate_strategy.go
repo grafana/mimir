@@ -23,6 +23,7 @@ type globalIngestionStrategyWithBurstFactor struct {
 	limits *validation.Overrides
 	ring   ReadLifecycler
 }
+
 // We want a rate limiter that can use the burst factor if it's set for ingest rate limiting.
 func newGlobalRateStrategyWithBurstFactor(limits *validation.Overrides, ring ReadLifecycler) limiter.RateLimiterStrategy {
 	return &globalIngestionStrategyWithBurstFactor{
@@ -46,12 +47,12 @@ func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
 	burstFactor := s.limits.IngestionBurstFactor(tenantID)
 	if burstFactor > 0 {
 		limit := s.Limit(tenantID)
-		burstByFactor := float64(burstFactor) * limit
+		burstByFactor := burstFactor * limit
 		// If the ingestion rate * burst factor is too large we want to set it to the max possible burst value
 		if burstByFactor >= math.MaxInt {
 			return math.MaxInt
 		} else {
-			return int(burstByFactor)
+			return int(math.Ceil(burstByFactor))
 		}
 	} else {
 		return s.limits.IngestionBurstSize(tenantID)
@@ -113,10 +114,6 @@ func (s *requestRateStrategy) Burst(tenantID string) int {
 		return lm
 	}
 	return math.MaxInt
-}
-
-type ingestionRateStrategy struct {
-	limits *validation.Overrides
 }
 
 type infiniteStrategy struct{}

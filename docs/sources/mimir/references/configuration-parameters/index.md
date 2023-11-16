@@ -2869,10 +2869,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 [ingestion_burst_size: <int> | default = 200000]
 
 # (experimental) Per-tenant burst factor which is the maximum burst size allowed
-# as a multiple of the per-tenant ingestion rate. If this is set it will
-# override the `ingestion-burst-size` option.
+# as a multiple of the per-tenant ingestion rate, this burst-factor must be
+# greater than or equal to 1. If this is set it will override the
+# ingestion-burst-size option.
 # CLI flag: -distributor.ingestion-burst-factor
-[ingestion_burst_factor: <int> | default = 0]
+[ingestion_burst_factor: <float> | default = 0]
 
 # Flag to enable, for all tenants, handling of samples with external labels
 # identifying replicas in an HA Prometheus setup.

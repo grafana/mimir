@@ -633,7 +633,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		distributors         int
 		ingestionRate        float64
 		ingestionBurstSize   int
-		ingestionBurstFactor int
+		ingestionBurstFactor float64
 		pushes               []testPush
 	}{
 		"evenly share the ingestion limit across distributors": {

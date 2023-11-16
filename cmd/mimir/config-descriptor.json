@@ -3107,11 +3107,11 @@
           "kind": "field",
           "name": "ingestion_burst_factor",
           "required": false,
-          "desc": "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate. If this is set it will override the `ingestion-burst-size` option.",
+          "desc": "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "distributor.ingestion-burst-factor",
-          "fieldType": "int",
+          "fieldType": "float",
           "fieldCategory": "experimental"
         },
         {
