@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -24,18 +25,20 @@ import (
 )
 
 type config struct {
-	bucketConfig   objtools.BucketConfig
-	includeTenants flagext.StringSliceCSV
-	excludeTenants flagext.StringSliceCSV
-	inputJSONFile  string
-	dryRun         bool
+	bucketConfig    objtools.BucketConfig
+	includeTenants  flagext.StringSliceCSV
+	excludeTenants  flagext.StringSliceCSV
+	inputFile       string
+	inputFileFormat string
+	dryRun          bool
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucketConfig.RegisterFlags(f)
 	f.Var(&c.includeTenants, "include-tenants", "If not empty, only blocks for these tenants are considered.")
 	f.Var(&c.excludeTenants, "exclude-tenants", "Blocks for these tenants are not considered.")
-	f.StringVar(&c.inputJSONFile, "input-json-file", "", "If set, the blocks to undelete are read from the provided json file.")
+	f.StringVar(&c.inputFile, "input-file", "", "If set, the blocks to undelete are read from the provided file.")
+	f.StringVar(&c.inputFileFormat, "input-file-format", "json", "The format of the input file. Accepted values: json and lines.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "If true, no writes/deletes are performed and are instead only logged.")
 }
 
@@ -104,18 +107,27 @@ func newTenantFilter(cfg config) tenantFilter {
 
 func getBlocks(ctx context.Context, cfg config, bucket objtools.Bucket) (map[string][]ulid.ULID, error) {
 	tenantFilter := newTenantFilter(cfg)
-	if cfg.inputJSONFile != "" {
-		return getBlocksFromJSONFile(cfg.inputJSONFile, tenantFilter)
+	if cfg.inputFile != "" {
+		switch strings.ToLower(cfg.inputFileFormat) {
+		case "json":
+			return getBlocksFromJSONFile(cfg.inputFile, tenantFilter)
+		case "lines":
+			return getBlocksFromLinesFile(cfg.inputFile, tenantFilter)
+		default:
+			return nil, errors.Errorf("unrecognized input file format: %s", cfg.inputFileFormat)
+		}
 	}
 	return getBlocksFromListing(ctx, bucket, tenantFilter)
 }
 
-// getBlocksFromFile reads a JSON tenant to blocks map from the specified file
+// getBlocksFromJSONFile reads a JSON tenant to blockIDs map from the specified file
 func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
+	defer f.Close()
+
 	b, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
@@ -146,6 +158,34 @@ func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]u
 	}
 
 	return m2, nil
+}
+
+// getBlocksFromLinesFile reads a file with each line having a tenant and a blockID separated by a space
+func getBlocksFromLinesFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	m := make(map[string][]ulid.ULID)
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		tenant, blockString, found := strings.Cut(line, " ")
+		if !found {
+			return nil, errors.Errorf("no space separating tenant and block in line formatted file: %s", line)
+		}
+		if !filter(tenant) {
+			continue
+		}
+		u, err := ulid.Parse(blockString)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse a string=%s as a ULID for tenant=%s", blockString, tenant)
+		}
+		m[tenant] = append(m[tenant], u)
+	}
+	return m, nil
 }
 
 // getBlocksFromListing does a prefixed versioned listing for to find all block prefixes in each unfiltered tenant

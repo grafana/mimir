@@ -8,22 +8,43 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 - A bucket with versioning enabled is assumed.
 - A deleted object can not be recovered if a noncurrent version of the object does not exist.
-- This program should not be run while deletes are still occurring on the affected blocks since the undelete may race the delete. To prevent deletes from Mimir itself either temporarily stop the compactor component entirely or set `-compactor.blocks-retention-period`, `-compactor.disabled-tenants`, and `-compactor.partial-block-deletion-delay` (or related per-tenant limits) appropriately beforehand.
+- This program should ideally not be run while deletes are still occurring on the affected blocks since the undelete may race the delete. To prevent deletes from Mimir itself either temporarily stop the compactor component entirely or set `-compactor.blocks-retention-period`, `-compactor.disabled-tenants`, and `-compactor.partial-block-deletion-delay` (or related per-tenant limits) appropriately beforehand.
 
 ## Features
 
 - See what changes would be made on object storage without actually performing them with `--dry-run`
 - Limit which tenants are included in the undelete by specifying a comma separated list of tenants with either `--include-tenants` or `--exclude-tenants`. By default all tenants are included. If a tenant is included all blocks within that tenant are considered by default.
-- Specify exactly what blocks to restore by specifying a JSON file with `--input-json-file`. The expected JSON format within the file is a map of tenants to a list of blocks like:
+- Specify exactly what blocks to restore by providing an input file with `--input-file`. The format is provided with `--input-file-format` and can be `json` (the default) or `lines`. 
 
+## Input file formats
+
+Specifying an input file is optional, but when it is provided it must be in a supported format.
+
+The `json` format is a map of tenants to a list of blocks:
 ```json
 {
-  "tenant1": ["01GDY90HMVFPSJHXZRQH8KRAME", "01GE0SV77NX8ASC7JN0ZQMN0WM"],
-  "tenant2": ["01GZDNKM6SQ9S7W5YQBDF0DK49"]
+  "tenant1": [
+    "01GDY90HMVFPSJHXZRQH8KRAME",
+    "01GE0SV77NX8ASC7JN0ZQMN0WM"
+  ],
+  "tenant2": [
+    "01GZDNKM6SQ9S7W5YQBDF0DK49"
+  ]
 }
 ```
 
-Tenants specified in the JSON can be refined further by the `--include-tenants` and `--exclude-tenants` options if they are provided.
+The `lines` format is a tenant and a single block separated by a space on each line:
+```
+tenant1 01GDY90HMVFPSJHXZRQH8KRAME
+tenant1 01GE0SV77NX8ASC7JN0ZQMN0WM
+tenant2 01GZDNKM6SQ9S7W5YQBDF0DK49
+```
+
+Tenants specified in either format can be refined further by the `--include-tenants` and `--exclude-tenants` options if they are provided.
+
+For convenience `jq` can be used to translate between the two formats:
+- To translate from `json` to `lines`: `jq --raw-output 'to_entries[] | .key as $tenant | .value[] | $tenant + " " + .'`
+- To translate from `lines` to `json`: `jq --slurp --raw-input 'split("\n") | map(select(length > 0) | split(" ") | {"tenant": .[0], "block": .[1]}) | group_by(.tenant) | map({(.[0].tenant): map(.block)}) | add'`
 
 ## What does undeleting a block mean?
 
@@ -73,6 +94,7 @@ Running `go build .` in this directory builds the program. Then use an example b
   --azure.account-name <account name> \
   --azure.account-key <account key> \
   --exclude-tenants tenant1 \
+  --input-file undelete.json \
   --dry-run
 ```
 
@@ -85,6 +107,7 @@ Running `go build .` in this directory builds the program. Then use an example b
   --s3.access-key-id <access key id> \
   --s3.secret-access-key <secret access key> \
   --s3.endpoint <endpoint> \
-  --input-json-file undelete.json \
+  --input-file undelete.lines \
+  --input-file-format lines \
   --dry-run
 ```
