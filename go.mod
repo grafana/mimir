@@ -71,7 +71,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheus v0.84.0
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.84.0
 	github.com/prometheus/procfs v0.12.0
-	github.com/thanos-io/objstore v0.0.0-20231025225615-ff7faac741fb
+	github.com/thanos-io/objstore v0.0.0-20231112185854-37752ee64d98
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rcv0017
 	go.opentelemetry.io/otel v1.19.0
