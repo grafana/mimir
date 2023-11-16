@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAwaitServiceRunning_ServiceIsReady(t *testing.T) {
+func TestAwaitQueryFrontendServiceRunning_ServiceIsReady(t *testing.T) {
 	run := func(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
@@ -22,11 +22,11 @@ func TestAwaitServiceRunning_ServiceIsReady(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), service))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	err := awaitServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
+	err := awaitQueryFrontendServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
-func TestAwaitServiceRunning_ServiceIsNotReadyWaitDisabled(t *testing.T) {
+func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyWaitDisabled(t *testing.T) {
 	startChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-startChan
@@ -37,13 +37,13 @@ func TestAwaitServiceRunning_ServiceIsNotReadyWaitDisabled(t *testing.T) {
 	require.NoError(t, service.StartAsync(context.Background()))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	err := awaitServiceRunning(context.Background(), service, 0, log.NewNopLogger())
+	err := awaitQueryFrontendServiceRunning(context.Background(), service, 0, log.NewNopLogger())
 	require.EqualError(t, err, "frontend not running: Starting")
 
 	close(startChan)
 }
 
-func TestAwaitServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
+func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
 	startChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-startChan
@@ -63,11 +63,11 @@ func TestAwaitServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
 		close(startChan)
 	}()
 
-	err := awaitServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
+	err := awaitQueryFrontendServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
-func TestAwaitServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {
+func TestAwaitQueryFrontendServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {
 	serviceChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-serviceChan
@@ -78,7 +78,7 @@ func TestAwaitServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {
 	require.NoError(t, service.StartAsync(context.Background()))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	err := awaitServiceRunning(context.Background(), service, 100*time.Millisecond, log.NewNopLogger())
+	err := awaitQueryFrontendServiceRunning(context.Background(), service, 100*time.Millisecond, log.NewNopLogger())
 	require.EqualError(t, err, "frontend not running (is Starting), timed out waiting for it to be running after 100ms")
 
 	close(serviceChan)

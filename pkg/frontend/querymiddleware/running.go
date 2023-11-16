@@ -34,7 +34,7 @@ type frontendRunningRoundTripper struct {
 }
 
 func (f *frontendRunningRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	if err := awaitServiceRunning(request.Context(), f.service, f.timeout, f.log); err != nil {
+	if err := awaitQueryFrontendServiceRunning(request.Context(), f.service, f.timeout, f.log); err != nil {
 		return nil, apierror.New(apierror.TypeUnavailable, err.Error())
 	}
 
@@ -42,7 +42,7 @@ func (f *frontendRunningRoundTripper) RoundTrip(request *http.Request) (*http.Re
 }
 
 // This method is not on frontendRunningRoundTripper to make it easier to test this logic.
-func awaitServiceRunning(ctx context.Context, service services.Service, timeout time.Duration, log log.Logger) error {
+func awaitQueryFrontendServiceRunning(ctx context.Context, service services.Service, timeout time.Duration, log log.Logger) error {
 	if state := service.State(); state == services.Running {
 		// Fast path: frontend is already running, nothing more to do.
 		return nil
@@ -51,7 +51,7 @@ func awaitServiceRunning(ctx context.Context, service services.Service, timeout 
 		return fmt.Errorf("frontend not running: %v", state)
 	}
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, log, "awaitQueryFrontendReady")
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, log, "awaitQueryFrontendServiceRunning")
 	defer spanLog.Finish()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
