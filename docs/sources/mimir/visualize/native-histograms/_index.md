@@ -15,25 +15,36 @@ weight: 100
 
 # Visualize native histograms
 
-Prometheus native histograms is a data type in the Prometheus ecosystem that enables producing, storing and querying high resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations. To learn more about the native histograms data type and how to start sending them to Grafana Mimir, go to [Send native histograms to Mimir]({{< relref "../../send/native-histograms" >}}).
+Prometheus native histograms is a data type in the Prometheus ecosystem that makes it possible to produce, store, and query a high-resolution [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) of observations.
+To learn more about the native histograms data type and how to start sending native histograms to Grafana Mimir,
+refer to [Send native histograms to Mimir]({{< relref "../../send/native-histograms" >}}).
 
 ## Prometheus Query Language
 
-In the examples below you'll learn how to query native histogram metrics and how it's different from the previous classic histograms. We'll use the example histogram metric called `request_duration_seconds`. We assume the metric has some labels as well, thus will apply an aggregation (`sum`) to the time series of the metric to produce a single output.
+The Prometheus Query Language (PromQL) allows you to query native histogram metrics.
+PromQL queries of native histograms are different from those of classic histograms.
 
-### Direct access to count and sum
+For more information about PromQL, refer to [Querying Prometheus](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 
-To query the overall count of observations made to a histogram, use the following query:
+<!--
+Given an example, where a histogram metric is named `request_duration_seconds`,
+and it has some labels, you can apply an aggregation (`sum`) to the time series of the metric.
+Doing so produces a single output.
+ -->
+
+### Query your histogram’s count or sum
+
+To query the total count of observations within a histogram, use the following queries:
 
 ```PromQL
 # Native histograms:
 histogram_count(sum(request_duration_seconds))
 
-# Previous classic histograms:
+# Classic histograms:
 sum(request_duration_seconds_count)
 ```
 
-To query the overall sum of observed values, use the following query:
+To query the total sum of observed values, use the following query:
 
 ```PromQL
 # Native histograms:
