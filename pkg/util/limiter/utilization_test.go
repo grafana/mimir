@@ -404,3 +404,49 @@ func generateLinearStepCPUUtilization(count int, from, step float64) []float64 {
 	}
 	return values
 }
+
+func BenchmarkUtilizationBasedLimiter(b *testing.B) {
+	const gigabyte = 1024 * 1024 * 1024
+
+	setup := func(cpuLimit float64, memoryLimit uint64) *UtilizationBasedLimiter {
+		lim := NewUtilizationBasedLimiter(cpuLimit, memoryLimit, false, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		s, err := newCombinedScanner()
+		require.NoError(b, err)
+		lim.utilizationScanner = s
+		require.Empty(b, lim.LimitingReason(), "Limiting should initially be disabled")
+
+		return lim
+	}
+
+	tim := time.Now()
+	nowFn := func() time.Time {
+		return tim
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		lim := setup(0.11, gigabyte)
+
+		// Warm up the CPU utilization.
+		for i := 0; i < int(resourceUtilizationSlidingWindow.Seconds()); i++ {
+			lim.compute(nowFn)
+			tim = tim.Add(resourceUtilizationUpdateInterval)
+		}
+
+		lim.compute(nowFn)
+		tim = tim.Add(resourceUtilizationUpdateInterval)
+	}
+}
+
+func BenchmarkCombinedScanner(b *testing.B) {
+	s, err := newCombinedScanner()
+	require.NoError(b, err)
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, _, err := s.Scan()
+		require.NoError(b, err)
+	}
+}
