@@ -17,44 +17,32 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func newFrontendRunningRoundTripper(next http.RoundTripper, readinessAwaiter ReadinessAwaiter, timeout time.Duration) http.RoundTripper {
+func NewFrontendRunningRoundTripper(next http.RoundTripper, service services.Service, timeout time.Duration, log log.Logger) http.RoundTripper {
 	return &frontendRunningRoundTripper{
-		readinessAwaiter: readinessAwaiter,
-		timeout:          timeout,
-		next:             next,
+		next:    next,
+		service: service,
+		timeout: timeout,
+		log:     log,
 	}
 }
 
 type frontendRunningRoundTripper struct {
-	readinessAwaiter ReadinessAwaiter
-	timeout          time.Duration
-	next             http.RoundTripper
+	next    http.RoundTripper
+	service services.Service
+	timeout time.Duration
+	log     log.Logger
 }
 
 func (f *frontendRunningRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	if err := f.readinessAwaiter.Await(request.Context(), f.timeout); err != nil {
+	if err := awaitServiceRunning(request.Context(), f.service, f.timeout, f.log); err != nil {
 		return nil, apierror.New(apierror.TypeUnavailable, err.Error())
 	}
 
 	return f.next.RoundTrip(request)
 }
 
-type ReadinessAwaiter interface {
-	Await(ctx context.Context, timeout time.Duration) error
-}
-
-type serviceReadinessAwaiter struct {
-	log             log.Logger
-	serviceProvider func() services.Service
-}
-
-func NewServiceReadinessAwaiter(log log.Logger, serviceProvider func() services.Service) ReadinessAwaiter {
-	return &serviceReadinessAwaiter{log, serviceProvider}
-}
-
-func (s *serviceReadinessAwaiter) Await(ctx context.Context, timeout time.Duration) error {
-	service := s.serviceProvider()
-
+// This method is not on frontendRunningRoundTripper to make it easier to test this logic.
+func awaitServiceRunning(ctx context.Context, service services.Service, timeout time.Duration, log log.Logger) error {
 	if state := service.State(); state == services.Running {
 		// Fast path: frontend is already running, nothing more to do.
 		return nil
@@ -63,7 +51,7 @@ func (s *serviceReadinessAwaiter) Await(ctx context.Context, timeout time.Durati
 		return fmt.Errorf("frontend not running: %v", state)
 	}
 
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.log, "awaitQueryFrontendReady")
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, log, "awaitQueryFrontendReady")
 	defer spanLog.Finish()
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)

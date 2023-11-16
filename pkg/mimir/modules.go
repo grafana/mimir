@@ -684,10 +684,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat)
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	// This indirection is necessary because the query-frontend service depends on the query-frontend tripperware service, so
-	// doesn't exist at the point where this method is called.
-	getQueryFrontendService := func() services.Service { return t.ServiceMap[QueryFrontend] }
-
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
@@ -696,7 +692,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
 		t.Registerer,
-		querymiddleware.NewServiceReadinessAwaiter(util_log.Logger, getQueryFrontendService),
 	)
 	if err != nil {
 		return nil, err
@@ -714,12 +709,6 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	// Wrap roundtripper into Tripperware.
-	roundTripper = t.QueryFrontendTripperware(roundTripper)
-
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
-
 	var frontendSvc services.Service
 	if frontendV1 != nil {
 		t.API.RegisterQueryFrontend1(frontendV1)
@@ -729,6 +718,13 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		t.API.RegisterQueryFrontend2(frontendV2)
 		frontendSvc = frontendV2
 	}
+
+	// Wrap roundtripper into Tripperware and then wrap this with the roundtripper that checks that the frontend is ready to receive requests.
+	roundTripper = t.QueryFrontendTripperware(roundTripper)
+	roundTripper = querymiddleware.NewFrontendRunningRoundTripper(roundTripper, frontendSvc, t.Cfg.Frontend.QueryMiddleware.NotRunningTimeout, util_log.Logger)
+
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
+	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {

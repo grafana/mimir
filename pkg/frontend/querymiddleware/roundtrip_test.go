@@ -77,7 +77,6 @@ func TestRangeTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
-		&alwaysRunningServiceAwaiter{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +128,6 @@ func TestInstantTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
-		&alwaysRunningServiceAwaiter{},
 	)
 	require.NoError(t, err)
 
@@ -303,7 +301,6 @@ func TestTripperware_Metrics(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				reg,
-				&alwaysRunningServiceAwaiter{},
 			)
 			require.NoError(t, err)
 
@@ -410,10 +407,4 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	r.URL.Scheme = "http"
 	r.URL.Host = s.host
 	return s.next.RoundTrip(r)
-}
-
-type alwaysRunningServiceAwaiter struct{}
-
-func (a *alwaysRunningServiceAwaiter) Await(context.Context, time.Duration) error {
-	return nil
 }

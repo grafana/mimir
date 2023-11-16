@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestServiceReadinessAwaiter_ServiceIsReady(t *testing.T) {
+func TestAwaitServiceRunning_ServiceIsReady(t *testing.T) {
 	run := func(ctx context.Context) error {
 		<-ctx.Done()
 		return nil
@@ -22,12 +22,11 @@ func TestServiceReadinessAwaiter_ServiceIsReady(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), service))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
-	err := awaiter.Await(context.Background(), 0)
+	err := awaitServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
-func TestServiceReadinessAwaiter_ServiceIsNotReadyWaitDisabled(t *testing.T) {
+func TestAwaitServiceRunning_ServiceIsNotReadyWaitDisabled(t *testing.T) {
 	startChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-startChan
@@ -38,14 +37,13 @@ func TestServiceReadinessAwaiter_ServiceIsNotReadyWaitDisabled(t *testing.T) {
 	require.NoError(t, service.StartAsync(context.Background()))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
-	err := awaiter.Await(context.Background(), 0)
+	err := awaitServiceRunning(context.Background(), service, 0, log.NewNopLogger())
 	require.EqualError(t, err, "frontend not running: Starting")
 
 	close(startChan)
 }
 
-func TestServiceReadinessAwaiter_ServiceIsNotReadyInitially(t *testing.T) {
+func TestAwaitServiceRunning_ServiceIsNotReadyInitially(t *testing.T) {
 	startChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-startChan
@@ -65,12 +63,11 @@ func TestServiceReadinessAwaiter_ServiceIsNotReadyInitially(t *testing.T) {
 		close(startChan)
 	}()
 
-	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
-	err := awaiter.Await(context.Background(), time.Second)
+	err := awaitServiceRunning(context.Background(), service, time.Second, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
-func TestServiceReadinessAwaiter_ServiceIsNotReadyAfterTimeout(t *testing.T) {
+func TestAwaitServiceRunning_ServiceIsNotReadyAfterTimeout(t *testing.T) {
 	serviceChan := make(chan struct{})
 	start := func(ctx context.Context) error {
 		<-serviceChan
@@ -81,8 +78,7 @@ func TestServiceReadinessAwaiter_ServiceIsNotReadyAfterTimeout(t *testing.T) {
 	require.NoError(t, service.StartAsync(context.Background()))
 	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), service)) }()
 
-	awaiter := NewServiceReadinessAwaiter(log.NewNopLogger(), func() services.Service { return service })
-	err := awaiter.Await(context.Background(), 100*time.Millisecond)
+	err := awaitServiceRunning(context.Background(), service, 100*time.Millisecond, log.NewNopLogger())
 	require.EqualError(t, err, "frontend not running (is Starting), timed out waiting for it to be running after 100ms")
 
 	close(serviceChan)

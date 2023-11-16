@@ -176,9 +176,8 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-	frontendReadinessAwaiter ReadinessAwaiter,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer, frontendReadinessAwaiter)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +195,6 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-	frontendReadinessAwaiter ReadinessAwaiter,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
 	engineOpts.ActiveQueryTracker = nil
@@ -304,16 +302,14 @@ func newQueryTripperware(
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
-		nextWithReadinessCheck := newFrontendRunningRoundTripper(next, frontendReadinessAwaiter, cfg.NotRunningTimeout)
-
-		queryrange := newLimitedParallelismRoundTripper(nextWithReadinessCheck, codec, limits, queryRangeMiddleware...)
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
-			newLimitedParallelismRoundTripper(nextWithReadinessCheck, codec, limits, queryInstantMiddleware...),
+			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
-		cardinality := nextWithReadinessCheck
-		labels := nextWithReadinessCheck
+		cardinality := next
+		labels := next
 
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
