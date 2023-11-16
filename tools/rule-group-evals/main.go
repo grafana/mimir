@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/yaml.v3"
 )
 
 type Result struct {
@@ -53,11 +57,17 @@ func (r Rule) NameStr() string {
 }
 
 func main() {
-	dir := os.Args[1]
-	entries, err := os.ReadDir(dir)
-	noErr(err)
-	for _, entry := range entries {
-		analyseGroups(filepath.Join(dir, entry.Name()))
+	mode := os.Args[1]
+	switch mode {
+	case "download":
+		downloadRules(os.Args[2])
+	case "analyze":
+		dir := os.Args[2]
+		entries, err := os.ReadDir(dir)
+		noErr(err)
+		for _, entry := range entries {
+			analyseGroups(filepath.Join(dir, entry.Name()))
+		}
 	}
 }
 
@@ -227,4 +237,62 @@ func noErr(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func downloadRules(destiantion string) {
+	namespaces := map[string]string{}
+
+	for namespace, cluster := range namespaces {
+		defer fmt.Println("done", namespace)
+		downloadNamespaceRules(destiantion, cluster, namespace)
+	}
+}
+
+func downloadNamespaceRules(desitnation string, cluster string, namespace string) {
+	fmt.Println("downloading", cluster, namespace)
+	noErr(exec.Command("kubectx", cluster).Run())
+	noErr(exec.Command("kubens", namespace).Run())
+	kubefwd := exec.Command("kubectl", "port-forward", "svc/ruler", "8080:80", "-n", namespace)
+	noErr(kubefwd.Start())
+	defer func() { _, _ = kubefwd.Process.Wait() }()
+	defer func() { noErr(kubefwd.Process.Kill()) }()
+
+	time.Sleep(time.Second * 10)
+
+	g := errgroup.Group{}
+	g.SetLimit(10)
+	tenants := tenantNames()
+	noErr(os.MkdirAll(filepath.Join(desitnation, namespace), 0777))
+	for tenantIdx, tenant := range tenants {
+		tenant := tenant
+		tenantIdx := tenantIdx
+		g.Go(func() error {
+			fmt.Println("downloading tenant", tenantIdx, "/", len(tenants))
+			req, err := http.NewRequest(http.MethodGet, "http://localhost:8080/prometheus/api/v1/rules", nil)
+			noErr(err)
+			req.Header.Set("x-scope-orgid", tenant)
+			resp, err := http.DefaultClient.Do(req)
+			noErr(err)
+			respBody, err := io.ReadAll(resp.Body)
+			noErr(err)
+			noErr(os.WriteFile(filepath.Join(desitnation, namespace, fmt.Sprintf("%s.json", tenant)), respBody, 0600))
+			return nil
+		})
+	}
+	noErr(g.Wait())
+}
+
+func tenantNames() []string {
+	respMap := map[string]interface{}{}
+	resp, err := http.Get("http://localhost:8080/ruler/rule_groups")
+	noErr(err)
+	respBody, err := io.ReadAll(resp.Body)
+	noErr(err)
+	//fmt.Println(string(respBody))
+	noErr(yaml.Unmarshal(respBody, &respMap))
+	names := make([]string, 0, len(respMap))
+	for tenant := range respMap {
+		names = append(names, tenant)
+	}
+	return names
 }
