@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/web/api/v1"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -108,7 +108,7 @@ func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.
 		}
 
 		var json = jsoniter.ConfigCompatibleWithStandardLibrary
-		bytes, err := json.Marshal(v1.Response{Data: res})
+		bytes, err := json.Marshal(activeSeriesResponse{Data: res})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -246,4 +246,8 @@ type labelNamesCardinality struct {
 type labelValuesCardinalityResponse struct {
 	SeriesCountTotal uint64                  `json:"series_count_total"`
 	Labels           []labelNamesCardinality `json:"labels"`
+}
+
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
 }

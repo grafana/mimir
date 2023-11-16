@@ -18,7 +18,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -856,7 +855,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 
-			resp := v1.Response{}
+			resp := activeSeriesResponse{}
 			err = json.Unmarshal(bodyContent, &resp)
 			require.NoError(t, err)
 			assert.Len(t, resp.Data, len(series))
