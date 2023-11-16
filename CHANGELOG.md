@@ -27,7 +27,6 @@
 * [FEATURE] Query-frontend: add experimental support for query blocking. Queries are blocked on a per-tenant basis and is configured via the limit `blocked_queries`. #5609
 * [FEATURE] Vault: Added support for new Vault authentication methods: `AppRole`, `Kubernetes`, `UserPass` and `Token`. #6143
 * [FEATURE] Add experimental endpoint `/api/v1/cardinality/active_series` to return the set of active series for a given selector. #6536 #6619
-* [ENHANCEMENT] Add `MimirIngesterReachingInflightPushRequestLimit` alert and runbook. #6649
 * [ENHANCEMENT] Ingester: exported summary `cortex_ingester_inflight_push_requests_summary` tracking total number of inflight requests in percentile buckets. #5845
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. #5879
 * [ENHANCEMENT] Query-frontend: add `cortex_query_frontend_enqueue_duration_seconds` metric that records the time taken to enqueue or reject a query request. When query-scheduler is in use, the metric has the `scheduler_address` label to differentiate the enqueue duration by query-scheduler backend. #5879 #6087 #6120
@@ -87,6 +86,7 @@
 
 * [CHANGE] Dashboards: enabled reporting gRPC codes as `status_code` label in Mimir dashboards. In case of gRPC calls, the successful `status_code` label on `cortex_request_duration_seconds` and gRPC client request duration metrics has changed from 'success' and '2xx' to 'OK'. #6561
 * [CHANGE] Alerts: remove `MimirGossipMembersMismatch` alert and replace it with `MimirGossipMembersTooHigh` and `MimirGossipMembersTooLow` alerts that should have a higher signal-to-noise ratio. #6508
+* [ENHANCEMENT] Alerts: add `MimirIngesterReachingInflightPushRequestLimit` alert and runbook. #6649
 * [ENHANCEMENT] Dashboards: Optionally show rejected requests on Mimir Writes dashboard. Useful when used together with "early request rejection" in ingester and distributor. #6132 #6556
 * [ENHANCEMENT] Alerts: added a critical alert for `CompactorSkippedBlocksWithOutOfOrderChunks` when multiple blocks are affected. #6410
 * [ENHANCEMENT] Dashboards: Added the min-replicas for autoscaling dashboards. #6528

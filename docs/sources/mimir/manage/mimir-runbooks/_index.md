@@ -180,22 +180,22 @@ How to **fix** it:
 
 ### MimirIngesterReachingInflightPushRequestLimit
 
-This alert fires when the `cortex_ingester_inflight_push_requests_summary` per ingester instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the ingester will fail (5xx) or 429 for new requests, while existing in-flight push requests will continue to succeed.
+This alert fires when the `-ingester.instance-limits.max-inflight-push-requests` per ingester instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Upon reaching this limit, any new push requests to the ingester will result in failure with a 5xx status code or a 429 status code for new requests. Meanwhile, existing in-flight push requests will still be processed successfully.
 
 In case of **emergency**:
 
-- If the actual number of in-flight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
-- Increasing the limit will increase the number of in-flight push requests which will increase ingesters' memory utilization. Please monitor the ingesters' memory utilization via the `Mimir / Writes Resources` dashboard
+- If the actual number of in-flight push requests is very close to or already at the set limit and the ingesters have headroom to accept more requests, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the number of in-flight push requests which will increase ingesters' memory and cpu utilization. Please monitor the ingesters' memory/cpu utilization via the `Mimir / Writes Resources` dashboard
 
 How the limit is **configured**:
 
-- The limit can be configured either by the CLI flag (`-ingester.instance-limits.max-inflight-push-requests`) or in the config:
+- The limit can be configured in the runtime config:
   ```
   ingester:
     instance_limits:
       max_inflight_push_requests: <int>
   ```
-- These changes are applied with a ingester restart.
+- These changes are applied without ingester restart.
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_inflight_push_requests"})`
 
 How to **fix** it:
@@ -203,7 +203,7 @@ How to **fix** it:
 1. **Temporarily increase the limit**<br />
    If the actual number of in-flight push requests is very close to or already hit the limit.
 2. **Scale up ingesters**<br />
-   Scaling up ingesters will lower the number of in-flight push requests per ingester, but pay attention this could cause tenants to start discarding samples due to lowered local series limits. The bottom panes of the [dashboard](https://ops.grafana-ops.net/d/eb5ead36-a5cb-4f0b-88c3-a6548b5496e6/series-increase-review?orgId=1) could give you an idea whether the current limit is already close to limit. If any tenants are in danger, the PR to add ingesters should also temporarily increase the global series limit for those tenants to compensate ([example](https://github.com/grafana/deployment_tools/pull/95487)). Be sure to revert the temporary limits increases after the in-memory series for the tenants drop (usually after the next compaction).
+   Scaling up ingesters will lower the number of in-flight push requests per ingester, but pay attention this could cause tenants to start discarding samples due to lowered local series limits. If any tenants are in danger, the PR to add ingesters should also temporarily increase the global series limit for those tenants to compensate.
 
 ### MimirRequestLatency
 
