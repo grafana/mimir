@@ -58,11 +58,11 @@ The order of writes within a Mimir block is:
 
 When a block needs to be deleted, the following actions are performed:
 
-1. A local delete marker is added to the block "directory". This is a "soft delete"
+1. A local delete marker is added to the block "directory". This is a "soft delete".
 2. A global delete marker for the block is added to the tenant's marker "directory" for easier indexing.
-3. Some time passes to provide time for the delete markers to be noticed
-4. Files besides delete markers are deleted within the block "directory" (meta first, then chunks/index)
-5. The delete markers are deleted, local then global
+3. Some time passes to provide time for the delete markers to be noticed.
+4. Files besides delete markers are deleted within the block "directory" (meta first, then chunks/index).
+5. The delete markers are deleted, local then global.
 
 An undelete tries to get a block back to being a complete block by restoring noncurrent object versions (as needed) in the order of a block write and then deleting the delete markers (local then global). If required data for a complete block is missing then that block will remain untouched.
 
