@@ -54,9 +54,8 @@ func (s *globalIngestionStrategyWithBurstFactor) Burst(tenantID string) int {
 		} else {
 			return int(math.Ceil(burstByFactor))
 		}
-	} else {
-		return s.limits.IngestionBurstSize(tenantID)
 	}
+	return s.limits.IngestionBurstSize(tenantID)
 }
 
 type globalStrategy struct {
