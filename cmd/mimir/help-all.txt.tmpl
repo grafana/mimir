@@ -1163,6 +1163,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
   -distributor.retry-after-header.max-backoff-exponent int
     	[experimental] Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds. (default 5)
+  -distributor.reusable-ingester-push-workers int
+    	[experimental] Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration

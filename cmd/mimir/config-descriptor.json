@@ -1647,6 +1647,17 @@
           "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "reusable_ingester_push_workers",
+          "required": false,
+          "desc": "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.reusable-ingester-push-workers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
