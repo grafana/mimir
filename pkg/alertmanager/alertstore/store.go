@@ -38,6 +38,14 @@ type AlertStore interface {
 	// If configuration for the user doesn't exist, no error is reported.
 	DeleteAlertConfig(ctx context.Context, user string) error
 
+	GetGrafanaAlertConfig(ctx context.Context, user string) (alertspb.GrafanaAlertConfigDesc, error)
+	SetGrafanaAlertConfig(ctx context.Context, cfg alertspb.GrafanaAlertConfigDesc) error
+	DeleteGrafanaAlertConfig(ctx context.Context, user string) error
+
+	GetFullGrafanaState(ctx context.Context, user string) (alertspb.FullStateDesc, error)
+	SetFullGrafanaState(ctx context.Context, user string, fs alertspb.FullStateDesc) error
+	DeleteFullGrafanaState(ctx context.Context, user string) error
+
 	// ListUsersWithFullState returns the list of users which have had state written.
 	ListUsersWithFullState(ctx context.Context) ([]string, error)
 

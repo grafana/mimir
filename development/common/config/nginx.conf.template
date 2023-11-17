@@ -61,6 +61,12 @@ http {
     location = /api/v1/alerts {
       proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
     }
+    location = /api/v1/grafana/config {
+      proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
+    }
+    location = /api/v1/grafana/state {
+      proxy_pass      http://${ALERT_MANAGER_HOST}$request_uri;
+    }
 
     # Ruler endpoints
     location /prometheus/config/v1/rules {
