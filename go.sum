@@ -831,6 +831,8 @@ github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndr
 github.com/posener/complete v1.2.3/go.mod h1:WZIdtGGp+qx0sLrYKtIRAruyNpv6hFCicSgv7Sy7s/s=
 github.com/prometheus/alertmanager v0.26.1-0.20231103145006-fdea7e731cd0 h1:XRT8ObR9fIpmkNUhoz3SurKOK7MPHvRZ7vvjvjIrnk8=
 github.com/prometheus/alertmanager v0.26.1-0.20231103145006-fdea7e731cd0/go.mod h1:8sGbFiIliWiOe4AJ6EfyHmAQOBqLlw22ucVzppIhiG0=
+github.com/prometheus/alertmanager v0.26.1-0.20231117200754-ca5089d33eab h1:639j+0he3vXZWIfy8RgphuZC3iCKGRe4qM23fymWrkE=
+github.com/prometheus/alertmanager v0.26.1-0.20231117200754-ca5089d33eab/go.mod h1:d9ELeFBjQ7xxGYb+0Xh+ygxMUBwM6579tojeH6xb0qE=
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.0.0/go.mod h1:db9x61etRT2tGnBNRi70OPL5FsnadC4Ky3P0J6CfImo=
 github.com/prometheus/client_golang v1.4.0/go.mod h1:e9GMxYsXl05ICDXkRhurwBS4Q3OK1iX/F2sw+iXX5zU=

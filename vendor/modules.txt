@@ -807,8 +807,8 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.26.1-0.20231103145006-fdea7e731cd0
-## explicit; go 1.18
+# github.com/prometheus/alertmanager v0.26.1-0.20231117200754-ca5089d33eab
+## explicit; go 1.21
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
 github.com/prometheus/alertmanager/api/v1
