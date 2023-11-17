@@ -178,6 +178,7 @@ type Config struct {
 
 	UseIngesterOwnedSeriesForLimits bool `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool `yaml:"track_ingester_owned_series" category:"experimental"`
+	OwnedSeriesUpdateInterval       time.Duration
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -199,6 +200,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
+	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
 }
 
 func (cfg *Config) Validate() error {
@@ -296,6 +298,10 @@ type Ingester struct {
 	utilizationBasedLimiter utilizationBasedLimiter
 
 	errorSamplers ingesterErrSamplers
+
+	// Used by ownedSeries to check if ring has changed.
+	// TODO(pstibrany): only keep ingesters from the same zone.
+	ownedSeriesLastReplicaSet ring.ReplicationSet
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -470,7 +476,9 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
-		ownedSeriesService := services.NewBasicService(nil, i.ownedSeriesLoop, nil)
+		// By doing first update in Starting phase, we delay pushes to ingester until we have updated owned series at
+		// least once.
+		ownedSeriesService := services.NewTimerService(i.cfg.OwnedSeriesUpdateInterval, i.ownedSeriesStarting, i.ownedSeriesIter, nil)
 		servs = append(servs, ownedSeriesService)
 	}
 
@@ -3458,69 +3466,81 @@ type utilizationBasedLimiter interface {
 	LimitingReason() string
 }
 
-func (i *Ingester) ownedSeriesLoop(ctx context.Context) error {
-	// At startup, wait for the lifecycler to join the ring and then calculate series.
-	// After that, check the token ranges at regular intervals, and recalculate ownership if they have changed
-	// TODO(pprus) -- concurrency
+var ownedSeriesRingOp = ring.WriteNoExtend // Distributor uses WriteNoExtend.
 
+// This is Starting function for ownedSeries service. Service is only started after all TSDBs are opened.
+// Pushes are not allowed yet when this function runs.
+func (i *Ingester) ownedSeriesStarting(ctx context.Context) error {
+	err := ring.WaitInstanceState(ctx, i.ingestersRing, i.lifecycler.ID, ring.ACTIVE)
+	if err != nil {
+		return err
+	}
+
+	// Compute ownedSeries before we start (and allow pushes).
+	rs, err := i.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
+	if err != nil {
+		return fmt.Errorf("owned series: can't cache replica set: %w", err)
+	}
+
+	i.ownedSeriesLastReplicaSet = rs
+	return nil
+}
+
+func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
 	// TODO(pprus) -- we compact after replaying the WAL, which might be before we've joined the ring and updated the ranges
+	// TODO(pstibrany) -- WAL replay and compaction happen before owned series service even starts. It will first wait until instance is ACTIVE, and then recompute owned series
+	//  before allowing ingester to proceed (and before ingester accepts push requests).
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	runOnce := false
+	rs, err := i.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
+	if err != nil {
+		level.Error(i.logger).Log("msg", "owned series: can't check ring for updates", "err", err)
+		return nil // If we returned error, OwnedSeries service would stop.
+	}
 
-	for ctx.Err() == nil {
-		select {
-		case <-ticker.C:
-			// TODO(pprus) -- use ring.WaitInstanceState instead
-			if i.lifecycler.GetState() != ring.ACTIVE {
-				level.Warn(i.logger).Log("msg", "ingester is not ACTIVE, cannot compute owned series.")
+	if !ring.HasReplicationSetChanged(i.ownedSeriesLastReplicaSet, rs) {
+		return nil // If we returned error, OwnedSeries service would stop.
+	}
+
+	i.ownedSeriesLastReplicaSet = rs
+
+	start := time.Now()
+	i.ownedSeriesUpdate(ctx, "ring changed")
+	level.Info(i.logger).Log("msg", "owned series: updated owned series for all users", "duration", time.Since(start))
+	return nil
+}
+
+func (i *Ingester) ownedSeriesUpdate(ctx context.Context, reason string) {
+	// TODO(pprus) -- concurrency.
+	// TODO(pstibrany) -- not sure what's meant by above comment. I don't think we should update token ranges and owned series concurrently,
+	//  but perhaps it means that there's a race between compactor updating owned series, and update from here. It's not necessarily a problem -- but we can fix
+	//  that in the future)
+	for _, userID := range i.getTSDBUsers() {
+		if ctx.Err() != nil {
+			return
+		}
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		shardSize := i.limiter.getShardSize(userID)
+		subr := i.ingestersRing.ShuffleShard(userID, shardSize)
+		level.Info(i.logger).Log("msg", "owned series: subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
+
+		ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
+		if err != nil {
+			if errors.Is(err, ring.ErrInstanceNotFound) {
+				ranges = nil
+			} else {
+				level.Error(i.logger).Log("msg", "owned series: failed to get token ranges", "error", err)
 				continue
 			}
+		}
 
-			// TODO(pprus) -- what to do if we fail for some users? TODO: We set limit based on their tenant overrides.
-
-			start := time.Now()
-
-			for _, userID := range i.getTSDBUsers() {
-				level.Info(i.logger).Log("msg", "pprus -- updating token ranges", "user", userID)
-				db := i.getTSDB(userID)
-				if db == nil {
-					continue
-				}
-
-				// TODO(pprus) should add a mutex and TryLock here and skip this if compaction is currently running
-
-				shardSize := i.limiter.getShardSize(userID)
-				subr := i.ingestersRing.ShuffleShard(userID, shardSize)
-				level.Info(i.logger).Log("msg", "pprus -- subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
-
-				// TODO(pprus) -- this seems to fail the first time because the zone has no tokens
-				// TODO(pprus) -- this will fail if the ingester used to hold this tenant, but they were moved off of this ingester (they'll keep getting returned by getTSDBUsers, but this instance won't be in their subring)
-				ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
-				if err != nil {
-					level.Error(i.logger).Log("msg", "pprus -- failed to get token ranges", "error", err)
-					continue
-					// return?
-				}
-
-				level.Info(i.logger).Log("msg", "pprus -- updated token ranges")
-				if db.UpdateTokenRanges(ranges) {
-					db.RecalculateOwnedSeries("owned range change", i.logger, shardSize)
-				}
-			}
-
-			level.Info(i.logger).Log("msg", "updated owned series for all users", "duration", time.Since(start))
-
-			// Run less often once we've run the initial calculations
-			if !runOnce {
-				ticker.Reset(time.Minute)
-				runOnce = true
-			}
-
-		case <-ctx.Done():
-			return nil
+		if db.UpdateTokenRanges(ranges) {
+			level.Info(i.logger).Log("msg", "owned series: updated token ranges for user, recalculating owned series", "user", userID)
+			db.RecalculateOwnedSeries(reason, i.logger, shardSize)
 		}
 	}
-	return nil
 }
