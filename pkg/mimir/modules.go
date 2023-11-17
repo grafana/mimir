@@ -28,7 +28,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
@@ -352,14 +351,6 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 
 	loader := runtimeConfigLoader{validate: t.Cfg.ValidateLimits}
 	t.Cfg.RuntimeConfig.Loader = loader.load
-
-	// QueryIngestersWithin is moving from a global config that can in the querier yaml to a limit config
-	// We need to preserve the option in the querier yaml for two releases
-	// If the querier config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.11.0
-	if t.Cfg.Querier.QueryIngestersWithin != querier.DefaultQuerierCfgQueryIngestersWithin {
-		t.Cfg.LimitsConfig.QueryIngestersWithin = model.Duration(t.Cfg.Querier.QueryIngestersWithin)
-	}
 
 	// DeprecatedCacheUnalignedRequests is moving from a global config that can in the frontend yaml to a limit config
 	// We need to preserve the option in the frontend yaml for two releases

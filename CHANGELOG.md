@@ -4,6 +4,14 @@
 
 ### Grafana Mimir
 
+* [CHANGE] The following deprecated configurations have been removed: #6673
+  * `-querier.query-ingesters-within`
+  * `-querier.iterators`
+  * `-querier.batch-iterators`
+  * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
+  * `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
+  * `-blocks-storage.bucket-store.bucket-index.enabled`
 * [CHANGE] Querier: Split worker GRPC config into separate client configs for the frontend and scheduler to allow TLS to be configured correctly when specifying the `tls_server_name`. The GRPC config specified under `-querier.frontend-client.*` will no longer apply to the scheduler client, and will need to be set explicitly under `-querier.scheduler-client.*`. #6445 #6573
 * [CHANGE] Store-gateway: enable sparse index headers by default. Sparse index headers reduce the time to load an index header up to 90%. #6005
 * [CHANGE] Store-gateway: lazy-loading concurrency limit default value is now 4. #6004

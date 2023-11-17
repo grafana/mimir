@@ -1176,17 +1176,6 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (deprecated) Use iterators to execute query, as opposed to fully materialising
-# the series in memory.
-# CLI flag: -querier.iterators
-[iterators: <boolean> | default = false]
-
-# (deprecated) Use batch iterators to execute query, as opposed to fully
-# materialising the series in memory.  Takes precedent over the
-# -querier.iterators flag.
-# CLI flag: -querier.batch-iterators
-[batch_iterators: <boolean> | default = true]
-
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be
@@ -3557,12 +3546,6 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # (deprecated) If enabled, queriers and store-gateways discover blocks by
-    # reading a bucket index (created and updated by the compactor) instead of
-    # periodically scanning the bucket.
-    # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
-    [enabled: <boolean> | default = true]
-
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.update-on-error-interval
@@ -3588,19 +3571,6 @@ bucket_store:
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
-
-  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
-  # allocations. The pool is shared across all tenants. 0 to disable the limit.
-  # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
-  [max_chunk_pool_bytes: <int> | default = 2147483648]
-
-  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
-  [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
-
-  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
-  [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
