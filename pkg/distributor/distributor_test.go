@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
@@ -1291,7 +1292,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
+				promtestutil.RequireEqual(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
 			}
 		}
 	}
@@ -2503,7 +2504,8 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 					}
 
 					require.NoError(t, err)
-					assert.ElementsMatch(t, testData.expectedSeries, series)
+					slices.SortFunc(series, labels.Compare)
+					promtestutil.RequireEqual(t, testData.expectedSeries, series)
 
 					// Check that query stats are set correctly.
 					assert.Equal(t, uint64(len(testData.expectedSeries)), qStats.GetFetchedSeriesCount())
