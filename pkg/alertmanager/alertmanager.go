@@ -242,7 +242,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	// The default behavior with no flags set, is to actually use the new matcher parsing that's still under development.
 	// Therefore, we must pass in a flag here to force usage of the default/stable matcher parser.
 	// In the future, when the new matcher parsing stabilizes and we feel ready to adopt it, we can remove this flag to enable it.
-	features, err := featurecontrol.NewFlags(am.logger, "classic-matchers-parsing")
+	features, err := featurecontrol.NewFlags(am.logger, featurecontrol.FeatureClassicMode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid alertmanager featuresset: %v", err)
 	}
