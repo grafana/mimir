@@ -69,7 +69,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 
 	sfx := ""
 	if enableSuffixes {
-		sfx = "_foo"
+		sfx = "_bytes"
 	}
 
 	// Push some series to Mimir.
@@ -82,7 +82,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	metadata := []mimirpb.MetricMetadata{
 		{
 			Help: "foo",
-			Unit: "foo",
+			Unit: "By",
 		},
 	}
 
@@ -125,7 +125,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 			 {
 				"type":"gauge",
 				"help":"foo",
-				"unit":"foo"
+				"unit":"By"
 			 }
 		  ]
 	   }
@@ -159,14 +159,14 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 				 {
 					"type":"histogram",
 					"help":"foo",
-					"unit":"foo"
+					"unit":"By"
 				 }
 			  ],
 			  "series_1%s":[
 				 {
 					"type":"gauge",
 					"help":"foo",
-					"unit":"foo"
+					"unit":"By"
 				 }
 			  ]
 		   }
