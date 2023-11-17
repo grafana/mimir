@@ -4,7 +4,6 @@ exporters:
   otlphttp:
     endpoint: http://distributor-1:8000/otlp
 
-
 processors:
   batch: {}
 receivers:

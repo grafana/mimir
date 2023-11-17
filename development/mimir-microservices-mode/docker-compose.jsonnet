@@ -356,7 +356,7 @@ std.manifestYamlDoc({
 
   otel_collector:: {
     otel_collector: {
-      image: 'otel/opentelemetry-collector-contrib:0.54.0',
+      image: 'otel/opentelemetry-collector-contrib:0.88.0',
       command: ['--config=/etc/otel-collector/otel-collector.yaml'],
       volumes: ['./config:/etc/otel-collector'],
       ports: ['8083:8083'],
