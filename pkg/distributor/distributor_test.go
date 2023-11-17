@@ -1290,7 +1290,7 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 			timeseries := ingesters[i].series()
 			assert.Equal(t, 1, len(timeseries))
 			for _, v := range timeseries {
-				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
+				assert.True(t, labels.Equal(tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels)))
 			}
 		}
 	}

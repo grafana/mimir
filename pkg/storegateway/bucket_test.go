@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -1134,7 +1135,7 @@ func benchmarkExpandedPostings(
 				if !tb.IsBenchmark() {
 					seriesThatMatch := filterSeries(allSeries, testCase.matchers)
 					seriesForPostings := loadSeries(ctx, tb, p, indexr)
-					assert.Equal(tb, seriesThatMatch, seriesForPostings)
+					testutil.RequireEqual(tb, seriesThatMatch, seriesForPostings)
 				}
 			}
 		})

@@ -565,7 +565,7 @@ func TestMergeQueryable_Select(t *testing.T) {
 					for i := 0; seriesSet.Next(); i++ {
 						count++
 						if tc.expectedLabels != nil {
-							require.Equal(t, tc.expectedLabels[i], seriesSet.At().Labels(), fmt.Sprintf("labels index: %d", i))
+							require.True(t, labels.Equal(tc.expectedLabels[i], seriesSet.At().Labels()), fmt.Sprintf("labels index: %d", i))
 						}
 					}
 					require.Equal(t, tc.expectedSeriesCount, count)
@@ -954,7 +954,7 @@ func TestSetLabelsRetainExisting(t *testing.T) {
 			expected:         labels.FromStrings("a", "d", "original_a", "b"),
 		},
 	} {
-		assert.Equal(t, tc.expected, setLabelsRetainExisting(tc.labels, tc.additionalLabels...))
+		assert.True(t, labels.Equal(tc.expected, setLabelsRetainExisting(tc.labels, tc.additionalLabels...)))
 	}
 }
 
