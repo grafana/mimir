@@ -9,6 +9,7 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -106,7 +107,16 @@ func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.
 			return
 		}
 
-		util.WriteJSONResponse(w, activeSeriesResponse{res})
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
+		bytes, err := json.Marshal(activeSeriesResponse{Data: res})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Nothing we can do about this error, so ignore it.
+		_, _ = w.Write(bytes)
 	})
 }
 

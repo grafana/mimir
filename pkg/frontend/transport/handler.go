@@ -152,7 +152,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mtx.Lock()
 	if f.stopped {
 		f.mtx.Unlock()
-		writeError(w, fmt.Errorf("frontend not running"))
+		http.Error(w, "frontend stopped", http.StatusServiceUnavailable)
 		return
 	}
 	f.inflightRequests++
