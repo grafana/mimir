@@ -116,7 +116,7 @@
   * `ingester_tsdb_head_early_compaction_min_in_memory_series`
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
 * [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler` `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler` and `consul` deployments, to ensure they don't become completely unavailable during a rollout. #5924
-* [ENHANCEMENT] Update rollout-operator to `v0.8.3`. #6022 #6110 #6558
+* [ENHANCEMENT] Update rollout-operator to `v0.9.0`. #6022 #6110 #6558 #6681
 * [ENHANCEMENT] Update memcached to `memcached:1.6.22-alpine`. #6585
 * [ENHANCEMENT] Store-gateway: replaced the following deprecated CLI flags: #6319
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
