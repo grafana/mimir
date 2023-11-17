@@ -8,10 +8,10 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -108,7 +108,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	//TODO: Extract an issue to limit the number of bytes we should read.
+	// TODO: Extract an issue to limit the number of bytes we should read.
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
@@ -236,7 +236,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	//TODO: Extract issue, we need to enforce a limit that checks against both configs at the same time.
+	// TODO: Extract issue, we need to enforce a limit that checks against both configs at the same time.
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		level.Error(logger).Log("msg", errReadingGrafanaConfig, "err", err.Error())
