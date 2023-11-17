@@ -45,12 +45,14 @@ In this tutorial, you'll:
    git clone https://github.com/grafana/mimir.git
    cd mimir
    ```
-1. Navigate to the tutorial directory:
+1. Navigate to the `get-started` directory:
    ```bash
-   cd docs/sources/mimir/tutorials/play-with-grafana-mimir/
+   cd docs/sources/mimir/get-started/play-with-grafana-mimir/
    ```
 
-**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/mimir/tutorials/play-with-grafana-mimir/`.
+{{% admonition type="note" %}}
+The instructions in this tutorial assume that your working directory is `docs/sources/mimir/get-started/play-with-grafana-mimir/` from the `main` branch.
+{{% /admonition %}}
 
 ## Start Grafana Mimir and dependencies
 
