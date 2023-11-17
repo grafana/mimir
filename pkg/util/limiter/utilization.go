@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -29,21 +30,32 @@ const (
 )
 
 type utilizationScanner interface {
-	// Scan returns CPU time in seconds and memory utilization in bytes, or an error.
+	// Scan returns CPU time in seconds and Go heap size in bytes, or an error.
 	Scan() (float64, uint64, error)
 }
 
-type procfsScanner struct {
+// combinedScanner scans /proc for CPU utilization and Go runtime for heap size.
+type combinedScanner struct {
 	proc procfs.Proc
 }
 
-func (s procfsScanner) Scan() (float64, uint64, error) {
+func (s combinedScanner) Scan() (float64, uint64, error) {
 	ps, err := s.proc.Stat()
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "failed to get process stats")
 	}
 
-	return ps.CPUTime(), uint64(ps.ResidentMemory()), nil
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	return ps.CPUTime(), m.HeapInuse, nil
+}
+
+func newCombinedScanner() (combinedScanner, error) {
+	p, err := procfs.Self()
+	return combinedScanner{
+		proc: p,
+	}, err
 }
 
 // UtilizationBasedLimiter is a Service offering limiting based on CPU and memory utilization.
@@ -68,7 +80,7 @@ type UtilizationBasedLimiter struct {
 	cpuMovingAvg   *math.EwmaRate
 	limitingReason atomic.String
 	currCPUUtil    atomic.Float64
-	currMemoryUtil atomic.Uint64
+	currHeapSize   atomic.Uint64
 	// For logging of input to CPU load EWMA calculation, keep window of source samples
 	cpuSamples *cpuSampleBuffer
 }
@@ -104,7 +116,7 @@ func NewUtilizationBasedLimiter(cpuLimit float64, memoryLimit uint64, logCPUSamp
 			Name: "utilization_limiter_current_memory_usage_bytes",
 			Help: "Current memory usage calculated by utilization based limiter.",
 		}, func() float64 {
-			return float64(l.currMemoryUtil.Load())
+			return float64(l.currHeapSize.Load())
 		})
 	}
 
@@ -118,15 +130,9 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 }
 
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
-	p, err := procfs.Self()
-	if err != nil {
-		return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting")
-	}
-
-	l.utilizationScanner = procfsScanner{
-		proc: p,
-	}
-	return nil
+	var err error
+	l.utilizationScanner, err = newCombinedScanner()
+	return errors.Wrap(err, "unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting")
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {
@@ -137,7 +143,7 @@ func (l *UtilizationBasedLimiter) update(_ context.Context) error {
 // compute and return the current CPU and memory utilization.
 // This function must be called at a regular interval (resourceUtilizationUpdateInterval) to get a predictable behaviour.
 func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil float64, currMemoryUtil uint64) {
-	cpuTime, currMemoryUtil, err := l.utilizationScanner.Scan()
+	cpuTime, currHeapSize, err := l.utilizationScanner.Scan()
 	if err != nil {
 		level.Warn(l.logger).Log("msg", "failed to get CPU and memory stats", "err", err.Error())
 		// Disable any limiting, since we can't tell resource utilization
@@ -148,7 +154,7 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	// Get wall time after CPU time, in case there's a delay before CPU time is returned,
 	// which would cause us to compute too high of a CPU load
 	now := nowFn()
-	l.currMemoryUtil.Store(currMemoryUtil)
+	l.currHeapSize.Store(currHeapSize)
 
 	// Add the instant CPU utilization to the moving average. The instant CPU
 	// utilization can only be computed starting from the 2nd tick.
@@ -190,7 +196,7 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	}
 
 	var reason string
-	if l.memoryLimit > 0 && currMemoryUtil >= l.memoryLimit {
+	if l.memoryLimit > 0 && currHeapSize >= l.memoryLimit {
 		reason = "memory"
 	} else if l.cpuLimit > 0 && currCPUUtil >= l.cpuLimit {
 		reason = "cpu"
@@ -210,11 +216,11 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
 		}
 		level.Info(logger).Log("msg", "enabling resource utilization based limiting",
-			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currHeapSize),
 			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	} else {
 		level.Info(l.logger).Log("msg", "disabling resource utilization based limiting",
-			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currMemoryUtil),
+			"memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currHeapSize),
 			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))
 	}
 

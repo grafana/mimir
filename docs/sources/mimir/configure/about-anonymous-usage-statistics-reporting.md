@@ -2,7 +2,7 @@
 aliases:
   - ../operators-guide/configure/about-anonymous-usage-statistics-reporting/ # /docs/mimir/<MIMIR_VERSION>/operators-guide/configure/about-anonymous-usage-statistics-reporting/
 description: Learn about Grafana Mimir anonymous usage statistics reporting
-menuTitle: About anonymous usage statistics reporting
+menuTitle: Anonymous usage statistics reporting
 title: About Grafana Mimir anonymous usage statistics reporting
 weight: 30
 ---

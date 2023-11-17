@@ -4561,6 +4561,12 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.part-size
 [part_size: <int> | default = 0]
 
+# (experimental) If enabled, a Content-MD5 header is sent with S3 Put Object
+# requests. Consumes more resources to compute the MD5, but may improve
+# compatibility with object storage services that do not support checksums.
+# CLI flag: -<prefix>.s3.send-content-md5
+[send_content_md5: <boolean> | default = false]
+
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   # CLI flag: -<prefix>.s3.sse.type
