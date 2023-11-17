@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -575,34 +575,9 @@ func (u *userTSDB) computeOwnedSeries() int {
 
 	count := 0
 	u.Head().ForEachSecondaryHash(func(secondaryHash uint32) {
-		if hashInRanges(secondaryHash, u.ownedTokenRanges) {
+		if ring.KeyInTokenRanges(secondaryHash, u.ownedTokenRanges) {
 			count++
 		}
 	})
 	return count
-}
-
-func hashInRanges(hash uint32, ranges []uint32) bool {
-	switch {
-	case len(ranges) == 0:
-		return false
-	case hash < ranges[0]:
-		// hash comes before the first range
-		return false
-	case hash > ranges[len(ranges)-1]:
-		// hash comes after the last range
-		return false
-	}
-
-	index, found := slices.BinarySearch(ranges, hash)
-	switch {
-	case found:
-		// ranges are closed
-		return true
-	case index%2 == 1:
-		// hash would be inserted after the start of a range (even index)
-		return true
-	default:
-		return false
-	}
 }
