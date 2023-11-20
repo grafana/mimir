@@ -7,6 +7,7 @@ package util
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"flag"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -138,6 +140,7 @@ type CompressionType int
 const (
 	NoCompression CompressionType = iota
 	RawSnappy
+	Gzip
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
@@ -145,15 +148,17 @@ const (
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[start reading]"))
+		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
 	}
+	// Limit at maxSize+1 so we can tell when the size is exceeded
+	reader = io.LimitReader(reader, int64(maxSize)+1)
 	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
 		return nil, err
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal]"), otlog.Int("size", len(body)))
+		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal]"), otlog.Int("size", len(body)))
 	}
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
@@ -166,14 +171,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 	if err != nil {
 		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"), otlog.Error(err))
+			sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"), otlog.Error(err))
 		}
 
 		return nil, err
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"))
+		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"))
 	}
 
 	return body, nil
@@ -194,60 +199,72 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) (body []byte, err error) {
-	defer func() {
-		if err != nil && len(body) > maxSize {
-			err = MsgSizeTooLargeErr{Actual: len(body), Limit: maxSize}
-		}
-	}()
+func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
-	buffer, ok := tryBufferFromReader(reader)
-	if ok {
-		body, err = decompressFromBuffer(dst, buffer, maxSize, compression, sp)
-		return
-	}
-	body, err = decompressFromReader(dst, reader, expectedSize, maxSize, compression, sp)
-	return
-}
 
-func decompressFromReader(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
-	var (
-		buf  bytes.Buffer
-		body []byte
-		err  error
-	)
-	if expectedSize > 0 {
-		buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
-	}
-	// Read from LimitReader with limit max+1. So if the underlying
-	// reader is over limit, the result will be bigger than max.
-	reader = io.LimitReader(reader, int64(maxSize)+1)
 	switch compression {
-	case NoCompression:
-		_, err = buf.ReadFrom(reader)
-		body = buf.Bytes()
-	case RawSnappy:
-		_, err = buf.ReadFrom(reader)
-		if err != nil {
-			return nil, err
+	case NoCompression, RawSnappy:
+		buf, ok := tryBufferFromReader(reader)
+		if ok {
+			return decompressFromBuffer(dst, buf, maxSize, compression, sp)
 		}
-		body, err = decompressFromBuffer(dst, &buf, maxSize, RawSnappy, sp)
+
+		buf = &bytes.Buffer{}
+		if expectedSize > 0 {
+			buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
+		}
+
+		if _, err := buf.ReadFrom(reader); err != nil {
+			// TODO: Translate error
+			return nil, errors.Wrap(err, "read write request")
+		}
+
+		return decompressFromBuffer(dst, buf, maxSize, compression, sp)
+	case Gzip:
+		if sp != nil {
+			sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"),
+				otlog.Int("size", expectedSize))
+		}
+
+		var err error
+		reader, err = gzip.NewReader(reader)
+		if err != nil {
+			return nil, errors.Wrap(err, "create gzip reader")
+		}
+
+		// Limit at maxSize+1 so we can tell when the size is exceeded
+		reader = io.LimitReader(reader, int64(maxSize)+1)
+		// TODO: Use dst as buffer?
+		var buf bytes.Buffer
+		if expectedSize > 0 {
+			buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
+		}
+		if _, err := buf.ReadFrom(reader); err != nil {
+			return nil, errors.Wrap(err, "decompress gzip")
+		}
+
+		if buf.Len() > maxSize {
+			return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
+		}
+
+		return buf.Bytes(), nil
+	default:
+		return nil, fmt.Errorf("unrecognized compression type %v", compression)
 	}
-	return body, err
 }
 
 func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
-	if len(buffer.Bytes()) > maxSize {
-		return nil, MsgSizeTooLargeErr{Actual: len(buffer.Bytes()), Limit: maxSize}
+	if buffer.Len() > maxSize {
+		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
 	}
 	switch compression {
 	case NoCompression:
 		return buffer.Bytes(), nil
 	case RawSnappy:
 		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoRequest[decompress]"),
+			sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"),
 				otlog.Int("size", len(buffer.Bytes())))
 		}
 		size, err := snappy.DecodedLen(buffer.Bytes())
