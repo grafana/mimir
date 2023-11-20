@@ -39,7 +39,7 @@ type grpcClient struct {
 }
 
 func (c *grpcClient) Export(ctx context.Context, request ExportRequest, opts ...grpc.CallOption) (ExportResponse, error) {
-	rsp, err := c.rawClient.Export(ctx, request.orig, opts...)
+	rsp, err := c.rawClient.Export(ctx, request.ExportMetricsServiceRequest, opts...)
 	if err != nil {
 		return ExportResponse{}, err
 	}
@@ -85,6 +85,6 @@ type rawMetricsServer struct {
 func (s rawMetricsServer) Export(ctx context.Context, request *otlpcollectormetrics.ExportMetricsServiceRequest) (*otlpcollectormetrics.ExportMetricsServiceResponse, error) {
 	otlp.MigrateMetrics(request.ResourceMetrics)
 	state := internal.StateMutable
-	rsp, err := s.srv.Export(ctx, ExportRequest{orig: request, state: &state})
+	rsp, err := s.srv.Export(ctx, ExportRequest{ExportMetricsServiceRequest: request, state: &state})
 	return rsp.orig, err
 }

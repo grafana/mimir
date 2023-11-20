@@ -17,7 +17,7 @@ var jsonUnmarshaler = &pmetric.JSONUnmarshaler{}
 // ExportRequest represents the request for gRPC/HTTP client/server.
 // It's a wrapper for pmetric.Metrics data.
 type ExportRequest struct {
-	orig  *otlpcollectormetrics.ExportMetricsServiceRequest
+	*otlpcollectormetrics.ExportMetricsServiceRequest
 	state *internal.State
 }
 
@@ -25,8 +25,8 @@ type ExportRequest struct {
 func NewExportRequest() ExportRequest {
 	state := internal.StateMutable
 	return ExportRequest{
-		orig:  &otlpcollectormetrics.ExportMetricsServiceRequest{},
-		state: &state,
+		ExportMetricsServiceRequest: &otlpcollectormetrics.ExportMetricsServiceRequest{},
+		state:                       &state,
 	}
 }
 
@@ -35,25 +35,25 @@ func NewExportRequest() ExportRequest {
 // any changes to the provided Metrics struct will be reflected in the ExportRequest and vice versa.
 func NewExportRequestFromMetrics(md pmetric.Metrics) ExportRequest {
 	return ExportRequest{
-		orig:  internal.GetOrigMetrics(internal.Metrics(md)),
-		state: internal.GetMetricsState(internal.Metrics(md)),
+		ExportMetricsServiceRequest: internal.GetOrigMetrics(internal.Metrics(md)),
+		state:                       internal.GetMetricsState(internal.Metrics(md)),
 	}
 }
 
 // MarshalProto marshals ExportRequest into proto bytes.
 func (ms ExportRequest) MarshalProto() ([]byte, error) {
-	return ms.orig.Marshal()
+	return ms.Marshal()
 }
 
 // UnmarshalProto unmarshalls ExportRequest from proto bytes.
 func (ms ExportRequest) UnmarshalProto(data []byte) error {
-	return ms.orig.Unmarshal(data)
+	return ms.Unmarshal(data)
 }
 
 // MarshalJSON marshals ExportRequest into JSON bytes.
 func (ms ExportRequest) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
-	if err := json.Marshal(&buf, ms.orig); err != nil {
+	if err := json.Marshal(&buf, ms.ExportMetricsServiceRequest); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -65,10 +65,10 @@ func (ms ExportRequest) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*ms.orig = *internal.GetOrigMetrics(internal.Metrics(md))
+	*ms.ExportMetricsServiceRequest = *internal.GetOrigMetrics(internal.Metrics(md))
 	return nil
 }
 
 func (ms ExportRequest) Metrics() pmetric.Metrics {
-	return pmetric.Metrics(internal.NewMetrics(ms.orig, ms.state))
+	return pmetric.Metrics(internal.NewMetrics(ms.ExportMetricsServiceRequest, ms.state))
 }

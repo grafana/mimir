@@ -55,84 +55,50 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	otlpRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_distributor_otlp_requests_total",
-		Help: "The total number of OTLP requests that have come in to the distributor.",
-	}, []string{"user"})
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
+		var decoderFunc func(io.Reader) (pmetricotlp.ExportRequest, []byte, error)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
-		contentEncoding := r.Header.Get("Content-Encoding")
-		var compression util.CompressionType
-		switch contentEncoding {
-		case "gzip":
-			compression = util.Gzip
-		case "":
-			compression = util.NoCompression
-		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
-		}
-
-		var decoderFunc func(io.ReadCloser) (pmetricotlp.ExportRequest, error)
 		switch contentType {
 		case pbContentType:
-			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, error) {
-				exportReq := pmetricotlp.NewExportRequest()
-				unmarshaler := otlpProtoUnmarshaler{
-					request: &exportReq,
-				}
-				err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
-				var tooLargeErr util.MsgSizeTooLargeErr
-				if errors.As(err, &tooLargeErr) {
-					return exportReq, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
-						actual: tooLargeErr.Actual,
-						limit:  tooLargeErr.Limit,
-					}.Error())
-				}
-				return exportReq, err
+			decoderFunc = func(reader io.Reader) (pmetricotlp.ExportRequest, []byte, error) {
+				er := pmetricotlp.NewExportRequest()
+				buf, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, dst, er, util.NoCompression)
+				return er, buf, err
 			}
 
-		case jsonContentType:
-			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, error) {
-				exportReq := pmetricotlp.NewExportRequest()
-				sz := int(r.ContentLength)
-				if sz > 0 {
-					// Extra space guarantees no reallocation
-					sz += bytes.MinRead
-				}
-				buf := buffers.Get(sz)
-				if compression == util.Gzip {
-					var err error
-					reader, err = gzip.NewReader(reader)
-					if err != nil {
-						return exportReq, errors.Wrap(err, "create gzip reader")
+			/*
+				case jsonContentType:
+					decoderFunc = func(buf []byte) (pmetricotlp.ExportRequest, error) {
+						req := pmetricotlp.NewExportRequest()
+						return req, req.UnmarshalJSON(buf)
 					}
-				}
-
-				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
-				if _, err := buf.ReadFrom(reader); err != nil {
-					if util.IsRequestBodyTooLarge(err) {
-						return exportReq, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
-							actual: -1,
-							limit:  maxRecvMsgSize,
-						}.Error())
-					}
-
-					return exportReq, errors.Wrap(err, "read write request")
-				}
-
-				return exportReq, exportReq.UnmarshalJSON(buf.Bytes())
-			}
+			*/
 
 		default:
-			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
-				actual: int(r.ContentLength),
-				limit:  maxRecvMsgSize,
-			}.Error())
+			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}.Error())
+		}
+
+		reader := r.Body
+		// Handle compression.
+		contentEncoding := r.Header.Get("Content-Encoding")
+		switch contentEncoding {
+		case "gzip":
+			gr, err := gzip.NewReader(reader)
+			if err != nil {
+				return nil, err
+			}
+			reader = gr
+
+		case "":
+			// No compression.
+
+		default:
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", contentEncoding)
 		}
 
 		spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.OTLPHandler.decodeAndConvert")
@@ -142,9 +108,9 @@ func OTLPHandler(
 		spanLogger.SetTag("content_encoding", contentEncoding)
 		spanLogger.SetTag("content_length", r.ContentLength)
 
-		otlpReq, err := decoderFunc(r.Body)
+		otlpReq, err := decoderFunc(body)
 		if err != nil {
-			return err
+			return body, err
 		}
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
@@ -159,7 +125,7 @@ func OTLPHandler(
 
 		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
-			return err
+			return body, err
 		}
 
 		metricCount := len(metrics)
@@ -188,7 +154,7 @@ func OTLPHandler(
 			req.Metadata = metadata
 		}
 
-		return nil
+		return body, nil
 	})
 }
 
