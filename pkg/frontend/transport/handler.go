@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -369,11 +368,11 @@ func writeError(w http.ResponseWriter, err error) {
 
 	// if the error is an APIError, ensure it gets written as a JSON response
 	if resp, ok := apierror.HTTPResponseFromError(err); ok {
-		_ = server.WriteResponse(w, resp)
+		_ = httpgrpc.WriteResponse(w, resp)
 		return
 	}
 
-	server.WriteError(w, err)
+	httpgrpc.WriteError(w, err)
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
