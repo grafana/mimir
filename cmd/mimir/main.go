@@ -10,6 +10,11 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
+	"github.com/prometheus/alertmanager/silence"
+	"github.com/prometheus/alertmanager/types"
 	"io"
 	"os"
 	"runtime"
@@ -200,7 +205,22 @@ func main() {
 		}
 	}
 
-	t, err := mimir.New(cfg, reg)
+	// Initialize the Alertmanager feature flags. Mimir does not register the flags itself
+	// for the time being. Instead, we initialize the flags to safe defaults, without
+	// for UTF-8 mode.
+	ff, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
+	util_log.CheckFatal("initializing Alertmanager feature flags", err)
+	types.InitFromFlags(util_log.Logger, ff)
+	silence.InitFromFlags(util_log.Logger, ff)
+	compat.InitFromFlags(util_log.Logger, ff)
+	// We are using custom parse functions to start with that let us collect data on
+	// incompatible matchers.
+	matcherMetrics := alertmanager.NewParseMetrics(reg)
+	matcherFn := alertmanager.ParseMatcher(cfg.Server.Log, matcherMetrics)
+	matchersFn := alertmanager.ParseMatchers(cfg.Server.Log, matcherMetrics)
+	compat.Init(matcherFn, matchersFn)
+
+	t, err := mimir.New(cfg, ff, reg)
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {

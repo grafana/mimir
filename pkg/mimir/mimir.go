@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -704,10 +705,11 @@ type Mimir struct {
 	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
+	FeatureFlags             featurecontrol.Flagger
 }
 
 // New makes a new Mimir.
-func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
+func New(cfg Config, flags featurecontrol.Flagger, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -742,8 +744,9 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	cfg.Server.Registerer = reg
 
 	mimir := &Mimir{
-		Cfg:        cfg,
-		Registerer: reg,
+		Cfg:          cfg,
+		Registerer:   reg,
+		FeatureFlags: flags,
 	}
 
 	mimir.setupObjstoreTracing()

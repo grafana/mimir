@@ -274,3 +274,5 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 
 // Replace opentracing-contrib/go-grpc with a fork until https://github.com/opentracing-contrib/go-grpc/pull/16 is merged.
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
+
+replace github.com/prometheus/alertmanager => github.com/grobinson-grafana/alertmanager v0.0.0-20231120111059-b342a0d826d8

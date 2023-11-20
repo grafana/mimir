@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -273,6 +274,8 @@ type MultitenantAlertmanager struct {
 
 	limits Limits
 
+	featureFlags featurecontrol.Flagger
+
 	registry          prometheus.Registerer
 	ringCheckErrors   prometheus.Counter
 	tenantsOwned      prometheus.Gauge
@@ -282,7 +285,7 @@ type MultitenantAlertmanager struct {
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
-func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, flags featurecontrol.Flagger, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	err := os.MkdirAll(cfg.DataDir, 0777)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
@@ -303,7 +306,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
+	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, flags, logger, registerer)
 }
 
 // ComputeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
@@ -339,7 +342,7 @@ func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 	return fallbackConfig, nil
 }
 
-func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
+func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, flags featurecontrol.Flagger, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	am := &MultitenantAlertmanager{
 		cfg:                 cfg,
 		fallbackConfig:      string(fallbackConfig),
@@ -351,6 +354,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		logger:              log.With(logger, "component", "MultiTenantAlertmanager"),
 		registry:            registerer,
 		limits:              limits,
+		featureFlags:        flags,
 		ringCheckErrors: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_alertmanager_ring_check_errors_total",
 			Help: "Number of errors that have occurred when checking the ring for ownership.",
@@ -784,6 +788,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Store:                             am.store,
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
+		FeatureFlags:                      am.featureFlags,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)

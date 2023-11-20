@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -70,6 +71,7 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
+		FeatureFlags:    featurecontrol.NoopFlags{},
 	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
@@ -153,6 +155,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
+		FeatureFlags:      featurecontrol.NoopFlags{},
 	}, reg)
 	require.NoError(t, err)
 	defer am.StopAndWait()
