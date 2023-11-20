@@ -637,15 +637,21 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
 	t.Helper()
+	var samples []prompb.Sample
+	for i := 0; i < 1000; i++ {
+		ts := time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).Add(time.Second)
+		samples = append(samples, prompb.Sample{
+			Value:     1,
+			Timestamp: ts.UnixNano(),
+		})
+	}
 	input := prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
 					{Name: "__name__", Value: "foo"},
 				},
-				Samples: []prompb.Sample{
-					{Value: 1, Timestamp: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
-				},
+				Samples: samples,
 				Histograms: []prompb.Histogram{
 					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(1))},
 			},

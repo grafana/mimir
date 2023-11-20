@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
@@ -146,12 +147,14 @@ func createOTLPRequest(tb testing.TB, body []byte, compress bool, contentType st
 type reusableReader struct {
 	*bytes.Reader
 	raw []byte
+	tb  testing.TB
 }
 
 func newReusableReader(raw []byte) *reusableReader {
 	return &reusableReader{
 		Reader: bytes.NewReader(raw),
 		raw:    raw,
+		tb:     tb,
 	}
 }
 
