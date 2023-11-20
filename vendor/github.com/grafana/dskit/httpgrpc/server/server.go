@@ -58,14 +58,10 @@ func (n nopCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
 
 // Handle implements HTTPServer.
 func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
-	req, err := http.NewRequest(r.Method, r.Url, nopCloser{Buffer: bytes.NewBuffer(r.Body)})
+	req, err := UnwrapHTTPRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
-	toHeader(r.Headers, req.Header)
-	req = req.WithContext(ctx)
-	req.RequestURI = r.Url
-	req.ContentLength = int64(len(r.Body))
 
 	recorder := httptest.NewRecorder()
 	s.handler.ServeHTTP(recorder, req)
@@ -165,8 +161,8 @@ func NewClient(address string) (*Client, error) {
 	}, nil
 }
 
-// HTTPRequest wraps an ordinary HTTPRequest with a gRPC one
-func HTTPRequest(r *http.Request) (*httpgrpc.HTTPRequest, error) {
+// WrapHTTPRequest wraps an ordinary http.Request up into an httpgrpc.HTTPRequest
+func WrapHTTPRequest(r *http.Request) (*httpgrpc.HTTPRequest, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -177,6 +173,19 @@ func HTTPRequest(r *http.Request) (*httpgrpc.HTTPRequest, error) {
 		Body:    body,
 		Headers: fromHeader(r.Header),
 	}, nil
+}
+
+// UnwrapHTTPRequest unwraps an ordinary http.Request from an httpgrpc.HTTPRequest
+func UnwrapHTTPRequest(ctx context.Context, r *httpgrpc.HTTPRequest) (*http.Request, error) {
+	req, err := http.NewRequest(r.Method, r.Url, nopCloser{Buffer: bytes.NewBuffer(r.Body)})
+	if err != nil {
+		return nil, err
+	}
+	toHeader(r.Headers, req.Header)
+	req = req.WithContext(ctx)
+	req.RequestURI = r.Url
+	req.ContentLength = int64(len(r.Body))
+	return req, nil
 }
 
 // WriteResponse converts an httpgrpc response to an HTTP one
@@ -207,7 +216,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	req, err := HTTPRequest(r)
+	req, err := WrapHTTPRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

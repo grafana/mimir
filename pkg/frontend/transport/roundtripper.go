@@ -39,7 +39,7 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := server.HTTPRequest(r)
+	req, err := server.WrapHTTPRequest(r)
 	if err != nil {
 		return nil, err
 	}
