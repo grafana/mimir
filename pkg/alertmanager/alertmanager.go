@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/notify"
@@ -237,7 +238,15 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, errors.Wrap(err, "failed to start state persister service")
 	}
 
-	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry)
+	// Alertmanager defines two flags for the classic vs new matcher parsing.
+	// The default behavior with no flags set, is to actually use the new matcher parsing that's still under development.
+	// Therefore, we must pass in a flag here to force usage of the default/stable matcher parser.
+	// In the future, when the new matcher parsing stabilizes and we feel ready to adopt it, we can remove this flag to enable it.
+	features, err := featurecontrol.NewFlags(am.logger, featurecontrol.FeatureClassicMode)
+	if err != nil {
+		return nil, fmt.Errorf("invalid alertmanager featuresset: %v", err)
+	}
+	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, features)
 
 	// Run the silences maintenance in a dedicated goroutine.
 	am.wg.Add(1)
@@ -378,13 +387,14 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 	for _, ti := range conf.TimeIntervals {
 		timeIntervals[ti.Name] = ti.TimeIntervals
 	}
+	intervener := timeinterval.NewIntervener(timeIntervals)
 
 	pipeline := am.pipelineBuilder.New(
 		integrationsMap,
 		waitFunc,
 		am.inhibitor,
 		silence.NewSilencer(am.silences, am.marker, am.logger),
-		timeIntervals,
+		intervener,
 		am.nflog,
 		am.state,
 	)
@@ -474,7 +484,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 				return
 			}
 			n = wrapper(name, n)
-			integrations = append(integrations, notify.NewIntegration(n, rs, name, i))
+			integrations = append(integrations, notify.NewIntegration(n, rs, name, i, nc.Name))
 		}
 	)
 
