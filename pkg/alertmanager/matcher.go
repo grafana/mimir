@@ -1,13 +1,14 @@
 package alertmanager
 
 import (
+	"reflect"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/matchers/parse"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"reflect"
 )
 
 type ParseMetrics struct {

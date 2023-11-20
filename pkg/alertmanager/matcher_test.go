@@ -1,12 +1,12 @@
 package alertmanager
 
 import (
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
