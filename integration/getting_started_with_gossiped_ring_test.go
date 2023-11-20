@@ -38,7 +38,6 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	flags := map[string]string{
 		// decrease timeouts to make test faster. should still be fine with two instances only
 		"-ingester.ring.observe-period":                     "5s", // to avoid conflicts in tokens
-		"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 		"-blocks-storage.bucket-store.sync-interval":        "1s", // sync continuously
 		"-blocks-storage.bucket-store.ignore-blocks-within": "0",
 		"-blocks-storage.backend":                           "s3",

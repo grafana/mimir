@@ -1647,6 +1647,17 @@
           "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "reusable_ingester_push_workers",
+          "required": false,
+          "desc": "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "distributor.reusable-ingester-push-workers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -1658,28 +1669,6 @@
       "required": false,
       "desc": "",
       "blockEntries": [
-        {
-          "kind": "field",
-          "name": "iterators",
-          "required": false,
-          "desc": "Use iterators to execute query, as opposed to fully materialising the series in memory.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.iterators",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
-          "name": "batch_iterators",
-          "required": false,
-          "desc": "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "querier.batch-iterators",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
         {
           "kind": "field",
           "name": "query_store_after",
@@ -8105,17 +8094,6 @@
               "blockEntries": [
                 {
                   "kind": "field",
-                  "name": "enabled",
-                  "required": false,
-                  "desc": "If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "blocks-storage.bucket-store.bucket-index.enabled",
-                  "fieldType": "boolean",
-                  "fieldCategory": "deprecated"
-                },
-                {
-                  "kind": "field",
                   "name": "update_on_error_interval",
                   "required": false,
                   "desc": "How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier.",
@@ -8161,39 +8139,6 @@
               "fieldFlag": "blocks-storage.bucket-store.ignore-blocks-within",
               "fieldType": "duration",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "max_chunk_pool_bytes",
-              "required": false,
-              "desc": "Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit.",
-              "fieldValue": null,
-              "fieldDefaultValue": 2147483648,
-              "fieldFlag": "blocks-storage.bucket-store.max-chunk-pool-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "chunk_pool_min_bucket_size_bytes",
-              "required": false,
-              "desc": "Size - in bytes - of the smallest chunks pool bucket.",
-              "fieldValue": null,
-              "fieldDefaultValue": 16000,
-              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
-            },
-            {
-              "kind": "field",
-              "name": "chunk_pool_max_bucket_size_bytes",
-              "required": false,
-              "desc": "Size - in bytes - of the largest chunks pool bucket.",
-              "fieldValue": null,
-              "fieldDefaultValue": 50000000,
-              "fieldFlag": "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes",
-              "fieldType": "int",
-              "fieldCategory": "deprecated"
             },
             {
               "kind": "field",

@@ -132,6 +132,10 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
+	// Start the compactor to have the bucket index created before querying.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
 	checkQueries(t, consul, previousImage, flags, oldFlagsMapper, s, 1, instantQueryTest{
 		expr:           "series_1",
 		time:           series1Timestamp,

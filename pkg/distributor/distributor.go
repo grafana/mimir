@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
@@ -150,6 +151,11 @@ type Distributor struct {
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
+
+	// ingesterDoBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
+	// It can be nil, in which case a simple `go f()` will be used.
+	// See Config.ReusableIngesterPushWorkers on how to configure this.
+	ingesterDoBatchPushWorkers func(func())
 }
 
 // Config contains the configuration required to
@@ -191,6 +197,7 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
+	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -207,6 +214,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
+	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 0, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -433,11 +441,22 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+
+	if cfg.ReusableIngesterPushWorkers > 0 {
+		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
+		d.ingesterDoBatchPushWorkers = wp.Go
+		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
+		subservices = append(subservices, services.NewBasicService(
+			nil,
+			func(ctx context.Context) error { <-ctx.Done(); return nil },
+			func(_ error) error { wp.Close(); return nil },
+		))
+	}
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
 	}
-
 	d.subservicesWatcher = services.NewFailureWatcher()
 	d.subservicesWatcher.WatchManager(d.subservices)
 
@@ -1310,7 +1329,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
-	err = ring.DoBatchWithClientError(ctx, ring.WriteNoExtend, subRing, keys,
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
 			var timeseriesCount, metadataCount int
 			for _, i := range indexes {
@@ -1338,8 +1357,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			}
 			return err
 		},
-		func() { pushReq.CleanUp(); cancel() },
-		isClientError,
+		ring.DoBatchOptions{
+			Cleanup:       func() { pushReq.CleanUp(); cancel() },
+			IsClientError: isClientError,
+			Go:            d.ingesterDoBatchPushWorkers,
+		},
 	)
 
 	return err

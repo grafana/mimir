@@ -187,14 +187,13 @@ overrides:
 				require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
 
 				flags := map[string]string{
-					"-runtime-config.reload-period":                     "100ms",
-					"-blocks-storage.backend":                           "filesystem",
-					"-blocks-storage.filesystem.dir":                    "/tmp",
-					"-blocks-storage.storage-prefix":                    "blocks",
-					"-blocks-storage.bucket-store.bucket-index.enabled": "false",
-					"-ruler-storage.backend":                            "filesystem",
-					"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
-					"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
+					"-runtime-config.reload-period":  "100ms",
+					"-blocks-storage.backend":        "filesystem",
+					"-blocks-storage.filesystem.dir": "/tmp",
+					"-blocks-storage.storage-prefix": "blocks",
+					"-ruler-storage.backend":         "filesystem",
+					"-ruler-storage.local.directory": "/tmp", // Avoid warning "unable to list rules".
+					"-runtime-config.file":           filepath.Join(e2e.ContainerSharedDir, overridesFile),
 				}
 				cortex1 := e2emimir.NewSingleBinary("cortex-1", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
 				require.NoError(t, s.StartAndWaitReady(cortex1))

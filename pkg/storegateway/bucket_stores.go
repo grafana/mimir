@@ -448,29 +448,20 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	}
 
 	// Instantiate a different blocks metadata fetcher based on whether bucket index is enabled or not.
-	var fetcher block.MetadataFetcher
-	if u.cfg.BucketStore.BucketIndex.DeprecatedEnabled {
-		fetcher = NewBucketIndexMetadataFetcher(
-			userID,
-			u.bucket,
-			u.limits,
-			u.logger,
-			fetcherReg,
-			filters,
-		)
-	} else {
-		var err error
-		fetcher, err = block.NewMetaFetcher(
-			userLogger,
-			u.cfg.BucketStore.MetaSyncConcurrency,
-			userBkt,
-			u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
-			fetcherReg,
-			filters,
-		)
-		if err != nil {
-			return nil, err
-		}
+	var (
+		fetcher block.MetadataFetcher
+		err     error
+	)
+	fetcher, err = block.NewMetaFetcher(
+		userLogger,
+		u.cfg.BucketStore.MetaSyncConcurrency,
+		userBkt,
+		u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
+		fetcherReg,
+		filters,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	bucketStoreOpts := []BucketStoreOption{
@@ -480,7 +471,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithLazyLoadingGate(u.lazyLoadingGate),
 	}
 
-	bs, err := NewBucketStore(
+	bs, err = NewBucketStore(
 		userID,
 		userBkt,
 		fetcher,

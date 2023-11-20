@@ -364,8 +364,6 @@ func TestRulerSharding(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
-			// Enable the bucket index so we can skip the initial bucket scan.
-			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Disable rule group limit
 			"-ruler.max-rule-groups-per-tenant": "0",
 		},
@@ -556,8 +554,6 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		RulerFlags(),
 		BlocksStorageFlags(),
 		map[string]string{
-			// Enable the bucket index so we can skip the initial bucket scan.
-			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			// Evaluate rules often, so that we don't need to wait for metrics to show up.
 			"-ruler.evaluation-interval": "2s",
 			"-ruler.poll-interval":       "2s",
