@@ -53,7 +53,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.34.1
+	cloud.google.com/go/storage v1.35.1
 	github.com/alecthomas/chroma/v2 v2.10.0
 	github.com/alecthomas/kingpin/v2 v2.3.2
 	github.com/aws/aws-sdk-go v1.46.6
@@ -78,7 +78,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.19.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
-	google.golang.org/api v0.149.0
+	google.golang.org/api v0.150.0
 	google.golang.org/protobuf v1.31.0
 	sigs.k8s.io/kustomize/kyaml v0.14.3
 )
@@ -240,7 +240,7 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20231016165738-49dd2c1f3d0b // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20231016165738-49dd2c1f3d0b // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231016165738-49dd2c1f3d0b // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231030173426-d783a09b4405 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/telebot.v3 v3.1.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
