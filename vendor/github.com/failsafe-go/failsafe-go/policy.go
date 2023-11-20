@@ -41,14 +41,14 @@ type FailurePolicyBuilder[S any, R any] interface {
 	OnFailure(listener func(ExecutionEvent[R])) S
 }
 
-// DelayFunction returns a duration to delay for given the ExecutionAttempt.
-type DelayFunction[R any] func(exec ExecutionAttempt[R]) time.Duration
+// DelayFunc returns a duration to delay for given the ExecutionAttempt.
+type DelayFunc[R any] func(exec ExecutionAttempt[R]) time.Duration
 
 // DelayablePolicyBuilder builds policies that can be delayed between executions.
 type DelayablePolicyBuilder[S any, R any] interface {
 	// WithDelay configures the time to delay between execution attempts.
 	WithDelay(delay time.Duration) S
 
-	// WithDelayFn accepts a function that configures the time to delay before the next execution attempt.
-	WithDelayFn(delayFn DelayFunction[R]) S
+	// WithDelayFunc accepts a function that configures the time to delay before the next execution attempt.
+	WithDelayFunc(delayFn DelayFunc[R]) S
 }
