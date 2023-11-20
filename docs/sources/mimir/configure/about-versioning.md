@@ -109,6 +109,7 @@ The following features are currently experimental:
     - `ingester.ring.token-generation-strategy`
     - `ingester.ring.spread-minimizing-zones`
     - `ingester.ring.spread-minimizing-join-ring-in-order`
+  - Allow ingester's `Push()` to return gRPC errors only: `-ingester.return-only-grpc-errors`.
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
