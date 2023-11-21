@@ -114,7 +114,7 @@ This may cause that incorrect results are returned for the query.
        --objstore.config-file bucket.yaml
    ```
 
-2. Remove the downsampled blocks.
+1. Remove the downsampled blocks.
 
    Mimir doesn’t understand the downsampled blocks from Thanos, such as blocks with a non-zero `Resolution` field in the `meta.json` file. Therefore, you need to remove the `5m` and `1h` downsampled blocks from this bucket.
 
@@ -136,7 +136,7 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
 
-3. Remove the duplicated blocks.
+1. Remove the duplicated blocks.
 
    If two replicas of Prometheus instances are deployed for high-availability, then only upload the blocks from one of the replicas and drop from the other replica.
 
@@ -179,7 +179,7 @@ This may cause that incorrect results are returned for the query.
    >     --output=csv > thanos-blocks.csv
    > ```
 
-4. Relabel the blocks with external labels.
+1. Relabel the blocks with external labels.
 
    Mimir doesn’t inject external labels from the `meta.json` file into query results. Therefore, you need to relabel the blocks with the required external labels in the `meta.json` file.
 
@@ -284,7 +284,7 @@ This may cause that incorrect results are returned for the query.
    > done
    > ```
 
-5) Remove external labels from meta.json.
+1. Remove external labels from meta.json.
 
    Mimir compactor will not be able to compact the blocks having external labels with Mimir's own blocks that don't have any such labels in their meta.json. Therefore these external labels have to be removed before copying them to the Mimir bucket.
 
@@ -344,7 +344,7 @@ This may cause that incorrect results are returned for the query.
    done
    ```
 
-6. Copy the blocks from the intermediate bucket to the Mimir bucket.
+1. Copy the blocks from the intermediate bucket to the Mimir bucket.
 
    For Amazon S3, use the `aws` tool:
 
@@ -360,4 +360,4 @@ This may cause that incorrect results are returned for the query.
 
    Historical blocks are not available for querying immediately after they are uploaded because the bucket index with the list of all available blocks first needs to be updated by the compactor. The compactor typically perform such an update every 15 minutes. After an update completes, other components such as the querier or store-gateway are able to work with the historical blocks, and the blocks are available for querying through Grafana.
 
-7. Check the `store-gateway` HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` to verify that the uploaded blocks are there.
+1. Check the `store-gateway` HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` to verify that the uploaded blocks are there.
