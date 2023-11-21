@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"golang.org/x/exp/slices"
 )
@@ -51,6 +52,24 @@ var (
 		},
 	}
 )
+
+// IWriteRequest represents a request to write metrics.
+type IWriteRequest interface {
+	// TimeseriesCount returns the number of timeseries.
+	TimeseriesCount() int
+	// HALabels returns HA labels.
+	HALabels(replicaLabel, clusterLabel string) (string, string)
+	// Label gets the value for a specified label of the first time series, or an empty string if non-existent.
+	Label(name string) string
+	// NumSamples returns the sum of samples in all time series.
+	NumSamples() int
+	// NumExemplars returns the number of exemplars in all time series.
+	NumExemplars() int
+	// RemoveLabel removes a certain label from all time series.
+	RemoveLabel(name string)
+	// PruneTimeseries prunes contained time series according to relabelConfigs and dropLabels.
+	PruneTimeseries(tenantID string, relabelConfigs []*relabel.Config, dropLabels string)
+}
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {

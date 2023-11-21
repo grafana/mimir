@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -501,22 +500,6 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		h.electedLock.Unlock()
 	}
 	return err
-}
-
-func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
-	var cluster, replica string
-	var pair mimirpb.LabelAdapter
-
-	for _, pair = range labels {
-		if pair.Name == replicaLabel {
-			replica = pair.Value
-		}
-		if pair.Name == clusterLabel {
-			cluster = pair.Value
-		}
-	}
-
-	return cluster, replica
 }
 
 func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {

@@ -40,7 +40,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
@@ -724,13 +723,13 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+		if req.TimeseriesCount() == 0 || !d.limits.AcceptHASamples(userID) {
 			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		cluster, replica := req.HALabels(haReplicaLabel, d.limits.HAClusterLabel(userID))
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
@@ -740,11 +739,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			span.SetTag("replica", replica)
 		}
 
-		numSamples := 0
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), time.Now())
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
-		}
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req), time.Now())
+		numSamples := req.NumSamples()
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
@@ -764,9 +760,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			// If we found both the cluster and replica labels, we only want to include the cluster label when
 			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 			// series we're trying to dedupe when HA tracking moves over to a different replica.
-			for ix := range req.Timeseries {
-				req.Timeseries[ix].RemoveLabel(haReplicaLabel)
-			}
+			req.RemoveLabel(haReplicaLabel)
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
@@ -800,27 +794,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		if err != nil {
 			return err
 		}
-
-		var removeTsIndexes []int
-		lb := labels.NewBuilder(labels.EmptyLabels())
-		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
-			ts := req.Timeseries[tsIdx]
-
-			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-				mimirpb.FromLabelAdaptersToBuilder(ts.Labels, lb)
-				lb.Set(metaLabelTenantID, userID)
-				keep := relabel.ProcessBuilder(lb, mrc...)
-				if !keep {
-					removeTsIndexes = append(removeTsIndexes, tsIdx)
-					continue
-				}
-				lb.Del(metaLabelTenantID)
-				req.Timeseries[tsIdx].SetLabels(mimirpb.FromBuilderToLabelAdapters(lb, ts.Labels))
-			}
-
-			for _, labelName := range d.limits.DropLabels(userID) {
-				req.Timeseries[tsIdx].RemoveLabel(labelName)
-			}
 
 			if len(ts.Labels) == 0 {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
@@ -860,31 +833,12 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
-			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
-			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
-
-			if len(ts.Labels) == 0 {
-				removeTsIndexes = append(removeTsIndexes, tsIdx)
-				continue
-			}
-
-			// We rely on sorted labels in different places:
-			// 1) When computing token for labels. Here different order of
-			// labels returns different tokens, which is bad.
-			// 2) In validation code, when checking for duplicate label names.
-			// As duplicate label names are rejected later in the validation
+			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
+			// different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
+			// later in the validation phase, we ignore them here.
 			// phase, we ignore them here.
-			// 3) Ingesters expect labels to be sorted in the Push request.
-			req.Timeseries[tsIdx].SortLabelsIfNeeded()
-		}
-
-		if len(removeTsIndexes) > 0 {
-			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
-			}
-			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
-		}
-
+		req.PruneTimeseries(userID, d.limits)
 		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
@@ -913,7 +867,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req), now)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
@@ -1053,12 +1007,8 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		numSamples := 0
-		numExemplars := 0
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
-			numExemplars += len(ts.Exemplars)
-		}
+		numSamples := req.NumSamples()
+		numExemplars := req.NumExemplars()
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
