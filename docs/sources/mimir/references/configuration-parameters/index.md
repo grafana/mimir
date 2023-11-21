@@ -920,6 +920,14 @@ instance_limits:
 # (experimental) Use experimental method of limiting push requests.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+
+# (experimental) Number of pre-allocated workers used to forward push requests
+# to the ingesters. If 0, no workers will be used and a new goroutine will be
+# spawned for each ingester push request. If not enough workers available, new
+# goroutine will be spawned. (Note: this is a performance optimization, not a
+# limiting feature.)
+# CLI flag: -distributor.reusable-ingester-push-workers
+[reusable_ingester_push_workers: <int> | default = 0]
 ```
 
 ### ingester
@@ -1168,17 +1176,6 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (deprecated) Use iterators to execute query, as opposed to fully materialising
-# the series in memory.
-# CLI flag: -querier.iterators
-[iterators: <boolean> | default = false]
-
-# (deprecated) Use batch iterators to execute query, as opposed to fully
-# materialising the series in memory.  Takes precedent over the
-# -querier.iterators flag.
-# CLI flag: -querier.batch-iterators
-[batch_iterators: <boolean> | default = true]
-
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be
@@ -1448,6 +1445,13 @@ results_cache:
 # downstream error is returned.
 # CLI flag: -query-frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
+
+# (experimental) Maximum time to wait for the query-frontend to become ready
+# before rejecting requests received before the frontend was ready. 0 to disable
+# (i.e. fail immediately if a request is received while the frontend is still
+# starting up)
+# CLI flag: -query-frontend.not-running-timeout
+[not_running_timeout: <duration> | default = 0s]
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
@@ -3549,12 +3553,6 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # (deprecated) If enabled, queriers and store-gateways discover blocks by
-    # reading a bucket index (created and updated by the compactor) instead of
-    # periodically scanning the bucket.
-    # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
-    [enabled: <boolean> | default = true]
-
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.update-on-error-interval
@@ -3580,19 +3578,6 @@ bucket_store:
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
-
-  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
-  # allocations. The pool is shared across all tenants. 0 to disable the limit.
-  # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
-  [max_chunk_pool_bytes: <int> | default = 2147483648]
-
-  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
-  [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
-
-  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
-  [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
@@ -4552,6 +4537,12 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # 0, the value is optimally computed for each object.
 # CLI flag: -<prefix>.s3.part-size
 [part_size: <int> | default = 0]
+
+# (experimental) If enabled, a Content-MD5 header is sent with S3 Put Object
+# requests. Consumes more resources to compute the MD5, but may improve
+# compatibility with object storage services that do not support checksums.
+# CLI flag: -<prefix>.s3.send-content-md5
+[send_content_md5: <boolean> | default = false]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

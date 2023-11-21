@@ -115,8 +115,6 @@ patches:
         path: /config/store_gateway/sharding_ring/tokens_file_path
       - op: remove
         path: /config/store_gateway/sharding_ring/wait_stability_min_duration
-      - op: remove
-        path: /config/blocks_storage/bucket_store/max_chunk_pool_bytes
 
   - target:
       kind: MimirConfig

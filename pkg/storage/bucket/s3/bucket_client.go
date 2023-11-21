@@ -57,6 +57,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		SecretKey:          cfg.SecretAccessKey.String(),
 		Insecure:           cfg.Insecure,
 		PutUserMetadata:    putUserMetadata,
+		SendContentMd5:     cfg.SendContentMd5,
 		SSEConfig:          sseCfg,
 		ListObjectsVersion: cfg.ListObjectsVersion,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,

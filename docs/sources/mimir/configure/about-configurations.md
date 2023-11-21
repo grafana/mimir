@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-configurations/
 description: Learn about Grafana Mimir configuration and key guidelines to consider.
-menuTitle: About configurations
+menuTitle: Configurations
 title: About Grafana Mimir configurations
 weight: 10
 ---
