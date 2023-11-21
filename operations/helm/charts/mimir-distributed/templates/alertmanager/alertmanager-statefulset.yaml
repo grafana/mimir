@@ -16,7 +16,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ $rolloutZone.replicas }}
-  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.alertmanager.persistentVolume.enableStatefulSetAutoDeletePVC)  }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.alertmanager.persistentVolume.enableRetentionPolicy)  }}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: {{ .Values.alertmanager.persistentVolume.whenDeleted }}
     whenScaled: {{ .Values.alertmanager.persistentVolume.whenScaled }}
