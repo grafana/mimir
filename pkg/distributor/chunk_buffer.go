@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -20,10 +21,11 @@ var (
 // ChunkBuffer is concurrency safe.
 // TODO rename "chunk" to something else, to avoid misunderstandings with TSDB chunks.
 type ChunkBuffer struct {
-	// mx protects closed and partitions.
+	// mx protects closed and partitions. Once closed, it's safe to read from partitions
+	// without acquiring the lock, because it's guaranteed no more data will be written to it.
 	mx         sync.Mutex
 	closed     bool
-	partitions map[int]*bytes.Buffer
+	partitions map[uint32]*bytes.Buffer
 
 	commitErr  error
 	commitDone chan struct{}
@@ -31,12 +33,13 @@ type ChunkBuffer struct {
 
 func NewChunkBuffer() *ChunkBuffer {
 	return &ChunkBuffer{
-		partitions: map[int]*bytes.Buffer{},
+		partitions: map[uint32]*bytes.Buffer{},
 		commitDone: make(chan struct{}),
 	}
 }
 
-func (b *ChunkBuffer) Append(ctx context.Context, partitionID int, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+// TODO store the userID too
+func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	// Serialise the input data.
 	entry := &mimirpb.WriteRequest{
 		Timeseries: timeseries,
@@ -111,18 +114,135 @@ func (b *ChunkBuffer) Marshal() (io.Reader, error) {
 		return nil, ErrChunkNotClosed
 	}
 
-	// TODO ensure it's closed, otherwise it's an error
-
-	return &ChunkBufferMarshaller{
-		partitions: b.partitions,
-	}, nil
+	return NewChunkBufferMarshaller(b.partitions), nil
 }
 
 type ChunkBufferMarshaller struct {
-	partitions map[int]*bytes.Buffer
+	// content is an ordered list of byte slices that get marshalled.
+	content [][]byte
+
+	// currContentOffset is the read offset in the current content slice
+	// (the current content is the one at index 0).
+	currContentOffset int
 }
 
+func NewChunkBufferMarshaller(partitions map[uint32]*bytes.Buffer) *ChunkBufferMarshaller {
+	// Get the list of partitions IDs.
+	partitionIDs := make([]uint32, 0, len(partitions))
+	for id := range partitions {
+		partitionIDs = append(partitionIDs, id)
+	}
+
+	// Spec requires to sort partition IDs.
+	slices.Sort(partitionIDs)
+
+	// Add TOC.
+	content := make([][]byte, 0, 1+len(partitions))
+	content = append(content, NewChunkBufferTOC(partitions).Bytes())
+
+	// Add partitions.
+	for _, partitionID := range partitionIDs {
+		content = append(content, partitions[partitionID].Bytes())
+	}
+
+	return &ChunkBufferMarshaller{
+		content: content,
+	}
+}
+
+// Read implements io.Reader.
 func (m *ChunkBufferMarshaller) Read(p []byte) (n int, err error) {
-	// TODO
-	return 0, nil
+	// Ensure we haven't reached the end of the current slice.
+	if len(m.content) > 0 && m.currContentOffset >= len(m.content[0]) {
+		m.content = m.content[1:]
+		m.currContentOffset = 0
+	}
+
+	// Ensure we haven't reached the end of the content.
+	if len(m.content) == 0 {
+		return 0, io.EOF
+	}
+
+	// Ensure the input buffer has some space.
+	if len(p) == 0 {
+		return 0, nil
+	}
+
+	n = min(len(p), len(m.content[0])-m.currContentOffset)
+	copy(p[0:n], m.content[0][m.currContentOffset:m.currContentOffset+n])
+	m.currContentOffset += n
+
+	return n, nil
+}
+
+// ChunkBufferTOC holds the TOC of a serialised ChunkBuffer.
+type ChunkBufferTOC struct {
+	// TODO magic
+	// TODO version
+
+	partitionsLength uint32
+	partitions       []ChunkBufferTOCPartition
+}
+
+func NewChunkBufferTOC(partitions map[uint32]*bytes.Buffer) ChunkBufferTOC {
+	toc := ChunkBufferTOC{}
+
+	// Get the list of partitions IDs.
+	partitionIDs := make([]uint32, 0, len(partitions))
+	for id := range partitions {
+		partitionIDs = append(partitionIDs, id)
+	}
+
+	// Spec requires to sort partition IDs.
+	slices.Sort(partitionIDs)
+
+	// Compute the TOC size (in bytes). This is required to know the starting offset of partitions.
+	// TODO use Size()
+	offset := 4 + uint64(len(partitions)*ChunkBufferTOCPartitionSize)
+
+	// Add partitions to TOC.
+	toc.partitions = make([]ChunkBufferTOCPartition, 0, len(partitions))
+	for id, buffer := range partitions {
+		// TODO we may want to write the length at the beginning of each partition, so we could also read it in a streaming way
+
+		toc.partitions = append(toc.partitions, ChunkBufferTOCPartition{
+			partitionID: id,
+			offset:      offset,
+			length:      uint64(buffer.Len()),
+		})
+
+		offset += uint64(buffer.Len())
+	}
+
+	return toc
+}
+
+// Size returns the serialised TOC size, in bytes.
+func (t ChunkBufferTOC) Size() int {
+	return 4 + (len(t.partitions) * ChunkBufferTOCPartitionSize)
+}
+
+func (t ChunkBufferTOC) Bytes() []byte {
+	buffer := bytes.NewBuffer(nil)
+	buffer.Grow(t.Size())
+
+	// Partitions.
+	_ = binary.Write(buffer, binary.BigEndian, uint32(len(t.partitions)))
+
+	for _, partition := range t.partitions {
+		_ = binary.Write(buffer, binary.BigEndian, partition.partitionID)
+		_ = binary.Write(buffer, binary.BigEndian, partition.offset)
+		_ = binary.Write(buffer, binary.BigEndian, partition.length)
+	}
+
+	return buffer.Bytes()
+}
+
+// ChunkBufferTOCPartitionSize is the size, in bytes, of a serialized ChunkBufferTOCPartition entry.
+const ChunkBufferTOCPartitionSize = 4 + 8 + 8
+
+type ChunkBufferTOCPartition struct {
+	partitionID uint32
+	offset      uint64
+	length      uint64
 }

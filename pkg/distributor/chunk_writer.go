@@ -37,7 +37,7 @@ func NewWriter(bufferPeriod time.Duration, client objstore.InstrumentedBucket) *
 
 // WriteSync the input data to the object storage. The function blocks until the data has been successfully committed
 // to the partition, or an error occurs.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (w *Writer) WriteSync(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	var lastErr error
 
 	for try := 0; try < 3; try++ {

@@ -27,7 +27,13 @@ func (u *ChunkUploader) UploadAsync(chunk *ChunkBuffer, done func(error)) {
 	chunkID := ulid.MustNew(now, rand.Reader)
 	key := fmt.Sprintf("%d/%s", now/1000, chunkID)
 
+	marshaller, err := chunk.Marshal()
+	if err != nil {
+		done(err)
+		return
+	}
+
 	// TODO context, timeout, retry
-	u.client.Upload(context.Background(), key, chunk.Reader())
-	// TODO
+	err = u.client.Upload(context.Background(), key, marshaller)
+	done(err)
 }
