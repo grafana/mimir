@@ -78,7 +78,7 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
-      nodeSelector:store-gateway
+      nodeSelector:
         {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
         {{- $rolloutZone.affinity | toYaml | nindent 8 }}
