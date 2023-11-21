@@ -88,7 +88,10 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	rulerAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("metrics-in-ruler.json").
 		StringVar(&raCmd.outputFile)
-
+	rulerAnalyzeCmd.Flag("tls-insecure-skip-verify", "Skip TLS certificate verification; alternatively, set "+envVars.TLSInsecureSkipVerify+".").
+		Default("false").
+		Envar(envVars.TLSInsecureSkipVerify).
+		BoolVar(&raCmd.ClientConfig.TLS.InsecureSkipVerify)	
 	daCmd := &DashboardAnalyzeCommand{}
 	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").Action(daCmd.run)
 	dashboardAnalyzeCmd.Arg("files", "Dashboard files").
