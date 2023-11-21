@@ -85,6 +85,7 @@
 * [ENHANCEMENT] Query-frontend: optionally wait for the frontend to complete startup if requests are received while the frontend is still starting. Disabled by default, set `-query-frontend.not-running-timeout` to a non-zero value to enable. #6621
 * [ENHANCEMENT] Distributor: Include source IPs in OTLP push handler logs. #6652
 * [ENHANCEMENT] Query-frontend: return clearer error message when a query request is received while shutting down. #6675
+* [ENHANCEMENT] Querier: return clearer error message when a query request is cancelled by the caller. #6697
 * [BUGFIX] Distributor: return server overload error in the event of exceeding the ingestion rate limit. #6549
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
