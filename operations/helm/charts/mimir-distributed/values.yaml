@@ -1457,7 +1457,7 @@ store_gateway:
 
     # -- Enable StatefulSetAutoDeletePVC feature
     # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
-    enableStatefulSetAutoDeletePVC: false
+    enableRetentionPolicy: false
     whenDeleted: Retain
     whenScaled: Retain
 
