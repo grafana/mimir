@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets. #6106
 * [CHANGE] The following deprecated configurations have been removed: #6673
   * `-querier.query-ingesters-within`
   * `-querier.iterators`
