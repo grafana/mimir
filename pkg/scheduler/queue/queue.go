@@ -152,32 +152,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			stopping = true
 		case qe := <-q.querierOperations:
-			// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
-			// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
-			switch qe.operation {
-			case registerConnection:
-				q.connectedQuerierWorkers.Inc()
-				queueBroker.addQuerierConnection(qe.querierID)
-				needToDispatchQueries = true
-			case unregisterConnection:
-				q.connectedQuerierWorkers.Dec()
-				queueBroker.removeQuerierConnection(qe.querierID, time.Now())
-				needToDispatchQueries = true
-			case notifyShutdown:
-				queueBroker.notifyQuerierShutdown(qe.querierID)
-				needToDispatchQueries = true
-
-				// We don't need to do any cleanup here in response to a graceful shutdown: next time we try to dispatch a query to
-				// this querier, getNextQueueForQuerier will return ErrQuerierShuttingDown and we'll remove the waiting
-				// GetNextRequestForQuerier call from our list.
-			case forgetDisconnected:
-				if queueBroker.forgetDisconnectedQueriers(time.Now()) > 0 {
-					// Removing some queriers may have caused a resharding.
-					needToDispatchQueries = true
-				}
-			default:
-				panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
-			}
+			needToDispatchQueries = q.handleQuerierConnectionOperation(qe, queueBroker)
 		case r := <-q.requestsToEnqueue:
 			err := q.enqueueRequestToBroker(queueBroker, r)
 			r.processed <- err
@@ -230,6 +205,34 @@ func (q *RequestQueue) dispatcherLoop() {
 			return
 		}
 	}
+}
+
+func (q *RequestQueue) handleQuerierConnectionOperation(qe querierOperation, queueBroker *queueBroker) bool {
+	// These operations may cause a resharding, so we should always try to dispatch queries afterwards.
+	// In the future, we could make this smarter: detect when a resharding actually happened and only trigger dispatching queries in those cases.
+	needToDispatchQueries := true
+
+	switch qe.operation {
+	case registerConnection:
+		q.connectedQuerierWorkers.Inc()
+		queueBroker.addQuerierConnection(qe.querierID)
+	case unregisterConnection:
+		q.connectedQuerierWorkers.Dec()
+		queueBroker.removeQuerierConnection(qe.querierID, time.Now())
+	case notifyShutdown:
+		// We don't need to do any cleanup here in response to a graceful shutdown: next time we try to dispatch a query to
+		// this querier, getNextQueueForQuerier will return ErrQuerierShuttingDown and we'll remove the waiting
+		// GetNextRequestForQuerier call from our list.
+		queueBroker.notifyQuerierShutdown(qe.querierID)
+	case forgetDisconnected:
+		if queueBroker.forgetDisconnectedQueriers(time.Now()) <= 0 {
+			// no querier connection changes happened && therefore no resharding
+			needToDispatchQueries = false
+		}
+	default:
+		panic(fmt.Sprintf("received unknown querier event %v for querier ID %v", qe.operation, qe.querierID))
+	}
+	return needToDispatchQueries
 }
 
 // enqueueRequestToBroker handles a request from the dispatcher's queue and submits it to the scheduler's queue broker.
