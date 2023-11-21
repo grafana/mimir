@@ -306,7 +306,7 @@ func TestTracingContext(t *testing.T) {
 	require.Equal(t, 1, len(scheduler.pendingRequests))
 
 	for _, r := range scheduler.pendingRequests {
-		require.NotNil(t, r.parentSpanContext)
+		require.NotNil(t, r.ParentSpanContext)
 	}
 }
 

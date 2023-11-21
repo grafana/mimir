@@ -13,7 +13,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -432,4 +434,21 @@ type nextRequestForQuerier struct {
 	req           Request
 	lastUserIndex UserIndex
 	err           error
+}
+
+type SchedulerRequest struct {
+	FrontendAddress string
+	UserID          string
+	QueryID         uint64
+	Request         *httpgrpc.HTTPRequest
+	StatsEnabled    bool
+
+	EnqueueTime time.Time
+
+	Ctx       context.Context
+	CtxCancel context.CancelFunc
+	QueueSpan opentracing.Span
+
+	// This is only used for testing.
+	ParentSpanContext opentracing.SpanContext
 }
