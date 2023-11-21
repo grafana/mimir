@@ -25,21 +25,21 @@ import (
 )
 
 type config struct {
-	bucketConfig    objtools.BucketConfig
-	includeTenants  flagext.StringSliceCSV
-	excludeTenants  flagext.StringSliceCSV
-	inputFile       string
-	inputFileFormat string
-	dryRun          bool
+	bucketConfig   objtools.BucketConfig
+	blocksFrom     string
+	inputFile      string
+	includeTenants flagext.StringSliceCSV
+	excludeTenants flagext.StringSliceCSV
+	dryRun         bool
 }
 
 func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucketConfig.RegisterFlags(f)
-	f.Var(&c.includeTenants, "include-tenants", "If not empty, only blocks for these tenants are considered.")
-	f.Var(&c.excludeTenants, "exclude-tenants", "Blocks for these tenants are not considered.")
-	f.StringVar(&c.inputFile, "input-file", "", "If set, the blocks to undelete are read from the provided file.")
-	f.StringVar(&c.inputFileFormat, "input-file-format", "json", "The format of the input file. Accepted values: json and lines.")
-	f.BoolVar(&c.dryRun, "dry-run", false, "If true, no writes/deletes are performed and are instead only logged.")
+	f.StringVar(&c.blocksFrom, "blocks-from", "", "Accepted values are json, lines, or listing. When listing is provided --input-file is ignored and object storage listings are used to discover tenants and blocks.")
+	f.StringVar(&c.inputFile, "input-file", "", "The file path to read when --blocks-from is json or lines, otherwise ignored. The default (\"\") assumes reading from standard input.")
+	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target.")
+	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants.")
+	f.BoolVar(&c.dryRun, "dry-run", false, "When set the changes that would be made to object storage are only logged rather than performed.")
 }
 
 func main() {
@@ -107,22 +107,30 @@ func newTenantFilter(cfg config) tenantFilter {
 
 func getBlocks(ctx context.Context, cfg config, bucket objtools.Bucket) (map[string][]ulid.ULID, error) {
 	tenantFilter := newTenantFilter(cfg)
-	if cfg.inputFile != "" {
-		switch strings.ToLower(cfg.inputFileFormat) {
-		case "json":
-			return getBlocksFromJSONFile(cfg.inputFile, tenantFilter)
-		case "lines":
-			return getBlocksFromLinesFile(cfg.inputFile, tenantFilter)
-		default:
-			return nil, errors.Errorf("unrecognized input file format: %s", cfg.inputFileFormat)
-		}
+	switch strings.ToLower(cfg.blocksFrom) {
+	case "json":
+		return getBlocksFromJSONFile(cfg.inputFile, tenantFilter)
+	case "lines":
+		return getBlocksFromLinesFile(cfg.inputFile, tenantFilter)
+	case "listing":
+		return getBlocksFromListing(ctx, bucket, tenantFilter)
+	case "":
+		return nil, errors.New("providing --blocks-from is required")
+	default:
+		return nil, errors.Errorf("unrecognized --blocks-from value: %s", cfg.blocksFrom)
 	}
-	return getBlocksFromListing(ctx, bucket, tenantFilter)
+}
+
+func getInputFile(filePath string) (*os.File, error) {
+	if filePath == "" {
+		return os.Stdin, nil
+	}
+	return os.Open(filePath)
 }
 
 // getBlocksFromJSONFile reads a JSON tenant to blockIDs map from the specified file
 func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
-	f, err := os.Open(filePath)
+	f, err := getInputFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +170,7 @@ func getBlocksFromJSONFile(filePath string, filter tenantFilter) (map[string][]u
 
 // getBlocksFromLinesFile reads a file with each line having a tenant and a blockID separated by a space
 func getBlocksFromLinesFile(filePath string, filter tenantFilter) (map[string][]ulid.ULID, error) {
-	f, err := os.Open(filePath)
+	f, err := getInputFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -172,9 +180,9 @@ func getBlocksFromLinesFile(filePath string, filter tenantFilter) (map[string][]
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
-		tenant, blockString, found := strings.Cut(line, " ")
+		tenant, blockString, found := strings.Cut(line, objtools.Delim)
 		if !found {
-			return nil, errors.Errorf("no space separating tenant and block in line formatted file: %s", line)
+			return nil, errors.Errorf("no %s separating tenant and block in line formatted file: %s", objtools.Delim, line)
 		}
 		if !filter(tenant) {
 			continue

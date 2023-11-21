@@ -8,17 +8,19 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 - A bucket with versioning enabled is assumed.
 - A deleted object can not be recovered if a noncurrent version of the object does not exist.
-- This program should ideally not be run while deletes are still occurring on the affected blocks since the undelete may race the delete. To prevent deletes from Mimir itself either temporarily stop the compactor component entirely or set `-compactor.blocks-retention-period`, `-compactor.disabled-tenants`, and `-compactor.partial-block-deletion-delay` (or related per-tenant limits) appropriately beforehand.
+- This program should ideally not be run while deletes are still occurring on the affected blocks since the undelete may race the delete. To prevent deletes from Mimir itself either temporarily stop the compactor component entirely or set the appropriate configuration.
 
-## Features
+## Flags
 
-- See what changes would be made on object storage without actually performing them with `--dry-run`
-- Limit which tenants are included in the undelete by specifying a comma separated list of tenants with either `--include-tenants` or `--exclude-tenants`. By default all tenants are included. If a tenant is included all blocks within that tenant are considered by default.
-- Specify exactly what blocks to restore by providing an input file with `--input-file`. The format is provided with `--input-file-format` and can be `json` (the default) or `lines`.
+- `--blocks-from` (mandatory) Accepted values are `json`, `lines`, or `listing`. When `listing` is provided `--input-file` is ignored and object storage listings are used to discover tenants and blocks.
+- `--input-file` (optional) The file path to read when `--blocks-from` is `json` or `lines`, otherwise ignored. The default (`""`) assumes reading from standard input.
+- `--include-tenants` (optional) A comma separated list of what tenants to target.
+- `--exclude-tenants` (optional) A comma separated list of what tenants to ignore. Has precedence over `--include-tenants`.
+- `--dry-run` (optional) When set the changes that would be made to object storage are only logged rather than performed.
 
-## Input file formats
+Each supported object storage service also has an additional set of flags (see examples in [Running](##Running)).
 
-Specifying an input file is optional, but when it is provided it must be in a supported format.
+## Input formats
 
 The `json` format is a map of tenants to a list of blocks:
 
@@ -29,20 +31,22 @@ The `json` format is a map of tenants to a list of blocks:
 }
 ```
 
-The `lines` format is a tenant and a single block separated by a space on each line:
+The `lines` format is a tenant and a block separated by a single `/` on each line:
 
 ```
-tenant1 01GDY90HMVFPSJHXZRQH8KRAME
-tenant1 01GE0SV77NX8ASC7JN0ZQMN0WM
-tenant2 01GZDNKM6SQ9S7W5YQBDF0DK49
+tenant1/01GDY90HMVFPSJHXZRQH8KRAME
+tenant1/01GE0SV77NX8ASC7JN0ZQMN0WM
+tenant2/01GZDNKM6SQ9S7W5YQBDF0DK49
 ```
 
-Tenants specified in either format can be refined further by the `--include-tenants` and `--exclude-tenants` options if they are provided.
+For convenience `jq` can be used to translate between the `json` and `lines` formats:
 
-For convenience `jq` can be used to translate between the two formats:
+- To translate from `json` to `lines`: `jq --raw-output 'to_entries[] | .key as $tenant | .value[] | $tenant + "/" + .'`
+- To translate from `lines` to `json`: `jq --slurp --raw-input 'split("\n") | map(select(length > 0) | split("/") | {"tenant": .[0], "block": .[1]}) | group_by(.tenant) | map({(.[0].tenant): map(.block)}) | add'`
 
-- To translate from `json` to `lines`: `jq --raw-output 'to_entries[] | .key as $tenant | .value[] | $tenant + " " + .'`
-- To translate from `lines` to `json`: `jq --slurp --raw-input 'split("\n") | map(select(length > 0) | split(" ") | {"tenant": .[0], "block": .[1]}) | group_by(.tenant) | map({(.[0].tenant): map(.block)}) | add'`
+No input is supplied with `listing` since the block information is derived from the object storage itself.
+
+Tenants specified in any format can be refined further by the `--include-tenants` and `--exclude-tenants` options if they are provided.
 
 ## What does undeleting a block mean?
 
@@ -79,6 +83,7 @@ Running `go build .` in this directory builds the program. Then use an example b
 ./undelete-blocks \
   --backend gcs \
   --gcs.bucket-name <bucket name> \
+  --blocks-from listing \
   --include-tenants tenant1,tenant2 \
   --dry-run
 ```
@@ -91,8 +96,9 @@ Running `go build .` in this directory builds the program. Then use an example b
   --azure.container-name <container name> \
   --azure.account-name <account name> \
   --azure.account-key <account key> \
-  --exclude-tenants tenant1 \
+  --blocks-from json \
   --input-file undelete.json \
+  --exclude-tenants tenant1 \
   --dry-run
 ```
 
@@ -105,7 +111,7 @@ Running `go build .` in this directory builds the program. Then use an example b
   --s3.access-key-id <access key id> \
   --s3.secret-access-key <secret access key> \
   --s3.endpoint <endpoint> \
+  --blocks-from lines \
   --input-file undelete.lines \
-  --input-file-format lines \
   --dry-run
 ```
