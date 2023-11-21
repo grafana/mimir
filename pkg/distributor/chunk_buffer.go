@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/prometheus/prometheus/tsdb/encoding"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -179,6 +181,7 @@ func (m *ChunkBufferMarshaller) Read(p []byte) (n int, err error) {
 type ChunkBufferTOC struct {
 	// TODO magic
 	// TODO version
+	// TODO crc32?
 
 	partitionsLength uint32
 	partitions       []ChunkBufferTOCPartition
@@ -197,34 +200,48 @@ func NewChunkBufferTOC(partitions map[uint32]*bytes.Buffer) ChunkBufferTOC {
 	slices.Sort(partitionIDs)
 
 	// Compute the TOC size (in bytes). This is required to know the starting offset of partitions.
-	// TODO use Size()
-	offset := 4 + uint64(len(partitions)*ChunkBufferTOCPartitionSize)
+	offset := ChunkBufferTOCSize(len(partitions))
 
 	// Add partitions to TOC.
+	toc.partitionsLength = uint32(len(partitions))
 	toc.partitions = make([]ChunkBufferTOCPartition, 0, len(partitions))
-	for id, buffer := range partitions {
-		// TODO we may want to write the length at the beginning of each partition, so we could also read it in a streaming way
+	for _, id := range partitionIDs {
+		partitionDataSize := uint64(partitions[id].Len())
 
 		toc.partitions = append(toc.partitions, ChunkBufferTOCPartition{
 			partitionID: id,
 			offset:      offset,
-			length:      uint64(buffer.Len()),
+			length:      partitionDataSize,
 		})
 
-		offset += uint64(buffer.Len())
+		offset += partitionDataSize
 	}
 
 	return toc
 }
 
-// Size returns the serialised TOC size, in bytes.
-func (t ChunkBufferTOC) Size() int {
-	return 4 + (len(t.partitions) * ChunkBufferTOCPartitionSize)
+func NewChunkBufferTOCFromBytes(data []byte) (ChunkBufferTOC, error) {
+	toc := ChunkBufferTOC{}
+
+	d := encoding.Decbuf{B: data}
+
+	// Partitions.
+	toc.partitionsLength = d.Be32()
+	for i := uint32(0); i < toc.partitionsLength; i++ {
+		toc.partitions = append(toc.partitions, ChunkBufferTOCPartition{
+			partitionID: d.Be32(),
+			offset:      d.Be64(),
+			length:      d.Be64(),
+		})
+	}
+
+	return toc, d.Err()
 }
 
+// Bytes returns the serialised TOC.
 func (t ChunkBufferTOC) Bytes() []byte {
 	buffer := bytes.NewBuffer(nil)
-	buffer.Grow(t.Size())
+	buffer.Grow(int(ChunkBufferTOCSize(int(t.partitionsLength))))
 
 	// Partitions.
 	_ = binary.Write(buffer, binary.BigEndian, uint32(len(t.partitions)))
@@ -245,4 +262,9 @@ type ChunkBufferTOCPartition struct {
 	partitionID uint32
 	offset      uint64
 	length      uint64
+}
+
+// ChunkBufferTOCSize returns the TOC size in bytes.
+func ChunkBufferTOCSize(numPartitions int) uint64 {
+	return uint64(4 + (numPartitions * ChunkBufferTOCPartitionSize))
 }
