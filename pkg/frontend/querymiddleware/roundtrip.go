@@ -307,10 +307,14 @@ func newQueryTripperware(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
 
-		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
+		// Wrap next for cardinality, labels queries and all other queries.
+		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
+		// range and instant queries have more accurate logic for query details.
+		next = newQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
 		labels := next
 
+		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
@@ -331,6 +335,25 @@ func newQueryTripperware(
 			}
 		})
 	}, nil
+}
+
+// newQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
+func newQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripper {
+	return RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		params, _ := util.ParseRequestFormWithoutConsumingBody(req)
+		if details := QueryDetailsFromContext(req.Context()); details != nil {
+			if startMs, _ := util.ParseTime(params.Get("start")); startMs != 0 {
+				details.Start = time.UnixMilli(startMs)
+				details.MinT = details.Start
+			}
+
+			if endMs, _ := util.ParseTime(params.Get("end")); endMs != 0 {
+				details.End = time.UnixMilli(endMs)
+				details.MaxT = details.End
+			}
+		}
+		return next.RoundTrip(req)
+	})
 }
 
 func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
