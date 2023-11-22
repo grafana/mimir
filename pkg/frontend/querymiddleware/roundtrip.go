@@ -39,6 +39,10 @@ const (
 	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
 	DefaultDeprecatedCacheUnalignedRequests = false
+
+	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
+	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
+	DefaultDeprecatedAlignQueriesWithStep = false
 )
 
 var (
@@ -48,7 +52,7 @@ var (
 // Config for query_range middleware chain.
 type Config struct {
 	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
+	DeprecatedAlignQueriesWithStep   bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
 	ResultsCacheConfig               `yaml:"results_cache"`
 	CacheResults                     bool          `yaml:"cache_results"`
 	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
@@ -69,7 +73,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
 	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 0, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
-	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -81,6 +84,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// and consistency with the process for migrating limits to per-tenant config
 	// TODO: Remove in Mimir 2.12.0
 	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
+
+	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
+	// cfg.DeprecatedAlignQueriesWithStep is set to the default here for clarity
+	// and consistency with the process for migrating limits to per-tenant config
+	// TODO: Remove in Mimir 2.14
+	cfg.DeprecatedAlignQueriesWithStep = DefaultDeprecatedAlignQueriesWithStep
 }
 
 // Validate validates the config.
@@ -210,9 +219,8 @@ func newQueryTripperware(
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
-	}
-	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics), newStepAlignMiddleware())
+		newInstrumentMiddleware("step_align", metrics),
+		newStepAlignMiddleware(limits, tenant.NewMultiResolver(), log, registerer),
 	}
 
 	var c cache.Cache
