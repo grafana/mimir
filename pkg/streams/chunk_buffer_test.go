@@ -1,4 +1,4 @@
-package distributor
+package streams
 
 import (
 	"bytes"
