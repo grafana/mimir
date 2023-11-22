@@ -22,6 +22,7 @@ var (
 // ChunkBuffer holds a chunk of data not written to the object storage yet.
 // ChunkBuffer is concurrency safe.
 // TODO rename "chunk" to something else, to avoid misunderstandings with TSDB chunks.
+// TODO is it faster if we use little endian?
 type ChunkBuffer struct {
 	// mx protects closed and partitions. Once closed, it's safe to read from partitions
 	// without acquiring the lock, because it's guaranteed no more data will be written to it.
@@ -79,6 +80,7 @@ func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID str
 	// TODO compression
 
 	// Write the next entry length.
+	// TODO use bigendian
 	if err := binary.Write(partitionBuffer, binary.LittleEndian, int64(len(data))); err != nil {
 		return err
 	}
