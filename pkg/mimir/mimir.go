@@ -66,6 +66,7 @@ import (
 	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/usagestats"
@@ -119,6 +120,7 @@ type Config struct {
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
@@ -175,6 +177,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
+	c.IngestStorage.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -234,6 +237,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
+	}
+	if err := c.IngestStorage.Validate(); err != nil {
+		return errors.Wrap(err, "invalid ingest storage config")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
