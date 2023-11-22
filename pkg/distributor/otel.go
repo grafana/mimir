@@ -127,7 +127,13 @@ func OTLPHandler(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
-		metrics, err := otelMetricsToTimeseries(ctx, limits, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return body, err
+		}
+		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+
+		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -154,7 +160,7 @@ func OTLPHandler(
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {
-			metadata, err := otelMetricsToMetadata(ctx, limits, otlpReq.Metrics())
+			metadata, err := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 			if err != nil {
 				return nil, err
 			}
@@ -185,14 +191,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(ctx context.Context, limits *validation.Overrides, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
-
+func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -224,14 +223,9 @@ func otelMetricsToMetadata(ctx context.Context, limits *validation.Overrides, md
 	return metadata, nil
 }
 
-func otelMetricsToTimeseries(ctx context.Context, limits *validation.Overrides, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{
-		AddMetricSuffixes: limits.OTelMetricSuffixesEnabled(tenantID),
+		AddMetricSuffixes: addSuffixes,
 	})
 	if errs != nil {
 		dropped := len(multierr.Errors(errs))
