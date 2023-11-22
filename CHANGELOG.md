@@ -102,6 +102,7 @@
 * [BUGFIX] Querier: fix issue where queries fail with "context canceled" error when an ingester or store-gateway fails healthcheck while the query is in progress. #6550
 * [BUGFIX] Tracing: When creating an OpenTelemetry tracing span, add it to the context for later retrieval. #6614
 * [BUGFIX] Querier: always report query results to query-frontends, even when cancelled, to ensure query-frontends don't wait for results that will otherwise never arrive. #6703
+* [BUGFIX] Querier: fix issue where queries can sometimes be cancelled if the query-scheduler that queued the request is stopped. #6706
 
 ### Mixin
 
