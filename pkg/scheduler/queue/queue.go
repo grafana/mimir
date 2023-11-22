@@ -215,6 +215,14 @@ func (q *RequestQueue) dispatcherLoop() {
 				currentElement = currentElement.Next()
 			}
 
+			if !queueBroker.isEmpty() {
+				// This should never happen: unless all of the queriers have shut down themselves, they should remain connected
+				// until the RequestQueue service enters the stopped state (see Scheduler.QuerierLoop()), and so we won't
+				// stop the RequestQueue until we've drained all enqueued queries.
+				// But if this does happen, we want to know about it.
+				level.Warn(q.log).Log("msg", "shutting down dispatcher loop: have no connected querier workers, but request queue is not empty, so these requests will be abandoned")
+			}
+
 			// We are done.
 			close(q.stopCompleted)
 			return
