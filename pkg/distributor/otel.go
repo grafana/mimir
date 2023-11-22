@@ -52,7 +52,7 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, _ []byte, req *mimirpb.PreallocWriteRequest, logger log.Logger) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.ExportRequest, error)
 
 		contentType := r.Header.Get("Content-Type")
@@ -127,7 +127,13 @@ func OTLPHandler(
 
 		level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 
-		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return body, err
+		}
+		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
+
+		metrics, err := otelMetricsToTimeseries(tenantID, addSuffixes, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -154,7 +160,7 @@ func OTLPHandler(
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {
-			metadata := otelMetricsToMetadata(otlpReq.Metrics())
+			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 			req.Metadata = metadata
 		}
 
@@ -182,7 +188,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
+func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -193,7 +199,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 		}
 	}
 
-	var metadata = make([]*mimirpb.MetricMetadata, 0, metadataLength)
+	metadata := make([]*mimirpb.MetricMetadata, 0, metadataLength)
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
@@ -202,7 +208,7 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
 					Type:             otelMetricTypeToMimirMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", true), // TODO expose addMetricSuffixes in configuration (https://github.com/grafana/mimir/issues/5967)
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -212,20 +218,15 @@ func otelMetricsToMetadata(md pmetric.Metrics) []*mimirpb.MetricMetadata {
 	}
 
 	return metadata
-
 }
 
-func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
-
+func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{
+		AddMetricSuffixes: addSuffixes,
+	})
 	if errs != nil {
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		dropped := len(multierr.Errors(errs))
-		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
+		discardedDueToOtelParseError.WithLabelValues(tenantID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
