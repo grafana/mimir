@@ -20,7 +20,7 @@ func NewChunkUploader(client objstore.InstrumentedBucket) *ChunkUploader {
 	}
 }
 
-func (u *ChunkUploader) UploadAsync(chunk *ChunkBuffer, done func(error)) {
+func (u *ChunkUploader) UploadSync(chunk *ChunkBuffer) (CommitRef, error) {
 	now := ulid.Now()
 
 	// TODO define an extensible format for the key (e.g. include distributor ID, bloom filter with partitions)
@@ -29,11 +29,21 @@ func (u *ChunkUploader) UploadAsync(chunk *ChunkBuffer, done func(error)) {
 
 	marshaller, err := chunk.Marshal()
 	if err != nil {
-		done(err)
-		return
+		return CommitRef{}, err
 	}
 
 	// TODO context, timeout, retry
 	err = u.client.Upload(context.Background(), key, marshaller)
-	done(err)
+	if err != nil {
+		return CommitRef{}, err
+	}
+
+	return CommitRef{StorageKey: key}, nil
+}
+
+func (u *ChunkUploader) UploadAsync(chunk *ChunkBuffer, done func(CommitRef, error)) {
+	// TODO this is as bad as it looks, cause goroutines are unbounded. Fix it.
+	go func() {
+		done(u.UploadSync(chunk))
+	}()
 }

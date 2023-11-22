@@ -37,7 +37,7 @@ func NewWriter(bufferPeriod time.Duration, client objstore.InstrumentedBucket) *
 
 // WriteSync the input data to the object storage. The function blocks until the data has been successfully committed
 // to the partition, or an error occurs.
-func (w *Writer) WriteSync(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (w *Writer) WriteSync(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) (CommitRef, error) {
 	var lastErr error
 
 	for try := 0; try < 3; try++ {
@@ -52,14 +52,14 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID uint32, userID strin
 			// The chunk has been closed in the meanwhile. We need to append to the new one.
 			continue
 		} else if lastErr != nil {
-			return lastErr
+			return CommitRef{}, lastErr
 		}
 
 		// Wait until the chunk is committed to the object storage.
 		return chunk.WaitCommit(ctx)
 	}
 
-	return lastErr
+	return CommitRef{}, lastErr
 }
 
 func (w *Writer) onBufferPeriod(ctx context.Context) error {
@@ -75,9 +75,15 @@ func (w *Writer) onBufferPeriod(ctx context.Context) error {
 	oldChunk.Close()
 
 	// Add the chunk to the upload queue.
-	w.uploader.UploadAsync(oldChunk, func(err error) {
-		oldChunk.NotifyCommit(err)
+	w.uploader.UploadAsync(oldChunk, func(ref CommitRef, err error) {
+		oldChunk.NotifyCommit(ref, err)
 	})
 
 	return nil
+}
+
+// CommitRef contains a reference to the commit containing the written data.
+type CommitRef struct {
+	// StorageKey holds the key (prefix + name) of the object containing the written data.
+	StorageKey string
 }

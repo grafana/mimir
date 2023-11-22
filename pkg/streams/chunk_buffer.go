@@ -29,6 +29,7 @@ type ChunkBuffer struct {
 	closed     bool
 	partitions map[uint32]*bytes.Buffer
 
+	commitRef  CommitRef
 	commitErr  error
 	commitDone chan struct{}
 }
@@ -89,19 +90,20 @@ func (b *ChunkBuffer) Close() {
 
 // NotifyCommit that the commit operation is completed. If the input err is valued, it means the operation
 // failed otherwise it succeeded.
-func (b *ChunkBuffer) NotifyCommit(err error) {
+func (b *ChunkBuffer) NotifyCommit(ref CommitRef, err error) {
+	b.commitRef = ref
 	b.commitErr = err
 	close(b.commitDone)
 }
 
 // WaitCommit until the chunk is committed to the object storage or an error occurred.
-func (b *ChunkBuffer) WaitCommit(ctx context.Context) error {
+func (b *ChunkBuffer) WaitCommit(ctx context.Context) (CommitRef, error) {
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return CommitRef{}, ctx.Err()
 
 	case <-b.commitDone:
-		return b.commitErr
+		return b.commitRef, b.commitErr
 	}
 }
 
