@@ -12,7 +12,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 ## Flags
 
-- `--blocks-from` (mandatory) Accepted values are `json`, `lines`, or `listing`. When `listing` is provided `--input-file` is ignored and object storage listings are used to discover tenants and blocks.
+- `--blocks-from` (required) Accepted values are `json`, `lines`, or `listing`. When `listing` is provided `--input-file` is ignored and object storage listings are used to discover tenants and blocks.
 - `--input-file` (optional) The file path to read when `--blocks-from` is `json` or `lines`, otherwise ignored. The default (`""`) assumes reading from standard input.
 - `--include-tenants` (optional) A comma separated list of what tenants to target.
 - `--exclude-tenants` (optional) A comma separated list of what tenants to ignore. Has precedence over `--include-tenants`.
@@ -70,8 +70,7 @@ An undelete tries to get a block back to being a complete block by restoring non
 
 ## Known limitations
 
-- If a local delete marker does not exist in a block directory then this tool assumes the global delete marker for that block does not exist. This may not be true in rare cases.
-- Files not listed within the `meta.json` of a block are not restored if they were deleted. For instance, if a `no-compact-mark.json` was present it will not be restored by this tool.
+Files not listed within the `meta.json` of a block are not restored if they were deleted. For instance, if a `no-compact-mark.json` was present it will not be restored by this tool.
 
 ## Running
 

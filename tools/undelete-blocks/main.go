@@ -259,6 +259,30 @@ func listBlocksForTenant(ctx context.Context, bkt objtools.Bucket, tenantID stri
 	return blockIDs, nil
 }
 
+func listGlobalDeleteMarkers(ctx context.Context, bucket objtools.Bucket, tenantID string) (map[ulid.ULID]struct{}, error) {
+	prefix := tenantID + objtools.Delim + block.MarkersPathname
+	// Unlike the other listings in this tool, this does not need to be a versioned listing since only the current state is required
+	listing, err := bucket.List(ctx, objtools.ListOptions{
+		Prefix: prefix,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	m := make(map[ulid.ULID]struct{})
+	markers, err := listing.ToNamesWithoutPrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	for _, marker := range markers {
+		if ulid, ok := block.IsDeletionMarkFilename(marker); ok {
+			m[ulid] = struct{}{}
+		}
+	}
+
+	return m, nil
+}
+
 func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[string][]ulid.ULID, dryRun bool) {
 	succeeded, notNeeded, failed := 0, 0, 0
 	defer func() {
@@ -266,14 +290,25 @@ func undeleteBlocks(ctx context.Context, bucket objtools.Bucket, blocks map[stri
 	}()
 
 	for tenantID, blockIDs := range blocks {
+		tenantLogger := slog.With("tenant", tenantID)
+
+		globalDeleteMarkers, err := listGlobalDeleteMarkers(ctx, bucket, tenantID)
+		if err != nil {
+			tenantLogger.Error("failed to list global markers for tenant, failing all blocks for this tenant", "err", err)
+			failed += len(blockIDs)
+			continue
+		}
+
 		for _, blockID := range blockIDs {
-			logger := slog.With("tenant", tenantID, "block", blockID)
+			logger := tenantLogger.With("block", blockID)
 			if err := ctx.Err(); err != nil {
 				logger.Error("context error", "err", err)
 				return
 			}
 
-			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, logger, dryRun)
+			_, globalDeleteMarkerExists := globalDeleteMarkers[blockID]
+
+			undeleted, err := undeleteBlock(ctx, bucket, tenantID, blockID, globalDeleteMarkerExists, logger, dryRun)
 			if err != nil {
 				failed++
 				logger.Error("failed to undelete block", "err", err)
@@ -295,7 +330,7 @@ type version struct {
 	info         objtools.VersionInfo
 }
 
-func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, logger *slog.Logger, dryRun bool) (bool, error) {
+func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, blockID ulid.ULID, globalDeleteMarkerExists bool, logger *slog.Logger, dryRun bool) (bool, error) {
 	/*
 	 Lifecycle of a block
 	 0. Nothing
@@ -315,8 +350,7 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 		Versioned: true,
 	})
 	if err != nil {
-		logger.Error("failed listing versions")
-		return false, err
+		return false, errors.Wrap(err, "failed listing versions")
 	}
 
 	// First we'll sort the objects into version lists
@@ -333,41 +367,21 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 	metaName := blockPrefix + objtools.Delim + block.MetaFilename
 	m, metaVersion, err := getMeta(ctx, bkt, metaName, objVersions[metaName])
 	if err != nil {
-		logger.Error("failed reading the block meta file")
-		return false, err
+		return false, errors.Wrap(err, "failed reading the block meta file")
 	}
 
-	targets, err := getTargetsInBlock(m, objVersions, blockPrefix)
+	restoreTargets, err := targetsToRestore(m, objVersions, blockPrefix)
 	if err != nil {
-		logger.Error("failed getting target versions to restore")
-		return false, err
+		return false, errors.Wrap(err, "failed getting target versions to restore")
 	}
-
 	// Restore the meta last if it's needed
 	if metaVersion != nil {
-		targets = append(targets, restorableVersion{
+		restoreTargets = append(restoreTargets, restorableVersion{
 			objectName:  metaName,
 			versionInfo: metaVersion.info,
 		})
 	}
-
-	localDeleteMarkerPath := blockPrefix + objtools.Delim + block.DeletionMarkFilename
-	globalDeleteMarkerPath := tenantID + objtools.Delim + block.DeletionMarkFilepath(blockID)
-
-	// avoids making an exists call by using the version listing we already have
-	var localDeleteMarkerExists bool
-	if markerVersions, ok := objVersions[localDeleteMarkerPath]; ok {
-		v, ok := versionToRestore(markerVersions)
-		localDeleteMarkerExists = v == nil && ok // "nothing needed to restore" for the block delete marker means it exists
-	}
-
-	if !localDeleteMarkerExists && len(targets) == 0 {
-		return false, nil
-	}
-
-	logger.Info("block can be undeleted")
-
-	for _, target := range targets {
+	for _, target := range restoreTargets {
 		if dryRun {
 			logger.Info("dry run: would restore", "object", target.objectName, "version", target.versionInfo.VersionID)
 			continue
@@ -379,23 +393,22 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 		logger.Info("restored an object version", "object", target.objectName, "version", target.versionInfo.VersionID)
 	}
 
-	if localDeleteMarkerExists {
-		for _, objectName := range []string{localDeleteMarkerPath, globalDeleteMarkerPath} {
-			if dryRun {
-				logger.Info("dry run: would delete a delete marker", "object", objectName)
-				continue
-			}
-
-			if err = bkt.Delete(ctx, objectName, objtools.DeleteOptions{}); err != nil {
-				logger.Error("failed to delete a delete marker", "object", objectName)
-				return false, err
-			}
-
-			logger.Info("delete succeeded", "object", objectName)
+	deleteMarkers := markersToDelete(tenantID, blockID, globalDeleteMarkerExists, objVersions)
+	for _, objectName := range deleteMarkers {
+		if dryRun {
+			logger.Info("dry run: would delete a delete marker", "object", objectName)
+			continue
 		}
+
+		if err = bkt.Delete(ctx, objectName, objtools.DeleteOptions{}); err != nil {
+			logger.Error("failed to delete a delete marker", "object", objectName)
+			return false, err
+		}
+
+		logger.Info("deleted a delete marker", "object", objectName)
 	}
 
-	return true, nil
+	return len(restoreTargets) != 0 || len(deleteMarkers) != 0, nil
 }
 
 func getMeta(ctx context.Context, bkt objtools.Bucket, path string, versions []version) (*block.Meta, *version, error) {
@@ -426,7 +439,7 @@ func getMeta(ctx context.Context, bkt objtools.Bucket, path string, versions []v
 	return m, metaVersion, nil
 }
 
-func getTargetsInBlock(m *block.Meta, objVersions map[string][]version, blockPrefix string) ([]restorableVersion, error) {
+func targetsToRestore(m *block.Meta, objVersions map[string][]version, blockPrefix string) ([]restorableVersion, error) {
 	targetVersions := make([]restorableVersion, 0, len(m.Thanos.Files))
 
 	// Verify that every expected file is present in the block and restorable
@@ -476,4 +489,26 @@ func versionToRestore(versions []version) (v *version, ok bool) {
 	}
 
 	return target, target != nil
+}
+
+func markersToDelete(tenantID string, blockID ulid.ULID, globalDeleteMarkerExists bool, objVersions map[string][]version) []string {
+	localDeleteMarkerPath := strings.Join([]string{tenantID, blockID.String(), block.DeletionMarkFilename}, objtools.Delim)
+	globalDeleteMarkerPath := tenantID + objtools.Delim + block.DeletionMarkFilepath(blockID)
+
+	// avoids making an exists call by using the version listing we already have
+	var localDeleteMarkerExists bool
+	if markerVersions, ok := objVersions[localDeleteMarkerPath]; ok {
+		v, ok := versionToRestore(markerVersions)
+		localDeleteMarkerExists = v == nil && ok // "nothing needed to restore" for the block delete marker means it exists
+	}
+
+	deleteTargets := make([]string, 0, 2)
+	if localDeleteMarkerExists {
+		deleteTargets = append(deleteTargets, localDeleteMarkerPath)
+	}
+	if globalDeleteMarkerExists {
+		deleteTargets = append(deleteTargets, globalDeleteMarkerPath)
+	}
+
+	return deleteTargets
 }
