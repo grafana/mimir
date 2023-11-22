@@ -221,9 +221,14 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		}
 	}
 	var c client.PoolClient
-	var retries int
 
-	for {
+	bof := backoff.New(ctx, backoff.Config{
+		MinBackoff: 5 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: maxNotifyFrontendRetries,
+	})
+
+	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
@@ -238,14 +243,11 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			HttpResponse: response,
 			Stats:        stats,
 		})
-		if err == nil || retries >= maxNotifyFrontendRetries {
+		if err == nil {
 			break
 		}
-		// If the used connection returned and error, remove it from the pool and retry.
-		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", retries)
-
-		sp.frontendPool.RemoveClientFor(frontendAddress)
-		retries++
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries())
+		bof.Wait()
 	}
 
 	if err != nil {
