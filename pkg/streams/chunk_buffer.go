@@ -203,7 +203,9 @@ type ChunkBufferTOC struct {
 	// TODO crc32?
 
 	partitionsLength uint32
-	partitions       []ChunkBufferTOCPartition
+
+	// partitions contains each partition ID at most once
+	partitions []ChunkBufferTOCPartition
 }
 
 func NewChunkBufferTOC(partitions map[uint32]*bytes.Buffer) ChunkBufferTOC {
