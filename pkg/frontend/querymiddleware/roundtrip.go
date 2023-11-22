@@ -50,11 +50,12 @@ type Config struct {
 	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
 	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
 	ResultsCacheConfig               `yaml:"results_cache"`
-	CacheResults                     bool   `yaml:"cache_results"`
-	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
-	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
-	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
-	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	CacheResults                     bool          `yaml:"cache_results"`
+	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"experimental"`
+	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
+	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
+	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -66,6 +67,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
+	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 0, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
@@ -249,13 +251,11 @@ func newQueryTripperware(
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
-
-	queryInstantMiddleware = append(
-		queryInstantMiddleware,
+	queryInstantMiddleware := []Middleware{
+		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
-	)
+	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
@@ -283,7 +283,8 @@ func newQueryTripperware(
 			registerer,
 		)
 
-		queryRangeMiddleware = append(queryRangeMiddleware,
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
 			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
 		)
@@ -311,8 +312,8 @@ func newQueryTripperware(
 		labels := next
 
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, limits, next, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

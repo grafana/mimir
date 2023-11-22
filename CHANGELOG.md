@@ -5,7 +5,6 @@
 ### Grafana Mimir
 
 * [CHANGE] The following deprecated configurations have been removed: #6673
-  * `-querier.query-ingesters-within`
   * `-querier.iterators`
   * `-querier.batch-iterators`
   * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
@@ -83,6 +82,7 @@
 * [ENHANCEMENT] Server: Add `-server.http-log-closed-connections-without-response-enabled` option to log details about connections to HTTP server that were closed before any data was sent back. This can happen if client doesn't manage to send complete HTTP headers before timeout. #6612
 * [ENHANCEMENT] Query-frontend: include length of query, time since the earliest and latest points of a query, time since the earliest and latest points of a query, cached/uncached bytes in "query stats" logs. Time parameters (start/end/time) are always formatted as RFC3339 now. #6473 #6477
 * [ENHANCEMENT] Distributor: added support for reducing the resolution of native histogram samples upon ingestion if the sample has too many buckets compared to `-validation.max-native-histogram-buckets`. This is enabled by default and can be turned off by setting `-validation.reduce-native-histogram-over-max-buckets` to `false`. #6535
+* [ENHANCEMENT] Query-frontend: optionally wait for the frontend to complete startup if requests are received while the frontend is still starting. Disabled by default, set `-query-frontend.not-running-timeout` to a non-zero value to enable. #6621
 * [ENHANCEMENT] Distributor: Include source IPs in OTLP push handler logs. #6652
 * [ENHANCEMENT] Query-frontend: return clearer error message when a query request is received while shutting down. #6675
 * [BUGFIX] Distributor: return server overload error in the event of exceeding the ingestion rate limit. #6549
@@ -125,7 +125,7 @@
   * `ingester_tsdb_head_early_compaction_min_in_memory_series`
 * [ENHANCEMENT] Double the amount of rule groups for each user tier. #5897
 * [ENHANCEMENT] Set `maxUnavailable` to 0 for `distributor`, `overrides-exporter`, `querier`, `query-frontend`, `query-scheduler` `ruler-querier`, `ruler-query-frontend`, `ruler-query-scheduler` and `consul` deployments, to ensure they don't become completely unavailable during a rollout. #5924
-* [ENHANCEMENT] Update rollout-operator to `v0.8.3`. #6022 #6110 #6558
+* [ENHANCEMENT] Update rollout-operator to `v0.9.0`. #6022 #6110 #6558 #6681
 * [ENHANCEMENT] Update memcached to `memcached:1.6.22-alpine`. #6585
 * [ENHANCEMENT] Store-gateway: replaced the following deprecated CLI flags: #6319
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
