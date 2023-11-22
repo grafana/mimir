@@ -114,6 +114,11 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 				log.DebugLog("msg", "finished streaming", "series", totalSeries, "chunks", totalChunks)
 				return nil
+			} else if errors.Is(err, context.Canceled) {
+				// If there's a more detailed cancellation reason available, return that.
+				if cause := context.Cause(s.ctx); cause != nil {
+					return fmt.Errorf("aborted stream because query was cancelled: %w", cause)
+				}
 			}
 
 			return err

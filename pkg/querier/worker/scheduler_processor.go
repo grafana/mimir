@@ -7,6 +7,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -134,10 +136,12 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) error {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancel(c.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(c.Context())
+	defer func() {
+		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
+	}()
 
 	for {
 		request, err := c.Recv()
@@ -160,8 +164,8 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 			// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
 			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 			// net/http package.
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
+			ctx, cancel := context.WithCancelCause(ctx)
+			defer cancel(util.NewCancellationError(errors.New("query evaluation finished")))
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
