@@ -4,6 +4,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"math"
 	"net"
 	"testing"
@@ -285,8 +286,18 @@ func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopC
 
 	grpcServer := grpc.NewServer()
 	frontendv2pb.RegisterFrontendForQuerierServer(grpcServer, frontendForQuerierMock)
-	go func() { require.NoError(t, grpcServer.Serve(lis)) }()
-	t.Cleanup(grpcServer.Stop)
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+
+		if err := grpcServer.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			require.NoError(t, err)
+		}
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		<-stopped // Wait for shutdown to complete.
+	})
 
 	return sp, loopClient, requestHandler, frontendForQuerierMock
 }
