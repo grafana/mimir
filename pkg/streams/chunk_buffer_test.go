@@ -2,9 +2,11 @@ package streams
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,36 +156,47 @@ func TestNewChunkBufferTOCFromBytes_Corrupted(t *testing.T) {
 }
 
 func TestChunkBufferMarshaller_Read(t *testing.T) {
-	// TODO run many times, change seed each time and log it
+	const numRuns = 100
 
-	partitions := map[uint32]*bytes.Buffer{
-		1: bytes.NewBufferString("partition-1"),
-		2: bytes.NewBufferString("partition-2"),
-		3: bytes.NewBufferString("partition-3"),
+	for r := 0; r < numRuns; r++ {
+		randSeed := time.Now().UnixNano()
+		randImpl := rand.New(rand.NewSource(randSeed))
+
+		t.Run(fmt.Sprintf("seed = %d", randSeed), func(t *testing.T) {
+			partitions := map[uint32]*bytes.Buffer{
+				1: bytes.NewBufferString("partition-1"),
+				2: bytes.NewBufferString("partition-2"),
+				3: bytes.NewBufferString("partition-3"),
+			}
+
+			marshaller := NewChunkBufferMarshaller(partitions)
+			buffer := bytes.NewBuffer(nil)
+
+			// Read using random sizes.
+			for {
+				readBuffer := make([]byte, randImpl.Intn(10)+1)
+				readSize, err := marshaller.Read(readBuffer)
+				if err == io.EOF {
+					break
+				}
+
+				require.NoError(t, err)
+				require.Greater(t, readSize, 0)
+
+				buffer.Write(readBuffer[0:readSize])
+			}
+
+			marshalled := buffer.Bytes()
+
+			// Check the TOC.
+			expectedTOC := NewChunkBufferTOC(partitions)
+			expectedTOCBytes := expectedTOC.Bytes()
+			require.Equal(t, expectedTOC.Bytes(), marshalled[0:len(expectedTOCBytes)])
+
+			// Check partitions.
+			for _, partition := range expectedTOC.partitions {
+				assert.Equal(t, partitions[partition.partitionID].Bytes(), marshalled[partition.offset:partition.offset+partition.length])
+			}
+		})
 	}
-
-	marshaller := NewChunkBufferMarshaller(partitions)
-	buffer := bytes.NewBuffer(nil)
-
-	// Read using random sizes.
-	for {
-		readBuffer := make([]byte, rand.Intn(10))
-		readSize, err := marshaller.Read(readBuffer)
-		if err == io.EOF {
-			break
-		}
-
-		require.NoError(t, err)
-		require.Greater(t, readSize, 0)
-
-		buffer.Write(readBuffer[0:readSize])
-	}
-
-	marshalled := buffer.Bytes()
-
-	// Check the TOC.
-	expectedTOC := NewChunkBufferTOC(partitions).Bytes()
-	assert.Equal(t, expectedTOC, marshalled[0:len(expectedTOC)])
-
-	// TODO assert the rest of the content
 }
