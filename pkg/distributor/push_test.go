@@ -102,8 +102,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			res, err := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
-			require.NoError(t, err)
+			res := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
 			assert.Equal(t, sampleMetadata, res)
 		})
 	}
@@ -290,10 +289,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 				req.Header.Set("Content-Encoding", tt.encoding)
 			}
 
-			tenantLimits := map[string]*validation.Limits{}
 			limits, err := validation.NewOverrides(
 				validation.Limits{},
-				validation.NewMockTenantLimits(tenantLimits),
+				validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 			)
 			require.NoError(t, err)
 			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, tt.verifyFunc, log.NewNopLogger())
@@ -349,10 +347,9 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	tenantLimits := map[string]*validation.Limits{}
 	limits, err := validation.NewOverrides(
 		validation.Limits{},
-		validation.NewMockTenantLimits(tenantLimits),
+		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(t, err)
 
@@ -396,10 +393,9 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
-	tenantLimits := map[string]*validation.Limits{}
 	limits, err := validation.NewOverrides(
 		validation.Limits{},
-		validation.NewMockTenantLimits(tenantLimits),
+		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
 	)
 	require.NoError(t, err)
 

@@ -160,10 +160,7 @@ func OTLPHandler(
 		req.Timeseries = metrics
 
 		if enableOtelMetadataStorage {
-			metadata, err := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
-			if err != nil {
-				return nil, err
-			}
+			metadata := otelMetricsToMetadata(addSuffixes, otlpReq.Metrics())
 			req.Metadata = metadata
 		}
 
@@ -191,7 +188,7 @@ func otelMetricTypeToMimirMetricType(otelMetric pmetric.Metric) mimirpb.MetricMe
 	return mimirpb.UNKNOWN
 }
 
-func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) ([]*mimirpb.MetricMetadata, error) {
+func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.MetricMetadata {
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	metadataLength := 0
@@ -220,7 +217,7 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) ([]*mimirpb.Met
 		}
 	}
 
-	return metadata, nil
+	return metadata
 }
 
 func otelMetricsToTimeseries(tenantID string, addSuffixes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
