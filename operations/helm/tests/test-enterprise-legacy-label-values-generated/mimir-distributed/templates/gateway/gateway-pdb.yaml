@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-gateway
+  labels:
+    app: enterprise-metrics-gateway
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-gateway
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

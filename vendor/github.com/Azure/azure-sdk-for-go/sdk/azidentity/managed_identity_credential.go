@@ -8,7 +8,6 @@ package azidentity
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -71,7 +70,7 @@ type ManagedIdentityCredentialOptions struct {
 // user-assigned identity. See Azure Active Directory documentation for more information about managed identities:
 // https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview
 type ManagedIdentityCredential struct {
-	client confidentialClient
+	client *confidentialClient
 	mic    *managedIdentityClient
 }
 
@@ -85,16 +84,15 @@ func NewManagedIdentityCredential(options *ManagedIdentityCredentialOptions) (*M
 		return nil, err
 	}
 	cred := confidential.NewCredFromTokenProvider(mic.provideToken)
-	if err != nil {
-		return nil, err
-	}
+
 	// It's okay to give MSAL an invalid client ID because MSAL will use it only as part of a cache key.
 	// ManagedIdentityClient handles all the details of authentication and won't receive this value from MSAL.
 	clientID := "SYSTEM-ASSIGNED-MANAGED-IDENTITY"
 	if options.ID != nil {
 		clientID = options.ID.String()
 	}
-	c, err := confidential.New(clientID, cred)
+	// similarly, it's okay to give MSAL an incorrect tenant because MSAL won't use the value
+	c, err := newConfidentialClient("common", clientID, credNameManagedIdentity, cred, confidentialClientOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -104,22 +102,12 @@ func NewManagedIdentityCredential(options *ManagedIdentityCredentialOptions) (*M
 // GetToken requests an access token from the hosting environment. This method is called automatically by Azure SDK clients.
 func (c *ManagedIdentityCredential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	if len(opts.Scopes) != 1 {
-		err := errors.New(credNameManagedIdentity + ": GetToken() requires exactly one scope")
+		err := fmt.Errorf("%s.GetToken() requires exactly one scope", credNameManagedIdentity)
 		return azcore.AccessToken{}, err
 	}
 	// managed identity endpoints require an AADv1 resource (i.e. token audience), not a v2 scope, so we remove "/.default" here
-	scopes := []string{strings.TrimSuffix(opts.Scopes[0], defaultSuffix)}
-	ar, err := c.client.AcquireTokenSilent(ctx, scopes)
-	if err == nil {
-		logGetTokenSuccess(c, opts)
-		return azcore.AccessToken{Token: ar.AccessToken, ExpiresOn: ar.ExpiresOn.UTC()}, nil
-	}
-	ar, err = c.client.AcquireTokenByCredential(ctx, scopes)
-	if err != nil {
-		return azcore.AccessToken{}, err
-	}
-	logGetTokenSuccess(c, opts)
-	return azcore.AccessToken{Token: ar.AccessToken, ExpiresOn: ar.ExpiresOn.UTC()}, err
+	opts.Scopes = []string{strings.TrimSuffix(opts.Scopes[0], defaultSuffix)}
+	return c.client.GetToken(ctx, opts)
 }
 
 var _ azcore.TokenCredential = (*ManagedIdentityCredential)(nil)

@@ -12,10 +12,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -137,8 +136,15 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 		return
 	}
 
-	slices.SortFunc(p.Labels, func(a, b LabelAdapter) bool {
-		return a.Name < b.Name
+	slices.SortFunc(p.Labels, func(a, b LabelAdapter) int {
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		default:
+			return 0
+		}
 	})
 	p.clearUnmarshalData()
 }

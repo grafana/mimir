@@ -24,7 +24,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -49,6 +48,10 @@ type SnowballOptions struct {
 	// Compression will typically reduce memory and network usage,
 	// Compression can safely be enabled with MinIO hosts.
 	Compress bool
+
+	// SkipErrs if enabled will skip any errors while reading the
+	// object content while creating the snowball archive
+	SkipErrs bool
 }
 
 // SnowballObject contains information about a single object to be added to the snowball.
@@ -60,6 +63,7 @@ type SnowballObject struct {
 	Size int64
 
 	// Modtime to apply to the object.
+	// If Modtime is the zero value current time will be used.
 	ModTime time.Time
 
 	// Content of the object.
@@ -107,7 +111,7 @@ func (c Client) PutObjectsSnowball(ctx context.Context, bucketName string, opts 
 			return nopReadSeekCloser{bytes.NewReader(b.Bytes())}, int64(b.Len()), nil
 		}
 	} else {
-		f, err := ioutil.TempFile("", "s3-putsnowballobjects-*")
+		f, err := os.CreateTemp("", "s3-putsnowballobjects-*")
 		if err != nil {
 			return err
 		}
@@ -173,6 +177,10 @@ objectLoop:
 				ModTime:  obj.ModTime,
 				Format:   tar.FormatPAX,
 			}
+			if header.ModTime.IsZero() {
+				header.ModTime = time.Now().UTC()
+			}
+
 			if err := t.WriteHeader(&header); err != nil {
 				closeObj()
 				return err
@@ -180,10 +188,16 @@ objectLoop:
 			n, err := io.Copy(t, obj.Content)
 			if err != nil {
 				closeObj()
+				if opts.SkipErrs {
+					continue
+				}
 				return err
 			}
 			if n != obj.Size {
 				closeObj()
+				if opts.SkipErrs {
+					continue
+				}
 				return io.ErrUnexpectedEOF
 			}
 			closeObj()

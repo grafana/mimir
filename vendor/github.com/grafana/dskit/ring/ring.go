@@ -151,7 +151,7 @@ type instanceInfo struct {
 	Zone       string
 }
 
-// Ring holds the information about the members of the consistent hash ring.
+// Ring is a Service that maintains an in-memory copy of a ring and watches for changes.
 type Ring struct {
 	services.Service
 
@@ -238,16 +238,19 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "ring_tokens_total",
 			Help:        "Number of tokens in the ring",
-			ConstLabels: map[string]string{"name": name}}),
+			ConstLabels: map[string]string{"name": name},
+		}),
 		oldestTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_oldest_member_timestamp",
 			Help:        "Timestamp of the oldest member in the ring.",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		logger: logger,
 	}
@@ -303,6 +306,11 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 			}
 		}
 	}
+
+	// Ensure the ID of each InstanceDesc is set based on the map of instances. This
+	// handles the case where some components are running older lifecyclers which do
+	// not set the instance ID when registering in the ring.
+	ringDesc.setInstanceIDs()
 
 	rc := prevRing.RingCompare(ringDesc)
 	if rc == Equal || rc == EqualButStatesAndTimestamps {
@@ -515,9 +523,10 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}
 
 	return ReplicationSet{
-		Instances:           healthyInstances,
-		MaxErrors:           maxErrors,
-		MaxUnavailableZones: maxUnavailableZones,
+		Instances:            healthyInstances,
+		MaxErrors:            maxErrors,
+		MaxUnavailableZones:  maxUnavailableZones,
+		ZoneAwarenessEnabled: r.cfg.ZoneAwarenessEnabled,
 	}, nil
 }
 
@@ -525,9 +534,9 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 // In case of zone-awareness, this method takes into account only tokens of
 // the same zone. More precisely, for each instance only the distance between
 // its tokens and tokens of the instances from the same zone will be considered.
-func (r *Desc) CountTokens() map[string]int {
+func (r *Desc) CountTokens() map[string]int64 {
 	var (
-		owned               = make(map[string]int, len(r.Ingesters))
+		owned               = make(map[string]int64, len(r.Ingesters))
 		ringTokensByZone    = r.getTokensByZone()
 		ringInstanceByToken = r.getTokensInfo()
 	)

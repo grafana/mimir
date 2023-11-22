@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,8 +29,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -349,6 +349,51 @@ func TestConfig_Validate(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := test.config.Validate()
 			require.Equal(t, test.expectedError, err)
+		})
+	}
+}
+
+func TestIsLabelsQuery(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{
+			path:     "/api/v1/labels/unknown",
+			expected: false,
+		}, {
+			path:     "/api/v1/",
+			expected: false,
+		}, {
+			path:     "/api/v1/labels",
+			expected: true,
+		}, {
+			path:     "/labels",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/labels",
+			expected: true,
+		}, {
+			path:     "/api/v1/label/test/values",
+			expected: true,
+		}, {
+			path:     "/values",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/label/test/values",
+			expected: true,
+		}, {
+			path:     "/prometheus/api/v1/label/test/values/unknown",
+			expected: false,
+		}, {
+			path:     "/prometheus/api/v1/label/test/unknown/values",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.path, func(t *testing.T) {
+			assert.Equal(t, testData.expected, isLabelsQuery(testData.path))
 		})
 	}
 }

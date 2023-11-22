@@ -9,12 +9,14 @@ import (
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/weaveworks/common/server"
+	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
-// Check that debug lines are correctly filtered out.
+// Check that debug lines are correctly filtered out and that rate limit is satisfied.
 func ExampleInitLogger() {
 	// Kludge a couple of things so we can do tests repeatably.
 	saveStderr := os.Stderr
@@ -27,14 +29,26 @@ func ExampleInitLogger() {
 
 	cfg := server.Config{}
 	_ = cfg.LogLevel.Set("info")
-	log.InitLogger(&cfg)
-	level.Info(log.Logger).Log("test", "1")
-	level.Debug(log.Logger).Log("test", "2 - should not print")
-	cfg.Log.Infof("test 3")
-	cfg.Log.Debugf("test 4 - should not print")
+	rateLimitedCfg := log.RateLimitedLoggerCfg{
+		Enabled:       true,
+		LogsPerSecond: 1,
+		LogsBurstSize: 4,
+		Registry:      prometheus.NewPedanticRegistry(),
+	}
+	cfg.Log = log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, rateLimitedCfg)
+
+	for i := 0; i < 1000; i++ {
+		level.Info(log.Logger).Log("msg", "log.Logger", "test", i+1)
+		level.Debug(log.Logger).Log("msg", "log.Logger", "test", i+1)
+		level.Info(cfg.Log).Log("msg", "cfg.Log", "test", i+1)
+		level.Debug(cfg.Log).Log("msg", "log.Logger", "test", i+1)
+	}
+
 	// Output:
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:31 level=info test=1
-	// ts=1970-01-01T00:00:00Z caller=log_test.go:33 level=info msg="test 3"
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:41 level=info msg=log.Logger test=1
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:43 level=info msg=cfg.Log test=1
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:41 level=info msg=log.Logger test=2
+	// ts=1970-01-01T00:00:00Z caller=log_test.go:43 level=info msg=cfg.Log test=2
 
 	os.Stderr = saveStderr
 	gokitlog.DefaultTimestampUTC = saveTimestamp
@@ -43,8 +57,8 @@ func ExampleInitLogger() {
 // Check the overhead of debug logging which gets filtered out.
 func BenchmarkDebugLog(b *testing.B) {
 	cfg := server.Config{}
-	_ = cfg.LogLevel.Set("info")
-	log.InitLogger(&cfg)
+	require.NoError(b, cfg.LogLevel.Set("info"))
+	log.InitLogger(cfg.LogFormat, cfg.LogLevel, false, log.RateLimitedLoggerCfg{})
 	b.ResetTimer()
 	dl := level.Debug(log.Logger)
 	for i := 0; i < b.N; i++ {

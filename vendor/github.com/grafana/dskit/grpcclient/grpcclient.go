@@ -37,6 +37,9 @@ type Config struct {
 	// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md
 	ConnectBackoffBaseDelay time.Duration `yaml:"connect_backoff_base_delay" category:"advanced"`
 	ConnectBackoffMaxDelay  time.Duration `yaml:"connect_backoff_max_delay" category:"advanced"`
+
+	Middleware       []grpc.UnaryClientInterceptor  `yaml:"-"`
+	StreamMiddleware []grpc.StreamClientInterceptor `yaml:"-"`
 }
 
 // RegisterFlags registers flags.
@@ -61,7 +64,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.InitialStreamWindowSize, prefix+".initial-stream-window-size", "Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
 	f.Var(&cfg.InitialConnectionWindowSize, prefix+".initial-connection-window-size", "Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator.")
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.")
-	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 0, "The maximum amount of time to establish a connection. A value of 0 means default gRPC connect timeout and backoff.")
+	f.DurationVar(&cfg.ConnectTimeout, prefix+".connect-timeout", 5*time.Second, "The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff.")
 	f.DurationVar(&cfg.ConnectBackoffBaseDelay, prefix+".connect-backoff-base-delay", time.Second, "Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0.")
 	f.DurationVar(&cfg.ConnectBackoffMaxDelay, prefix+".connect-backoff-max-delay", 5*time.Second, "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0.")
 
@@ -91,7 +94,8 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 	return opts
 }
 
-// DialOption returns the config as a grpc.DialOptions.
+// DialOption returns the config as a grpc.DialOptions. The passed inceptors
+// wrap around the configured middleware.
 func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
@@ -99,6 +103,9 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		return nil, err
 	}
 	opts = append(opts, tlsOpts...)
+
+	unaryClientInterceptors = append(unaryClientInterceptors, cfg.Middleware...)
+	streamClientInterceptors = append(streamClientInterceptors, cfg.StreamMiddleware...)
 
 	if cfg.BackoffOnRatelimits {
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{NewBackoffRetry(cfg.BackoffConfig)}, unaryClientInterceptors...)

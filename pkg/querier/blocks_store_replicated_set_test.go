@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway"
 )
 
 func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
@@ -347,7 +348,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 
 			// Wait until the ring client has initialised the state.
 			test.Poll(t, time.Second, true, func() interface{} {
-				all, err := r.GetAllHealthy(ring.Read)
+				all, err := r.GetAllHealthy(storegateway.BlocksRead)
 				return err == nil && len(all.Instances) > 0
 			})
 
@@ -413,7 +414,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	// Wait until the ring client has initialised the state.
 	test.Poll(t, time.Second, true, func() interface{} {
-		all, err := r.GetAllHealthy(ring.Read)
+		all, err := r.GetAllHealthy(storegateway.BlocksRead)
 		return err == nil && len(all.Instances) > 0
 	})
 

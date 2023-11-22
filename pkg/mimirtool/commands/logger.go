@@ -8,8 +8,8 @@ package commands
 import (
 	"fmt"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type LoggerConfig struct {

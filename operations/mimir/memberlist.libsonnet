@@ -61,7 +61,7 @@
 
     memberlistConfig:: {
       'memberlist.bind-port': gossipRingPort,
-      'memberlist.join': 'dns+gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
+      'memberlist.join': 'dns+gossip-ring.%s.svc.%s:%d' % [$._config.namespace, $._config.cluster_domain, gossipRingPort],
     } + (
       if $._config.memberlist_cluster_label == '' then {} else {
         'memberlist.cluster-label': $._config.memberlist_cluster_label,
@@ -195,7 +195,8 @@
 
       local ports = [
         servicePort.newNamed('gossip-ring', gossipRingPort, gossipRingPort) +
-        servicePort.withProtocol('TCP'),
+        servicePort.withProtocol('TCP') +
+        servicePort.withAppProtocol('tcp'),
       ];
       service.new(
         'gossip-ring',  // name

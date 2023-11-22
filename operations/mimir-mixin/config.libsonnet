@@ -13,7 +13,7 @@
     // 1: Shared crosshair, the crosshair will appear on all panels but the
     // tooltip will  appear only on the panel under the cursor
     // 2: Shared Tooltip, both crosshair and tooltip will appear on all panels
-    graph_tooltip: 0,
+    graph_tooltip: 1,
 
     // Tags for dashboards.
     tags: ['mimir'],
@@ -78,7 +78,7 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw', 'cortex-gw-internal'],
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
@@ -593,41 +593,45 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
+    autoscaling_hpa_prefix: 'keda-hpa-',
+
     autoscaling: {
       query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'query-frontend',
       },
       ruler_query_frontend: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-query-frontend',
       },
       querier: {
         enabled: false,
         // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
-        hpa_name: 'keda-hpa-querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'querier',
       },
       ruler_querier: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler-querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
       distributor: {
         enabled: false,
-        hpa_name: 'keda-hpa-distributor',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
       },
       ruler: {
         enabled: false,
-        hpa_name: 'keda-hpa-ruler',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler',
       },
       gateway: {
         enabled: false,
-        hpa_name: 'keda-hpa-cortex-gw.*',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
     },
 
 
     // The routes to exclude from alerts.
-    alert_excluded_routes: [],
+    alert_excluded_routes: [
+      'debug_pprof',
+    ],
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
@@ -643,5 +647,13 @@
 
     // Used to add additional services to dashboards that support it.
     extraServiceNames: [],
+
+    // When using early rejection of inflight requests in ingesters and distributors (using -ingester.limit-inflight-requests-using-grpc-method-limiter
+    // and -distributor.limit-inflight-requests-using-grpc-method-limiter options), rejected requests will not count towards standard Mimir metrics
+    // like cortex_request_duration_seconds_count. Enabling this will make them visible on the dashboard again.
+    //
+    // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
+    // not used (default), then rejected requests are already counted as failures.
+    show_rejected_requests_on_writes_dashboard: false,
   },
 }

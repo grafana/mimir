@@ -18,6 +18,9 @@ spec:
       app: enterprise-metrics-gateway
       release: test-enterprise-legacy-label-values
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:

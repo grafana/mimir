@@ -14,6 +14,14 @@
       querier_shard_size: 10,
       store_gateway_shard_size: 3,
       ruler_shard_size: 2,
+
+      // Target amount of series we want each shard to have per ingester.
+      target_series_per_ingester: 100e3,
+      // Target utilization of max_global_series_per_user per user.
+      // For example, if we're setting 6M limit for users using 3M, this should be 50%.
+      // Setting this lower than the actual usage will result in using more than target_series_per_ingester, and vice-versa.
+      // This value should be changed gradually, to avoid a sudden increase in user's shard size (which would lower the local ingester limit).
+      target_utilization_percentage: 50,
     },
 
     // Check if shuffle-sharding has been enabled.
@@ -24,69 +32,79 @@
       $._config.shuffle_sharding.store_gateway_enabled ||
       $._config.shuffle_sharding.ruler_enabled,
 
+
+    local roundUpToMultipleOfThree(n) = std.ceil(n / 3) * 3,
+
     // The ingesters shard size has been computed this way:
-    // - Target for 50% utilisation of the user class
-    // - Target each tenant to 100K series / ingester (after replication)
+    // - Target for XX% utilisation of the user class (see $._config.target_utilization_percentage_for_overrides)
+    // - Target each tenant to YYYK series / ingester (after replication) (see $._config.target_series_per_ingesters_for_overrides)
     // - Round up and ensure it's a multiple of 3 (so that it's multi-zone ready)
     //
     // Eg. small class = 1M series = ceil(((1M * 3) * 50%) / 100K) = 15
     //
+    // We're setting ingestion_tenant_shard_size based on a fixed series number for that user class rather than depending on max_global_series_per_user
+    // because we don't want the shards to change during temporary limits increases.
+    local ingesterTenantShardSize(series) = std.max(
+      $._config.shuffle_sharding.ingester_shard_size,
+      roundUpToMultipleOfThree(series * 3 * $._config.shuffle_sharding.target_utilization_percentage / 100 / $._config.shuffle_sharding.target_series_per_ingester)
+    ),
+
     overrides+:: if !shuffle_sharding_enabled then {} else {
       // Use defaults for this user class.
       extra_small_user+:: {},
 
       // Target 300K active series.
       medium_small_user+:: {
-        ingestion_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(300e3),
         store_gateway_tenant_shard_size: std.max(3, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 1M active series.
       small_user+:: {
-        ingestion_tenant_shard_size: std.max(15, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(1e6),
         store_gateway_tenant_shard_size: std.max(6, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 3M active series.
       medium_user+:: {
-        ingestion_tenant_shard_size: std.max(45, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(3e6),
         store_gateway_tenant_shard_size: std.max(9, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 6M active series.
       big_user+:: {
-        ingestion_tenant_shard_size: std.max(90, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(6e6),
         store_gateway_tenant_shard_size: std.max(12, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(3, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 12M active series.
       super_user+:: {
-        ingestion_tenant_shard_size: std.max(180, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(12e6),
         store_gateway_tenant_shard_size: std.max(18, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 16M active series.
       mega_user+:: {
-        ingestion_tenant_shard_size: std.max(240, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(16e6),
         store_gateway_tenant_shard_size: std.max(24, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 24M active series.
       user_24M+:: {
-        ingestion_tenant_shard_size: std.max(360, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(24e6),
         store_gateway_tenant_shard_size: std.max(30, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       },
 
       // Target 32M active series.
       user_32M+:: {
-        ingestion_tenant_shard_size: std.max(480, $._config.shuffle_sharding.ingester_shard_size),
+        ingestion_tenant_shard_size: ingesterTenantShardSize(32e6),
         store_gateway_tenant_shard_size: std.max(42, $._config.shuffle_sharding.store_gateway_shard_size),
         ruler_tenant_shard_size: std.max(12, $._config.shuffle_sharding.ruler_shard_size),
       },

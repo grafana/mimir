@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   ruler_args::
+    $._config.commonConfig +
     $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -22,11 +23,11 @@
       'ruler.rule-path': '/rules',
 
       // Alertmanager configs
-      'ruler.alertmanager-url': 'http://alertmanager.%s.svc.cluster.local/alertmanager' % $._config.namespace,
+      'ruler.alertmanager-url': 'http://alertmanager.%(namespace)s.svc.%(cluster_domain)s/alertmanager' % $._config,
 
       // Ring Configs
       'ruler.ring.store': 'consul',
-      'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'ruler.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
 
       'server.http-listen-port': $._config.server_http_port,
     },
@@ -38,7 +39,7 @@
       container.new('ruler', $._images.ruler) +
       container.withPorts($.util.defaultPorts) +
       container.withArgsMixin($.util.mapToFlags($.ruler_args)) +
-      (if std.length($.ruler_env_map) > 0 then container.withEnvMap($.ruler_env_map) else {}) +
+      (if std.length($.ruler_env_map) > 0 then container.withEnvMap(std.prune($.ruler_env_map)) else {}) +
       $.util.resourcesRequests('1', '6Gi') +
       $.util.resourcesLimits('16', '16Gi') +
       $.util.readinessProbe +
@@ -60,4 +61,7 @@
 
   ruler_service: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels),
+
+  ruler_pdb: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
+    $.newMimirPdb('ruler'),
 }

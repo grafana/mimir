@@ -79,6 +79,7 @@ async function takeScreenshot(browser, dashboard) {
         "var-datasource": "Mimir",
         "var-cluster": process.env.CLUSTER,
         "var-namespace": dashboard.name.includes("alertmanager") ? process.env.ALERTMANAGER_NAMESPACE : process.env.MIMIR_NAMESPACE,
+        "var-user": process.env.MIMIR_USER,
     })
 
     // Load the dashboard page.
@@ -113,7 +114,7 @@ async function takeScreenshot(browser, dashboard) {
 
 async function run() {
     // Ensure required environment variables have been set.
-    ["CLUSTER", "MIMIR_NAMESPACE", "ALERTMANAGER_NAMESPACE"].forEach((name) => {
+    ["CLUSTER", "MIMIR_NAMESPACE", "ALERTMANAGER_NAMESPACE", "MIMIR_USER"].forEach((name) => {
         if (!process.env[name]) {
             throw new Error(`The ${name} environment variable is missing`)
         }

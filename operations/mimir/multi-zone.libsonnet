@@ -24,7 +24,9 @@
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
     multi_zone_store_gateway_migration_enabled: false,
     multi_zone_store_gateway_replicas: 0,
-    multi_zone_store_gateway_max_unavailable: 50,
+    // When store-gateway lazy loading is disabled, store-gateway may take a long time to startup.
+    // To speed up rollouts, we increase the max unavailable to rollout all store-gateways in a zone in a single batch.
+    multi_zone_store_gateway_max_unavailable: if $._config.store_gateway_lazy_loading_enabled then 50 else 1000,
 
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
@@ -88,7 +90,7 @@
         'ingester.ring.instance-availability-zone': 'zone-%s' % zone,
       },
     )) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
   newIngesterZoneStatefulSet(zone, container)::
     local name = 'ingester-zone-%s' % zone;
@@ -216,7 +218,7 @@
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
       }
     )) +
-    (if std.length(envmap) > 0 then container.withEnvMap(envmap) else {}),
+    (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
   newStoreGatewayZoneStatefulSet(zone, container)::
     local name = 'store-gateway-zone-%s' % zone;
@@ -387,4 +389,7 @@
 
   rollout_operator_service_account: if !rollout_operator_enabled then null else
     serviceAccount.new('rollout-operator'),
+
+  rollout_operator_pdb: if !rollout_operator_enabled then null else
+    $.newMimirPdb('rollout-operator'),
 }

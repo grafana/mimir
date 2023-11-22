@@ -17,9 +17,9 @@ groups:
         The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
     expr: |
-      100 * sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready"}[1m]))
+      100 * sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready|debug_pprof"}[1m]))
         /
-      sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready"}[1m]))
+      sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
         > 1
     for: 15m
     labels:
@@ -30,7 +30,7 @@ groups:
         {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequestlatency
     expr: |
-      cluster_namespace_job_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop"}
+      cluster_namespace_job_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop|debug_pprof"}
          >
       2.5
     for: 15m
@@ -113,11 +113,20 @@ groups:
       severity: warning
   - alert: MimirIngesterRestarts
     annotations:
-      message: '{{ $labels.job }}/{{ $labels.pod }} has restarted {{ printf "%.2f"
-        $value }} times in the last 30 mins.'
+      message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterrestarts
     expr: |
-      changes(process_start_time_seconds{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}[30m]) >= 2
+      (
+        sum by(cluster, namespace, pod) (
+          increase(kube_pod_container_status_restarts_total{container=~"(ingester|mimir-write)"}[30m])
+        )
+        >= 2
+      )
+      and
+      (
+        count by(cluster, namespace, pod) (cortex_build_info) > 0
+      )
     labels:
       severity: warning
   - alert: MimirKVStoreFailure
@@ -178,6 +187,20 @@ groups:
       and on (cluster, namespace)
       (count by (cluster, namespace) (cortex_ruler_managers_total) > 2)
     for: 1h
+    labels:
+      severity: warning
+  - alert: MimirIngestedDataTooFarInTheFuture
+    annotations:
+      message: Mimir ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has ingested samples with timestamps more than 1h in the future.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesteddatatoofarinthefuture
+    expr: |
+      max by(cluster, namespace, pod) (
+          cortex_ingester_tsdb_head_max_timestamp_seconds - time()
+          and
+          cortex_ingester_tsdb_head_max_timestamp_seconds > 0
+      ) > 60*60
+    for: 5m
     labels:
       severity: warning
   - alert: MimirRingMembersMismatch
@@ -343,26 +366,6 @@ groups:
       severity: critical
 - name: mimir-provisioning
   rules:
-  - alert: MimirProvisioningTooManyActiveSeries
-    annotations:
-      message: |
-        The number of in-memory series per ingester in {{ $labels.cluster }}/{{ $labels.namespace }} is too high.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirprovisioningtoomanyactiveseries
-    expr: |
-      avg by (cluster, namespace) (cortex_ingester_memory_series) > 1.6e6
-    for: 2h
-    labels:
-      severity: warning
-  - alert: MimirProvisioningTooManyWrites
-    annotations:
-      message: |
-        Ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} ingest too many samples per second.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirprovisioningtoomanywrites
-    expr: |
-      avg by (cluster, namespace) (cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m) > 80e3
-    for: 15m
-    labels:
-      severity: warning
   - alert: MimirAllocatingTooMuchMemory
     annotations:
       message: |
@@ -472,14 +475,28 @@ groups:
       severity: warning
 - name: gossip_alerts
   rules:
-  - alert: MimirGossipMembersMismatch
+  - alert: MimirGossipMembersTooHigh
     annotations:
-      message: Mimir instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
-        }} sees incorrect number of gossip members.
-      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersmismatch
+      message: One or more Mimir instances in {{ $labels.cluster }}/{{ $labels.namespace
+        }} consistently sees a higher than expected number of gossip members.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmemberstoohigh
     expr: |
-      avg by (cluster, namespace) (memberlist_client_cluster_members_count) != sum by (cluster, namespace) (up{job=~".+/(alertmanager|compactor|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"})
-    for: 15m
+      max by (cluster, namespace) (memberlist_client_cluster_members_count)
+      >
+      (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+    for: 20m
+    labels:
+      severity: warning
+  - alert: MimirGossipMembersTooLow
+    annotations:
+      message: One or more Mimir instances in {{ $labels.cluster }}/{{ $labels.namespace
+        }} consistently sees a lower than expected number of gossip members.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmemberstoolow
+    expr: |
+      min by (cluster, namespace) (memberlist_client_cluster_members_count)
+      <
+      (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
+    for: 20m
     labels:
       severity: warning
 - name: etcd_alerts
@@ -619,9 +636,9 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblocks
     expr: |
-      (min by(cluster, namespace, pod) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
+      (min by(cluster, namespace, pod) (time() - cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 60 * 60 * 4)
       and
-      (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) > 0)
+      (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) > 0)
       and
       # Only if the ingester has ingested samples over the last 4h.
       (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -640,7 +657,7 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblockssincestart
     expr: |
-      (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) == 0)
+      (max by(cluster, namespace, pod) (cortex_ingester_shipper_last_successful_upload_timestamp_seconds) == 0)
       and
       (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
     for: 4h
@@ -883,6 +900,16 @@ groups:
     for: 1m
     labels:
       severity: warning
+  - alert: MimirCompactorSkippedBlocksWithOutOfOrderChunks
+    annotations:
+      message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has found and ignored blocks with out of order chunks.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedblockswithoutoforderchunks
+    expr: |
+      increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 1
+    for: 30m
+    labels:
+      severity: critical
 - name: mimir_autoscaling
   rules:
   - alert: MimirAutoscalerNotActive
@@ -892,18 +919,21 @@ groups:
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirautoscalernotactive
     expr: |
       (
-          kube_horizontalpodautoscaler_status_condition{condition="ScalingActive",status="false"}
-          # Match only Mimir namespaces.
-          * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
-          # Add "metric" label.
-          + on(cluster, namespace, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
-          > 0
+          label_replace((
+            kube_horizontalpodautoscaler_status_condition{condition="ScalingActive",status="false"}
+            # Match only Mimir namespaces.
+            * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
+            # Add "metric" label.
+            + on(cluster, namespace, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
+            > 0),
+            "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+          )
       )
       # Alert only if the scaling metric exists and is > 0. If the KEDA ScaledObject is configured to scale down 0,
       # then HPA ScalingActive may be false when expected to run 0 replicas. In this case, the scaling metric exported
       # by KEDA could not exist at all or being exposed with a value of 0.
-      and on (cluster, namespace, metric)
-      (label_replace(keda_metrics_adapter_scaler_metrics_value, "namespace", "$0", "exported_namespace", ".+") > 0)
+      and on (cluster, namespace, metric, scaledObject)
+      (label_replace(keda_scaler_metrics_value, "namespace", "$0", "exported_namespace", ".+") > 0)
     for: 1h
     labels:
       severity: critical
@@ -915,7 +945,7 @@ groups:
     expr: |
       (
           # Find KEDA scalers reporting errors.
-          label_replace(rate(keda_metrics_adapter_scaler_errors[5m]), "namespace", "$1", "exported_namespace", "(.*)")
+          label_replace(rate(keda_scaler_errors[5m]), "namespace", "$1", "exported_namespace", "(.*)")
           # Match only Mimir namespaces.
           * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
       )

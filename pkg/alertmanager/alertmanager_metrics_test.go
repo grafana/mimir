@@ -951,6 +951,11 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
 func populateAlertmanager(base float64) *prometheus.Registry {
 	reg := prometheus.NewRegistry()
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "alertmanager_config_hash",
+		Help: "Hash of the currently loaded alertmanager configuration.",
+	})
+
 	s := newSilenceMetrics(reg)
 	s.gcDuration.Observe(base)
 	s.snapshotDuration.Observe(base)

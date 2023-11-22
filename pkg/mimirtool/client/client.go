@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/crypto/tls"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/util/version"
 )

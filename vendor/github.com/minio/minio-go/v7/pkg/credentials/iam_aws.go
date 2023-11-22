@@ -22,7 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -106,7 +106,7 @@ func (m *IAM) Retrieve() (Value, error) {
 			Client:      m.Client,
 			STSEndpoint: endpoint,
 			GetWebIDTokenExpiry: func() (*WebIdentityToken, error) {
-				token, err := ioutil.ReadFile(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE"))
+				token, err := os.ReadFile(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE"))
 				if err != nil {
 					return nil, err
 				}
@@ -227,7 +227,7 @@ func listRoleNames(client *http.Client, u *url.URL, token string) ([]string, err
 	return credsList, nil
 }
 
-func getEcsTaskCredentials(client *http.Client, endpoint string, token string) (ec2RoleCredRespBody, error) {
+func getEcsTaskCredentials(client *http.Client, endpoint, token string) (ec2RoleCredRespBody, error) {
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return ec2RoleCredRespBody{}, err
@@ -268,7 +268,7 @@ func fetchIMDSToken(client *http.Client, endpoint string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -291,7 +291,13 @@ func getCredentials(client *http.Client, endpoint string) (ec2RoleCredRespBody, 
 	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
 	token, err := fetchIMDSToken(client, endpoint)
 	if err != nil {
-		return ec2RoleCredRespBody{}, err
+		// Return only errors for valid situations, if the IMDSv2 is not enabled
+		// we will not be able to get the token, in such a situation we have
+		// to rely on IMDSv1 behavior as a fallback, this check ensures that.
+		// Refer https://github.com/minio/minio-go/issues/1866
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+			return ec2RoleCredRespBody{}, err
+		}
 	}
 
 	// http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html

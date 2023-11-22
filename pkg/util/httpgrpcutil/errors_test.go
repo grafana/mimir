@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 )
 
 func TestPrioritizeRecoverableErr(t *testing.T) {

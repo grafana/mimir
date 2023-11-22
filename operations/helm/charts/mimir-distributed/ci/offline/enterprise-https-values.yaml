@@ -1,0 +1,228 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+enterprise:
+  enabled: true
+
+mimir:
+  structuredConfig:
+    admin_api:
+      leader_election:
+        client_config: &grpc_client_tls_config
+          tls_enabled: true
+          tls_cert_path: /certs/tls.crt
+          tls_key_path: /certs/tls.key
+          tls_server_name: gem.grafana.com
+          tls_insecure_skip_verify: false
+
+    common:
+      storage:
+        s3:
+          endpoint: s3.dualstack.us-east-2.amazonaws.com
+
+    alertmanager_storage:
+      backend: s3
+      s3:
+        bucket_name: alertmanager
+
+    ruler:
+      tenant_federation:
+        enabled: true
+      ruler_client: *grpc_client_tls_config
+      alertmanager_client: *grpc_client_tls_config
+
+    tenant_federation:
+      enabled: true
+
+    frontend:
+      results_cache:
+        memcached:
+          <<: *grpc_client_tls_config
+      grpc_client_config: *grpc_client_tls_config
+
+    ingester:
+      ring:
+        kvstore:
+          store: memberlist
+        tokens_file_path: /data/tokens
+
+    # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
+    blocks_storage:
+      backend: s3
+      s3:
+        bucket_name: blocks
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+
+    ruler_storage:
+      backend: s3
+      s3:
+        bucket_name: ruler
+
+    admin_client:
+      storage:
+        type: s3
+        s3:
+          bucket_name: admin-api
+
+    gateway:
+      proxy:
+        admin_api: &tls_frontend
+          url: https://gem-mimir-admin-api:8080
+          tls_enabled: true
+          tls_cert_path: /certs/tls.crt
+          tls_key_path: /certs/tls.key
+          tls_server_name: gem.grafana.com
+          tls_insecure_skip_verify: false
+        alertmanager:
+          <<: *tls_frontend
+          url: https://gem-mimir-alertmanager-headless:8080
+        compactor:
+          <<: *tls_frontend
+          url: https://gem-mimir-compactor-headless:8080
+        distributor:
+          <<: *tls_frontend
+          url: dns:///gem-mimir-distributor-headless:9095
+        ingester:
+          <<: *tls_frontend
+          url: https://gem-mimir-ingester-headless:8080
+        query_frontend:
+          <<: *tls_frontend
+          url: https://gem-mimir-query-frontend:8080
+        ruler:
+          <<: *tls_frontend
+          url: https://gem-mimir-ruler:8080
+        store_gateway:
+          <<: *tls_frontend
+          url: https://gem-mimir-store-gateway-headless:8080
+        default:
+          <<: *tls_frontend
+          url: https://gem-mimir-admin-api:8080
+    instrumentation:
+      distributor_client: *grpc_client_tls_config
+    querier:
+      store_gateway_client: *grpc_client_tls_config
+    query_scheduler:
+      grpc_client_config: *grpc_client_tls_config
+    alertmanager:
+      alertmanager_client: *grpc_client_tls_config
+    ingester_client:
+      grpc_client_config: *grpc_client_tls_config
+    frontend_worker:
+      grpc_client_config: *grpc_client_tls_config
+    memberlist: *grpc_client_tls_config
+
+    cluster_name: gem
+
+    server:
+      http_tls_config:
+        cert_file: /certs/tls.crt
+        key_file: /certs/tls.key
+        client_auth_type: VerifyClientCertIfGiven
+
+      grpc_tls_config:
+        cert_file: /certs/tls.crt
+        key_file: /certs/tls.key
+        client_auth_type: VerifyClientCertIfGiven
+
+alertmanager:
+  extraVolumes: &extra_volume
+    - name: tls-certs
+      secret:
+        secretName: tls-certs
+  extraVolumeMounts: &extra_volume_mount
+    - name: tls-certs
+      mountPath: /certs
+      readOnly: true
+  readinessProbe: &readiness_probe
+    httpGet:
+      path: /ready
+      port: http-metrics
+      scheme: HTTPS
+
+distributor:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+ingester:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+ruler:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+querier:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+query_frontend:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+query_scheduler:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+store_gateway:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+compactor:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+chunks-cache:
+  enabled: true
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+
+results-cache:
+  enabled: true
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+
+
+index-cache:
+  enabled: true
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+
+metadata-cache:
+  enabled: true
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+
+minio:
+  enabled: false
+
+overrides_exporter:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+  livenessProbe: *readiness_probe
+
+license:
+  external: true
+  secretName: gem-license
+
+tokengenJob:
+  enable: false
+
+admin_api:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe
+
+gateway:
+  extraVolumes: *extra_volume
+  extraVolumeMounts: *extra_volume_mount
+  readinessProbe: *readiness_probe

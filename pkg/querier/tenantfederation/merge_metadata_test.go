@@ -8,12 +8,13 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -21,7 +22,7 @@ type mockMetadataSupplier struct {
 	results map[string][]scrape.MetricMetadata
 }
 
-func (m *mockMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
+func (m *mockMetadataSupplier) MetricsMetadata(ctx context.Context, _ *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse single tenant ID from context: %w", err)
@@ -48,8 +49,8 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 
 	t.Run("invalid tenant IDs", func(t *testing.T) {
 		upstream := &mockMetadataSupplier{}
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
-		_, err := supplier.MetricsMetadata(context.Background())
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
+		_, err := supplier.MetricsMetadata(context.Background(), client.DefaultMetricsMetadataRequest())
 
 		assert.ErrorIs(t, err, user.ErrNoOrgID)
 	})
@@ -61,8 +62,8 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
-		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a"))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
+		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a"), client.DefaultMetricsMetadataRequest())
 
 		require.NoError(t, err)
 		require.Len(t, res, 1)
@@ -77,8 +78,8 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
-		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
+		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"), client.DefaultMetricsMetadataRequest())
 
 		require.NoError(t, err)
 		require.Len(t, res, 2)
@@ -94,8 +95,8 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 			},
 		}
 
-		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
-		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
+		supplier := NewMetadataSupplier(upstream, defaultConcurrency, test.NewTestingLogger(t))
+		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"), client.DefaultMetricsMetadataRequest())
 
 		require.NoError(t, err)
 		require.Len(t, res, 2)

@@ -14,4 +14,5 @@ jobs:
       cr_configfile: operations/helm/cr.yaml
       ct_configfile: operations/helm/ct.yaml
     secrets:
-      helm_repo_token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+      github_app_id: ${{ secrets.MIMIR_HELM_RELEASE_APP_ID }}
+      github_app_pem: ${{ secrets.MIMIR_HELM_RELEASE_APP_KEY_PEM }}

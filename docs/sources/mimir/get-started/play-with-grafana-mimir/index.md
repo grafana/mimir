@@ -1,11 +1,12 @@
 ---
 aliases:
+  - /tutorials/play-with-grafana-mimir/
   - ../tutorials/play-with-grafana-mimir/
-  - ../tutorials/
 associated_technologies:
   - mimir
 author:
   - marco
+canonical: https://grafana.com/tutorials/play-with-grafana-mimir/
 description: Learn about Grafana Mimir, which provides distributed,
   horizontally scalable, and highly available long term storage for Prometheus.
 keywords:
@@ -51,10 +52,10 @@ In this tutorial, you'll:
    ```
 1. Navigate to the tutorial directory:
    ```bash
-   cd docs/sources/mimir/tutorials/play-with-grafana-mimir/
+   cd docs/sources/mimir/get-started/play-with-grafana-mimir/
    ```
 
-**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/mimir/tutorials/play-with-grafana-mimir/`.
+**Note**: the instructions in this tutorial assume that your working directory is `docs/sources/mimir/get-started/play-with-grafana-mimir/`.
 
 ## Start Grafana Mimir and dependencies
 

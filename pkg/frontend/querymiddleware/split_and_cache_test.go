@@ -20,6 +20,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -29,8 +31,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -170,7 +170,6 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		true,
 		false, // Cache disabled.
 		24*time.Hour,
-		false,
 		mockLimits{},
 		codec,
 		nil,
@@ -242,7 +241,6 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -375,7 +373,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		true,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
 		cacheBackend,
@@ -481,12 +478,18 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
 
+	limits := mockLimits{
+		maxCacheFreshness:                    10 * time.Minute,
+		resultsCacheTTL:                      resultsCacheTTL,
+		resultsCacheOutOfOrderWindowTTL:      resultsCacheLowerTTL,
+		resultsCacheForUnalignedQueryEnabled: true,
+	}
+
 	mw := newSplitAndCacheMiddleware(
 		true,
 		true,
 		24*time.Hour,
-		true, // caching of step-unaligned requests is enabled in this test.
-		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
+		limits,
 		newTestPrometheusCodec(),
 		cacheBackend,
 		ConstSplitter(day),
@@ -647,7 +650,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				false, // No interval splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -787,7 +789,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	// Randomise the seed but log it in case we need to reproduce the test on failure.
 	seed := time.Now().UnixNano()
-	rand.Seed(seed)
+	rnd := rand.New(rand.NewSource(seed))
 	t.Log("random generator seed:", seed)
 
 	// The mocked storage contains samples within the following min/max time.
@@ -814,8 +816,8 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	reqs := make([]Request, 0, numQueries)
 	for q := 0; q < numQueries; q++ {
 		// Generate a random time range within min/max time.
-		startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
-		endTime := startTime.Add(time.Duration(rand.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
+		startTime := minTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
+		endTime := startTime.Add(time.Duration(rnd.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
 
 		reqs = append(reqs, &PrometheusRangeQueryRequest{
 			Id:    int64(q),
@@ -856,7 +858,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
-					testData.cacheUnaligned,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
@@ -1139,7 +1140,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				false, // No splitting.
 				true,
 				24*time.Hour,
-				false,
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
@@ -1185,7 +1185,6 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{
 			resultsCacheTTL:                 1 * time.Hour,
 			resultsCacheOutOfOrderWindowTTL: 10 * time.Minute,
@@ -1271,7 +1270,6 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
-		false,
 		mockLimits{},
 		newTestPrometheusCodec(),
 		cache.NewMockCache(),

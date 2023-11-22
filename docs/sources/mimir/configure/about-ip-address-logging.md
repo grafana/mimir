@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-ip-address-logging/
 description: Troubleshoot errors by logging IP addresses of reverse proxies.
-menuTitle: About IP address logging of a reverse proxy
+menuTitle: IP address logging of a reverse proxy
 title: About Grafana Mimir IP address logging of a reverse proxy
 weight: 30
 ---

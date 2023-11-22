@@ -346,8 +346,9 @@ func (c *S3) CopyObjectRequest(input *CopyObjectInput) (req *request.Request, ou
 // to read the entire body.
 //
 // The copy request charge is based on the storage class and Region that you
-// specify for the destination object. For pricing information, see Amazon S3
-// pricing (http://aws.amazon.com/s3/pricing/).
+// specify for the destination object. The request can also result in a data
+// retrieval charge for the source if the source storage class bills for data
+// retrieval. For pricing information, see Amazon S3 pricing (http://aws.amazon.com/s3/pricing/).
 //
 // Amazon S3 transfer acceleration does not support cross-Region copies. If
 // you request a cross-Region copy using a transfer acceleration endpoint, you
@@ -477,9 +478,12 @@ func (c *S3) CopyObjectRequest(input *CopyObjectInput) (req *request.Request, ou
 // For more information, see Storage Classes (https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html)
 // in the Amazon S3 User Guide.
 //
-// If the source object's storage class is GLACIER, you must restore a copy
-// of this object before you can use it as a source object for the copy operation.
-// For more information, see RestoreObject (https://docs.aws.amazon.com/AmazonS3/latest/API/API_RestoreObject.html).
+// If the source object's storage class is GLACIER or DEEP_ARCHIVE, or the object's
+// storage class is INTELLIGENT_TIERING and it's S3 Intelligent-Tiering access
+// tier (https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html#intel-tiering-tier-definition)
+// is Archive Access or Deep Archive Access, you must restore a copy of this
+// object before you can use it as a source object for the copy operation. For
+// more information, see RestoreObject (https://docs.aws.amazon.com/AmazonS3/latest/API/API_RestoreObject.html).
 // For more information, see Copying Objects (https://docs.aws.amazon.com/AmazonS3/latest/dev/CopyingObjectsExamples.html).
 //
 // # Versioning
@@ -592,11 +596,12 @@ func (c *S3) CreateBucketRequest(input *CreateBucketInput) (req *request.Request
 // (https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_CreateBucket.html).
 //
 // By default, the bucket is created in the US East (N. Virginia) Region. You
-// can optionally specify a Region in the request body. You might choose a Region
-// to optimize latency, minimize costs, or address regulatory requirements.
-// For example, if you reside in Europe, you will probably find it advantageous
-// to create buckets in the Europe (Ireland) Region. For more information, see
-// Accessing a bucket (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html#access-bucket-intro).
+// can optionally specify a Region in the request body. To constrain the bucket
+// creation to a specific Region, you can use LocationConstraint (https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateBucketConfiguration.html)
+// condition key. You might choose a Region to optimize latency, minimize costs,
+// or address regulatory requirements. For example, if you reside in Europe,
+// you will probably find it advantageous to create buckets in the Europe (Ireland)
+// Region. For more information, see Accessing a bucket (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingBucket.html#access-bucket-intro).
 //
 // If you send your create bucket request to the s3.amazonaws.com endpoint,
 // the request goes to the us-east-1 Region. Accordingly, the signature calculations
@@ -6489,7 +6494,7 @@ func (c *S3) ListObjectVersionsRequest(input *ListObjectVersionsInput) (req *req
 // use request parameters as selection criteria to return metadata about a subset
 // of all the object versions.
 //
-// To use this operation, you must have permissions to perform the s3:ListBucketVersions
+// To use this operation, you must have permission to perform the s3:ListBucketVersions
 // action. Be aware of the name difference.
 //
 // A 200 OK response can contain valid or invalid XML. Make sure to design your
@@ -6800,20 +6805,22 @@ func (c *S3) ListObjectsV2Request(input *ListObjectsV2Input) (req *request.Reque
 // and handle it appropriately. Objects are returned sorted in an ascending
 // order of the respective key names in the list. For more information about
 // listing objects, see Listing object keys programmatically (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ListingKeysUsingAPIs.html)
+// in the Amazon S3 User Guide.
 //
 // To use this operation, you must have READ access to the bucket.
 //
 // To use this action in an Identity and Access Management (IAM) policy, you
-// must have permissions to perform the s3:ListBucket action. The bucket owner
+// must have permission to perform the s3:ListBucket action. The bucket owner
 // has this permission by default and can grant this permission to others. For
 // more information about permissions, see Permissions Related to Bucket Subresource
 // Operations (https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-with-s3-actions.html#using-with-s3-actions-related-to-bucket-subresources)
-// and Managing Access Permissions to Your Amazon S3 Resources (https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-access-control.html).
+// and Managing Access Permissions to Your Amazon S3 Resources (https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-access-control.html)
+// in the Amazon S3 User Guide.
 //
 // This section describes the latest revision of this action. We recommend that
-// you use this revised API for application development. For backward compatibility,
-// Amazon S3 continues to support the prior version of this API, ListObjects
-// (https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjects.html).
+// you use this revised API operation for application development. For backward
+// compatibility, Amazon S3 continues to support the prior version of this API
+// operation, ListObjects (https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjects.html).
 //
 // To get a list of your buckets, see ListBuckets (https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListBuckets.html).
 //
@@ -7643,15 +7650,13 @@ func (c *S3) PutBucketEncryptionRequest(input *PutBucketEncryptionInput) (req *r
 // By default, all buckets have a default encryption configuration that uses
 // server-side encryption with Amazon S3 managed keys (SSE-S3). You can optionally
 // configure default encryption for a bucket by using server-side encryption
-// with Key Management Service (KMS) keys (SSE-KMS), dual-layer server-side
-// encryption with Amazon Web Services KMS keys (DSSE-KMS), or server-side encryption
-// with customer-provided keys (SSE-C). If you specify default encryption by
-// using SSE-KMS, you can also configure Amazon S3 Bucket Keys. For information
-// about bucket default encryption, see Amazon S3 bucket default encryption
-// (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html)
-// in the Amazon S3 User Guide. For more information about S3 Bucket Keys, see
-// Amazon S3 Bucket Keys (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-key.html)
-// in the Amazon S3 User Guide.
+// with Key Management Service (KMS) keys (SSE-KMS) or dual-layer server-side
+// encryption with Amazon Web Services KMS keys (DSSE-KMS). If you specify default
+// encryption by using SSE-KMS, you can also configure Amazon S3 Bucket Keys
+// (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-key.html). If you
+// use PutBucketEncryption to set your default bucket encryption (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html)
+// to SSE-KMS, you should verify that your KMS key ID is correct. Amazon S3
+// does not validate the KMS key ID provided in PutBucketEncryption requests.
 //
 // This action requires Amazon Web Services Signature Version 4. For more information,
 // see Authenticating Requests (Amazon Web Services Signature Version 4) (https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html).
@@ -8938,6 +8943,9 @@ func (c *S3) PutBucketReplicationRequest(input *PutBucketReplicationInput) (req 
 // configuration, you provide the name of the destination bucket or buckets
 // where you want Amazon S3 to replicate objects, the IAM role that Amazon S3
 // can assume to replicate objects on your behalf, and other relevant information.
+// You can invoke this request for a specific Amazon Web Services Region by
+// using the aws:RequestedRegion (https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-requestedregion)
+// condition key.
 //
 // A replication configuration must include at least one rule, and can contain
 // a maximum of 1,000. Each rule identifies a subset of objects to replicate
@@ -9164,7 +9172,7 @@ func (c *S3) PutBucketTaggingRequest(input *PutBucketTaggingInput) (req *request
 // name, and then organize your billing information to see the total cost of
 // that application across several services. For more information, see Cost
 // Allocation and Tagging (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html)
-// and Using Cost Allocation in Amazon S3 Bucket Tags (https://docs.aws.amazon.com/AmazonS3/latest/dev/CostAllocTagging.html).
+// and Using Cost Allocation in Amazon S3 Bucket Tags (https://docs.aws.amazon.com/AmazonS3/latest/userguide/CostAllocTagging.html).
 //
 // When this operation sets the tags for a bucket, it will overwrite any current
 // tags the bucket already has. You cannot use this operation to add tags to
@@ -9176,22 +9184,20 @@ func (c *S3) PutBucketTaggingRequest(input *PutBucketTaggingInput) (req *request
 // Related to Bucket Subresource Operations (https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-with-s3-actions.html#using-with-s3-actions-related-to-bucket-subresources)
 // and Managing Access Permissions to Your Amazon S3 Resources (https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-access-control.html).
 //
-// PutBucketTagging has the following special errors:
+// PutBucketTagging has the following special errors. For more Amazon S3 errors
+// see, Error Responses (https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html).
 //
-//   - Error code: InvalidTagError Description: The tag provided was not a
-//     valid tag. This error can occur if the tag did not pass input validation.
-//     For information about tag restrictions, see User-Defined Tag Restrictions
-//     (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/allocation-tag-restrictions.html)
-//     and Amazon Web Services-Generated Cost Allocation Tag Restrictions (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/aws-tag-restrictions.html).
+//   - InvalidTag - The tag provided was not a valid tag. This error can occur
+//     if the tag did not pass input validation. For more information, see Using
+//     Cost Allocation in Amazon S3 Bucket Tags (https://docs.aws.amazon.com/AmazonS3/latest/userguide/CostAllocTagging.html).
 //
-//   - Error code: MalformedXMLError Description: The XML provided does not
-//     match the schema.
+//   - MalformedXML - The XML provided does not match the schema.
 //
-//   - Error code: OperationAbortedError Description: A conflicting conditional
-//     action is currently in progress against this resource. Please try again.
+//   - OperationAborted - A conflicting conditional action is currently in
+//     progress against this resource. Please try again.
 //
-//   - Error code: InternalError Description: The service was unable to apply
-//     the provided tag to the bucket.
+//   - InternalError - The service was unable to apply the provided tag to
+//     the bucket.
 //
 // The following operations are related to PutBucketTagging:
 //
@@ -9452,6 +9458,8 @@ func (c *S3) PutBucketWebsiteRequest(input *PutBucketWebsiteInput) (req *request
 // If you require more than 50 routing rules, you can use object redirect. For
 // more information, see Configuring an Object Redirect (https://docs.aws.amazon.com/AmazonS3/latest/dev/how-to-page-redirect.html)
 // in the Amazon S3 User Guide.
+//
+// The maximum request length is limited to 128 KB.
 //
 // Returns awserr.Error for service API and SDK errors. Use runtime type assertions
 // with awserr.Error's Code and Message methods to get detailed information about
@@ -10113,12 +10121,13 @@ func (c *S3) PutObjectTaggingRequest(input *PutObjectTaggingInput) (req *request
 
 // PutObjectTagging API operation for Amazon Simple Storage Service.
 //
-// Sets the supplied tag-set to an object that already exists in a bucket.
+// Sets the supplied tag-set to an object that already exists in a bucket. A
+// tag is a key-value pair. For more information, see Object Tagging (https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-tagging.html).
 //
-// A tag is a key-value pair. You can associate tags with an object by sending
-// a PUT request against the tagging subresource that is associated with the
-// object. You can retrieve tags by sending a GET request. For more information,
-// see GetObjectTagging (https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectTagging.html).
+// You can associate tags with an object by sending a PUT request against the
+// tagging subresource that is associated with the object. You can retrieve
+// tags by sending a GET request. For more information, see GetObjectTagging
+// (https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectTagging.html).
 //
 // For tagging-related restrictions related to characters and encodings, see
 // Tag Restrictions (https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/allocation-tag-restrictions.html).
@@ -10131,22 +10140,20 @@ func (c *S3) PutObjectTaggingRequest(input *PutObjectTaggingInput) (req *request
 // To put tags of any other version, use the versionId query parameter. You
 // also need permission for the s3:PutObjectVersionTagging action.
 //
-// For information about the Amazon S3 object tagging feature, see Object Tagging
-// (https://docs.aws.amazon.com/AmazonS3/latest/dev/object-tagging.html).
+// PutObjectTagging has the following special errors. For more Amazon S3 errors
+// see, Error Responses (https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html).
 //
-// PutObjectTagging has the following special errors:
+//   - InvalidTag - The tag provided was not a valid tag. This error can occur
+//     if the tag did not pass input validation. For more information, see Object
+//     Tagging (https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-tagging.html).
 //
-//   - Code: InvalidTagError Cause: The tag provided was not a valid tag. This
-//     error can occur if the tag did not pass input validation. For more information,
-//     see Object Tagging (https://docs.aws.amazon.com/AmazonS3/latest/dev/object-tagging.html).
+//   - MalformedXML - The XML provided does not match the schema.
 //
-//   - Code: MalformedXMLError Cause: The XML provided does not match the schema.
+//   - OperationAborted - A conflicting conditional action is currently in
+//     progress against this resource. Please try again.
 //
-//   - Code: OperationAbortedError Cause: A conflicting conditional action
-//     is currently in progress against this resource. Please try again.
-//
-//   - Code: InternalError Cause: The service was unable to apply the provided
-//     tag to the object.
+//   - InternalError - The service was unable to apply the provided tag to
+//     the object.
 //
 // The following operations are related to PutObjectTagging:
 //
@@ -10706,6 +10713,7 @@ func (c *S3) SelectObjectContentWithContext(ctx aws.Context, input *SelectObject
 }
 
 var _ awserr.Error
+var _ time.Time
 
 // SelectObjectContentEventStream provides the event stream handling for the SelectObjectContent.
 //
@@ -11378,7 +11386,7 @@ type AbortMultipartUploadInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -11395,7 +11403,9 @@ type AbortMultipartUploadInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -12767,7 +12777,7 @@ type CompleteMultipartUploadInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -12815,7 +12825,9 @@ type CompleteMultipartUploadInput struct {
 	MultipartUpload *CompletedMultipartUpload `locationName:"CompleteMultipartUpload" type:"structure" xmlURI:"http://s3.amazonaws.com/doc/2006-03-01/"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -13029,7 +13041,7 @@ type CompleteMultipartUploadOutput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	Bucket *string `type:"string"`
 
@@ -13473,7 +13485,7 @@ type CopyObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -13630,7 +13642,9 @@ type CopyObjectInput struct {
 	ObjectLockRetainUntilDate *time.Time `location:"header" locationName:"x-amz-object-lock-retain-until-date" type:"timestamp" timestampFormat:"iso8601"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -13665,11 +13679,11 @@ type CopyObjectInput struct {
 	// String and GoString methods.
 	SSEKMSEncryptionContext *string `location:"header" locationName:"x-amz-server-side-encryption-context" type:"string" sensitive:"true"`
 
-	// Specifies the KMS key ID to use for object encryption. All GET and PUT requests
-	// for an object protected by KMS will fail if they're not made via SSL or using
-	// SigV4. For information about configuring any of the officially supported
-	// Amazon Web Services SDKs and Amazon Web Services CLI, see Specifying the
-	// Signature Version in Request Authentication (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version)
+	// Specifies the KMS ID (Key ID, Key ARN, or Key Alias) to use for object encryption.
+	// All GET and PUT requests for an object protected by KMS will fail if they're
+	// not made via SSL or using SigV4. For information about configuring any of
+	// the officially supported Amazon Web Services SDKs and Amazon Web Services
+	// CLI, see Specifying the Signature Version in Request Authentication (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version)
 	// in the Amazon S3 User Guide.
 	//
 	// SSEKMSKeyId is a sensitive parameter and its value will be
@@ -13681,11 +13695,12 @@ type CopyObjectInput struct {
 	// S3 (for example, AES256, aws:kms, aws:kms:dsse).
 	ServerSideEncryption *string `location:"header" locationName:"x-amz-server-side-encryption" type:"string" enum:"ServerSideEncryption"`
 
-	// By default, Amazon S3 uses the STANDARD Storage Class to store newly created
-	// objects. The STANDARD storage class provides high durability and high availability.
-	// Depending on performance needs, you can specify a different Storage Class.
-	// Amazon S3 on Outposts only uses the OUTPOSTS Storage Class. For more information,
-	// see Storage Classes (https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html)
+	// If the x-amz-storage-class header is not used, the copied object will be
+	// stored in the STANDARD Storage Class by default. The STANDARD storage class
+	// provides high durability and high availability. Depending on performance
+	// needs, you can specify a different Storage Class. Amazon S3 on Outposts only
+	// uses the OUTPOSTS Storage Class. For more information, see Storage Classes
+	// (https://docs.aws.amazon.com/AmazonS3/latest/dev/storage-class-intro.html)
 	// in the Amazon S3 User Guide.
 	StorageClass *string `location:"header" locationName:"x-amz-storage-class" type:"string" enum:"StorageClass"`
 
@@ -14617,7 +14632,7 @@ type CreateMultipartUploadInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -14700,7 +14715,9 @@ type CreateMultipartUploadInput struct {
 	ObjectLockRetainUntilDate *time.Time `location:"header" locationName:"x-amz-object-lock-retain-until-date" type:"timestamp" timestampFormat:"iso8601"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -14735,12 +14752,12 @@ type CreateMultipartUploadInput struct {
 	// String and GoString methods.
 	SSEKMSEncryptionContext *string `location:"header" locationName:"x-amz-server-side-encryption-context" type:"string" sensitive:"true"`
 
-	// Specifies the ID of the symmetric encryption customer managed key to use
-	// for object encryption. All GET and PUT requests for an object protected by
-	// KMS will fail if they're not made via SSL or using SigV4. For information
-	// about configuring any of the officially supported Amazon Web Services SDKs
-	// and Amazon Web Services CLI, see Specifying the Signature Version in Request
-	// Authentication (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version)
+	// Specifies the ID (Key ID, Key ARN, or Key Alias) of the symmetric encryption
+	// customer managed key to use for object encryption. All GET and PUT requests
+	// for an object protected by KMS will fail if they're not made via SSL or using
+	// SigV4. For information about configuring any of the officially supported
+	// Amazon Web Services SDKs and Amazon Web Services CLI, see Specifying the
+	// Signature Version in Request Authentication (https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingAWSSDK.html#specify-signature-version)
 	// in the Amazon S3 User Guide.
 	//
 	// SSEKMSKeyId is a sensitive parameter and its value will be
@@ -15064,7 +15081,7 @@ type CreateMultipartUploadOutput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	Bucket *string `locationName:"Bucket" type:"string"`
 
@@ -17034,7 +17051,7 @@ type DeleteObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -17062,7 +17079,9 @@ type DeleteObjectInput struct {
 	MFA *string `location:"header" locationName:"x-amz-mfa" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -17191,8 +17210,10 @@ func (s DeleteObjectInput) updateArnableField(v string) (interface{}, error) {
 type DeleteObjectOutput struct {
 	_ struct{} `type:"structure"`
 
-	// Specifies whether the versioned object that was permanently deleted was (true)
-	// or was not (false) a delete marker.
+	// Indicates whether the specified object version that was permanently deleted
+	// was (true) or was not (false) a delete marker before deletion. In a simple
+	// DELETE, this header indicates whether (true) or not (false) the current version
+	// of the object is a delete marker.
 	DeleteMarker *bool `location:"header" locationName:"x-amz-delete-marker" type:"boolean"`
 
 	// If present, indicates that the requester was successfully charged for the
@@ -17257,7 +17278,7 @@ type DeleteObjectTaggingInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -17424,7 +17445,7 @@ type DeleteObjectsInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -17476,7 +17497,9 @@ type DeleteObjectsInput struct {
 	MFA *string `location:"header" locationName:"x-amz-mfa" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -17773,9 +17796,10 @@ func (s DeletePublicAccessBlockOutput) GoString() string {
 type DeletedObject struct {
 	_ struct{} `type:"structure"`
 
-	// Specifies whether the versioned object that was permanently deleted was (true)
-	// or was not (false) a delete marker. In a simple DELETE, this header indicates
-	// whether (true) or not (false) a delete marker was created.
+	// Indicates whether the specified object version that was permanently deleted
+	// was (true) or was not (false) a delete marker before deletion. In a simple
+	// DELETE, this header indicates whether (true) or not (false) the current version
+	// of the object is a delete marker.
 	DeleteMarker *bool `type:"boolean"`
 
 	// The version ID of the delete marker created as a result of the DELETE operation.
@@ -18733,7 +18757,9 @@ type GetBucketAccelerateConfigurationInput struct {
 	ExpectedBucketOwner *string `location:"header" locationName:"x-amz-expected-bucket-owner" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -21513,7 +21539,9 @@ type GetObjectAclInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -21694,7 +21722,7 @@ type GetObjectAttributesInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -21713,8 +21741,8 @@ type GetObjectAttributesInput struct {
 	// Sets the maximum number of parts to return.
 	MaxParts *int64 `location:"header" locationName:"x-amz-max-parts" type:"integer"`
 
-	// An XML header that specifies the fields at the root level that you want returned
-	// in the response. Fields that you do not specify are not returned.
+	// Specifies the fields at the root level that you want returned in the response.
+	// Fields that you do not specify are not returned.
 	//
 	// ObjectAttributes is a required field
 	ObjectAttributes []*string `location:"header" locationName:"x-amz-object-attributes" type:"list" required:"true" enum:"ObjectAttributes"`
@@ -21724,7 +21752,9 @@ type GetObjectAttributesInput struct {
 	PartNumberMarker *int64 `location:"header" locationName:"x-amz-part-number-marker" type:"integer"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -22113,7 +22143,7 @@ type GetObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -22164,7 +22194,9 @@ type GetObjectInput struct {
 	Range *string `location:"header" locationName:"Range" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -22446,7 +22478,9 @@ type GetObjectLegalHoldInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -23148,7 +23182,9 @@ type GetObjectRetentionInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -23310,7 +23346,7 @@ type GetObjectTaggingInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -23327,7 +23363,9 @@ type GetObjectTaggingInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -23503,7 +23541,9 @@ type GetObjectTorrentInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -24008,7 +24048,7 @@ type HeadBucketInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -24139,7 +24179,7 @@ type HeadObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -24190,7 +24230,9 @@ type HeadObjectInput struct {
 	Range *string `location:"header" locationName:"Range" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -27051,7 +27093,7 @@ type ListMultipartUploadsInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -27068,8 +27110,8 @@ type ListMultipartUploadsInput struct {
 	Delimiter *string `location:"querystring" locationName:"delimiter" type:"string"`
 
 	// Requests Amazon S3 to encode the object keys in the response and specifies
-	// the encoding method to use. An object key may contain any Unicode character;
-	// however, XML 1.0 parser cannot parse some characters, such as characters
+	// the encoding method to use. An object key can contain any Unicode character;
+	// however, the XML 1.0 parser cannot parse some characters, such as characters
 	// with an ASCII value from 0 to 10. For characters that are not supported in
 	// XML 1.0, you can add this parameter to request that Amazon S3 encode the
 	// keys in the response.
@@ -27098,12 +27140,14 @@ type ListMultipartUploadsInput struct {
 
 	// Lists in-progress uploads only for those keys that begin with the specified
 	// prefix. You can use prefixes to separate a bucket into different grouping
-	// of keys. (You can think of using prefix to make groups in the same way you'd
-	// use a folder in a file system.)
+	// of keys. (You can think of using prefix to make groups in the same way that
+	// you'd use a folder in a file system.)
 	Prefix *string `location:"querystring" locationName:"prefix" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -27257,9 +27301,9 @@ type ListMultipartUploadsOutput struct {
 
 	// Encoding type used by Amazon S3 to encode object keys in the response.
 	//
-	// If you specify encoding-type request parameter, Amazon S3 includes this element
-	// in the response, and returns encoded key name values in the following response
-	// elements:
+	// If you specify the encoding-type request parameter, Amazon S3 includes this
+	// element in the response, and returns encoded key name values in the following
+	// response elements:
 	//
 	// Delimiter, KeyMarker, Prefix, NextKeyMarker, Key.
 	EncodingType *string `type:"string" enum:"EncodingType"`
@@ -27420,8 +27464,8 @@ type ListObjectVersionsInput struct {
 	Delimiter *string `location:"querystring" locationName:"delimiter" type:"string"`
 
 	// Requests Amazon S3 to encode the object keys in the response and specifies
-	// the encoding method to use. An object key may contain any Unicode character;
-	// however, XML 1.0 parser cannot parse some characters, such as characters
+	// the encoding method to use. An object key can contain any Unicode character;
+	// however, the XML 1.0 parser cannot parse some characters, such as characters
 	// with an ASCII value from 0 to 10. For characters that are not supported in
 	// XML 1.0, you can add this parameter to request that Amazon S3 encode the
 	// keys in the response.
@@ -27435,7 +27479,7 @@ type ListObjectVersionsInput struct {
 	// Specifies the key to start with when listing objects in a bucket.
 	KeyMarker *string `location:"querystring" locationName:"key-marker" type:"string"`
 
-	// Sets the maximum number of keys returned in the response. By default the
+	// Sets the maximum number of keys returned in the response. By default, the
 	// action returns up to 1,000 key names. The response might contain fewer keys
 	// but will never contain more. If additional keys satisfy the search criteria,
 	// but were not returned because max-keys was exceeded, the response contains
@@ -27443,15 +27487,21 @@ type ListObjectVersionsInput struct {
 	// and version-id-marker.
 	MaxKeys *int64 `location:"querystring" locationName:"max-keys" type:"integer"`
 
+	// Specifies the optional fields that you want returned in the response. Fields
+	// that you do not specify are not returned.
+	OptionalObjectAttributes []*string `location:"header" locationName:"x-amz-optional-object-attributes" type:"list" enum:"OptionalObjectAttributes"`
+
 	// Use this parameter to select only those keys that begin with the specified
 	// prefix. You can use prefixes to separate a bucket into different groupings
-	// of keys. (You can think of using prefix to make groups in the same way you'd
-	// use a folder in a file system.) You can use prefix with delimiter to roll
-	// up numerous objects into a single result under CommonPrefixes.
+	// of keys. (You can think of using prefix to make groups in the same way that
+	// you'd use a folder in a file system.) You can use prefix with delimiter to
+	// roll up numerous objects into a single result under CommonPrefixes.
 	Prefix *string `location:"querystring" locationName:"prefix" type:"string"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -27538,6 +27588,12 @@ func (s *ListObjectVersionsInput) SetMaxKeys(v int64) *ListObjectVersionsInput {
 	return s
 }
 
+// SetOptionalObjectAttributes sets the OptionalObjectAttributes field's value.
+func (s *ListObjectVersionsInput) SetOptionalObjectAttributes(v []*string) *ListObjectVersionsInput {
+	s.OptionalObjectAttributes = v
+	return s
+}
+
 // SetPrefix sets the Prefix field's value.
 func (s *ListObjectVersionsInput) SetPrefix(v string) *ListObjectVersionsInput {
 	s.Prefix = &v
@@ -27603,16 +27659,16 @@ type ListObjectVersionsOutput struct {
 
 	// Encoding type used by Amazon S3 to encode object key names in the XML response.
 	//
-	// If you specify encoding-type request parameter, Amazon S3 includes this element
-	// in the response, and returns encoded key name values in the following response
-	// elements:
+	// If you specify the encoding-type request parameter, Amazon S3 includes this
+	// element in the response, and returns encoded key name values in the following
+	// response elements:
 	//
 	// KeyMarker, NextKeyMarker, Prefix, Key, and Delimiter.
 	EncodingType *string `type:"string" enum:"EncodingType"`
 
 	// A flag that indicates whether Amazon S3 returned all of the results that
 	// satisfied the search criteria. If your results were truncated, you can make
-	// a follow-up paginated request using the NextKeyMarker and NextVersionIdMarker
+	// a follow-up paginated request by using the NextKeyMarker and NextVersionIdMarker
 	// response parameters as a starting place in another request to return the
 	// rest of the results.
 	IsTruncated *bool `type:"boolean"`
@@ -27770,18 +27826,18 @@ type ListObjectsInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
 	Bucket *string `location:"uri" locationName:"Bucket" type:"string" required:"true"`
 
-	// A delimiter is a character you use to group keys.
+	// A delimiter is a character that you use to group keys.
 	Delimiter *string `location:"querystring" locationName:"delimiter" type:"string"`
 
 	// Requests Amazon S3 to encode the object keys in the response and specifies
-	// the encoding method to use. An object key may contain any Unicode character;
-	// however, XML 1.0 parser cannot parse some characters, such as characters
+	// the encoding method to use. An object key can contain any Unicode character;
+	// however, the XML 1.0 parser cannot parse some characters, such as characters
 	// with an ASCII value from 0 to 10. For characters that are not supported in
 	// XML 1.0, you can add this parameter to request that Amazon S3 encode the
 	// keys in the response.
@@ -27796,10 +27852,14 @@ type ListObjectsInput struct {
 	// listing after this specified key. Marker can be any key in the bucket.
 	Marker *string `location:"querystring" locationName:"marker" type:"string"`
 
-	// Sets the maximum number of keys returned in the response. By default the
+	// Sets the maximum number of keys returned in the response. By default, the
 	// action returns up to 1,000 key names. The response might contain fewer keys
 	// but will never contain more.
 	MaxKeys *int64 `location:"querystring" locationName:"max-keys" type:"integer"`
+
+	// Specifies the optional fields that you want returned in the response. Fields
+	// that you do not specify are not returned.
+	OptionalObjectAttributes []*string `location:"header" locationName:"x-amz-optional-object-attributes" type:"list" enum:"OptionalObjectAttributes"`
 
 	// Limits the response to keys that begin with the specified prefix.
 	Prefix *string `location:"querystring" locationName:"prefix" type:"string"`
@@ -27887,6 +27947,12 @@ func (s *ListObjectsInput) SetMaxKeys(v int64) *ListObjectsInput {
 	return s
 }
 
+// SetOptionalObjectAttributes sets the OptionalObjectAttributes field's value.
+func (s *ListObjectsInput) SetOptionalObjectAttributes(v []*string) *ListObjectsInput {
+	s.OptionalObjectAttributes = v
+	return s
+}
+
 // SetPrefix sets the Prefix field's value.
 func (s *ListObjectsInput) SetPrefix(v string) *ListObjectsInput {
 	s.Prefix = &v
@@ -27940,7 +28006,7 @@ type ListObjectsOutput struct {
 	// CommonPrefixes lists keys that act like subdirectories in the directory specified
 	// by Prefix.
 	//
-	// For example, if the prefix is notes/ and the delimiter is a slash (/) as
+	// For example, if the prefix is notes/ and the delimiter is a slash (/), as
 	// in notes/summer/july, the common prefix is notes/summer/. All of the keys
 	// that roll up into a common prefix count as a single return when calculating
 	// the number of returns.
@@ -27973,13 +28039,16 @@ type ListObjectsOutput struct {
 	// The bucket name.
 	Name *string `type:"string"`
 
-	// When response is truncated (the IsTruncated element value in the response
-	// is true), you can use the key name in this field as marker in the subsequent
-	// request to get next set of objects. Amazon S3 lists objects in alphabetical
-	// order Note: This element is returned only if you have delimiter request parameter
-	// specified. If response does not include the NextMarker and it is truncated,
-	// you can use the value of the last Key in the response as the marker in the
-	// subsequent request to get the next set of object keys.
+	// When the response is truncated (the IsTruncated element value in the response
+	// is true), you can use the key name in this field as the marker parameter
+	// in the subsequent request to get the next set of objects. Amazon S3 lists
+	// objects in alphabetical order.
+	//
+	// This element is returned only if you have the delimiter request parameter
+	// specified. If the response does not include the NextMarker element and it
+	// is truncated, you can use the value of the last Key element in the response
+	// as the marker parameter in the subsequent request to get the next set of
+	// object keys.
 	NextMarker *string `type:"string"`
 
 	// Keys that begin with the indicated prefix.
@@ -28091,18 +28160,18 @@ type ListObjectsV2Input struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
 	Bucket *string `location:"uri" locationName:"Bucket" type:"string" required:"true"`
 
-	// ContinuationToken indicates Amazon S3 that the list is being continued on
-	// this bucket with a token. ContinuationToken is obfuscated and is not a real
-	// key.
+	// ContinuationToken indicates to Amazon S3 that the list is being continued
+	// on this bucket with a token. ContinuationToken is obfuscated and is not a
+	// real key.
 	ContinuationToken *string `location:"querystring" locationName:"continuation-token" type:"string"`
 
-	// A delimiter is a character you use to group keys.
+	// A delimiter is a character that you use to group keys.
 	Delimiter *string `location:"querystring" locationName:"delimiter" type:"string"`
 
 	// Encoding type used by Amazon S3 to encode object keys in the response.
@@ -28113,15 +28182,19 @@ type ListObjectsV2Input struct {
 	// (access denied).
 	ExpectedBucketOwner *string `location:"header" locationName:"x-amz-expected-bucket-owner" type:"string"`
 
-	// The owner field is not present in listV2 by default, if you want to return
-	// owner field with each key in the result then set the fetch owner field to
-	// true.
+	// The owner field is not present in ListObjectsV2 by default. If you want to
+	// return the owner field with each key in the result, then set the FetchOwner
+	// field to true.
 	FetchOwner *bool `location:"querystring" locationName:"fetch-owner" type:"boolean"`
 
-	// Sets the maximum number of keys returned in the response. By default the
+	// Sets the maximum number of keys returned in the response. By default, the
 	// action returns up to 1,000 key names. The response might contain fewer keys
 	// but will never contain more.
 	MaxKeys *int64 `location:"querystring" locationName:"max-keys" type:"integer"`
+
+	// Specifies the optional fields that you want returned in the response. Fields
+	// that you do not specify are not returned.
+	OptionalObjectAttributes []*string `location:"header" locationName:"x-amz-optional-object-attributes" type:"list" enum:"OptionalObjectAttributes"`
 
 	// Limits the response to keys that begin with the specified prefix.
 	Prefix *string `location:"querystring" locationName:"prefix" type:"string"`
@@ -28219,6 +28292,12 @@ func (s *ListObjectsV2Input) SetMaxKeys(v int64) *ListObjectsV2Input {
 	return s
 }
 
+// SetOptionalObjectAttributes sets the OptionalObjectAttributes field's value.
+func (s *ListObjectsV2Input) SetOptionalObjectAttributes(v []*string) *ListObjectsV2Input {
+	s.OptionalObjectAttributes = v
+	return s
+}
+
 // SetPrefix sets the Prefix field's value.
 func (s *ListObjectsV2Input) SetPrefix(v string) *ListObjectsV2Input {
 	s.Prefix = &v
@@ -28312,11 +28391,11 @@ type ListObjectsV2Output struct {
 	IsTruncated *bool `type:"boolean"`
 
 	// KeyCount is the number of keys returned with this request. KeyCount will
-	// always be less than or equal to the MaxKeys field. Say you ask for 50 keys,
-	// your result will include 50 keys or fewer.
+	// always be less than or equal to the MaxKeys field. For example, if you ask
+	// for 50 keys, your result will include 50 keys or fewer.
 	KeyCount *int64 `type:"integer"`
 
-	// Sets the maximum number of keys returned in the response. By default the
+	// Sets the maximum number of keys returned in the response. By default, the
 	// action returns up to 1,000 key names. The response might contain fewer keys
 	// but will never contain more.
 	MaxKeys *int64 `type:"integer"`
@@ -28335,7 +28414,7 @@ type ListObjectsV2Output struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	Name *string `type:"string"`
 
@@ -28469,7 +28548,7 @@ type ListPartsInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -28493,7 +28572,9 @@ type ListPartsInput struct {
 	PartNumberMarker *int64 `location:"querystring" locationName:"part-number-marker" type:"integer"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -29095,10 +29176,10 @@ func (s *LoggingEnabled) SetTargetPrefix(v string) *LoggingEnabled {
 type MetadataEntry struct {
 	_ struct{} `type:"structure"`
 
-	// Name of the Object.
+	// Name of the object.
 	Name *string `type:"string"`
 
-	// Value of the Object.
+	// Value of the object.
 	Value *string `type:"string"`
 }
 
@@ -29848,8 +29929,15 @@ type Object struct {
 	// The owner of the object
 	Owner *Owner `type:"structure"`
 
+	// Specifies the restoration status of an object. Objects in certain storage
+	// classes must be restored before they can be retrieved. For more information
+	// about these storage classes and how to work with archived objects, see Working
+	// with archived objects (https://docs.aws.amazon.com/AmazonS3/latest/userguide/archived-objects.html)
+	// in the Amazon S3 User Guide.
+	RestoreStatus *RestoreStatus `type:"structure"`
+
 	// Size in bytes of the object
-	Size *int64 `type:"integer"`
+	Size *int64 `type:"long"`
 
 	// The class of storage used to store the object.
 	StorageClass *string `type:"string" enum:"ObjectStorageClass"`
@@ -29900,6 +29988,12 @@ func (s *Object) SetLastModified(v time.Time) *Object {
 // SetOwner sets the Owner field's value.
 func (s *Object) SetOwner(v *Owner) *Object {
 	s.Owner = v
+	return s
+}
+
+// SetRestoreStatus sets the RestoreStatus field's value.
+func (s *Object) SetRestoreStatus(v *RestoreStatus) *Object {
+	s.RestoreStatus = v
 	return s
 }
 
@@ -30171,7 +30265,7 @@ type ObjectPart struct {
 	PartNumber *int64 `type:"integer"`
 
 	// The size of the uploaded part in bytes.
-	Size *int64 `type:"integer"`
+	Size *int64 `type:"long"`
 }
 
 // String returns the string representation.
@@ -30251,8 +30345,15 @@ type ObjectVersion struct {
 	// Specifies the owner of the object.
 	Owner *Owner `type:"structure"`
 
+	// Specifies the restoration status of an object. Objects in certain storage
+	// classes must be restored before they can be retrieved. For more information
+	// about these storage classes and how to work with archived objects, see Working
+	// with archived objects (https://docs.aws.amazon.com/AmazonS3/latest/userguide/archived-objects.html)
+	// in the Amazon S3 User Guide.
+	RestoreStatus *RestoreStatus `type:"structure"`
+
 	// Size in bytes of the object.
-	Size *int64 `type:"integer"`
+	Size *int64 `type:"long"`
 
 	// The class of storage used to store the object.
 	StorageClass *string `type:"string" enum:"ObjectVersionStorageClass"`
@@ -30312,6 +30413,12 @@ func (s *ObjectVersion) SetLastModified(v time.Time) *ObjectVersion {
 // SetOwner sets the Owner field's value.
 func (s *ObjectVersion) SetOwner(v *Owner) *ObjectVersion {
 	s.Owner = v
+	return s
+}
+
+// SetRestoreStatus sets the RestoreStatus field's value.
+func (s *ObjectVersion) SetRestoreStatus(v *RestoreStatus) *ObjectVersion {
+	s.RestoreStatus = v
 	return s
 }
 
@@ -30664,7 +30771,7 @@ type Part struct {
 	PartNumber *int64 `type:"integer"`
 
 	// Size in bytes of the uploaded part data.
-	Size *int64 `type:"integer"`
+	Size *int64 `type:"long"`
 }
 
 // String returns the string representation.
@@ -34254,14 +34361,16 @@ type PutObjectAclInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Key is a required field
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -34486,7 +34595,7 @@ type PutObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -34630,7 +34739,9 @@ type PutObjectInput struct {
 	ObjectLockRetainUntilDate *time.Time `location:"header" locationName:"x-amz-object-lock-retain-until-date" type:"timestamp" timestampFormat:"iso8601"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -34668,9 +34779,9 @@ type PutObjectInput struct {
 	SSEKMSEncryptionContext *string `location:"header" locationName:"x-amz-server-side-encryption-context" type:"string" sensitive:"true"`
 
 	// If x-amz-server-side-encryption has a valid value of aws:kms or aws:kms:dsse,
-	// this header specifies the ID of the Key Management Service (KMS) symmetric
-	// encryption customer managed key that was used for the object. If you specify
-	// x-amz-server-side-encryption:aws:kms or x-amz-server-side-encryption:aws:kms:dsse,
+	// this header specifies the ID (Key ID, Key ARN, or Key Alias) of the Key Management
+	// Service (KMS) symmetric encryption customer managed key that was used for
+	// the object. If you specify x-amz-server-side-encryption:aws:kms or x-amz-server-side-encryption:aws:kms:dsse,
 	// but do not providex-amz-server-side-encryption-aws-kms-key-id, Amazon S3
 	// uses the Amazon Web Services managed key (aws/s3) to protect the data. If
 	// the KMS key does not exist in the same account that's issuing the command,
@@ -35073,7 +35184,9 @@ type PutObjectLegalHoldInput struct {
 	LegalHold *ObjectLockLegalHold `locationName:"LegalHold" type:"structure" xmlURI:"http://s3.amazonaws.com/doc/2006-03-01/"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -35269,7 +35382,9 @@ type PutObjectLockConfigurationInput struct {
 	ObjectLockConfiguration *ObjectLockConfiguration `locationName:"ObjectLockConfiguration" type:"structure" xmlURI:"http://s3.amazonaws.com/doc/2006-03-01/"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -35660,7 +35775,9 @@ type PutObjectRetentionInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -35845,7 +35962,7 @@ type PutObjectTaggingInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -35883,7 +36000,9 @@ type PutObjectTaggingInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -37232,7 +37351,7 @@ type RestoreObjectInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -37266,7 +37385,9 @@ type RestoreObjectInput struct {
 	Key *string `location:"uri" locationName:"Key" min:"1" type:"string" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -37555,6 +37676,64 @@ func (s *RestoreRequest) SetTier(v string) *RestoreRequest {
 // SetType sets the Type field's value.
 func (s *RestoreRequest) SetType(v string) *RestoreRequest {
 	s.Type = &v
+	return s
+}
+
+// Specifies the restoration status of an object. Objects in certain storage
+// classes must be restored before they can be retrieved. For more information
+// about these storage classes and how to work with archived objects, see Working
+// with archived objects (https://docs.aws.amazon.com/AmazonS3/latest/userguide/archived-objects.html)
+// in the Amazon S3 User Guide.
+type RestoreStatus struct {
+	_ struct{} `type:"structure"`
+
+	// Specifies whether the object is currently being restored. If the object restoration
+	// is in progress, the header returns the value TRUE. For example:
+	//
+	// x-amz-optional-object-attributes: IsRestoreInProgress="true"
+	//
+	// If the object restoration has completed, the header returns the value FALSE.
+	// For example:
+	//
+	// x-amz-optional-object-attributes: IsRestoreInProgress="false", RestoreExpiryDate="2012-12-21T00:00:00.000Z"
+	//
+	// If the object hasn't been restored, there is no header response.
+	IsRestoreInProgress *bool `type:"boolean"`
+
+	// Indicates when the restored copy will expire. This value is populated only
+	// if the object has already been restored. For example:
+	//
+	// x-amz-optional-object-attributes: IsRestoreInProgress="false", RestoreExpiryDate="2012-12-21T00:00:00.000Z"
+	RestoreExpiryDate *time.Time `type:"timestamp"`
+}
+
+// String returns the string representation.
+//
+// API parameter values that are decorated as "sensitive" in the API will not
+// be included in the string output. The member name will be present, but the
+// value will be replaced with "sensitive".
+func (s RestoreStatus) String() string {
+	return awsutil.Prettify(s)
+}
+
+// GoString returns the string representation.
+//
+// API parameter values that are decorated as "sensitive" in the API will not
+// be included in the string output. The member name will be present, but the
+// value will be replaced with "sensitive".
+func (s RestoreStatus) GoString() string {
+	return s.String()
+}
+
+// SetIsRestoreInProgress sets the IsRestoreInProgress field's value.
+func (s *RestoreStatus) SetIsRestoreInProgress(v bool) *RestoreStatus {
+	s.IsRestoreInProgress = &v
+	return s
+}
+
+// SetRestoreExpiryDate sets the RestoreExpiryDate field's value.
+func (s *RestoreStatus) SetRestoreExpiryDate(v time.Time) *RestoreStatus {
+	s.RestoreExpiryDate = &v
 	return s
 }
 
@@ -38453,17 +38632,21 @@ type ServerSideEncryptionByDefault struct {
 	// KMS key ID to use for the default encryption. This parameter is allowed if
 	// and only if SSEAlgorithm is set to aws:kms.
 	//
-	// You can specify the key ID or the Amazon Resource Name (ARN) of the KMS key.
+	// You can specify the key ID, key alias, or the Amazon Resource Name (ARN)
+	// of the KMS key.
+	//
+	//    * Key ID: 1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	//    * Key ARN: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
+	//
+	//    * Key Alias: alias/alias-name
+	//
 	// If you use a key ID, you can run into a LogDestination undeliverable error
 	// when creating a VPC flow log.
 	//
 	// If you are using encryption with cross-account or Amazon Web Services service
 	// operations you must use a fully qualified KMS key ARN. For more information,
 	// see Using encryption for cross-account operations (https://docs.aws.amazon.com/AmazonS3/latest/dev/bucket-encryption.html#bucket-encryption-update-bucket-policy).
-	//
-	//    * Key ID: 1234abcd-12ab-34cd-56ef-1234567890ab
-	//
-	//    * Key ARN: arn:aws:kms:us-east-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab
 	//
 	// Amazon S3 only supports symmetric encryption KMS keys. For more information,
 	// see Asymmetric keys in Amazon Web Services KMS (https://docs.aws.amazon.com/kms/latest/developerguide/symmetric-asymmetric.html)
@@ -39477,7 +39660,7 @@ type UploadPartCopyInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -39576,7 +39759,9 @@ type UploadPartCopyInput struct {
 	PartNumber *int64 `location:"querystring" locationName:"partNumber" type:"integer" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -39947,7 +40132,7 @@ type UploadPartInput struct {
 	// AccessPointName-AccountId.outpostID.s3-outposts.Region.amazonaws.com. When
 	// you use this action with S3 on Outposts through the Amazon Web Services SDKs,
 	// you provide the Outposts access point ARN in place of the bucket name. For
-	// more information about S3 on Outposts ARNs, see What is S3 on Outposts (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
+	// more information about S3 on Outposts ARNs, see What is S3 on Outposts? (https://docs.aws.amazon.com/AmazonS3/latest/userguide/S3onOutposts.html)
 	// in the Amazon S3 User Guide.
 	//
 	// Bucket is a required field
@@ -40027,7 +40212,9 @@ type UploadPartInput struct {
 	PartNumber *int64 `location:"querystring" locationName:"partNumber" type:"integer" required:"true"`
 
 	// Confirms that the requester knows that they will be charged for the request.
-	// Bucket owners need not specify this parameter in their requests. For information
+	// Bucket owners need not specify this parameter in their requests. If either
+	// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+	// requester will pay for corresponding charges to copy the object. For information
 	// about downloading objects from Requester Pays buckets, see Downloading Objects
 	// in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 	// in the Amazon S3 User Guide.
@@ -40724,9 +40911,9 @@ type WriteGetObjectResponseInput struct {
 	// server-side encryption with customer-provided encryption keys (SSE-C) (https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html).
 	SSECustomerKeyMD5 *string `location:"header" locationName:"x-amz-fwd-header-x-amz-server-side-encryption-customer-key-MD5" type:"string"`
 
-	// If present, specifies the ID of the Amazon Web Services Key Management Service
-	// (Amazon Web Services KMS) symmetric encryption customer managed key that
-	// was used for stored in Amazon S3 object.
+	// If present, specifies the ID (Key ID, Key ARN, or Key Alias) of the Amazon
+	// Web Services Key Management Service (Amazon Web Services KMS) symmetric encryption
+	// customer managed key that was used for stored in Amazon S3 object.
 	//
 	// SSEKMSKeyId is a sensitive parameter and its value will be
 	// replaced with "sensitive" in string returned by WriteGetObjectResponseInput's
@@ -41233,6 +41420,12 @@ const (
 
 	// BucketLocationConstraintUsWest2 is a BucketLocationConstraint enum value
 	BucketLocationConstraintUsWest2 = "us-west-2"
+
+	// BucketLocationConstraintApSouth2 is a BucketLocationConstraint enum value
+	BucketLocationConstraintApSouth2 = "ap-south-2"
+
+	// BucketLocationConstraintEuSouth2 is a BucketLocationConstraint enum value
+	BucketLocationConstraintEuSouth2 = "eu-south-2"
 )
 
 // BucketLocationConstraint_Values returns all elements of the BucketLocationConstraint enum
@@ -41264,6 +41457,8 @@ func BucketLocationConstraint_Values() []string {
 		BucketLocationConstraintUsGovWest1,
 		BucketLocationConstraintUsWest1,
 		BucketLocationConstraintUsWest2,
+		BucketLocationConstraintApSouth2,
+		BucketLocationConstraintEuSouth2,
 	}
 }
 
@@ -41376,8 +41571,8 @@ func DeleteMarkerReplicationStatus_Values() []string {
 }
 
 // Requests Amazon S3 to encode the object keys in the response and specifies
-// the encoding method to use. An object key may contain any Unicode character;
-// however, XML 1.0 parser cannot parse some characters, such as characters
+// the encoding method to use. An object key can contain any Unicode character;
+// however, the XML 1.0 parser cannot parse some characters, such as characters
 // with an ASCII value from 0 to 10. For characters that are not supported in
 // XML 1.0, you can add this parameter to request that Amazon S3 encode the
 // keys in the response.
@@ -41713,6 +41908,12 @@ const (
 
 	// InventoryOptionalFieldChecksumAlgorithm is a InventoryOptionalField enum value
 	InventoryOptionalFieldChecksumAlgorithm = "ChecksumAlgorithm"
+
+	// InventoryOptionalFieldObjectAccessControlList is a InventoryOptionalField enum value
+	InventoryOptionalFieldObjectAccessControlList = "ObjectAccessControlList"
+
+	// InventoryOptionalFieldObjectOwner is a InventoryOptionalField enum value
+	InventoryOptionalFieldObjectOwner = "ObjectOwner"
 )
 
 // InventoryOptionalField_Values returns all elements of the InventoryOptionalField enum
@@ -41731,6 +41932,8 @@ func InventoryOptionalField_Values() []string {
 		InventoryOptionalFieldIntelligentTieringAccessTier,
 		InventoryOptionalFieldBucketKeyStatus,
 		InventoryOptionalFieldChecksumAlgorithm,
+		InventoryOptionalFieldObjectAccessControlList,
+		InventoryOptionalFieldObjectOwner,
 	}
 }
 
@@ -42033,6 +42236,18 @@ func ObjectVersionStorageClass_Values() []string {
 }
 
 const (
+	// OptionalObjectAttributesRestoreStatus is a OptionalObjectAttributes enum value
+	OptionalObjectAttributesRestoreStatus = "RestoreStatus"
+)
+
+// OptionalObjectAttributes_Values returns all elements of the OptionalObjectAttributes enum
+func OptionalObjectAttributes_Values() []string {
+	return []string{
+		OptionalObjectAttributesRestoreStatus,
+	}
+}
+
+const (
 	// OwnerOverrideDestination is a OwnerOverride enum value
 	OwnerOverrideDestination = "Destination"
 )
@@ -42164,6 +42379,9 @@ const (
 
 	// ReplicationStatusReplica is a ReplicationStatus enum value
 	ReplicationStatusReplica = "REPLICA"
+
+	// ReplicationStatusCompleted is a ReplicationStatus enum value
+	ReplicationStatusCompleted = "COMPLETED"
 )
 
 // ReplicationStatus_Values returns all elements of the ReplicationStatus enum
@@ -42173,6 +42391,7 @@ func ReplicationStatus_Values() []string {
 		ReplicationStatusPending,
 		ReplicationStatusFailed,
 		ReplicationStatusReplica,
+		ReplicationStatusCompleted,
 	}
 }
 
@@ -42207,7 +42426,9 @@ func RequestCharged_Values() []string {
 }
 
 // Confirms that the requester knows that they will be charged for the request.
-// Bucket owners need not specify this parameter in their requests. For information
+// Bucket owners need not specify this parameter in their requests. If either
+// the source or destination Amazon S3 bucket has Requester Pays enabled, the
+// requester will pay for corresponding charges to copy the object. For information
 // about downloading objects from Requester Pays buckets, see Downloading Objects
 // in Requester Pays Buckets (https://docs.aws.amazon.com/AmazonS3/latest/dev/ObjectsinRequesterPaysBuckets.html)
 // in the Amazon S3 User Guide.

@@ -9,8 +9,6 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -18,15 +16,12 @@ import (
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestPrometheusCodec_JSONResponse(t *testing.T) {
@@ -190,11 +185,11 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
-			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
+			durationHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "decode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
 			require.Less(t, *durationHistogram.SampleSum, 0.1)
-			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
+			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "decode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
@@ -223,11 +218,11 @@ func TestPrometheusCodec_JSONResponse(t *testing.T) {
 
 			metrics, err = dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
-			durationHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			durationHistogram, err = dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
 			require.Less(t, *durationHistogram.SampleSum, 0.1)
-			payloadSizeHistogram, err = findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			payloadSizeHistogram, err = dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(len(body)), *payloadSizeHistogram.SampleSum)
@@ -374,45 +369,14 @@ func TestPrometheusCodec_JSONEncoding(t *testing.T) {
 
 			metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
 			require.NoError(t, err)
-			durationHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
+			durationHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_duration_seconds", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *durationHistogram.SampleCount)
 			require.Less(t, *durationHistogram.SampleSum, 0.1)
-			payloadSizeHistogram, err := findHistogramMatchingLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
+			payloadSizeHistogram, err := dskit_metrics.FindHistogramWithNameAndLabels(metrics, "cortex_frontend_query_response_codec_payload_bytes", "format", "json", "operation", "encode")
 			require.NoError(t, err)
 			require.Equal(t, uint64(1), *payloadSizeHistogram.SampleCount)
 			require.Equal(t, float64(encoded.ContentLength), *payloadSizeHistogram.SampleSum)
 		})
 	}
-}
-
-func findHistogramMatchingLabels(metrics dskit_metrics.MetricFamilyMap, name string, labelValuePairs ...string) (*dto.Histogram, error) {
-	metricFamily, ok := metrics[name]
-	if !ok {
-		return nil, fmt.Errorf("no metric with name %v found", name)
-	}
-
-	l := []labels.Label{}
-	for i := 0; i < len(labelValuePairs); i += 2 {
-		l = append(l, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
-	}
-	var matchingMetrics []*dto.Metric
-
-	for _, metric := range metricFamily.Metric {
-		if util.MatchesSelectors(metric, l) {
-			matchingMetrics = append(matchingMetrics, metric)
-		}
-	}
-
-	if len(matchingMetrics) != 1 {
-		return nil, fmt.Errorf("wanted exactly one matching metric, but found %v", len(matchingMetrics))
-	}
-
-	metric := matchingMetrics[0]
-
-	if metric.Histogram == nil {
-		return nil, errors.New("found a single matching metric, but it is not a histogram")
-	}
-
-	return metric.Histogram, nil
 }

@@ -10,26 +10,14 @@ on:
   workflow_dispatch:
 jobs:
   test:
-    runs-on: "ubuntu-latest"
-    steps:
-    - name: "Check out code"
-      uses: "actions/checkout@v3"
-    - name: "Build website"
-      run: |
-        docker run \
-          -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-          -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
-          -e HUGO_REFLINKSERRORLEVEL=ERROR \
-          --rm \
-            grafana/docs-base:latest \
-              /bin/bash -c 'make hugo'
+    uses: ./.github/workflows/test-docs.yml
 
   sync:
     runs-on: "ubuntu-latest"
     needs: "test"
     steps:
     - name: "Check out code"
-      uses: "actions/checkout@v3"
+      uses: "actions/checkout@v4"
 
     - name: "Clone website-sync Action"
       # WEBSITE_SYNC_TOKEN is a fine-grained GitHub Personal Access Token that expires.

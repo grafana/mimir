@@ -1470,7 +1470,7 @@
             "multi": false,
             "name": "cluster",
             "options": [ ],
-            "query": "label_values(apiserver_request_total, cluster)",
+            "query": "label_values(cluster)",
             "refresh": 2,
             "regex": "",
             "sort": 1,

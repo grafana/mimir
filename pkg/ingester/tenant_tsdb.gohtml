@@ -1,0 +1,55 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/ingester.tenantTSDBPageContent */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ingester: TSDB for tenant {{ .Tenant }}</title>
+</head>
+<body>
+<h1>Ingester: TSDB for tenant {{ .Tenant }}</h1>
+<p>Current time: {{ .Now }}</p>
+
+<h2>TSDB Head</h2>
+
+<ul>
+    <li>Number of series: {{.Head.NumSeries}}</li>
+    <li>Min Time: {{.Head.MinTime}}</li>
+    <li>Max Time: {{.Head.MaxTime}}</li>
+    <li>Appendable Min Valid Time: {{if .Head.AppendableMinValidTime}}{{.Head.AppendableMinValidTime}}{{else}}N/A{{end}}</li>
+    <li>Min OOO Time: {{.Head.MinOOOTime}}</li>
+    <li>Max OOO Time: {{.Head.MaxOOOTime}}</li>
+</ul>
+
+<h2>Blocks</h2>
+
+
+<table border="1" cellpadding="5" style="border-collapse: collapse">
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Min Time</th>
+        <th>Max Time</th>
+        <th>Number of Series</th>
+        <th>Number of Chunks</th>
+        <th>Number of Samples</th>
+        <th>Compaction Hints</th>
+        <th>Uploaded</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ range .Blocks }}
+        <tr>
+            <td>{{.ID}}</td>
+            <td>{{.MinTime}}</td>
+            <td>{{.MaxTime}}</td>
+            <td>{{.Stats.NumSeries}}</td>
+            <td>{{.Stats.NumChunks}}</td>
+            <td>{{.Stats.NumSamples}}</td>
+            <td>{{.Compaction.Hints}}</td>
+            <td>{{.UploadedOn}}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>

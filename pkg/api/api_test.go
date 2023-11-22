@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/server"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/util/gziphandler"
 )
@@ -33,6 +33,7 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 		GRPCListenAddress: "localhost",
 		MetricsNamespace:  "without_source_ip_extractor",
 	}
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
@@ -49,6 +50,7 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 		GRPCListenAddress: "localhost",
 		MetricsNamespace:  "with_source_ip_extractor",
 	}
+	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
 
@@ -191,15 +193,17 @@ func getServerConfig(t *testing.T) server.Config {
 	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
 	httpHost, httpPortNum := getHostnameAndRandomPort(t)
 
-	return server.Config{
+	cfg := server.Config{
 		HTTPListenAddress: httpHost,
 		HTTPListenPort:    httpPortNum,
 
 		GRPCListenAddress: grpcHost,
 		GRPCListenPort:    grpcPortNum,
 
-		GPRCServerMaxRecvMsgSize: 1024,
+		GRPCServerMaxRecvMsgSize: 1024,
 	}
+	require.NoError(t, cfg.LogLevel.Set("info"))
+	return cfg
 }
 
 func getHostnameAndRandomPort(t *testing.T) (string, int) {

@@ -31,7 +31,7 @@ type BucketCount interface {
 // absolute counts directly). Go type parameters don't allow type
 // specialization. Therefore, where special treatment of deltas between buckets
 // vs. absolute counts is important, this information has to be provided as a
-// separate boolean parameter "deltaBuckets"
+// separate boolean parameter "deltaBuckets".
 type InternalBucketCount interface {
 	float64 | int64
 }
@@ -102,16 +102,22 @@ type baseBucketIterator[BC BucketCount, IBC InternalBucketCount] struct {
 }
 
 func (b baseBucketIterator[BC, IBC]) At() Bucket[BC] {
+	return b.at(b.schema)
+}
+
+// at is an internal version of the exported At to enable using a different
+// schema.
+func (b baseBucketIterator[BC, IBC]) at(schema int32) Bucket[BC] {
 	bucket := Bucket[BC]{
 		Count: BC(b.currCount),
 		Index: b.currIdx,
 	}
 	if b.positive {
-		bucket.Upper = getBound(b.currIdx, b.schema)
-		bucket.Lower = getBound(b.currIdx-1, b.schema)
+		bucket.Upper = getBound(b.currIdx, schema)
+		bucket.Lower = getBound(b.currIdx-1, schema)
 	} else {
-		bucket.Lower = -getBound(b.currIdx, b.schema)
-		bucket.Upper = -getBound(b.currIdx-1, b.schema)
+		bucket.Lower = -getBound(b.currIdx, schema)
+		bucket.Upper = -getBound(b.currIdx-1, schema)
 	}
 	bucket.LowerInclusive = bucket.Lower < 0
 	bucket.UpperInclusive = bucket.Upper > 0
@@ -325,18 +331,6 @@ func compactBuckets[IBC InternalBucketCount](buckets []IBC, spans []Span, maxEmp
 	}
 
 	return buckets, spans
-}
-
-func bucketsMatch[IBC InternalBucketCount](b1, b2 []IBC) bool {
-	if len(b1) != len(b2) {
-		return false
-	}
-	for i, b := range b1 {
-		if b != b2[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func getBound(idx, schema int32) float64 {

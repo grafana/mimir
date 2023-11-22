@@ -64,7 +64,7 @@ func TestLen(t *testing.T) {
 var step = int(15 * time.Second / time.Millisecond)
 
 func TestChunk(t *testing.T) {
-	const maxSamples = 2048
+	const maxSamples = 240 // Twice as big as current TSDB
 
 	for _, enc := range []Encoding{PrometheusXorChunk, PrometheusHistogramChunk, PrometheusFloatHistogramChunk} {
 		for samples := maxSamples / 10; samples < maxSamples; samples += maxSamples / 10 {

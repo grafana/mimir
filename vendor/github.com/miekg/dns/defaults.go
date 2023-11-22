@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 const hexDigit = "0123456789abcdef"
@@ -272,18 +273,24 @@ func IsMsg(buf []byte) error {
 
 // IsFqdn checks if a domain name is fully qualified.
 func IsFqdn(s string) bool {
-	s2 := strings.TrimSuffix(s, ".")
-	if s == s2 {
+	// Check for (and remove) a trailing dot, returning if there isn't one.
+	if s == "" || s[len(s)-1] != '.' {
 		return false
 	}
+	s = s[:len(s)-1]
 
-	i := strings.LastIndexFunc(s2, func(r rune) bool {
+	// If we don't have an escape sequence before the final dot, we know it's
+	// fully qualified and can return here.
+	if s == "" || s[len(s)-1] != '\\' {
+		return true
+	}
+
+	// Otherwise we have to check if the dot is escaped or not by checking if
+	// there are an odd or even number of escape sequences before the dot.
+	i := strings.LastIndexFunc(s, func(r rune) bool {
 		return r != '\\'
 	})
-
-	// Test whether we have an even number of escape sequences before
-	// the dot or none.
-	return (len(s2)-i)%2 != 0
+	return (len(s)-i)%2 != 0
 }
 
 // IsRRset checks if a set of RRs is a valid RRset as defined by RFC 2181.
@@ -324,8 +331,18 @@ func Fqdn(s string) string {
 
 // CanonicalName returns the domain name in canonical form. A name in canonical
 // form is lowercase and fully qualified. See Section 6.2 in RFC 4034.
+// According to the RFC all uppercase US-ASCII letters in the owner name of the
+// RR areeplaced by the corresponding lowercase US-ASCII letters.
 func CanonicalName(s string) string {
-	return strings.ToLower(Fqdn(s))
+	var result strings.Builder
+	for _, ch := range s {
+		if unicode.IsUpper(ch) && (ch >= 0x00 && ch <= 0x7F) {
+			result.WriteRune(unicode.ToLower(ch))
+		} else {
+			result.WriteRune(ch)
+		}
+	}
+	return Fqdn(result.String())
 }
 
 // Copied from the official Go code.

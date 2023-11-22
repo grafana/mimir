@@ -23,7 +23,7 @@
       target: 'flusher',
       'blocks-storage.tsdb.retention-period': '10000h',  // don't delete old blocks too soon.
     })) +
-    (if std.length($.flusher_env_map) > 0 then container.withEnvMap($.flusher_env_map) else {}) +
+    (if std.length($.flusher_env_map) > 0 then container.withEnvMap(std.prune($.flusher_env_map)) else {}) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
     $.util.readinessProbe +

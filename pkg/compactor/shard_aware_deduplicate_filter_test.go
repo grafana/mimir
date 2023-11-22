@@ -395,13 +395,13 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 	var (
 		reg   prometheus.Registerer
 		count uint64
-		cases []map[ulid.ULID]*block.Meta
 	)
 
 	dedupFilter := NewShardAwareDeduplicateFilter()
 	synced := extprom.NewTxGaugeVec(reg, prometheus.GaugeOpts{}, []string{"state"})
 
 	for blocksNum := 10; blocksNum <= 10000; blocksNum *= 10 {
+		var cases []map[ulid.ULID]*block.Meta
 		// blocksNum number of blocks with all of them unique ULID and unique 100 sources.
 		cases = append(cases, make(map[ulid.ULID]*block.Meta, blocksNum))
 		for i := 0; i < blocksNum; i++ {

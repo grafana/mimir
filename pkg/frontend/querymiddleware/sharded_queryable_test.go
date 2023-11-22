@@ -26,6 +26,7 @@ import (
 )
 
 func TestShardedQuerier_Select(t *testing.T) {
+	ctx := context.Background()
 	var testExpr = []struct {
 		name    string
 		querier *shardedQuerier
@@ -37,7 +38,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				set := q.Select(false, nil)
+				set := q.Select(ctx, false, nil)
 				require.Equal(t, set.Err(), errNoEmbeddedQueries)
 			},
 		},
@@ -67,6 +68,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -87,6 +89,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -143,6 +146,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
+					ctx,
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -206,6 +210,8 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 		`sum(rate(metric{__query_shard__="2_of_3"}[1m]))`,
 	}
 
+	ctx := context.Background()
+
 	// Mock the downstream handler to wait until all concurrent queries have been
 	// received. If the test succeeds we have the guarantee they were called concurrently
 	// otherwise the test times out while hanging in the downstream handler.
@@ -232,6 +238,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	require.Nil(t, err)
 
 	seriesSet := querier.Select(
+		ctx,
 		false,
 		nil,
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
@@ -254,7 +261,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
-	querier, err := queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
@@ -267,7 +274,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 2nd querier.
-	querier, err = queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	querier, err = queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
 	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
@@ -281,7 +288,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 }
 
 func mkShardedQuerier(handler Handler) *shardedQuerier {
-	return &shardedQuerier{ctx: context.Background(), req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }
 
 func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {

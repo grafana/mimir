@@ -26,7 +26,9 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,13 +42,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -108,9 +107,9 @@ type mockRulerClientsPool struct {
 	numberOfCalls atomic.Int32
 }
 
-func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
+func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerClient, error) {
 	for _, r := range p.rulerAddrMap {
-		if r.lifecycler.GetInstanceAddr() == addr {
+		if r.lifecycler.GetInstanceAddr() == inst.Addr {
 			return &mockRulerClient{
 				ruler:           r,
 				rulesCallsCount: &p.numberOfCalls,
@@ -118,7 +117,7 @@ func (p *mockRulerClientsPool) GetClientFor(addr string) (RulerClient, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unable to find ruler for addr %s", addr)
+	return nil, fmt.Errorf("unable to find ruler for addr %s %s", inst.Id, inst.Addr)
 }
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {
@@ -226,7 +225,7 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	noopQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
 	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
@@ -1219,7 +1218,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRulersWithRuleGroups int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCount += len(actualRuleGroups)
 
@@ -1257,7 +1256,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 		var actualRuleGroupsCountPerRuler []int
 
 		for _, ruler := range rulers {
-			actualRuleGroups, err := ruler.getLocalRules(userID, RulesRequest{Filter: AnyRule})
+			actualRuleGroups, err := ruler.getLocalRules(ctx, userID, RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			actualRuleGroupsCountPerRuler = append(actualRuleGroupsCountPerRuler, len(actualRuleGroups))
 		}

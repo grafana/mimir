@@ -14,12 +14,13 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -786,8 +787,112 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesCardinalityHandler(t *testing.T) {
+	tests := []struct {
+		name                 string
+		requestParams        map[string][]string
+		expectMatcherSetSize int
+		expectError          bool
+	}{
+		{
+			name:        "should error on missing selector param",
+			expectError: true,
+		},
+		{
+			name:          "should error on invalid selector",
+			requestParams: map[string][]string{"selector": {"-not-valid-"}},
+			expectError:   true,
+		},
+		{
+			name:          "should error on multiple selectors",
+			requestParams: map[string][]string{"selector": {"a", "b"}},
+			expectError:   true,
+		},
+		{
+			name:          "valid selector",
+			requestParams: map[string][]string{"selector": {`{job="prometheus"}`}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			d := &mockDistributor{}
+
+			series := []labels.Labels{
+				labels.FromStrings("__name__", "up", "job", "prometheus"),
+				labels.FromStrings("__name__", "process_start_time_seconds", "job", "prometheus"),
+			}
+			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, nil)
+
+			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			data := url.Values{}
+			for key, values := range test.requestParams {
+				for _, value := range values {
+					data.Add(key, value)
+				}
+			}
+			request, err := http.NewRequestWithContext(ctx, "POST", "/active_series", strings.NewReader(data.Encode()))
+			require.NoError(t, err)
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			if test.expectError {
+				require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+				return
+			}
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func(body io.ReadCloser) {
+				err := body.Close()
+				require.NoError(t, err)
+			}(body)
+			bodyContent, err := io.ReadAll(body)
+			require.NoError(t, err)
+
+			resp := activeSeriesResponse{}
+			err = json.Unmarshal(bodyContent, &resp)
+			require.NoError(t, err)
+			assert.Len(t, resp.Data, len(series))
+		})
+	}
+}
+
+func BenchmarkActiveSeriesHandler_ServeHTTP(b *testing.B) {
+	const numResponseSeries = 1000
+
+	d := &mockDistributor{}
+
+	var s []labels.Labels
+	for i := 0; i < numResponseSeries; i++ {
+		s = append(s, labels.FromStrings("__name__", "up", "job", "prometheus", "instance", "instance"+fmt.Sprint(i)))
+	}
+	d.On("ActiveSeries", mock.Anything, mock.Anything).Return(s, nil)
+
+	handler := createEnabledHandler(b, ActiveSeriesCardinalityHandler, d)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	for i := 0; i < b.N; i++ {
+		// Prepare a request.
+		r := httptest.NewRequest("POST", "/active_series", strings.NewReader("selector={job=\"prometheus\"}"))
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+		// Run the benchmark.
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, r.WithContext(ctx))
+
+		// Make sure we're not benchmarking error responses.
+		require.Equal(b, http.StatusOK, recorder.Result().StatusCode)
+	}
+}
+
 // createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
-func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
+func createEnabledHandler(t testing.TB, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{CardinalityAnalysisEnabled: true}
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)

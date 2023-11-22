@@ -145,23 +145,21 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 
-	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
-	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
 	return h.Sum64()
 }
 
 // offset returns the time until the next scrape cycle for the target.
-// It includes the global server jitterSeed for scrapes from multiple Prometheus to try to be at different times.
-func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration {
+// It includes the global server offsetSeed for scrapes from multiple Prometheus to try to be at different times.
+func (t *Target) offset(interval time.Duration, offsetSeed uint64) time.Duration {
 	now := time.Now().UnixNano()
 
 	// Base is a pinned to absolute time, no matter how often offset is called.
 	var (
 		base   = int64(interval) - now%int64(interval)
-		offset = (t.hash() ^ jitterSeed) % uint64(interval)
+		offset = (t.hash() ^ offsetSeed) % uint64(interval)
 		next   = base + int64(offset)
 	)
 
@@ -198,7 +196,7 @@ func (t *Target) DiscoveredLabels() labels.Labels {
 	return t.discoveredLabels.Copy()
 }
 
-// SetDiscoveredLabels sets new DiscoveredLabels
+// SetDiscoveredLabels sets new DiscoveredLabels.
 func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()

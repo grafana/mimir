@@ -123,6 +123,21 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored blocks with out of order chunks.' % $._config,
           },
         },
+        {
+          // Alert if compactor has tried to compact blocks with out-of-order chunks.
+          // Any number greater than 1 over the last 30 minutes should be investigated quickly as it could start to impact the read path.
+          alert: $.alertName('CompactorSkippedBlocksWithOutOfOrderChunks'),
+          'for': '30m',
+          expr: |||
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 1
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored blocks with out of order chunks.' % $._config,
+          },
+        },
       ],
     },
   ],

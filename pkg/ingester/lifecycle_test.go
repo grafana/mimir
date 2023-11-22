@@ -44,7 +44,7 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg.IngesterRing.InstanceAddr = "localhost"
 	cfg.IngesterRing.InstanceID = "localhost"
 	cfg.IngesterRing.FinalSleep = 0
-	cfg.ActiveSeriesMetricsEnabled = true
+	cfg.ActiveSeriesMetrics.Enabled = true
 
 	return cfg
 }

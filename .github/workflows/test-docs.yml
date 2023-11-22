@@ -1,0 +1,56 @@
+name: "test-docs"
+
+on:
+  workflow_call:
+
+jobs:
+  test-docs:
+    runs-on: "ubuntu-latest"
+    steps:
+    - name: "Check out code"
+      uses: "actions/checkout@v4"
+    - name: Run Git Config
+      run: git config --global --add safe.directory '*'
+    - name: Build website to test Mimir documentation
+      run: |
+        set -x
+        docker run \
+          -v "${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest" \
+          -e HUGO_REFLINKSERRORLEVEL=ERROR \
+          --rm \
+          grafana/docs-base:latest \
+          /bin/bash -c 'make hugo'
+    - name: Determine Mimir version targeted by Helm chart documentation
+      id: mimir_version
+      run: |
+        MIMIR_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *MIMIR_DOCS_VERSION: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
+        echo "version=${MIMIR_VERSION}" | tee "${GITHUB_OUTPUT}"
+    - name: Determine Mimir branch for targeted version
+      id: mimir_branch
+      env:
+        MIMIR_VERSION: ${{ steps.mimir_version.outputs.version }}
+      run: |
+        if [[ "${MIMIR_VERSION}" = next ]]; then
+            echo 'branch=main' | tee "${GITHUB_OUTPUT}"
+        else
+            MIMIR_VERSION_WITHOUT_PREFIX="${MIMIR_VERSION#v}"
+            echo "branch=release-${MIMIR_VERSION_WITHOUT_PREFIX%.x}" | tee "${GITHUB_OUTPUT}"
+        fi
+    - name: Check out ${{ steps.mimir_version.outputs.branch }} documentation
+      uses: actions/checkout@v4
+      with:
+        path: ${{ steps.mimir_branch.outputs.branch }}
+        ref: ${{ steps.mimir_branch.outputs.branch }}
+    - name: Build website to test Helm chart documentation
+      env:
+        MIMIR_BRANCH: ${{ steps.mimir_branch.outputs.branch }}
+        MIMIR_VERSION: ${{ steps.mimir_version.outputs.version }}
+      run: |
+        set -x
+        docker run \
+          -v "${GITHUB_WORKSPACE}/${MIMIR_BRANCH}/docs/sources/mimir:/hugo/content/docs/mimir/${MIMIR_VERSION}" \
+          -v "${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest" \
+          -e HUGO_REFLINKSERRORLEVEL=ERROR \
+          --rm \
+          grafana/docs-base:latest \
+          /bin/bash -c 'make hugo'

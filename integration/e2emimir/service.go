@@ -19,6 +19,7 @@ func NewMimirService(
 	image string,
 	command *e2e.Command,
 	readiness e2e.ReadinessProbe,
+	envVars map[string]string,
 	httpPort int,
 	grpcPort int,
 	otherPorts ...int,
@@ -29,12 +30,7 @@ func NewMimirService(
 		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, otherPorts...),
 		grpcPort:    grpcPort,
 	}
-	// Add jaeger configuration with a 50% sampling rate so that we can trigger
-	// code paths that rely on a trace being sampled.
-	s.SetEnvVars(map[string]string{
-		"JAEGER_SAMPLER_TYPE":  "const",
-		"JAEGER_SAMPLER_PARAM": "0.5",
-	})
+	s.SetEnvVars(envVars)
 	return s
 }
 

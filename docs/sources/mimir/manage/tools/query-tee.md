@@ -119,6 +119,12 @@ When the query results comparison is enabled, the query-tee compares the respons
 
 > **Note**: Floating point sample values are compared with a tolerance that can be configured via `-proxy.value-comparison-tolerance`. The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
 
+> **Note**: The default value of `-proxy.compare-skip-recent-samples` is 2 minutes. This means points within results with a timestamp within 2 minutes of the current time will not be compared.
+> This prevents false positives due to racing with ingestion, and, if the query selects the output of recording rules, rule evaluation.
+>
+> If either Mimir cluster is running with a non-default value of `-ruler.evaluation-delay-duration`, we recommend setting `-proxy.compare-skip-recent-samples` to 1 minute more than the
+> value of `-ruler.evaluation-delay-duration`.
+
 ### Exported metrics
 
 The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:

@@ -1,0 +1,10 @@
+/var/log/mimir/mimir.log {
+  compress
+  copytruncate
+  create 0600 root root
+  daily
+  missingok
+  nodelaycompress
+  notifempty
+  rotate 7
+}

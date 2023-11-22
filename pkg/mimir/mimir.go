@@ -12,34 +12,36 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goregexp "regexp" //lint:ignore faillint the Prometheus client library requires us to pass a regexp from this package
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/signals"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
-	"github.com/weaveworks/common/server"
-	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -101,7 +103,7 @@ type Config struct {
 	Target                          flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled             bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant                    string                 `yaml:"no_auth_tenant" category:"advanced"`
-	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"experimental"`
+	ShutdownDelay                   time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	MaxSeparateMetricsGroupsPerUser int                    `yaml:"max_separate_metrics_groups_per_user" category:"experimental"`
 	EnableGoRuntimeMetrics          bool                   `yaml:"enable_go_runtime_metrics" category:"advanced"`
 	PrintConfig                     bool                   `yaml:"-"`
@@ -233,7 +235,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
 	}
-	if err := c.BlocksStorage.Validate(log); err != nil {
+	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
@@ -682,7 +684,7 @@ type Mimir struct {
 	Distributor              *distributor.Distributor
 	Ingester                 *ingester.Ingester
 	Flusher                  *flusher.Flusher
-	Frontend                 *frontendv1.Frontend
+	FrontendV1               *frontendv1.Frontend
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
@@ -696,14 +698,12 @@ type Mimir struct {
 	Alertmanager             *alertmanager.MultitenantAlertmanager
 	Compactor                *compactor.MultitenantCompactor
 	StoreGateway             *storegateway.StoreGateway
+	StoreQueryable           prom_storage.Queryable
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 	Vault                    *vault.Vault
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
-
-	// Queryables that the querier should use to query the long term storage.
-	StoreQueryables []querier.QueryableWithFilter
 }
 
 // New makes a new Mimir.
@@ -715,14 +715,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		os.Exit(0)
 	}
 
-	if cfg.EnableGoRuntimeMetrics {
-		// unregister default Go collector
-		reg.Unregister(collectors.NewGoCollector())
-		// register Go collector with all available runtime metrics
-		reg.MustRegister(collectors.NewGoCollector(
-			collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
-		))
-	}
+	setUpGoRuntimeMetrics(cfg, reg)
 
 	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
 	if cfg.TenantFederation.Enabled {
@@ -756,11 +749,34 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
+	mimir.Cfg.Server.Router = mux.NewRouter()
+	middleware.InitHTTPGRPCMiddleware(mimir.Cfg.Server.Router)
+
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
 	}
 
 	return mimir, nil
+}
+
+func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
+	rules := []collectors.GoRuntimeMetricsRule{
+		// Enable the mutex wait time metric.
+		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+	}
+
+	if cfg.EnableGoRuntimeMetrics {
+		// Enable all available runtime metrics.
+		rules = append(rules, collectors.MetricsAll)
+	}
+
+	// Unregister the default Go collector...
+	reg.Unregister(collectors.NewGoCollector())
+
+	// ...and replace it with our own that adds our extra rules.
+	reg.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(rules...),
+	))
 }
 
 // setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
@@ -928,8 +944,8 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 
 		// Query Frontend has a special check that makes sure that a querier is attached before it signals
 		// itself as ready
-		if t.Frontend != nil {
-			if err := t.Frontend.CheckReady(r.Context()); err != nil {
+		if t.FrontendV1 != nil {
+			if err := t.FrontendV1.CheckReady(r.Context()); err != nil {
 				http.Error(w, "Query Frontend not ready: "+err.Error(), http.StatusServiceUnavailable)
 				return
 			}

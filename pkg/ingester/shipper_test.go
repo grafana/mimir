@@ -51,7 +51,7 @@ func TestShipper(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 	t.Run("no shipper file yet", func(t *testing.T) {
 		// No shipper file = nothing is reported as shipped.
@@ -193,7 +193,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 	logger := log.NewLogfmtLogger(os.Stderr)
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
+	s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 	// Create and upload a block
 	id1 := ulid.MustNew(1, nil)
@@ -259,7 +259,7 @@ func TestIterBlockMetas(t *testing.T) {
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id3.String())))
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	shipper := newShipper(nil, overrides, "", nil, dir, nil, block.TestSource)
+	shipper := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, nil, block.TestSource)
 	metas, err := shipper.blockMetasFromOldest()
 	require.NoError(t, err)
 	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
@@ -273,7 +273,7 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	inmemory := objstore.NewInMemBucket()
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
-	s := newShipper(nil, overrides, "", nil, dir, inmemory, block.TestSource)
+	s := newShipper(nil, overrides, "", newShipperMetrics(nil), dir, inmemory, block.TestSource)
 
 	id := ulid.MustNew(1, nil)
 	blockDir := path.Join(dir, id.String())
@@ -417,7 +417,7 @@ func TestShipper_AddOOOLabel(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(tenantLimits))
 			require.NoError(t, err)
-			s := newShipper(logger, overrides, "", nil, blocksDir, bkt, block.TestSource)
+			s := newShipper(logger, overrides, "", newShipperMetrics(nil), blocksDir, bkt, block.TestSource)
 
 			createBlock(t, blocksDir, tc.meta.ULID, tc.meta)
 

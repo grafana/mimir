@@ -80,6 +80,14 @@ std.manifestYamlDoc({
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
     }),
+
+    'ingester-3': mimirService({
+      name: 'ingester-3',
+      target: 'ingester',
+      httpPort: 8004,
+      jaegerApp: 'ingester-3',
+      extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+    }),
   },
 
   read_components::
@@ -87,7 +95,7 @@ std.manifestYamlDoc({
       querier: mimirService({
         name: 'querier',
         target: 'querier',
-        httpPort: 8004,
+        httpPort: 8005,
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
           if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
@@ -126,7 +134,7 @@ std.manifestYamlDoc({
     ['ruler-%d' % id]: mimirService({
       name: 'ruler-' + id,
       target: 'ruler',
-      httpPort: 8020 + id,
+      httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
     })
     for id in std.range(1, count)
@@ -183,6 +191,7 @@ std.manifestYamlDoc({
         JAEGER_SAMPLER_TYPE: 'const',
         JAEGER_SAMPLER_PARAM: 1,
         JAEGER_TAGS: 'app=%s' % s.jaegerApp,
+        JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
       },
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
@@ -243,7 +252,7 @@ std.manifestYamlDoc({
         'NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx',
         'DISTRIBUTOR_HOST=distributor-1:8000',
         'ALERT_MANAGER_HOST=alertmanager-1:8031',
-        'RULER_HOST=ruler-1:8021',
+        'RULER_HOST=ruler-1:8022',
         'QUERY_FRONTEND_HOST=query-frontend:8007',
         'COMPACTOR_HOST=compactor:8007',
       ],
@@ -296,12 +305,11 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.40.6',
+      image: 'prom/prometheus:v2.47.2',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
-        // This option enables native histogram support in prometheus, which is disabled by default since it doesn't scape classic histograms used by the recording rules and dashboards
-        // '--enable-feature=native-histograms',
+        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -314,7 +322,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:9.4.3',
+      image: 'grafana/grafana:10.1.5',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -332,8 +340,8 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.21.2',
-      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-prometheus.wal-directory=/tmp'],
+      image: 'grafana/agent:v0.37.3',
+      command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
     },
@@ -366,7 +374,7 @@ std.manifestYamlDoc({
         '--tenants-count=1',
         '--query-enabled=true',
         '--query-interval=1s',
-        '--query-url=http://querier:8004/prometheus',
+        '--query-url=http://querier:8005/prometheus',
         '--server-metrics-port=9900',
       ],
       ports: ['9900:9900'],

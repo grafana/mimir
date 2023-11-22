@@ -116,6 +116,38 @@ func (r *Client) GetDashboardBySlug(ctx context.Context, slug string) (Board, Bo
 	return r.getDashboard(ctx, path)
 }
 
+// DashboardVersion represents a response from /api/dashboards/id/:dashboardId/versions API
+type DashboardVersion struct {
+	ID            uint      `json:"id"`
+	DashboardID   uint      `json:"dashboardId"`
+	ParentVersion uint      `json:"parentVersion"`
+	RestoredFrom  uint      `json:"restoredFrom"`
+	Version       uint      `json:"version"`
+	Created       time.Time `json:"created"`
+	CreatedBy     string    `json:"createdBy"`
+	Message       string    `json:"message"`
+}
+
+// GetDashboardVersionsByDashboardID reflects /api/dashboards/id/:dashboardId/versions API call
+func (r *Client) GetDashboardVersionsByDashboardID(ctx context.Context, dashboardID uint, params ...QueryParam) ([]DashboardVersion, error) {
+	var (
+		raw  []byte
+		code int
+		err  error
+	)
+
+	if raw, code, err = r.get(ctx, fmt.Sprintf("api/dashboards/id/%d/versions", dashboardID), queryParams(params...)); err != nil {
+		return nil, err
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("HTTP error %d: returns %s", code, raw)
+	}
+	var versions []DashboardVersion
+	err = json.Unmarshal(raw, &versions)
+
+	return versions, err
+}
+
 // getDashboard loads a dashboard from Grafana instance along with metadata for a dashboard.
 // For dashboards from a filesystem set "file/" prefix for slug. By default dashboards from
 // a database assumed. Database dashboards may have "db/" prefix or may have not, it will
@@ -396,7 +428,33 @@ type (
 	SearchParam func(*url.Values)
 	// SearchParamType is a type accepted by SearchType func.
 	SearchParamType string
+	// QueryParam is a type for specifying arbitrary API parameters
+	QueryParam func(*url.Values)
 )
+
+// queryParams returns url.Values built from multiple QueryParam
+func queryParams(params ...QueryParam) url.Values {
+	u := url.URL{}
+	q := u.Query()
+	for _, p := range params {
+		p(&q)
+	}
+	return q
+}
+
+// QueryParamStart sets `start` parameter
+func QueryParamStart(start uint) QueryParam {
+	return func(v *url.Values) {
+		v.Set("start", strconv.Itoa(int(start)))
+	}
+}
+
+// QueryParamLimit sets `limit` parameter
+func QueryParamLimit(limit uint) QueryParam {
+	return func(v *url.Values) {
+		v.Set("limit", strconv.Itoa(int(limit)))
+	}
+}
 
 // Search entities to be used with SearchType().
 const (

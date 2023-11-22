@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -37,8 +36,9 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	hits = t.c.FetchMultiPostings(ctx, userID, blockID, keys)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "IndexCache.FetchMultiPostings",
+		"block", blockID,
 		"requested keys", len(keys),
 		"cache hits", hits.Remaining(),
 		"cache misses", len(keys)-hits.Remaining(),
@@ -58,8 +58,9 @@ func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID 
 	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, userID, blockID, ids)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "IndexCache.FetchMultiSeriesForRefs",
+	spanLogger.DebugLog("msg", "IndexCache.FetchMultiSeriesForRefs",
 		"requested series", len(ids),
+		"block", blockID,
 		"cache hits", len(hits),
 		"cache misses", len(misses),
 		"time elapsed", time.Since(t0),
@@ -79,8 +80,9 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	data, found := t.c.FetchExpandedPostings(ctx, userID, blockID, key, postingsSelectionStrategy)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "IndexCache.FetchExpandedPostings",
+		"block", blockID,
 		"requested key", key,
 		"postings selection strategy", postingsSelectionStrategy,
 		"found", found,
@@ -101,8 +103,9 @@ func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID s
 	data, found := t.c.FetchSeriesForPostings(ctx, userID, blockID, shard, postingsKey)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "IndexCache.FetchSeriesForPostings",
+		"block", blockID,
 		"shard", shardKey(shard),
 		"found", found,
 		"time_elapsed", time.Since(t0),
@@ -123,8 +126,9 @@ func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, userID string, 
 	data, found := t.c.FetchLabelNames(ctx, userID, blockID, matchersKey)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "IndexCache.FetchLabelNames",
+		"block", blockID,
 		"requested key", matchersKey,
 		"found", found,
 		"time elapsed", time.Since(t0),
@@ -144,8 +148,9 @@ func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, userID string,
 	data, found := t.c.FetchLabelValues(ctx, userID, blockID, labelName, matchersKey)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log(
+	spanLogger.DebugLog(
 		"msg", "IndexCache.FetchLabelValues",
+		"block", blockID,
 		"label name", labelName,
 		"requested key", matchersKey,
 		"found", found,

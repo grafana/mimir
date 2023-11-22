@@ -26,57 +26,69 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 			}(),
 		},
 		"unsupported backend should fail": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: "xxx",
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = "xxx"
+
+				return cfg
+			}(),
 			expected: errUnsupportedIndexCacheBackend,
 		},
 		"no memcached addresses should fail": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendMemcached,
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendMemcached
+
+				return cfg
+			}(),
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"one memcached address should pass": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendMemcached,
-					Memcached: cache.MemcachedClientConfig{
-						Addresses:           []string{"dns+localhost:11211"},
-						MaxAsyncConcurrency: 1,
-					},
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendMemcached
+				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
+
+				return cfg
+			}(),
 		},
 		"no redis address should fail": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendRedis,
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendRedis
+
+				return cfg
+			}(),
 			expected: cache.ErrRedisConfigNoEndpoint,
 		},
 		"one redis address should pass": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendRedis,
-					Redis: cache.RedisClientConfig{
-						Endpoint:            []string{"localhost:6379"},
-						MaxAsyncConcurrency: 1,
-					},
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendRedis
+				cfg.Redis.Endpoint = []string{"localhost:6379"}
+
+				return cfg
+			}(),
 		},
 		"inmemory should pass": {
-			cfg: IndexCacheConfig{
-				BackendConfig: cache.BackendConfig{
-					Backend: IndexCacheBackendInMemory,
-				},
-			},
+			cfg: func() IndexCacheConfig {
+				cfg := IndexCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				cfg.Backend = IndexCacheBackendInMemory
+
+				return cfg
+			}(),
 		},
 	}
 

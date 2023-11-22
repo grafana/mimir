@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -91,16 +92,34 @@ func NewMetricFamilyMap(metrics []*dto.MetricFamily) (MetricFamilyMap, error) {
 	return perMetricName, nil
 }
 
+// SumCounters returns sum of counters or 0, if no counter was found.
 func (mfm MetricFamilyMap) SumCounters(name string) float64 {
 	return sum(mfm[name], counterValue)
 }
 
+// SumGauges returns sum of gauges or 0, if no gauge was found.
 func (mfm MetricFamilyMap) SumGauges(name string) float64 {
 	return sum(mfm[name], gaugeValue)
 }
 
+// MaxGauges returns max of gauges or NaN, if no gauge was found.
 func (mfm MetricFamilyMap) MaxGauges(name string) float64 {
-	return max(mfm[name], gaugeValue)
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
+		if val > res {
+			return val
+		}
+		return res
+	})
+}
+
+// MinGauges returns minimum of gauges or NaN if no gauge was found.
+func (mfm MetricFamilyMap) MinGauges(name string) float64 {
+	return fold(mfm[name], gaugeValueOrNaN, func(val, res float64) float64 {
+		if val < res {
+			return val
+		}
+		return res
+	})
 }
 
 func (mfm MetricFamilyMap) SumHistograms(name string) HistogramData {
@@ -227,11 +246,17 @@ func (d MetricFamiliesPerTenant) sumOfSingleValuesWithLabels(metric string, fn f
 	return result
 }
 
-func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+func (d MetricFamiliesPerTenant) foldGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, valFn func(MetricFamilyMap) float64, foldFn func(val, res float64) float64) {
 	result := math.NaN()
 	for _, tenantEntry := range d {
-		if value := tenantEntry.metrics.MaxGauges(gauge); math.IsNaN(result) || value > result {
+		value := valFn(tenantEntry.metrics)
+		if math.IsNaN(value) {
+			continue
+		}
+		if math.IsNaN(result) {
 			result = value
+		} else {
+			result = foldFn(value, result)
 		}
 	}
 
@@ -243,6 +268,24 @@ func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, d
 	out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result)
 }
 
+func (d MetricFamiliesPerTenant) SendMinOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MinGauges(gauge) }, func(val, res float64) float64 {
+		if val < res {
+			return val
+		}
+		return res
+	})
+}
+
+func (d MetricFamiliesPerTenant) SendMaxOfGauges(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
+	d.foldGauges(out, desc, func(familyMap MetricFamilyMap) float64 { return familyMap.MaxGauges(gauge) }, func(val, res float64) float64 {
+		if val > res {
+			return val
+		}
+		return res
+	})
+}
+
 func (d MetricFamiliesPerTenant) SendMaxOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
 	for _, tenantEntry := range d {
 		if tenantEntry.tenant == "" {
@@ -250,7 +293,9 @@ func (d MetricFamiliesPerTenant) SendMaxOfGaugesPerTenant(out chan<- prometheus.
 		}
 
 		result := tenantEntry.metrics.MaxGauges(gauge)
-		out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, tenantEntry.tenant)
+		if !math.IsNaN(result) {
+			out <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, result, tenantEntry.tenant)
+		}
 	}
 }
 
@@ -417,20 +462,20 @@ func sum(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 	return result
 }
 
-// max returns the max value from all metrics from same metric family (= series with the same metric name, but different labels)
-// Supplied function extracts value.
-func max(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
+// fold returns value computed from multiple metrics, using folding function. if there are no metrics, it returns NaN.
+func fold(mf *dto.MetricFamily, fn func(*dto.Metric) float64, foldFn func(val, res float64) float64) float64 {
 	result := math.NaN()
 
 	for _, m := range mf.GetMetric() {
-		if value := fn(m); math.IsNaN(result) || value > result {
-			result = value
+		value := fn(m)
+		if math.IsNaN(value) {
+			continue
 		}
-	}
-
-	// If there's no metric, we do return 0 which is the gauge default.
-	if math.IsNaN(result) {
-		return 0
+		if math.IsNaN(result) {
+			result = value
+		} else {
+			result = foldFn(value, result)
+		}
 	}
 
 	return result
@@ -439,6 +484,14 @@ func max(mf *dto.MetricFamily, fn func(*dto.Metric) float64) float64 {
 // This works even if m is nil, m.Counter is nil or m.Counter.Value is nil (it returns 0 in those cases)
 func counterValue(m *dto.Metric) float64 { return m.GetCounter().GetValue() }
 func gaugeValue(m *dto.Metric) float64   { return m.GetGauge().GetValue() }
+
+// gaugeValueOrNaN returns Gauge value or math.NaN.
+func gaugeValueOrNaN(m *dto.Metric) float64 {
+	if m == nil || m.Gauge == nil || m.Gauge.Value == nil {
+		return math.NaN()
+	}
+	return *m.Gauge.Value
+}
 
 // SummaryData keeps all data needed to create summary metric
 type SummaryData struct {
@@ -771,4 +824,17 @@ func applyMetricOptions(options ...MetricOption) *metricOptions {
 type metricOptions struct {
 	skipZeroValueMetrics bool
 	labelNames           []string
+}
+
+func makeLabels(namesAndValues ...string) []*dto.LabelPair {
+	out := []*dto.LabelPair(nil)
+
+	for i := 0; i+1 < len(namesAndValues); i = i + 2 {
+		out = append(out, &dto.LabelPair{
+			Name:  proto.String(namesAndValues[i]),
+			Value: proto.String(namesAndValues[i+1]),
+		})
+	}
+
+	return out
 }

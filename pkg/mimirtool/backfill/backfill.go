@@ -90,7 +90,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 
 	var wroteHeader bool
 
-	for t := mint; t <= maxt; t = t + blockDuration {
+	for t := mint; t <= maxt; t = t + blockDuration/2 {
 		err := func() error {
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
 			if err != nil {
@@ -106,7 +106,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 			ctx := context.Background()
 			app := w.Appender(ctx)
 			i := input()
-			tsUpper := t + blockDuration
+			tsUpper := t + blockDuration/2
 			samplesCount := 0
 			for {
 				err := i.Next()

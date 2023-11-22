@@ -5,7 +5,7 @@ package httpgrpcutil
 import (
 	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 // PrioritizeRecoverableErr checks whether in the given slice of errors there is a recoverable error, if yes then it will

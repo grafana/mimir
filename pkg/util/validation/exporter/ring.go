@@ -6,6 +6,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -46,7 +48,7 @@ var ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.LEAVING}, nil)
 // RingConfig holds the configuration for the overrides-exporter ring.
 type RingConfig struct {
 	// Whether the ring is enabled for overrides-exporters.
-	Enabled bool `yaml:"enabled" category:"experimental"`
+	Enabled bool `yaml:"enabled"`
 
 	// Use common config shared with other components' ring config.
 	Common util.CommonRingConfig `yaml:",inline"`
@@ -82,7 +84,7 @@ func (c *RingConfig) toBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifec
 
 	return ring.BasicLifecyclerConfig{
 		ID:                              c.Common.InstanceID,
-		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
 		HeartbeatPeriod:                 c.Common.HeartbeatPeriod,
 		HeartbeatTimeout:                c.Common.HeartbeatTimeout,
 		TokensObservePeriod:             0,

@@ -50,6 +50,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
+| [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
+| [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
 | [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
 | [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
 | [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
@@ -316,7 +318,7 @@ Requires [authentication](#authentication).
 POST /otlp/v1/metrics
 ```
 
-Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/otlp.md#otlphttp). Experimental.
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md). Experimental.
 
 This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
 You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
@@ -425,6 +427,22 @@ GET /ingester/ring
 
 This endpoint displays a web page with the ingesters hash ring status, including the state, health, and last heartbeat time of each ingester.
 
+### Ingester tenants
+
+```
+GET /ingester/tenants
+```
+
+Displays a web page with the list of tenants with open TSDB on given ingester.
+
+### Ingester tenant TSDB
+
+```
+GET /ingester/tsdb/{tenant}
+```
+
+Displays a web page with details about tenant's open TSDB on given ingester.
+
 ## Querier / Query-frontend
 
 The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend" >}}).
@@ -485,6 +503,10 @@ For more information, refer to Prometheus [get label names](https://prometheus.i
 
 Requires [authentication](#authentication).
 
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than `0`.
+
 ### Get label values
 
 ```
@@ -494,6 +516,10 @@ GET <prometheus-http-prefix>/api/v1/label/{name}/values
 For more information, refer to Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values).
 
 Requires [authentication](#authentication).
+
+#### Caching
+
+The query-frontend can return a stale response fetched from the query results cache if `-query-frontend.cache-results` is enabled and `-query-frontend.results-cache-ttl-for-labels-query` set to a value greater than `0`.
 
 ### Get metric metadata
 
@@ -954,6 +980,8 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
+The names of the templates in `template_files` must be valid file names and not contain any path separators. For example, both `/templates/my-template.tpl` and `./my-template.tpl` are invalid, whereas `my-template.tpl` is valid.
+
 This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
@@ -1157,7 +1185,8 @@ This API endpoint is experimental and subject to change.
 POST /compactor/delete_tenant
 ```
 
-Request deletion of ALL tenant data.
+Request deletion of ALL tenant data for the tenant specified in the `X-Scope-OrgID` header. If authentication is disabled,
+then the default `anonymous` tenant is deleted (configurable by `-auth.no-auth-tenant`).
 
 Requires [authentication](#authentication).
 

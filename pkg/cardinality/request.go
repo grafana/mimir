@@ -5,6 +5,7 @@ package cardinality
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -23,9 +24,6 @@ const (
 )
 
 const (
-	RequestTypeLabelNames  = RequestType(iota)
-	RequestTypeLabelValues = RequestType(iota)
-
 	minLimit           = 0
 	maxLimit           = 500
 	defaultLimit       = 20
@@ -34,8 +32,6 @@ const (
 	stringParamSeparator = rune(0)
 	stringValueSeparator = rune(1)
 )
-
-type RequestType int
 
 type LabelNamesRequest struct {
 	Matchers []*labels.Matcher
@@ -62,29 +58,29 @@ func (r *LabelNamesRequest) String() string {
 	return b.String()
 }
 
-func (r *LabelNamesRequest) RequestType() RequestType {
-	return RequestTypeLabelNames
-}
-
 // DecodeLabelNamesRequest decodes the input http.Request into a LabelNamesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
 func DecodeLabelNamesRequest(r *http.Request) (*LabelNamesRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeLabelNamesRequestFromValues(r.Form)
+}
+
+// DecodeLabelNamesRequestFromValues is like DecodeLabelNamesRequest but takes url.Values in input.
+func DecodeLabelNamesRequestFromValues(values url.Values) (*LabelNamesRequest, error) {
 	var (
 		parsed = &LabelNamesRequest{}
 		err    error
 	)
 
-	err = r.ParseForm()
+	parsed.Matchers, err = extractSelector(values)
 	if err != nil {
 		return nil, err
 	}
 
-	parsed.Matchers, err = extractSelector(r)
-	if err != nil {
-		return nil, err
-	}
-
-	parsed.Limit, err = extractLimit(r)
+	parsed.Limit, err = extractLimit(values)
 	if err != nil {
 		return nil, err
 	}
@@ -132,38 +128,39 @@ func (r *LabelValuesRequest) String() string {
 	return b.String()
 }
 
-func (r *LabelValuesRequest) RequestType() RequestType {
-	return RequestTypeLabelValues
-}
-
 // DecodeLabelValuesRequest decodes the input http.Request into a LabelValuesRequest.
 // The input http.Request can either be a GET or POST with URL-encoded parameters.
 func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeLabelValuesRequestFromValues(r.Form)
+}
+
+// DecodeLabelValuesRequestFromValues is like DecodeLabelValuesRequest but takes url.Values in input.
+func DecodeLabelValuesRequestFromValues(values url.Values) (*LabelValuesRequest, error) {
 	var (
 		parsed = &LabelValuesRequest{}
 		err    error
 	)
 
-	if err = r.ParseForm(); err != nil {
-		return nil, err
-	}
-
-	parsed.LabelNames, err = extractLabelNames(r)
+	parsed.LabelNames, err = extractLabelNames(values)
 	if err != nil {
 		return nil, err
 	}
 
-	parsed.Matchers, err = extractSelector(r)
+	parsed.Matchers, err = extractSelector(values)
 	if err != nil {
 		return nil, err
 	}
 
-	parsed.Limit, err = extractLimit(r)
+	parsed.Limit, err = extractLimit(values)
 	if err != nil {
 		return nil, err
 	}
 
-	parsed.CountMethod, err = extractCountMethod(r)
+	parsed.CountMethod, err = extractCountMethod(values)
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +169,8 @@ func DecodeLabelValuesRequest(r *http.Request) (*LabelValuesRequest, error) {
 }
 
 // extractSelector parses and gets selector query parameter containing a single matcher
-func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
-	selectorParams := r.Form["selector"]
+func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) {
+	selectorParams := values["selector"]
 	if len(selectorParams) == 0 {
 		return nil, nil
 	}
@@ -186,22 +183,31 @@ func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
 	}
 
 	// Ensure stable sorting (improves query results cache hit ratio).
-	slices.SortFunc(matchers, func(a, b *labels.Matcher) bool {
-		if a.Name != b.Name {
-			return a.Name < b.Name
+	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
+		switch {
+		case a.Name < b.Name:
+			return -1
+		case a.Name > b.Name:
+			return 1
+		case a.Type < b.Type:
+			return -1
+		case a.Type > b.Type:
+			return 1
+		case a.Value < b.Value:
+			return -1
+		case a.Value > b.Value:
+			return 1
+		default:
+			return 0
 		}
-		if a.Type != b.Type {
-			return a.Type < b.Type
-		}
-		return a.Value < b.Value
 	})
 
 	return matchers, nil
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
-func extractLimit(r *http.Request) (limit int, err error) {
-	limitParams := r.Form["limit"]
+func extractLimit(values url.Values) (limit int, err error) {
+	limitParams := values["limit"]
 	if len(limitParams) == 0 {
 		return defaultLimit, nil
 	}
@@ -222,8 +228,8 @@ func extractLimit(r *http.Request) (limit int, err error) {
 }
 
 // extractLabelNames parses and gets label_names query parameter containing an array of label values
-func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
-	labelNamesParams := r.Form["label_names[]"]
+func extractLabelNames(values url.Values) ([]model.LabelName, error) {
+	labelNamesParams := values["label_names[]"]
 	if len(labelNamesParams) == 0 {
 		return nil, fmt.Errorf("'label_names[]' param is required")
 	}
@@ -244,8 +250,8 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 }
 
 // extractCountMethod parses and validates request param `count_method` if it's defined, otherwise returns default value.
-func extractCountMethod(r *http.Request) (countMethod CountMethod, err error) {
-	countMethodParams := r.Form["count_method"]
+func extractCountMethod(values url.Values) (countMethod CountMethod, err error) {
+	countMethodParams := values["count_method"]
 	if len(countMethodParams) == 0 {
 		return defaultCountMethod, nil
 	}
@@ -257,4 +263,50 @@ func extractCountMethod(r *http.Request) (countMethod CountMethod, err error) {
 	default:
 		return "", fmt.Errorf("invalid 'count_method' param '%v'. valid options are: [%s]", countMethodParams[0], strings.Join([]string{string(ActiveMethod), string(InMemoryMethod)}, ","))
 	}
+}
+
+type ActiveSeriesRequest struct {
+	Matchers []*labels.Matcher
+}
+
+// DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.
+func DecodeActiveSeriesRequest(r *http.Request) (*ActiveSeriesRequest, error) {
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+
+	return DecodeActiveSeriesRequestFromValues(r.Form)
+}
+
+// DecodeActiveSeriesRequestFromValues is like DecodeActiveSeriesRequest but takes an url.Values parameter.
+func DecodeActiveSeriesRequestFromValues(values url.Values) (*ActiveSeriesRequest, error) {
+	var (
+		parsed = &ActiveSeriesRequest{}
+		err    error
+	)
+
+	if !values.Has("selector") {
+		return nil, fmt.Errorf("missing 'selector' parameter")
+	}
+
+	parsed.Matchers, err = extractSelector(values)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
+}
+
+// String returns a string representation that uniquely identifies the request.
+func (r *ActiveSeriesRequest) String() string {
+	b := strings.Builder{}
+
+	for idx, matcher := range r.Matchers {
+		if idx > 0 {
+			b.WriteRune(stringValueSeparator)
+		}
+		b.WriteString(matcher.String())
+	}
+
+	return b.String()
 }

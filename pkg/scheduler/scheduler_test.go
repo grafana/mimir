@@ -17,23 +17,30 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
-	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 const testMaxOutstandingPerTenant = 5
+
+func TestMain(m *testing.M) {
+	util_test.VerifyNoLeakTestMain(m)
+}
 
 func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
 	cfg := Config{}
@@ -78,10 +85,11 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
-		Type:        schedulerpb.ENQUEUE,
-		QueryID:     1,
-		UserID:      "test",
-		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		Type:         schedulerpb.ENQUEUE,
+		QueryID:      1,
+		UserID:       "test",
+		HttpRequest:  &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		StatsEnabled: true,
 	})
 
 	{
@@ -95,6 +103,8 @@ func TestSchedulerBasicEnqueue(t *testing.T) {
 		require.Equal(t, "frontend-12345", msg2.FrontendAddress)
 		require.Equal(t, "GET", msg2.HttpRequest.Method)
 		require.Equal(t, "/hello", msg2.HttpRequest.Url)
+		require.True(t, msg2.StatsEnabled)
+		require.Greater(t, msg2.QueueTimeNanos, int64(0))
 		require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{}))
 	}
 
@@ -189,7 +199,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 	})
 
 	// Disconnect frontend.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Wait until the frontend has disconnected.
 	test.Poll(t, time.Second, float64(0), func() interface{} {
@@ -222,7 +232,7 @@ func TestCancelRequestInProgress(t *testing.T) {
 
 	// At this point, scheduler assumes that querier is processing the request (until it receives empty QuerierToScheduler message back).
 	// Simulate frontend disconnect.
-	require.NoError(t, frontendLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
 
 	// Add a little sleep to make sure that scheduler notices frontend disconnect.
 	time.Sleep(500 * time.Millisecond)
@@ -339,16 +349,28 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	// One more query from the same user will trigger an error.
 	fl := initFrontendLoop(t, frontendClient, "extra-frontend")
-	require.NoError(t, fl.Send(&schedulerpb.FrontendToScheduler{
+
+	req := schedulerpb.FrontendToScheduler{
 		Type:        schedulerpb.ENQUEUE,
 		QueryID:     0,
 		UserID:      "test",
 		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-	}))
+	}
+
+	// Inject span context to the request so we can check handling of max outstanding requests.
+	mockTracer := mocktracer.New()
+	opentracing.SetGlobalTracer(mockTracer)
+	sp, _ := opentracing.StartSpanFromContextWithTracer(context.Background(), mockTracer, "client")
+	require.NoError(t, mockTracer.Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest)))
+
+	require.NoError(t, fl.Send(&req))
 
 	msg, err := fl.Recv()
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
+
+	spans := mockTracer.FinishedSpans()
+	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
@@ -397,7 +419,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	require.NoError(t, err)
 
 	// Querier now disconnects, without sending empty message back.
-	require.NoError(t, querierLoop.CloseSend())
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
 
 	// Verify that frontend was notified about request.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
@@ -411,7 +433,7 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 	})
 }
 
-func TestSchedulerMetrics(t *testing.T) {
+func TestSchedulerQueueMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
@@ -444,6 +466,39 @@ func TestSchedulerMetrics(t *testing.T) {
 		# TYPE cortex_query_scheduler_queue_length gauge
 		cortex_query_scheduler_queue_length{user="another"} 1
 	`), "cortex_query_scheduler_queue_length"))
+}
+
+func TestSchedulerQuerierMetrics(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	_, _, querierClient := setupScheduler(t, reg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	querierLoop, err := querierClient.QuerierLoop(ctx)
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	require.Eventually(t, func() bool {
+		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
+			# TYPE cortex_query_scheduler_connected_querier_clients gauge
+			cortex_query_scheduler_connected_querier_clients 1
+		`), "cortex_query_scheduler_connected_querier_clients")
+
+		return err == nil
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be incremented after querier connected")
+
+	cancel()
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	require.Eventually(t, func() bool {
+		err := promtest.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_query_scheduler_connected_querier_clients Number of querier worker clients currently connected to the query-scheduler.
+			# TYPE cortex_query_scheduler_connected_querier_clients gauge
+			cortex_query_scheduler_connected_querier_clients 0
+		`), "cortex_query_scheduler_connected_querier_clients")
+
+		return err == nil
+	}, time.Second, 10*time.Millisecond, "expected cortex_query_scheduler_connected_querier_clients metric to be decremented after querier disconnected")
 }
 
 func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClient, frontendAddr string) schedulerpb.SchedulerForFrontend_FrontendLoopClient {

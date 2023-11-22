@@ -11,8 +11,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/httpgrpc/server"
+	"github.com/grafana/dskit/httpgrpc"
 )
 
 // GrpcRoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
@@ -39,7 +38,7 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := server.HTTPRequest(r)
+	req, err := httpgrpc.FromHTTPRequest(r)
 	if err != nil {
 		return nil, err
 	}

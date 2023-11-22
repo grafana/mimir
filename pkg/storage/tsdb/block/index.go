@@ -32,8 +32,8 @@ import (
 )
 
 // VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
-func VerifyBlock(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error {
-	stats, err := GatherBlockHealthStats(logger, blockDir, minTime, maxTime, checkChunks)
+func VerifyBlock(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error {
+	stats, err := GatherBlockHealthStats(ctx, logger, blockDir, minTime, maxTime, checkChunks)
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func (n *minMaxSumInt64) Avg() int64 {
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
 // See HealthStats.Issue347OutsideChunks for details.
-func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime int64, checkChunkData bool) (stats HealthStats, err error) {
+func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunkData bool) (stats HealthStats, err error) {
 	indexFn := filepath.Join(blockDir, IndexFilename)
 	chunkDir := filepath.Join(blockDir, ChunksDirname)
 	// index reader
@@ -222,7 +222,8 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 	}
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
 
-	p, err := r.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	p, err := r.Postings(ctx, n, v)
 	if err != nil {
 		return stats, errors.Wrap(err, "get all postings")
 	}
@@ -249,13 +250,13 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 		defer runutil.CloseWithErrCapture(&err, cr, "closing chunks reader")
 	}
 
-	lnames, err := r.LabelNames()
+	lnames, err := r.LabelNames(ctx)
 	if err != nil {
 		return stats, errors.Wrap(err, "label names")
 	}
 	stats.LabelNamesCount = int64(len(lnames))
 
-	lvals, err := r.LabelValues("__name__")
+	lvals, err := r.LabelValues(ctx, "__name__")
 	if err != nil {
 		return stats, errors.Wrap(err, "metric label values")
 	}
@@ -396,14 +397,14 @@ func GatherBlockHealthStats(logger log.Logger, blockDir string, minTime, maxTime
 
 type ignoreFnType func(mint, maxt int64, prev *chunks.Meta, curr *chunks.Meta) (bool, error)
 
-// Repair open the block with given id in dir and creates a new one with fixed data.
+// Repair opens the block with given id in dir and creates a new one with fixed data.
 // It:
 // - removes out of order duplicates
 // - all "complete" outsiders (they will not accessed anyway)
 // - removes all near "complete" outside chunks introduced by https://github.com/prometheus/tsdb/issues/347.
 // Fixable inconsistencies are resolved in the new block.
 // TODO(bplotka): https://github.com/thanos-io/thanos/issues/378.
-func Repair(logger log.Logger, dir string, id ulid.ULID, source SourceType, ignoreChkFns ...ignoreFnType) (resid ulid.ULID, err error) {
+func Repair(ctx context.Context, logger log.Logger, dir string, id ulid.ULID, source SourceType, ignoreChkFns ...ignoreFnType) (resid ulid.ULID, err error) {
 	if len(ignoreChkFns) == 0 {
 		return resid, errors.New("no ignore chunk function specified")
 	}
@@ -446,7 +447,7 @@ func Repair(logger log.Logger, dir string, id ulid.ULID, source SourceType, igno
 	}
 	defer runutil.CloseWithErrCapture(&err, chunkw, "repair chunk writer")
 
-	indexw, err := index.NewWriter(context.TODO(), filepath.Join(resdir, IndexFilename))
+	indexw, err := index.NewWriter(ctx, filepath.Join(resdir, IndexFilename))
 	if err != nil {
 		return resid, errors.Wrap(err, "open index writer")
 	}
@@ -459,7 +460,7 @@ func Repair(logger log.Logger, dir string, id ulid.ULID, source SourceType, igno
 	resmeta.Stats = tsdb.BlockStats{} // Reset stats.
 	resmeta.Thanos.Source = source    // Update source.
 
-	if err := rewrite(logger, indexr, chunkr, indexw, chunkw, &resmeta, ignoreChkFns); err != nil {
+	if err := rewrite(ctx, logger, indexr, chunkr, indexw, chunkw, &resmeta, ignoreChkFns); err != nil {
 		return resid, errors.Wrap(err, "rewrite block")
 	}
 	resmeta.Thanos.SegmentFiles = GetSegmentFiles(resdir)
@@ -620,21 +621,22 @@ type seriesRepair struct {
 // which index.Reader does not implement.
 type indexReader interface {
 	Symbols() index.StringIter
-	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
-	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
-	Postings(name string, values ...string) (index.Postings, error)
+	SortedLabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error)
+	Postings(ctx context.Context, name string, values ...string) (index.Postings, error)
 	SortedPostings(index.Postings) index.Postings
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
-	LabelNames(matchers ...*labels.Matcher) ([]string, error)
-	LabelValueFor(id storage.SeriesRef, label string) (string, error)
-	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
+	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
+	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
+	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
 	Close() error
 }
 
 // rewrite writes all data from the readers back into the writers while cleaning
 // up mis-ordered and duplicated chunks.
 func rewrite(
+	ctx context.Context,
 	logger log.Logger,
 	indexr indexReader, chunkr tsdb.ChunkReader,
 	indexw tsdb.IndexWriter, chunkw tsdb.ChunkWriter,
@@ -651,7 +653,8 @@ func rewrite(
 		return errors.Wrap(symbols.Err(), "next symbol")
 	}
 
-	all, err := indexr.Postings(index.AllPostingsKey())
+	n, v := index.AllPostingsKey()
+	all, err := indexr.Postings(ctx, n, v)
 	if err != nil {
 		return errors.Wrap(err, "postings")
 	}

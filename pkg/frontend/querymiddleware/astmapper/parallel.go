@@ -14,6 +14,7 @@ import (
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{
+	parser.GROUP: {},
 	parser.SUM:   {},
 	parser.MIN:   {},
 	parser.MAX:   {},

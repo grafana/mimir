@@ -78,6 +78,11 @@ func (b *PrefixedBucketClient) IsObjNotFoundErr(err error) bool {
 	return b.bucket.IsObjNotFoundErr(err)
 }
 
+// IsAccessDeniedErr returns true if access to an operation is denied
+func (b *PrefixedBucketClient) IsAccessDeniedErr(err error) bool {
+	return b.bucket.IsAccessDeniedErr(err)
+}
+
 // Attributes returns attributes of the specified object.
 func (b *PrefixedBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	return b.bucket.Attributes(ctx, b.fullName(name))

@@ -164,6 +164,14 @@ var (
 		Message:              `{{ template "telegram.default.message" . }}`,
 		ParseMode:            "HTML",
 	}
+
+	DefaultMSTeamsConfig = MSTeamsConfig{
+		NotifierConfig: NotifierConfig{
+			VSendResolved: true,
+		},
+		Title: `{{ template "msteams.default.title" . }}`,
+		Text:  `{{ template "msteams.default.text" . }}`,
+	}
 )
 
 // NotifierConfig contains base options common across all notifier configurations.
@@ -495,11 +503,6 @@ func (c *WebhookConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.URL != nil && c.URLFile != "" {
 		return fmt.Errorf("at most one of url & url_file must be configured")
 	}
-	if c.URL != nil {
-		if c.URL.Scheme != "https" && c.URL.Scheme != "http" {
-			return fmt.Errorf("scheme required for webhook url")
-		}
-	}
 	return nil
 }
 
@@ -681,10 +684,12 @@ type PushoverConfig struct {
 	Message     string   `yaml:"message,omitempty" json:"message,omitempty"`
 	URL         string   `yaml:"url,omitempty" json:"url,omitempty"`
 	URLTitle    string   `yaml:"url_title,omitempty" json:"url_title,omitempty"`
+	Device      string   `yaml:"device,omitempty" json:"device,omitempty"`
 	Sound       string   `yaml:"sound,omitempty" json:"sound,omitempty"`
 	Priority    string   `yaml:"priority,omitempty" json:"priority,omitempty"`
 	Retry       duration `yaml:"retry,omitempty" json:"retry,omitempty"`
 	Expire      duration `yaml:"expire,omitempty" json:"expire,omitempty"`
+	TTL         duration `yaml:"ttl,omitempty" json:"ttl,omitempty"`
 	HTML        bool     `yaml:"html" json:"html,omitempty"`
 }
 
@@ -776,4 +781,19 @@ func (c *TelegramConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return fmt.Errorf("unknown parse_mode on telegram_config, must be Markdown, MarkdownV2, HTML or empty string")
 	}
 	return nil
+}
+
+type MSTeamsConfig struct {
+	NotifierConfig `yaml:",inline" json:",inline"`
+	HTTPConfig     *commoncfg.HTTPClientConfig `yaml:"http_config,omitempty" json:"http_config,omitempty"`
+	WebhookURL     *SecretURL                  `yaml:"webhook_url,omitempty" json:"webhook_url,omitempty"`
+
+	Title string `yaml:"title,omitempty" json:"title,omitempty"`
+	Text  string `yaml:"text,omitempty" json:"text,omitempty"`
+}
+
+func (c *MSTeamsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultMSTeamsConfig
+	type plain MSTeamsConfig
+	return unmarshal((*plain)(c))
 }

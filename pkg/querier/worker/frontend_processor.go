@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
@@ -33,7 +33,7 @@ func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *f
 	return &frontendProcessor{
 		log:            log,
 		handler:        handler,
-		maxMessageSize: cfg.GRPCClientConfig.MaxSendMsgSize,
+		maxMessageSize: cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:      cfg.QuerierID,
 
 		frontendClientFactory: func(conn *grpc.ClientConn) frontendv1pb.FrontendClient {
@@ -99,7 +99,7 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 	ctx, cancel := context.WithCancel(c.Context())
 	defer cancel()
 
-	for {
+	for ctx.Err() == nil {
 		request, err := c.Recv()
 		if err != nil {
 			return err
@@ -114,7 +114,7 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			// and cancel the query.  We don't actually handle queries in parallel
 			// here, as we're running in lock step with the server - each Recv is
 			// paired with a Send.
-			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
+			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, time.Duration(request.QueueTimeNanos), func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
 				defer inflightQuery.Store(false)
 
 				return c.Send(&frontendv1pb.ClientToFrontend{
@@ -133,9 +133,11 @@ func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, infl
 			return fmt.Errorf("unknown request type: %v", request.Type)
 		}
 	}
+
+	return ctx.Err()
 }
 
-func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {
+func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.HTTPRequest, statsEnabled bool, queueTime time.Duration, sendHTTPResponse func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error) {
 	// Create a per-request context and cancel it once we're done processing the request.
 	// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
 	// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
@@ -147,6 +149,7 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 	var stats *querier_stats.Stats
 	if statsEnabled {
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
+		stats.AddQueueTime(queueTime)
 	}
 
 	response, err := fp.handler.Handle(ctx, request)

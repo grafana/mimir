@@ -14,3 +14,8 @@
 
 # No owners - allows sub-maintainers to merge changes.
 CHANGELOG.md
+
+# Dependencies
+go.mod @grafana/mimir-maintainers @grafanabot
+go.sum @grafana/mimir-maintainers @grafanabot
+/vendor/ @grafana/mimir-maintainers @grafanabot

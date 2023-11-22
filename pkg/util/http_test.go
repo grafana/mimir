@@ -13,7 +13,9 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -231,4 +233,62 @@ func TestNewMsgSizeTooLargeErr(t *testing.T) {
 	msg := `the request has been rejected because its size of 100 bytes exceeds the limit of 50 bytes`
 
 	assert.Equal(t, msg, err.Error())
+}
+
+func TestParseRequestFormWithoutConsumingBody(t *testing.T) {
+	expected := url.Values{
+		"first":  []string{"a", "b"},
+		"second": []string{"c"},
+	}
+
+	t.Run("GET request", func(t *testing.T) {
+		req, err := http.NewRequest("GET", "http://localhost/?"+expected.Encode(), nil)
+		require.NoError(t, err)
+
+		actual, err := util.ParseRequestFormWithoutConsumingBody(req)
+		require.NoError(t, err)
+		assert.Equal(t, expected, actual)
+
+		// Parsing the request again should get the expected values.
+		require.NoError(t, req.ParseForm())
+		assert.Equal(t, expected, req.Form)
+	})
+
+	t.Run("POST request", func(t *testing.T) {
+		origBody := newReadCloserObserver(io.NopCloser(strings.NewReader(expected.Encode())))
+		req, err := http.NewRequest("POST", "http://localhost/", origBody)
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		actual, err := util.ParseRequestFormWithoutConsumingBody(req)
+		require.NoError(t, err)
+		assert.Equal(t, expected, actual)
+
+		// Since the original body has been consumed and discarded, it should have called Close() too.
+		assert.True(t, origBody.closeCalled)
+
+		// The request should have been reset to a non-parsed state.
+		assert.Nil(t, req.Form)
+		assert.Nil(t, req.PostForm)
+
+		// Parsing the request again should get the expected values.
+		require.NoError(t, req.ParseForm())
+		assert.Equal(t, expected, req.Form)
+	})
+}
+
+type readCloserObserver struct {
+	io.ReadCloser
+	closeCalled bool
+}
+
+func newReadCloserObserver(wrapped io.ReadCloser) *readCloserObserver {
+	return &readCloserObserver{
+		ReadCloser: wrapped,
+	}
+}
+
+func (o *readCloserObserver) Close() error {
+	o.closeCalled = true
+	return o.ReadCloser.Close()
 }

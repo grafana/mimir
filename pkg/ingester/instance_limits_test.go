@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -33,4 +35,25 @@ max_tenants: 50000
 	require.Equal(t, int64(50000), l.MaxInMemoryTenants)
 	require.Equal(t, int64(30), l.MaxInMemorySeries)       // default value
 	require.Equal(t, int64(40), l.MaxInflightPushRequests) // default value
+}
+
+func TestInstanceLimitErr(t *testing.T) {
+	userID := "1"
+	limitErrors := []error{
+		errMaxIngestionRateReached,
+		errMaxTenantsReached,
+		errMaxInMemorySeriesReached,
+		errMaxInflightRequestsReached,
+	}
+	for _, limitError := range limitErrors {
+		var instanceLimitErr instanceLimitReachedError
+		require.Error(t, instanceLimitErr)
+		require.ErrorAs(t, limitError, &instanceLimitErr)
+		checkIngesterError(t, limitError, mimirpb.INSTANCE_LIMIT, false)
+
+		wrappedWithUserErr := wrapOrAnnotateWithUser(limitError, userID)
+		require.Error(t, wrappedWithUserErr)
+		require.ErrorIs(t, wrappedWithUserErr, limitError)
+		checkIngesterError(t, wrappedWithUserErr, mimirpb.INSTANCE_LIMIT, false)
+	}
 }

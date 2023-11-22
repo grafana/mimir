@@ -112,9 +112,9 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, logger)
+	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, spanLog)
 	if splitInterval <= 0 {
-		level.Debug(logger).Log("msg", "query splitting is disabled for this query or tenant")
+		spanLog.DebugLog("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
 	}
 
@@ -146,7 +146,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	if mapperStats.GetSplitQueries() == 0 {
 		// the query cannot be split, so continue
-		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
+		spanLog.DebugLog("msg", "input query resulted in a no operation, falling back to try executing without splitting")
 		switch mapperStats.GetSkippedReason() {
 		case astmapper.SkippedReasonSmallInterval:
 			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSmallInterval)).Inc()
@@ -159,7 +159,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return s.next.Do(ctx, req)
 	}
 
-	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", mapperStats.GetSplitQueries())
+	spanLog.DebugLog("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", mapperStats.GetSplitQueries())
 
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
@@ -193,11 +193,15 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 			Result:     extracted,
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
+		// Note that the positions based on the original query may be wrong as the rewritten
+		// query which is actually used is different, but the user does not see the rewritten
+		// query, so we pass in an empty string as the query so the positions will be hidden.
+		Warnings: res.Warnings.AsStrings("", 0),
 	}, nil
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog log.Logger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog *spanlogger.SpanLogger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0
@@ -213,7 +217,7 @@ func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenants
 		splitInterval = time.Duration(r.GetOptions().InstantSplitInterval)
 	}
 
-	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
+	spanLog.DebugLog("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
 
 	return splitInterval
 }

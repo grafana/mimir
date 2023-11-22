@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
@@ -24,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -90,7 +90,7 @@ func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
 	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
 	if cmd.username != "" {
-		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", rt)
+		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", "", rt)
 	}
 
 	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)
