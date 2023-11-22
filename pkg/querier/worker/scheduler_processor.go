@@ -246,12 +246,12 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		if err == nil {
 			break
 		}
-		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries())
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
 		bof.Wait()
 	}
 
 	if err != nil {
-		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
+		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
 }
 
