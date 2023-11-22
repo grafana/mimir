@@ -2,6 +2,8 @@ package distributor
 
 import (
 	"bytes"
+	"io"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,4 +151,39 @@ func TestNewChunkBufferTOCFromBytes_Corrupted(t *testing.T) {
 		_, err := NewChunkBufferTOCFromBytes([]byte{1})
 		require.Error(t, err)
 	})
+}
+
+func TestChunkBufferMarshaller_Read(t *testing.T) {
+	// TODO run many times, change seed each time and log it
+
+	partitions := map[uint32]*bytes.Buffer{
+		1: bytes.NewBufferString("partition-1"),
+		2: bytes.NewBufferString("partition-2"),
+		3: bytes.NewBufferString("partition-3"),
+	}
+
+	marshaller := NewChunkBufferMarshaller(partitions)
+	buffer := bytes.NewBuffer(nil)
+
+	// Read using random sizes.
+	for {
+		readBuffer := make([]byte, rand.Intn(10))
+		readSize, err := marshaller.Read(readBuffer)
+		if err == io.EOF {
+			break
+		}
+
+		require.NoError(t, err)
+		require.Greater(t, readSize, 0)
+
+		buffer.Write(readBuffer[0:readSize])
+	}
+
+	marshalled := buffer.Bytes()
+
+	// Check the TOC.
+	expectedTOC := NewChunkBufferTOC(partitions).Bytes()
+	assert.Equal(t, expectedTOC, marshalled[0:len(expectedTOC)])
+
+	// TODO assert the rest of the content
 }
