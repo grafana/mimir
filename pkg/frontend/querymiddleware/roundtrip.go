@@ -252,6 +252,8 @@ func newQueryTripperware(
 	}
 
 	queryInstantMiddleware := []Middleware{
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		newQueryStatsMiddleware(registerer, engine),
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
