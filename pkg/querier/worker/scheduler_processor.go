@@ -27,8 +27,8 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -100,17 +100,12 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 	}
 }
 
-func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
+func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := sp.schedulerClientFactory(conn)
 
-	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
-	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
-	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, sp.log)
-	defer execCancel()
-
-	backoff := backoff.New(execCtx, processorBackoffConfig)
+	backoff := backoff.New(ctx, processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := schedulerClient.QuerierLoop(execCtx)
+		c, err := schedulerClient.QuerierLoop(ctx)
 		if err == nil {
 			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
 		}
@@ -121,7 +116,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 			continue
 		}
 
-		if err := sp.querierLoop(c, address, inflightQuery); err != nil {
+		if err := sp.querierLoop(ctx, c, address); err != nil {
 			// Do not log an error if the query-scheduler is shutting down.
 			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
 				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
@@ -135,21 +130,38 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 	}
 }
 
-// process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) (err error) {
-	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancelCause(c.Context())
+// querierLoop loops processing requests on an established stream.
+func (sp *schedulerProcessor) querierLoop(workerCtx context.Context, c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string) (err error) {
+	// Build a child context so we can cancel a query when the stream is closed (which is how the scheduler signals that a query should be cancelled).
+	// We deliberately don't make this a child of workerCtx so that we can complete an inflight query even after a worker is stopped - workerCtx is
+	// cancelled when the scheduler begins shutting down.
+	ctx, cancel := context.WithCancelCause(context.Background())
 	defer func() {
 		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
 	}()
 
+	var queryComplete chan struct{}
+
 	for {
 		request, err := c.Recv()
 		if err != nil {
+			if status.Code(err) == codes.Canceled && workerCtx.Err() != nil && queryComplete != nil {
+				// This worker has been asked to shut down, and the Recv() call aborted because of this.
+				// Wait for query execution (if any) to finish.
+				//
+				// Note that the gRPC client translates client-side context cancellations to a gRPC-style error with codes.Canceled -
+				// it does not return the 'raw' context.Canceled error.
+				level.Debug(sp.log).Log("msg", "querier worker context has been canceled, waiting until inflight query is complete", "addr", address)
+				<-queryComplete
+				level.Debug(sp.log).Log("msg", "querier worker context has been canceled and inflight query is complete, canceling the execution context too", "addr", address)
+			}
+
+			// Once we get to here, we want to abort the running query (if any), which is handled by the deferred cancel call above.
+
 			return err
 		}
 
-		inflightQuery.Store(true)
+		queryComplete = make(chan struct{})
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
@@ -157,31 +169,31 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// here, as we're running in lock step with the server - each Recv is
 		// paired with a Send.
 		go func() {
-			defer inflightQuery.Store(false)
+			defer close(queryComplete)
 
 			// Create a per-request context and cancel it once we're done processing the request.
 			// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
 			// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
 			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 			// net/http package.
-			ctx, cancel := context.WithCancelCause(ctx)
+			queryCtx, cancel := context.WithCancelCause(ctx)
 			defer cancel(util.NewCancellationError(errors.New("query evaluation finished")))
 
 			// We need to inject user into context for sending response back.
-			ctx = user.InjectOrgID(ctx, request.UserID)
+			queryCtx = user.InjectOrgID(queryCtx, request.UserID)
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
 			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
 			if parentSpanContext != nil {
-				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
+				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(queryCtx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
 				defer queueSpan.Finish()
 
-				ctx = spanCtx
+				queryCtx = spanCtx
 			}
-			logger := util_log.WithContext(ctx, sp.log)
+			logger := util_log.WithContext(queryCtx, sp.log)
 
-			sp.runRequest(ctx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest, time.Duration(request.QueueTimeNanos))
+			sp.runRequest(queryCtx, logger, request.QueryID, request.FrontendAddress, request.StatsEnabled, request.HttpRequest, time.Duration(request.QueueTimeNanos))
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {

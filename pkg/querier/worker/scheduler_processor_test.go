@@ -41,7 +41,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 			// No query to execute, so wait until terminated.
 			<-loopClient.Context().Done()
-			return nil, loopClient.Context().Err()
+			return nil, toRPCErr(loopClient.Context().Err())
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
@@ -71,9 +71,9 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 					UserID:          "user-1",
 				}, nil
 			default:
-				// No more messages to process, so waiting until terminated.
+				// No more messages to process, so wait until terminated.
 				<-loopClient.Context().Done()
-				return nil, loopClient.Context().Err()
+				return nil, toRPCErr(loopClient.Context().Err())
 			}
 		})
 
@@ -84,10 +84,14 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			workerCancel()
 
 			// Ensure the execution context hasn't been canceled yet.
-			require.Nil(t, loopClient.Context().Err())
+			ctx := args.Get(0).(context.Context)
+			require.Nil(t, ctx.Err())
 
-			// Intentionally slow down the query execution, to double check the worker waits until done.
+			// Intentionally slow down the query execution, to double-check the worker waits until done.
 			time.Sleep(time.Second)
+
+			// Make sure the context still hasn't been cancelled and the check above was racy.
+			require.Nil(t, ctx.Err())
 		}).Return(&httpgrpc.HTTPResponse{}, nil)
 
 		startTime := time.Now()
@@ -123,7 +127,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			default:
 				// Wait until query execution has begun, then simulate the scheduler shutting down.
 				<-queryEvaluationBegun
-				return nil, schedulerpb.ErrSchedulerIsNotRunning
+				return nil, toRPCErr(schedulerpb.ErrSchedulerIsNotRunning)
 			}
 		})
 
@@ -170,7 +174,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		// is to let processQueriesOnSingleStream() terminate.
 		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
 			workerCancel()
-			return nil, status.Error(codes.Unknown, schedulerpb.ErrSchedulerIsNotRunning.Error())
+			return nil, toRPCErr(schedulerpb.ErrSchedulerIsNotRunning)
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
@@ -180,6 +184,61 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		// We expect no error in the log.
 		assert.NotContains(t, logs.String(), "error")
 		assert.NotContains(t, logs.String(), schedulerpb.ErrSchedulerIsNotRunning)
+	})
+
+	t.Run("should cancel query execution if scheduler returns an error", func(t *testing.T) {
+		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+
+		recvCount := atomic.NewInt64(0)
+		executionStarted := make(chan struct{})
+
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch recvCount.Inc() {
+			case 1:
+				return &schedulerpb.SchedulerToQuerier{
+					QueryID:         1,
+					HttpRequest:     nil,
+					FrontendAddress: frontend.addr,
+					UserID:          "user-1",
+				}, nil
+			default:
+				// No more requests to process: wait until execution of first query starts, then return an error that should trigger aborting execution
+				<-executionStarted
+				return nil, toRPCErr(errors.New("something went wrong"))
+			}
+		})
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+			// Ensure the execution context hasn't been canceled yet.
+			ctx := args.Get(0).(context.Context)
+			require.Nil(t, ctx.Err())
+
+			// Trigger Recv() returning an error.
+			close(executionStarted)
+
+			// Make sure the context is cancelled.
+			select {
+			case <-ctx.Done():
+				// Cancel the worker context so that processQueriesOnSingleStream terminates.
+				workerCancel()
+			case <-time.After(time.Second):
+				require.Fail(t, "gave up waiting for query execution context to be cancelled")
+			}
+		}).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		// Wait for query execution to terminate.
+		require.Eventually(t, func() bool {
+			return frontend.queryResultCalls.Load() == 1
+		}, time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
+
+		// We expect Send() to be called twice: first to send the querier ID to scheduler
+		// and then to send the query result.
+		loopClient.AssertNumberOfCalls(t, "Send", 2)
+		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
 	})
 }
 
@@ -204,7 +263,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
-				return nil, processClient.Context().Err()
+				return nil, toRPCErr(processClient.Context().Err())
 			}
 		})
 
@@ -390,4 +449,24 @@ func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2p
 	f.queryResultCalls.Inc()
 
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+// This function emulates the error-translating behaviour of google.golang.org/grpc.toRPCErr(),
+// which is used by the gRPC client to translate errors (including client-side context cancellations)
+// to gRPC-style errors.
+//
+// This implementation does not cover all the cases supported by the real implementation - it has just
+// enough to support the test cases in this file.
+//
+// Based on https://github.com/grpc/grpc-go/blob/c0aa20a8ac825f86edd59b2cab842de6da77a841/rpc_util.go#L874.
+func toRPCErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, context.Canceled.Error())
+	}
+
+	return status.Error(codes.Unknown, err.Error())
 }
