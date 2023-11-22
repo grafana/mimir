@@ -37,8 +37,11 @@ const (
 )
 
 type UserGrafanaConfig struct {
-	TemplateFiles             map[string]string `json:"template_files"`
-	GrafanaAlertmanagerConfig string            `json:"grafana_alertmanager_config"`
+	ID                        int64  `json:"id"`
+	GrafanaAlertmanagerConfig string `json:"configuration"`
+	Hash                      string `json:"configuration_hash"`
+	CreatedAt                 int64  `json:"created"`
+	Default                   bool   `json:"default"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -222,8 +225,11 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
-			TemplateFiles:             alertspb.ParseGrafanaTemplates(cfg),
+			ID:                        cfg.Id,
 			GrafanaAlertmanagerConfig: cfg.RawConfig,
+			Hash:                      cfg.Hash,
+			CreatedAt:                 cfg.CreatedAt,
+			Default:                   cfg.Default,
 		},
 	})
 }
@@ -256,7 +262,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, cfg.TemplateFiles, userID)
+	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, userID, cfg.Hash, cfg.ID, cfg.CreatedAt, cfg.Default)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())

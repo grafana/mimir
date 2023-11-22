@@ -39,6 +39,8 @@ message GrafanaAlertConfigDesc {
 
   string user = 1;
   string raw_config = 2;
-
-  repeated TemplateDesc templates = 3;
+  int64 id = 3;
+  string hash = 4;
+  int64 created_at = 5;
+  bool default = 7;
 }
