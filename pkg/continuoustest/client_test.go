@@ -61,7 +61,7 @@ func TestClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 10)
+		series := generateSineWaveSeries("test", now, 10, "unknown")
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -74,7 +74,7 @@ func TestClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusOK
 
-		series := generateSineWaveSeries("test", now, 22)
+		series := generateSineWaveSeries("test", now, 22, "unknown")
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
@@ -89,7 +89,7 @@ func TestClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusBadRequest
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, "unknown")
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
@@ -99,7 +99,7 @@ func TestClient_WriteSeries(t *testing.T) {
 		receivedRequests = nil
 		nextStatusCode = http.StatusInternalServerError
 
-		series := generateSineWaveSeries("test", now, 1)
+		series := generateSineWaveSeries("test", now, 1, "unknown")
 		statusCode, err := c.WriteSeries(ctx, series)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)

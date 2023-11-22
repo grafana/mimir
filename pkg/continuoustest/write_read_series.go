@@ -5,6 +5,7 @@ package continuoustest
 import (
 	"context"
 	"flag"
+	"os"
 	"strconv"
 	"time"
 
@@ -22,7 +23,8 @@ import (
 )
 
 const (
-	writeMaxAge = 50 * time.Minute
+	writeInterval = 20 * time.Second
+	writeMaxAge   = 50 * time.Minute
 )
 
 type WriteReadSeriesTestConfig struct {
@@ -34,6 +36,7 @@ type WriteReadSeriesTestConfig struct {
 	NumBuckets           int
 	MaxIncrease          int
 	WriteInterval        time.Duration
+	podIp                string // Filled at runtime.
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
@@ -88,6 +91,12 @@ func (t *WriteReadSeriesTest) Name() string {
 
 // Init implements Test.
 func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
+	ok := false
+	t.cfg.podIp, ok = os.LookupEnv("POD_IP")
+	if !ok || t.cfg.podIp == "" {
+		t.cfg.podIp = "unknown"
+	}
+
 	level.Info(t.logger).Log("msg", "Finding previously written samples time range to recover writes and reads from previous run")
 	if !t.cfg.WithFloats && !t.cfg.WithHistograms && !t.cfg.WithRandomHistograms {
 		return errors.New("should test something, currently testing nothing")
@@ -164,7 +173,7 @@ func (t *WriteReadSeriesTest) OnlyWriteSamples(ctx context.Context, now time.Tim
 		}
 
 		var series []prompb.TimeSeries
-		series, t.mutatingArr = generateMutatingSeries(metricName, timestamp, t.mutatingArr, t.cfg.NumSeries, t.cfg.MaxIncrease)
+		series, t.mutatingArr = generateMutatingSeries(metricName, timestamp, t.mutatingArr, t.cfg.NumSeries, t.cfg.MaxIncrease, t.cfg.podIp)
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
@@ -181,7 +190,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, t.cfg.podIp)
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break

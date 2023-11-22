@@ -28,8 +28,8 @@ const (
 )
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
-type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
-type generateMutatingSeriesFunc func(name string, t time.Time, arr []int64, numSeries, maxIncrease int) ([]prompb.TimeSeries, []int64)
+type generateSeriesFunc func(name string, t time.Time, numSeries int, podIp string) []prompb.TimeSeries
+type generateMutatingSeriesFunc func(name string, t time.Time, arr []int64, numSeries, maxIncrease int, podIp string) ([]prompb.TimeSeries, []int64)
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
 
@@ -89,7 +89,7 @@ var (
 			},
 		},
 	}
-	randomHistGenMutatingSeries = func(name string, t time.Time, arr []int64, numSeries, maxIncrease int) ([]prompb.TimeSeries, []int64) {
+	randomHistGenMutatingSeries = func(name string, t time.Time, arr []int64, numSeries, maxIncrease int, podIp string) ([]prompb.TimeSeries, []int64) {
 		out := make([]prompb.TimeSeries, 0, numSeries)
 
 		ts := t.UnixMilli()
@@ -104,6 +104,9 @@ var (
 				}, {
 					Name:  "series_id",
 					Value: strconv.Itoa(i),
+				}, {
+					Name:  "pod_ip",
+					Value: podIp,
 				}},
 				Histograms: []prompb.Histogram{convertedHist},
 			})
@@ -117,7 +120,7 @@ func init() {
 	for i, histProfile := range histogramProfiles {
 		histProfile := histProfile // shadowing it to ensure it's properly updated in the closure
 		histogramProfiles[i].generateValue = nil
-		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, podIp string) []prompb.TimeSeries {
 			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)
 		}
 	}
@@ -286,7 +289,7 @@ func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram
 	return h
 }
 
-func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+func generateSineWaveSeries(name string, t time.Time, numSeries int, podIp string) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 	value := generateSineWaveValue(t)
 	ts := t.UnixMilli()
@@ -299,6 +302,9 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 			}, {
 				Name:  "series_id",
 				Value: strconv.Itoa(i),
+			}, {
+				Name:  "pod_ip",
+				Value: podIp,
 			}},
 			Samples: []prompb.Sample{{
 				Value:     value,
