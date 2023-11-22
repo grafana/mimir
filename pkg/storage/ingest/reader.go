@@ -272,6 +272,7 @@ func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
 		}),
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(100_000_000),
+		kgo.BrokerMaxReadBytes(200_000_000), // following the default approach of setting this to 2x FetchMaxBytes
 		kgo.FetchMaxWait(5*time.Second),
 		kgo.FetchMaxPartitionBytes(50_000_000),
 	)

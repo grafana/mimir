@@ -349,6 +349,7 @@ func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 }
 
 func runAsync(wg *sync.WaitGroup, fn func()) {
+	// TODO call wg.Add(1) here
 	go func() {
 		defer wg.Done()
 		fn()
@@ -356,6 +357,7 @@ func runAsync(wg *sync.WaitGroup, fn func()) {
 }
 
 func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
+	// TODO call wg.Add(1) here
 	go func() {
 		defer wg.Done()
 		<-waitFor

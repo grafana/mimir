@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -203,6 +204,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
+			ctx = contexWithConsistencyLevel(ctx, request.GetHttpRequest().GetHeaders())
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
@@ -302,6 +304,20 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func contexWithConsistencyLevel(ctx context.Context, headers []*httpgrpc.Header) context.Context {
+	for _, h := range headers {
+		if h.Key != api.ReadConsistencyHeader {
+			continue
+		}
+		lvl := h.Values[0]
+		if !api.IsValidReadConsistency(lvl) {
+			continue
+		}
+		return api.ContextWithReadConsistency(ctx, lvl)
+	}
+	return ctx
 }
 
 func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
