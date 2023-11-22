@@ -44,6 +44,11 @@ func NewChunkBuffer() *ChunkBuffer {
 // TODO store the userID too
 // TODO test concurrency (including concurrency with Close())
 func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	// Nothing to do if the input data is empty.
+	if len(timeseries) == 0 && len(metadata) == 0 {
+		return nil
+	}
+
 	// Serialise the input data.
 	entry := &mimirpb.WriteRequest{
 		Timeseries: timeseries,
@@ -71,6 +76,8 @@ func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID str
 		b.partitions[partitionID] = partitionBuffer
 	}
 
+	// TODO compression
+
 	// Write the next entry length.
 	if err := binary.Write(partitionBuffer, binary.LittleEndian, int64(len(data))); err != nil {
 		return err
@@ -79,6 +86,14 @@ func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID str
 	// Write the next entry content.
 	_, err = partitionBuffer.Write(data)
 	return err
+}
+
+// Empty returns whether the chunk is empty.
+func (b *ChunkBuffer) Empty() bool {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
+	return len(b.partitions) == 0
 }
 
 // Close the chunk. This function is idempotent.

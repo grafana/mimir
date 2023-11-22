@@ -11,9 +11,9 @@ common:
 
 ingest_storage:
   enabled: true
+  buffer_period: 1s
   s3:
     bucket_name:   mimir-ingest
-    buffer_period: 1s
 
 blocks_storage:
   s3:

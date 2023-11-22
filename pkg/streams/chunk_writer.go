@@ -74,6 +74,13 @@ func (w *Writer) onBufferPeriod(ctx context.Context) error {
 	// Close the old chunk to ensure no more data will be appended.
 	oldChunk.Close()
 
+	// Skip the upload if the chunk is empty.
+	if oldChunk.Empty() {
+		// TODO unit test
+		oldChunk.NotifyCommit(CommitRef{}, nil)
+		return nil
+	}
+
 	// Add the chunk to the upload queue.
 	w.uploader.UploadAsync(oldChunk, func(ref CommitRef, err error) {
 		oldChunk.NotifyCommit(ref, err)
