@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/http"
 	"runtime"
 	"sort"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -1436,7 +1434,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			},
 		})
 		queryableInternalErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
-			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{Code: http.StatusInternalServerError, Body: []byte("fatal queryable error")})
+			return nil, apierror.New(apierror.TypeInternal, "some internal error")
 		})
 		queryablePrometheusExecErr = storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
@@ -1485,7 +1483,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
 			queryable:        queryableInternalErr,
-			expError:         apierror.New(apierror.TypeInternal, "rpc error: code = Code(500) desc = fatal queryable error"),
+			expError:         apierror.New(apierror.TypeInternal, "some internal error"),
 		},
 		{
 			name:             "downstream - storage prometheus execution error",
