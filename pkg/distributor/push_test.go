@@ -50,8 +50,6 @@ func TestHandler_remoteWrite(t *testing.T) {
 }
 
 func TestOTelMetricsToMetadata(t *testing.T) {
-	const tenantID = "tenant"
-
 	otelMetrics := pmetric.NewMetrics()
 	rs := otelMetrics.ResourceMetrics().AppendEmpty()
 	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
@@ -104,18 +102,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 				},
 			}
 
-			tenantLimits := map[string]*validation.Limits{
-				tenantID: {
-					OTelMetricSuffixesEnabled: tc.enableSuffixes,
-				},
-			}
-			limits, err := validation.NewOverrides(
-				validation.Limits{},
-				validation.NewMockTenantLimits(tenantLimits),
-			)
-			require.NoError(t, err)
-			ctx := user.InjectOrgID(context.Background(), tenantID)
-			res, err := otelMetricsToMetadata(ctx, limits, otelMetrics)
+			res, err := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
 			require.NoError(t, err)
 			assert.Equal(t, sampleMetadata, res)
 		})
