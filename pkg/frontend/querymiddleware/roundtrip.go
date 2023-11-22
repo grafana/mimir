@@ -203,10 +203,11 @@ func newQueryTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newQueryStatsMiddleware(registerer, engine),
+		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 	}
@@ -253,7 +254,7 @@ func newQueryTripperware(
 
 	queryInstantMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newQueryStatsMiddleware(registerer, engine),
+		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
