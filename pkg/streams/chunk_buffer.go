@@ -42,6 +42,7 @@ func NewChunkBuffer() *ChunkBuffer {
 }
 
 // TODO store the userID too
+// TODO test concurrency (including concurrency with Close())
 func (b *ChunkBuffer) Append(ctx context.Context, partitionID uint32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	// Serialise the input data.
 	entry := &mimirpb.WriteRequest{
@@ -122,7 +123,11 @@ func (b *ChunkBuffer) Marshal() (io.Reader, error) {
 }
 
 type ChunkBufferMarshaller struct {
-	// content is an ordered list of byte slices that get marshalled.
+	// size is the total size of the marshalled data.
+	size int64
+
+	// content is an ordered list of byte slices that get marshalled. This slice get shrank
+	// when reading.
 	content [][]byte
 
 	// currContentOffset is the read offset in the current content slice
@@ -149,8 +154,15 @@ func NewChunkBufferMarshaller(partitions map[uint32]*bytes.Buffer) *ChunkBufferM
 		content = append(content, partitions[partitionID].Bytes())
 	}
 
+	// Calculate the size.
+	var size int64
+	for _, data := range content {
+		size += int64(len(data))
+	}
+
 	return &ChunkBufferMarshaller{
 		content: content,
+		size:    size,
 	}
 }
 
@@ -177,6 +189,11 @@ func (m *ChunkBufferMarshaller) Read(p []byte) (n int, err error) {
 	m.currContentOffset += n
 
 	return n, nil
+}
+
+// ObjectSize implements objstore.ObjectSizer.
+func (m *ChunkBufferMarshaller) ObjectSize() (int64, error) {
+	return m.size, nil
 }
 
 // ChunkBufferTOC holds the TOC of a serialised ChunkBuffer.

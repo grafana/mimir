@@ -197,6 +197,11 @@ func TestChunkBufferMarshaller_Read(t *testing.T) {
 			for _, partition := range expectedTOC.partitions {
 				assert.Equal(t, partitions[partition.partitionID].Bytes(), marshalled[partition.offset:partition.offset+partition.length])
 			}
+
+			// Check reported size.
+			size, err := marshaller.ObjectSize()
+			require.NoError(t, err)
+			assert.Equal(t, int64(len(marshalled)), size)
 		})
 	}
 }

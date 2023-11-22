@@ -9,6 +9,12 @@ common:
       secret_access_key: supersecret
       insecure:          true
 
+ingest_storage:
+  enabled: true
+  s3:
+    bucket_name:   mimir-ingest
+    buffer_period: 1s
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks

@@ -12,6 +12,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -47,6 +49,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/streams"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -63,6 +66,9 @@ var (
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
 	reasonDistributorMaxInflightPushRequestsBytes = globalerror.DistributorMaxInflightPushRequestsBytes.LabelValue()
+
+	// Regular expression used to parse the ingester numeric ID.
+	ingesterIDRegexp = regexp.MustCompile(".*([0-9]+)$")
 )
 
 const (
@@ -458,6 +464,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			func(ctx context.Context) error { <-ctx.Done(); return nil },
 			func(_ error) error { wp.Close(); return nil },
 		))
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		bucketClient, err := bucket.NewClient(context.Background(), cfg.IngestStorageConfig.Bucket, "ingest-storage", log, reg)
+		if err != nil {
+			return nil, err
+		}
+
+		d.ingestStorageWriter = streams.NewWriter(cfg.IngestStorageConfig.BufferPeriod, bucketClient)
+		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
@@ -1358,7 +1374,13 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				}
 			}
 
-			err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+			var err error
+			if d.cfg.IngestStorageConfig.Enabled {
+				err = d.sendToPartition(localCtx, userID, ingester, timeseries, metadata, req.Source)
+			} else {
+				err = d.sendToIngester(localCtx, ingester, timeseries, metadata, req.Source)
+			}
+
 			if errors.Is(err, context.DeadlineExceeded) {
 				return errors.Wrap(err, deadlineExceededWrapMessage)
 			}
@@ -1410,7 +1432,8 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+// sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
+func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
@@ -1426,6 +1449,26 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
+}
+
+// sendToPartition sends received data to a specific partition based on the input ingester. This function is used when
+// ingest storage is enabled.
+// TODO unit test
+func (d *Distributor) sendToPartition(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	// TODO  This is a very hacky way to assign partitions, because it doesn't work when scaling in/out ingesters,
+	// 		and also because it assumes a specific naming (but that assumption is also made in the spread minimizing tokens generator).
+	match := ingesterIDRegexp.FindStringSubmatch(ingester.Id)
+	if len(match) == 0 {
+		return fmt.Errorf("unable to get the partition ID from %s", ingester.Id)
+	}
+
+	partitionID, err := strconv.Atoi(match[1])
+	if err != nil {
+		return fmt.Errorf("unable to get the partition ID from %s", ingester.Id)
+	}
+
+	_, err = d.ingestStorageWriter.WriteSync(ctx, uint32(partitionID), userID, timeseries, metadata, source)
+	return err
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
