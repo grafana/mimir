@@ -41,9 +41,13 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.FinalSleep = cfg.FinalSleep
 	expected.ReadinessCheckRingHealth = false
 	expected.HeartbeatPeriod = 15 * time.Second
-	expected.RingTokenGenerator = ring.NewRandomTokenGenerator()
+	expected.RingTokenGenerator = nil
 
-	assert.Equal(t, expected, cfg.ToLifecyclerConfig(log.NewNopLogger()))
+	result := cfg.ToLifecyclerConfig(log.NewNopLogger())
+	assert.IsType(t, &ring.RandomTokenGenerator{}, result.RingTokenGenerator)
+	result.RingTokenGenerator = nil
+
+	assert.Equal(t, expected, result)
 }
 
 func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
