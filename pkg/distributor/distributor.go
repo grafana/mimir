@@ -1447,7 +1447,7 @@ func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester
 		return fmt.Errorf("unable to get the partition ID from %s", ingester.Id)
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, uint32(partitionID), userID, timeseries, metadata, source)
+	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, timeseries, metadata, source)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
