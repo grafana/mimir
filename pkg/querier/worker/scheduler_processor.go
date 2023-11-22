@@ -151,6 +151,8 @@ func (sp *schedulerProcessor) querierLoop(workerCtx context.Context, c scheduler
 				//
 				// Note that the gRPC client translates client-side context cancellations to a gRPC-style error with codes.Canceled -
 				// it does not return the 'raw' context.Canceled error.
+				//
+				// We can't use c.Context() in the check above because the gRPC client will cancel this context before Recv() returns any kind of error.
 				level.Debug(sp.log).Log("msg", "querier worker context has been canceled, waiting until inflight query is complete", "addr", address)
 				<-queryComplete
 				level.Debug(sp.log).Log("msg", "querier worker context has been canceled and inflight query is complete, canceling the execution context too", "addr", address)
