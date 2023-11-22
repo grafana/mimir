@@ -1376,7 +1376,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToPartition(localCtx, userID, ingester, timeseries, metadata, req.Source)
+				err = d.sendToStorage(localCtx, userID, ingester, timeseries, metadata, req.Source)
 			} else {
 				err = d.sendToIngester(localCtx, ingester, timeseries, metadata, req.Source)
 			}
@@ -1451,10 +1451,10 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 	return handleIngesterPushError(err)
 }
 
-// sendToPartition sends received data to a specific partition based on the input ingester. This function is used when
-// ingest storage is enabled.
+// sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
+// This function is used when ingest storage is enabled.
 // TODO unit test
-func (d *Distributor) sendToPartition(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	// TODO  This is a very hacky way to assign partitions, because it doesn't work when scaling in/out ingesters,
 	// 		and also because it assumes a specific naming (but that assumption is also made in the spread minimizing tokens generator).
 	match := ingesterIDRegexp.FindStringSubmatch(ingester.Id)
