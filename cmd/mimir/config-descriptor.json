@@ -3943,7 +3943,7 @@
           "kind": "field",
           "name": "otel_metric_suffixes_enabled",
           "required": false,
-          "desc": "Whether to enable automatic suffixes to OTel metric names.",
+          "desc": "Whether to enable automatic suffixes to names of metrics ingested through OTLP.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.otel-metric-suffixes-enabled",

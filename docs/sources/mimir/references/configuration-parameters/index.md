@@ -3340,7 +3340,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 
-# (advanced) Whether to enable automatic suffixes to OTel metric names.
+# (advanced) Whether to enable automatic suffixes to names of metrics ingested
+# through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
 ```
