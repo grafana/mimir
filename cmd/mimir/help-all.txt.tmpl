@@ -1241,6 +1241,116 @@ Usage of ./cmd/mimir/mimir:
     	HTTP URL path under which the Alertmanager ui and api will be served. (default "/alertmanager")
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
+  -ingest-storage.azure.account-key string
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
+  -ingest-storage.azure.account-name string
+    	Azure storage account name
+  -ingest-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
+  -ingest-storage.azure.container-name string
+    	Azure storage container name
+  -ingest-storage.azure.endpoint-suffix string
+    	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -ingest-storage.azure.max-retries int
+    	Number of retries for recoverable errors (default 20)
+  -ingest-storage.azure.user-assigned-id string
+    	User assigned managed identity. If empty, then System assigned identity is used.
+  -ingest-storage.backend string
+    	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
+  -ingest-storage.buffer-period duration
+    	How long to buffer incoming requests in the distributor before they're uploaded to the object storage. (default 250ms)
+  -ingest-storage.enabled
+    	True to enable the ingestion via object storage.
+  -ingest-storage.filesystem.dir string
+    	Local filesystem storage directory. (default "ingest")
+  -ingest-storage.gcs.bucket-name string
+    	GCS bucket name
+  -ingest-storage.gcs.service-account string
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -ingest-storage.s3.access-key-id string
+    	S3 access key ID
+  -ingest-storage.s3.bucket-name string
+    	S3 bucket name
+  -ingest-storage.s3.endpoint string
+    	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
+  -ingest-storage.s3.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -ingest-storage.s3.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -ingest-storage.s3.http.insecure-skip-verify
+    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -ingest-storage.s3.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -ingest-storage.s3.insecure
+    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -ingest-storage.s3.list-objects-version string
+    	Use a specific version of the S3 list object API. Supported values are v1 or v2. Default is unset.
+  -ingest-storage.s3.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -ingest-storage.s3.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -ingest-storage.s3.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -ingest-storage.s3.native-aws-auth-enabled
+    	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
+  -ingest-storage.s3.part-size uint
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
+  -ingest-storage.s3.region string
+    	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
+  -ingest-storage.s3.secret-access-key string
+    	S3 secret access key
+  -ingest-storage.s3.send-content-md5
+    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
+  -ingest-storage.s3.signature-version string
+    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
+  -ingest-storage.s3.sse.kms-encryption-context string
+    	KMS Encryption Context used for object encryption. It expects JSON formatted string.
+  -ingest-storage.s3.sse.kms-key-id string
+    	KMS Key ID used to encrypt objects in S3
+  -ingest-storage.s3.sse.type string
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ingest-storage.s3.storage-class string
+    	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW
+  -ingest-storage.s3.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -ingest-storage.storage-prefix string
+    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -ingest-storage.swift.auth-url string
+    	OpenStack Swift authentication URL
+  -ingest-storage.swift.auth-version int
+    	OpenStack Swift authentication API version. 0 to autodetect.
+  -ingest-storage.swift.connect-timeout duration
+    	Time after which a connection attempt is aborted. (default 10s)
+  -ingest-storage.swift.container-name string
+    	Name of the OpenStack Swift container to put chunks in.
+  -ingest-storage.swift.domain-id string
+    	OpenStack Swift user's domain ID.
+  -ingest-storage.swift.domain-name string
+    	OpenStack Swift user's domain name.
+  -ingest-storage.swift.max-retries int
+    	Max retries on requests error. (default 3)
+  -ingest-storage.swift.password string
+    	OpenStack Swift API key.
+  -ingest-storage.swift.project-domain-id string
+    	ID of the OpenStack Swift project's domain (v3 auth only), only needed if it differs the from user domain.
+  -ingest-storage.swift.project-domain-name string
+    	Name of the OpenStack Swift project's domain (v3 auth only), only needed if it differs from the user domain.
+  -ingest-storage.swift.project-id string
+    	OpenStack Swift project ID (v2,v3 auth only).
+  -ingest-storage.swift.project-name string
+    	OpenStack Swift project name (v2,v3 auth only).
+  -ingest-storage.swift.region-name string
+    	OpenStack Swift Region to use (v2,v3 auth only).
+  -ingest-storage.swift.request-timeout duration
+    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
+  -ingest-storage.swift.user-domain-id string
+    	OpenStack Swift user's domain ID.
+  -ingest-storage.swift.user-domain-name string
+    	OpenStack Swift user's domain name.
+  -ingest-storage.swift.user-id string
+    	OpenStack Swift user ID.
+  -ingest-storage.swift.username string
+    	OpenStack Swift username.
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled

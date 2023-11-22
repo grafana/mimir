@@ -379,6 +379,76 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
+  -ingest-storage.azure.account-key string
+    	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
+  -ingest-storage.azure.account-name string
+    	Azure storage account name
+  -ingest-storage.azure.connection-string string
+    	If `connection-string` is set, the value of `endpoint-suffix` will not be used. Use this method over `account-key` if you need to authenticate via a SAS token. Or if you use the Azurite emulator.
+  -ingest-storage.azure.container-name string
+    	Azure storage container name
+  -ingest-storage.azure.endpoint-suffix string
+    	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -ingest-storage.backend string
+    	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
+  -ingest-storage.buffer-period duration
+    	How long to buffer incoming requests in the distributor before they're uploaded to the object storage. (default 250ms)
+  -ingest-storage.enabled
+    	True to enable the ingestion via object storage.
+  -ingest-storage.filesystem.dir string
+    	Local filesystem storage directory. (default "ingest")
+  -ingest-storage.gcs.bucket-name string
+    	GCS bucket name
+  -ingest-storage.gcs.service-account string
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
+  -ingest-storage.s3.access-key-id string
+    	S3 access key ID
+  -ingest-storage.s3.bucket-name string
+    	S3 bucket name
+  -ingest-storage.s3.endpoint string
+    	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
+  -ingest-storage.s3.region string
+    	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
+  -ingest-storage.s3.secret-access-key string
+    	S3 secret access key
+  -ingest-storage.s3.sse.kms-encryption-context string
+    	KMS Encryption Context used for object encryption. It expects JSON formatted string.
+  -ingest-storage.s3.sse.kms-key-id string
+    	KMS Key ID used to encrypt objects in S3
+  -ingest-storage.s3.sse.type string
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ingest-storage.storage-prefix string
+    	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -ingest-storage.swift.auth-url string
+    	OpenStack Swift authentication URL
+  -ingest-storage.swift.auth-version int
+    	OpenStack Swift authentication API version. 0 to autodetect.
+  -ingest-storage.swift.container-name string
+    	Name of the OpenStack Swift container to put chunks in.
+  -ingest-storage.swift.domain-id string
+    	OpenStack Swift user's domain ID.
+  -ingest-storage.swift.domain-name string
+    	OpenStack Swift user's domain name.
+  -ingest-storage.swift.password string
+    	OpenStack Swift API key.
+  -ingest-storage.swift.project-domain-id string
+    	ID of the OpenStack Swift project's domain (v3 auth only), only needed if it differs the from user domain.
+  -ingest-storage.swift.project-domain-name string
+    	Name of the OpenStack Swift project's domain (v3 auth only), only needed if it differs from the user domain.
+  -ingest-storage.swift.project-id string
+    	OpenStack Swift project ID (v2,v3 auth only).
+  -ingest-storage.swift.project-name string
+    	OpenStack Swift project name (v2,v3 auth only).
+  -ingest-storage.swift.region-name string
+    	OpenStack Swift Region to use (v2,v3 auth only).
+  -ingest-storage.swift.user-domain-id string
+    	OpenStack Swift user's domain ID.
+  -ingest-storage.swift.user-domain-name string
+    	OpenStack Swift user's domain name.
+  -ingest-storage.swift.user-id string
+    	OpenStack Swift user ID.
+  -ingest-storage.swift.username string
+    	OpenStack Swift username.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int

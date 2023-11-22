@@ -47,6 +47,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streams"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -156,6 +157,9 @@ type Distributor struct {
 	// It can be nil, in which case a simple `go f()` will be used.
 	// See Config.ReusableIngesterPushWorkers on how to configure this.
 	ingesterDoBatchPushWorkers func(func())
+
+	// ingestStorageWriter is the writer used when ingest storage is enabled.
+	ingestStorageWriter *streams.Writer
 }
 
 // Config contains the configuration required to
@@ -185,6 +189,9 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
+
+	// This config is dynamically injected because defined outside of distributor config.
+	IngestStorageConfig streams.Config `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`

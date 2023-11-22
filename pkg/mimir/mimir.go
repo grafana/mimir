@@ -68,6 +68,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/streams"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -119,6 +120,7 @@ type Config struct {
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage    streams.Config                  `yaml:"ingest_storage"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
@@ -175,6 +177,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
+	c.IngestStorage.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -198,6 +201,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 	return CommonConfigInheritance{
 		Storage: map[string]*bucket.StorageBackendConfig{
+			"ingest_storage":       &c.IngestStorage.Bucket.StorageBackendConfig,
 			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
@@ -234,6 +238,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Ruler.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid ruler config")
+	}
+	if err := c.IngestStorage.Validate(); err != nil {
+		return errors.Wrap(err, "ingest storage config")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")

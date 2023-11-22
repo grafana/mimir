@@ -187,6 +187,51 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
+ingest_storage:
+  # True to enable the ingestion via object storage.
+  # CLI flag: -ingest-storage.enabled
+  [enabled: <boolean> | default = false]
+
+  # How long to buffer incoming requests in the distributor before they're
+  # uploaded to the object storage.
+  # CLI flag: -ingest-storage.buffer-period
+  [buffer_period: <duration> | default = 250ms]
+
+  # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
+  # filesystem.
+  # CLI flag: -ingest-storage.backend
+  [backend: <string> | default = "filesystem"]
+
+  # The s3_backend block configures the connection to Amazon S3 object storage
+  # backend.
+  # The CLI flags prefix for this block configuration is: ingest-storage
+  [s3: <s3_storage_backend>]
+
+  # The gcs_backend block configures the connection to Google Cloud Storage
+  # object storage backend.
+  # The CLI flags prefix for this block configuration is: ingest-storage
+  [gcs: <gcs_storage_backend>]
+
+  # The azure_storage_backend block configures the connection to Azure object
+  # storage backend.
+  # The CLI flags prefix for this block configuration is: ingest-storage
+  [azure: <azure_storage_backend>]
+
+  # The swift_storage_backend block configures the connection to OpenStack
+  # Object Storage (Swift) object storage backend.
+  # The CLI flags prefix for this block configuration is: ingest-storage
+  [swift: <swift_storage_backend>]
+
+  # The filesystem_storage_backend block configures the usage of local file
+  # system as object storage backend.
+  # The CLI flags prefix for this block configuration is: ingest-storage
+  [filesystem: <filesystem_storage_backend>]
+
+  # Prefix for all objects stored in the backend storage. For simplicity, it may
+  # only contain digits and English alphabet letters.
+  # CLI flag: -ingest-storage.storage-prefix
+  [storage_prefix: <string> | default = ""]
+
 # The blocks_storage block configures the blocks storage.
 [blocks_storage: <blocks_storage>]
 
@@ -4476,6 +4521,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 - `alertmanager-storage`
 - `blocks-storage`
 - `common.storage`
+- `ingest-storage`
 - `ruler-storage`
 
 &nbsp;
@@ -4605,6 +4651,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 - `alertmanager-storage`
 - `blocks-storage`
 - `common.storage`
+- `ingest-storage`
 - `ruler-storage`
 
 &nbsp;
@@ -4636,6 +4683,7 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 - `alertmanager-storage`
 - `blocks-storage`
 - `common.storage`
+- `ingest-storage`
 - `ruler-storage`
 
 &nbsp;
@@ -4683,6 +4731,7 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 - `alertmanager-storage`
 - `blocks-storage`
 - `common.storage`
+- `ingest-storage`
 - `ruler-storage`
 
 &nbsp;
@@ -4772,6 +4821,7 @@ The `filesystem_storage_backend` block configures the usage of local file system
 - `alertmanager-storage`
 - `blocks-storage`
 - `common.storage`
+- `ingest-storage`
 - `ruler-storage`
 
 &nbsp;
