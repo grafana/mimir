@@ -472,7 +472,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	}
 
 	if cfg.IngestStorageConfig.Enabled {
-		d.ingestStorageWriter = ingest.NewWriter()
+		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaAddress, d.cfg.IngestStorageConfig.KafkaTopic, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
