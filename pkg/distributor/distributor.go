@@ -1846,6 +1846,45 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	return deduplicatedSeries, nil
 }
 
+// activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
+type activeSeriesResponse struct {
+	m       sync.Mutex
+	series  map[uint64]labels.Labels
+	builder labels.ScratchBuilder
+	lbls    labels.Labels
+}
+
+func newActiveSeriesResponse() *activeSeriesResponse {
+	return &activeSeriesResponse{
+		series:  make(map[uint64]labels.Labels),
+		builder: labels.NewScratchBuilder(40),
+	}
+}
+
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, metric := range series {
+		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
+		lblHash := r.lbls.Hash()
+		if _, ok := r.series[lblHash]; !ok {
+			r.series[lblHash] = r.lbls.Copy()
+		}
+	}
+}
+
+func (r *activeSeriesResponse) result() []labels.Labels {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	result := make([]labels.Labels, 0, len(r.series))
+	for _, series := range r.series {
+		result = append(result, series)
+	}
+	return result
+}
+
 // approximateFromZones computes a zonal value while factoring in replication.
 // e.g. series cardinality or ingestion rate.
 func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor int, seriesCountMapByZone map[string]T) T {
