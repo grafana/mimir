@@ -2255,7 +2255,9 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		instanceErrors:          i.metrics.rejected,
 		blockMinRetention:       i.cfg.BlocksStorageConfig.TSDB.Retention,
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
+		ownedSeriesShardSize:    i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
 	}
+	userDB.TriggerRecomputeOwnedSeries("new user")
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
@@ -2780,7 +2782,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		// If head was compacted, its MinTime has changed. We need to recalculate series owned by this ingester,
 		// because in-memory series are removed during compaction.
 		if minTimeBefore != minTimeAfter {
-			userDB.RecalculateOwnedSeries("compaction", i.logger, -1)
+			userDB.TriggerRecomputeOwnedSeries("compaction")
 		}
 
 		return nil
@@ -3483,37 +3485,30 @@ func (i *Ingester) ownedSeriesStarting(ctx context.Context) error {
 	}
 
 	i.ownedSeriesLastReplicaSet = rs
+	// Technically ring changed, but all TSDBs at this point also have "new user" trigger set anyway.
+	i.ownedSeriesUpdate(ctx, true)
 	return nil
 }
 
 func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
-	// TODO(pprus) -- we compact after replaying the WAL, which might be before we've joined the ring and updated the ranges
-	// TODO(pstibrany) -- WAL replay and compaction happen before owned series service even starts. It will first wait until instance is ACTIVE, and then recompute owned series
-	//  before allowing ingester to proceed (and before ingester accepts push requests).
-
 	rs, err := i.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
 	if err != nil {
 		level.Error(i.logger).Log("msg", "owned series: can't check ring for updates", "err", err)
 		return nil // If we returned error, OwnedSeries service would stop.
 	}
 
-	if !ring.HasReplicationSetChanged(i.ownedSeriesLastReplicaSet, rs) {
-		return nil // If we returned error, OwnedSeries service would stop.
-	}
-
+	ringChanged := ring.HasReplicationSetChanged(i.ownedSeriesLastReplicaSet, rs)
 	i.ownedSeriesLastReplicaSet = rs
 
 	start := time.Now()
-	i.ownedSeriesUpdate(ctx, "ring changed")
+	i.ownedSeriesUpdate(ctx, ringChanged)
 	level.Info(i.logger).Log("msg", "owned series: updated owned series for all users", "duration", time.Since(start))
 	return nil
 }
 
-func (i *Ingester) ownedSeriesUpdate(ctx context.Context, reason string) {
-	// TODO(pprus) -- concurrency.
-	// TODO(pstibrany) -- not sure what's meant by above comment. I don't think we should update token ranges and owned series concurrently,
-	//  but perhaps it means that there's a race between compactor updating owned series, and update from here. It's not necessarily a problem -- but we can fix
-	//  that in the future)
+// ownedSeriesUpdate iterates over all open TSDBs and updates owned series for all users that need it, either
+// because of external trigger (new user, compaction), or because of changed token ranges.
+func (i *Ingester) ownedSeriesUpdate(ctx context.Context, ringChanged bool) {
 	for _, userID := range i.getTSDBUsers() {
 		if ctx.Err() != nil {
 			return
@@ -3524,23 +3519,46 @@ func (i *Ingester) ownedSeriesUpdate(ctx context.Context, reason string) {
 			continue
 		}
 
-		shardSize := i.limiter.getShardSize(userID)
-		subr := i.ingestersRing.ShuffleShard(userID, shardSize)
-		level.Info(i.logger).Log("msg", "owned series: subring", "id", i.lifecycler.ID, "hasInstance", subr.HasInstance(i.lifecycler.ID), "instances", subr.InstancesCount(), "RF", subr.ReplicationFactor())
+		i.ownedSeriesUpdateForTenant(userID, db, ringChanged)
+	}
+}
 
-		ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
-		if err != nil {
-			if errors.Is(err, ring.ErrInstanceNotFound) {
-				ranges = nil
-			} else {
-				level.Error(i.logger).Log("msg", "owned series: failed to get token ranges", "error", err)
-				continue
+func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringChanged bool) {
+	shardSize := i.limiter.getShardSize(userID)
+
+	reason := db.requiresOwnedSeriesUpdate.Swap("") // Clear reason, so that other reasons can be set while we run update here.
+	if reason == "" {
+		if ringChanged {
+			reason = "ring changed"
+		} else {
+			_, ownedShardSize := db.OwnedSeriesAndShards()
+			if shardSize != ownedShardSize {
+				reason = "shard size changed"
 			}
 		}
+	}
 
-		if db.UpdateTokenRanges(ranges) {
-			level.Info(i.logger).Log("msg", "owned series: updated token ranges for user, recalculating owned series", "user", userID)
-			db.RecalculateOwnedSeries(reason, i.logger, shardSize)
+	if reason == "" {
+		// Nothing to do for this tenant.
+		return
+	}
+
+	subr := i.ingestersRing.ShuffleShard(userID, shardSize)
+	level.Info(i.logger).Log("msg", "owned series: subring for user", "user", userID, "ingester", i.lifecycler.ID, "subringContainsIngester", subr.HasInstance(i.lifecycler.ID), "ingestersInSubring", subr.InstancesCount(), "RF", subr.ReplicationFactor())
+
+	ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
+	if err != nil {
+		if errors.Is(err, ring.ErrInstanceNotFound) {
+			// This ingester doesn't own the tenant anymore, so there will be no "owned" series.
+			ranges = nil
+		} else {
+			level.Error(i.logger).Log("msg", "owned series: failed to get token ranges from user's subring", "user", userID, "ingester", i.lifecycler.ID, "err", err)
+
+			// If we failed to run the update, put the reason back. We need to keep trying.
+			db.TriggerRecomputeOwnedSeries(reason)
+			return
 		}
 	}
+
+	db.UpdateTokenRangesAndRecomputeOwnedSeries(ranges, shardSize, reason, i.logger)
 }

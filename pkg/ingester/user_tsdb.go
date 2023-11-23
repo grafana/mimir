@@ -131,10 +131,12 @@ type userTSDB struct {
 	// We use mutex, so that we can update count and shard size at the same time (when shard size changes).
 	ownedSeriesMtx       sync.Mutex
 	ownedSeriesCount     int // Number of "owned" series, based on current ring.
-	ownedSeriesShardSize int // Shard size used when computing "owned" series. Also used when checking series limit.
+	ownedSeriesShardSize int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used when checking series limits.
 
 	ownedTokenRangesMtx sync.Mutex
-	ownedTokenRanges    []uint32
+	ownedTokenRanges    ring.TokenRanges
+
+	requiresOwnedSeriesUpdate atomic.String
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -505,7 +507,22 @@ func (u *userTSDB) OwnedSeriesAndShards() (int, int) {
 	return u.ownedSeriesCount, u.ownedSeriesShardSize
 }
 
-func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger, shardSize int) {
+func (u *userTSDB) TriggerRecomputeOwnedSeries(reason string) {
+	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
+}
+
+func (u *userTSDB) UpdateTokenRangesAndRecomputeOwnedSeries(ranges ring.TokenRanges, shardSize int, reason string, logger log.Logger) {
+	if !u.updateTokenRanges(ranges) {
+		// If token ranges have not changed, we don't need to recompute owned series. But we should store shardSize, which may be different from before.
+		u.ownedSeriesMtx.Lock()
+		u.ownedSeriesShardSize = shardSize
+		u.ownedSeriesMtx.Unlock()
+		return
+	}
+
+	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
+	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
+
 	start := time.Now()
 	repeats := 0
 
@@ -515,14 +532,12 @@ func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger, shardSize
 	for {
 		ownedNew = u.computeOwnedSeries()
 
-		// Try to update the values, but only if no new series was added in the meantime.
+		// Try to update the values, but only if no new series were added in the meantime.
 		u.ownedSeriesMtx.Lock()
 		if u.ownedSeriesCount == ownedPrev {
 			// No new series was added while computing owned series.
 			u.ownedSeriesCount = ownedNew
-			if shardSize > 0 {
-				u.ownedSeriesShardSize = shardSize
-			}
+			u.ownedSeriesShardSize = shardSize
 			u.ownedSeriesMtx.Unlock()
 			break
 		}
@@ -538,11 +553,11 @@ func (u *userTSDB) RecalculateOwnedSeries(reason string, l log.Logger, shardSize
 
 	dur := time.Since(start)
 
-	level.Info(l).Log("msg", "pprus -- recalculated owned series", "user", u.userID, "reason", reason, "seriesCountBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "newSeriesCount", ownedNew, "newShardSize", shardSize, "duration", dur, "repeats", repeats)
+	level.Info(logger).Log("msg", "owned series: recomputed owned series for user", "user", u.userID, "reason", reason, "ownedSeriesCountBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "ownedSeriesCountAfter", ownedNew, "shardSizeAfter", shardSize, "duration", dur, "repeats", repeats)
 }
 
-// UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
-func (u *userTSDB) UpdateTokenRanges(newTokenRanges []uint32) bool {
+// updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	// Check for changes outside critical section.
 	u.ownedTokenRangesMtx.Lock()
 	prev := u.ownedTokenRanges
@@ -573,10 +588,17 @@ func (u *userTSDB) computeOwnedSeries() int {
 	u.ownedTokenRangesMtx.Lock()
 	defer u.ownedTokenRangesMtx.Unlock()
 
+	// This can happen if ingester doesn't own this tenant anymore.
+	if len(u.ownedTokenRanges) == 0 {
+		return 0
+	}
+
 	count := 0
-	u.Head().ForEachSecondaryHash(func(secondaryHash uint32) {
-		if ring.KeyInTokenRanges(secondaryHash, u.ownedTokenRanges) {
-			count++
+	u.Head().ForEachSecondaryHash(func(secondaryHashes []uint32) {
+		for _, sh := range secondaryHashes {
+			if u.ownedTokenRanges.IncludesKey(sh) {
+				count++
+			}
 		}
 	})
 	return count
