@@ -26,9 +26,10 @@
   * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
   * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
   * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
-* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, `Push()` will return only gRPC errors. This feature changes the following status codes: #6443 #6723
-  * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition`.
-  * `http.StatusServiceUnavailable` (503) and `codes.Unknown` are replaced with `codes.Internal`.
+* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, ingester will return only gRPC errors. This feature changes the following status codes: #6443 #6680 #6723
+  * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition` on the write path.
+  * `http.StatusServiceUnavailable` (503) is replaced with `codes.Internal` on the write path, and with `codes.ResourceExhausted` on the read path.
+  * `codes.Unknown` are replaced with `codes.Internal` on both write and read path.
 * [CHANGE] Upgrade Node.js to v20. #6540
 * [CHANGE] Querier: `cortex_querier_blocks_consistency_checks_failed_total` is now incremented when a block couldn't be queried from any attempted store-gateway as opposed to incremented after each attempt. Also `cortex_querier_blocks_consistency_checks_total` is incremented once per query as opposed to once per attempt (with 3 attempts). #6590
 * [CHANGE] Ingester: Modify utilization based read path limiter to base memory usage on Go heap size. #6584

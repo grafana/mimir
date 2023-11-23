@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
+	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
 )
 
@@ -341,4 +342,10 @@ func copyValues(src url.Values) url.Values {
 		dst[k] = append([]string(nil), vs...)
 	}
 	return dst
+}
+
+// IsHTTPStatusCode returns true if the given code is a valid HTTP status code, or false otherwise.
+func IsHTTPStatusCode(code codes.Code) bool {
+	httpStatus := http.StatusText(int(code))
+	return httpStatus != ""
 }

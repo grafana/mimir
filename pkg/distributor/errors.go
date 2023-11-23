@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -239,7 +240,7 @@ func handleIngesterPushError(err error) error {
 		return errors.Wrap(err, failedPushingToIngesterMessage)
 	}
 	statusCode := stat.Code()
-	if isHTTPStatusCode(statusCode) {
+	if util.IsHTTPStatusCode(statusCode) {
 		// TODO This code is needed for backwards compatibility, since ingesters may still return
 		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
 		// it. This code should be removed in mimir 2.12.0.
@@ -248,10 +249,6 @@ func handleIngesterPushError(err error) error {
 	}
 
 	return newIngesterPushError(stat)
-}
-
-func isHTTPStatusCode(statusCode codes.Code) bool {
-	return int(statusCode) >= 100 && int(statusCode) < 600
 }
 
 func isClientError(err error) bool {

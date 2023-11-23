@@ -28,6 +28,11 @@ import (
 
 const (
 	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
+	tooBusyErrorMsg             = "the ingester is currently too busy to process queries, try again later"
+)
+
+var (
+	tooBusyError = ingesterTooBusyError{}
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
@@ -509,6 +514,19 @@ func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
 // Ensure that tsdbUnavailableError is an ingesterError.
 var _ ingesterError = tsdbUnavailableError{}
 
+type ingesterTooBusyError struct{}
+
+func (e ingesterTooBusyError) Error() string {
+	return tooBusyErrorMsg
+}
+
+func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.TOO_BUSY
+}
+
+// Ensure that ingesterTooBusyError is an ingesterError.
+var _ ingesterError = ingesterTooBusyError{}
+
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
 	sampleTimestampTooOldOOOEnabled   *log.Sampler
@@ -535,7 +553,7 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-func handlePushErrorWithGRPC(err error) error {
+func handlePushError(err error) error {
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -573,6 +591,41 @@ func handlePushErrorWithHTTPGRPC(err error) error {
 			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
+	}
+	return err
+}
+
+func handleReadError(err error) error {
+	var (
+		ingesterErr ingesterError
+		errCode     = codes.Internal
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.TOO_BUSY:
+			errCode = codes.ResourceExhausted
+		case mimirpb.SERVICE_UNAVAILABLE:
+			errCode = codes.Unavailable
+		}
+	}
+	return newErrorWithStatus(err, errCode)
+}
+
+// handleReadErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// errorWithStatus, which may contain both HTTP and gRPC error codes.
+// TODO this method is needed only for the backwards compatibility,
+// and should be removed in mimir 2.12.0.
+func handleReadErrorWithHTTPGRPC(err error) error {
+	var (
+		ingesterErr ingesterError
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.TOO_BUSY:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		case mimirpb.SERVICE_UNAVAILABLE:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err
