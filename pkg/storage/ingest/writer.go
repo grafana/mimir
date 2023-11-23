@@ -30,7 +30,7 @@ type Writer struct {
 	// We create 1 writer per partition to better parallelize the workload.
 	// TODO close idle writers
 	writersMx sync.RWMutex
-	writers   map[int]*kgo.Client
+	writers   map[int32]*kgo.Client
 
 	// Metrics.
 	writeLatency    prometheus.Summary
@@ -43,7 +43,7 @@ func NewWriter(kafkaAddress, kafkaTopic string, logger log.Logger, reg prometheu
 		kafkaTopic:   kafkaTopic,
 		logger:       logger,
 		registerer:   reg,
-		writers:      map[int]*kgo.Client{},
+		writers:      map[int32]*kgo.Client{},
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
@@ -71,7 +71,7 @@ func NewWriter(kafkaAddress, kafkaTopic string, logger log.Logger, reg prometheu
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
@@ -115,7 +115,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int, userID string, 
 	return nil
 }
 
-func (w *Writer) getKafkaWriterForPartition(partitionID int) (*kgo.Client, error) {
+func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
 	writer := w.writers[partitionID]
@@ -142,7 +142,7 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int) (*kgo.Client, error
 }
 
 // newKafkaWriter creates a new Kafka client used to write to a specific partition.
-func (w *Writer) newKafkaWriter(partitionID int) (*kgo.Client, error) {
+func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 	logger := log.With(w.logger, "partition", partitionID)
 
 	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
@@ -164,7 +164,7 @@ func (w *Writer) newKafkaWriter(partitionID int) (*kgo.Client, error) {
 		kgo.DisableIdempotentWrite(),
 
 		// Use a static partitioner because we want to be in control of the partition.
-		kgo.RecordPartitioner(newKafkaStaticPartitioner(partitionID)),
+		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
 	)
 }
 

@@ -14,20 +14,20 @@ var ingesterIDRegexp = regexp.MustCompile("-(zone-.-)?([0-9]+)$")
 // The input ingester ID is expected to end either with "zone-X-Y" or only "-Y" where "X" is a letter in the range [a,d]
 // and "Y" is a positive integer number. This means that this function supports up to 4 zones starting
 // with letter "a" or no zones at all.
-func IngesterPartition(ingesterID string) (int, error) {
+func IngesterPartition(ingesterID string) (int32, error) {
 	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
 		return 0, fmt.Errorf("name doesn't match regular expression %s %q", ingesterID, ingesterIDRegexp.String())
 	}
 
 	// Convert the zone ID to a number starting from 0.
-	var zoneID int
+	var zoneID int32
 	if wholeZoneStr := match[1]; len(wholeZoneStr) > 1 {
 		if !strings.HasPrefix(wholeZoneStr, "zone-") {
 			return 0, fmt.Errorf("invalid zone ID %s in %s", wholeZoneStr, ingesterID)
 		}
 
-		zoneID = int(rune(wholeZoneStr[len(wholeZoneStr)-2])) - int('a')
+		zoneID = rune(wholeZoneStr[len(wholeZoneStr)-2]) - 'a'
 		if zoneID < 0 || zoneID > 4 {
 			return 0, fmt.Errorf("zone ID is not between a and d %s", ingesterID)
 		}
@@ -39,6 +39,6 @@ func IngesterPartition(ingesterID string) (int, error) {
 		return 0, fmt.Errorf("no ingester sequence in name %s", ingesterID)
 	}
 
-	partitionID := (ingesterSeq << 2) | (zoneID & 0x3)
+	partitionID := int32(ingesterSeq<<2) | (zoneID & 0x3)
 	return partitionID, nil
 }
