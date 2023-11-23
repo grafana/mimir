@@ -3,8 +3,6 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"regexp"
-	"strconv"
 	"sync"
 	"time"
 
@@ -202,22 +200,4 @@ func (p *kafkaStaticPartitioner) RequiresConsistency(_ *kgo.Record) bool {
 // Partition implements kgo.TopicPartitioner.
 func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
 	return p.partitionID
-}
-
-// Regular expression used to parse the ingester numeric ID.
-var ingesterIDRegexp = regexp.MustCompile(".*([0-9]+)$")
-
-func IngesterPartition(ingesterID string) (int, error) {
-	// TODO  This is a very hacky way to assign partitions, because it doesn't work when scaling in/out ingesters,
-	// 		and also because it assumes a specific naming (but that assumption is also made in the spread minimizing tokens generator).
-	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
-	if len(match) == 0 {
-		return 0, fmt.Errorf("unable to get the partition ID for %s", ingesterID)
-	}
-
-	partitionID, err := strconv.Atoi(match[1])
-	if err != nil {
-		return 0, fmt.Errorf("unable to get the partition ID for %s", ingesterID)
-	}
-	return partitionID, nil
 }
