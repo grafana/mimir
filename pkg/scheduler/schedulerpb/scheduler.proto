@@ -25,6 +25,9 @@ service SchedulerForQuerier {
   // for scheduler to keep a list of connected queriers up-to-date.
   rpc QuerierLoop(stream QuerierToScheduler) returns (stream SchedulerToQuerier) { };
 
+  // The querier notifies the scheduler that it wishes to gracefully terminate a QuerierLoop stream.
+  rpc NotifyStreamShutdown(NotifyStreamShutdownRequest) returns (NotifyStreamShutdownResponse);
+
   // The querier notifies the query-scheduler that it started a graceful shutdown.
   rpc NotifyQuerierShutdown(NotifyQuerierShutdownRequest) returns (NotifyQuerierShutdownResponse);
 }
@@ -33,6 +36,7 @@ service SchedulerForQuerier {
 // To signal that querier is ready to accept another request, querier sends empty message.
 message QuerierToScheduler {
   string querierID = 1;
+  string loopID = 2;
 }
 
 message SchedulerToQuerier {
@@ -53,6 +57,16 @@ message SchedulerToQuerier {
 
   // How much time did query spend in the queue.
   int64 queueTimeNanos = 6;
+
+  bool shouldStop = 7;
+}
+
+message NotifyStreamShutdownRequest {
+  string loopID = 1; // The same loopID that was sent when initiating the QuerierLoop.
+}
+
+message NotifyStreamShutdownResponse {
+  // Nothing to send.
 }
 
 // Scheduler interface exposed to Frontend. Frontend can enqueue and cancel requests.

@@ -986,3 +986,7 @@ func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	panic("implement me")
 }
+
+func (m *mockGrpcServiceHandler) NotifyStreamShutdown(_ context.Context, _ *schedulerpb.NotifyStreamShutdownRequest) (*schedulerpb.NotifyStreamShutdownResponse, error) {
+	panic("implement me")
+}

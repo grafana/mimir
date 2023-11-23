@@ -8,6 +8,7 @@ package scheduler
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -28,6 +29,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
@@ -72,6 +75,9 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            prometheus.Histogram
 	inflightRequests         prometheus.Summary
+
+	connectedQueryStreamsMtx sync.Mutex
+	connectedQueryStreams    map[string]chan struct{}
 }
 
 type requestKey struct {
@@ -118,6 +124,8 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		pendingRequests:    map[requestKey]*schedulerRequest{},
 		connectedFrontends: map[string]*connectedFrontend{},
 		subservicesWatcher: services.NewFailureWatcher(),
+
+		connectedQueryStreams: map[string]chan struct{}{},
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -379,6 +387,18 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, query
 	delete(s.pendingRequests, key)
 }
 
+func (s *Scheduler) NotifyStreamShutdown(_ context.Context, req *schedulerpb.NotifyStreamShutdownRequest) (*schedulerpb.NotifyStreamShutdownResponse, error) {
+	s.connectedQueryStreamsMtx.Lock()
+	defer s.connectedQueryStreamsMtx.Unlock()
+
+	if ch := s.connectedQueryStreams[req.LoopID]; ch != nil {
+		close(ch)
+		delete(s.connectedQueryStreams, req.LoopID)
+	}
+
+	return &schedulerpb.NotifyStreamShutdownResponse{}, nil
+}
+
 // QuerierLoop is started by querier to receive queries from scheduler.
 func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	resp, err := querier.Recv()
@@ -387,6 +407,27 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	}
 
 	querierID := resp.GetQuerierID()
+
+	var streamShutDown chan struct{}
+
+	if resp.LoopID != "" {
+		streamShutDown = make(chan struct{})
+		s.connectedQueryStreamsMtx.Lock()
+
+		if _, exists := s.connectedQueryStreams[resp.LoopID]; exists {
+			s.connectedQueryStreamsMtx.Unlock()
+			return status.Error(codes.AlreadyExists, fmt.Sprintf("already have loop with ID %v registered", resp.LoopID))
+		}
+
+		s.connectedQueryStreams[resp.LoopID] = streamShutDown
+		s.connectedQueryStreamsMtx.Unlock()
+
+		defer func() {
+			s.connectedQueryStreamsMtx.Lock()
+			delete(s.connectedQueryStreams, resp.LoopID)
+			s.connectedQueryStreamsMtx.Unlock()
+		}()
+	}
 
 	s.requestQueue.RegisterQuerierConnection(querierID)
 	defer s.requestQueue.UnregisterQuerierConnection(querierID)
@@ -432,7 +473,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			continue
 		}
 
-		if err := s.forwardRequestToQuerier(querier, r, queueTime); err != nil {
+		if err := s.forwardRequestToQuerier(querier, r, queueTime, streamShutDown); err != nil {
 			return err
 		}
 	}
@@ -447,13 +488,17 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest, queueTime time.Duration) error {
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest, queueTime time.Duration, streamShutDown <-chan struct{}) error {
 	// Make sure to cancel request at the end to clean up resources.
 	defer s.cancelRequestAndRemoveFromPending(req.frontendAddress, req.queryID)
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
+
+	// Ensure we don't try to make two Send() calls from two goroutines simultaneously.
+	querySent := make(chan struct{})
+
 	go func() {
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{
 			UserID:          req.userID,
@@ -463,6 +508,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			StatsEnabled:    req.statsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
+		close(querySent)
 		if err != nil {
 			errCh <- err
 			return
@@ -472,15 +518,15 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		errCh <- err
 	}()
 
-	select {
-	case <-req.ctx.Done():
+	onCancel := func() error {
 		// If the upstream request is cancelled (eg. frontend issued CANCEL or closed connection),
 		// we need to cancel the downstream req. Only way we can do that is to close the stream (by returning error here).
 		// Querier is expecting this semantics.
 		s.cancelledRequests.WithLabelValues(req.userID).Inc()
 		return req.ctx.Err()
+	}
 
-	case err := <-errCh:
+	onComplete := func(err error) error {
 		// Is there was an error handling this request due to network IO,
 		// then error out this upstream request _and_ stream.
 
@@ -488,6 +534,34 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			s.forwardErrorToFrontend(req.ctx, req, err)
 		}
 		return err
+	}
+
+	select {
+	case <-req.ctx.Done():
+		return onCancel()
+	case err := <-errCh:
+		return onComplete(err)
+	case <-streamShutDown:
+		// Querier has asked to abort this stream. Wait until it's safe to use the gRPC stream (or it completes or is cancelled),
+		// then acknowledge the shutdown request to unblock the querier's pending Recv() call, and wait for the query to
+		// complete or be cancelled.
+		select {
+		case <-querySent:
+			if err := querier.Send(&schedulerpb.SchedulerToQuerier{ShouldStop: true}); err != nil {
+				return err
+			}
+
+			select {
+			case <-req.ctx.Done():
+				return onCancel()
+			case err := <-errCh:
+				return onComplete(err)
+			}
+		case <-req.ctx.Done():
+			return onCancel()
+		case err := <-errCh:
+			return onComplete(err)
+		}
 	}
 }
 

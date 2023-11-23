@@ -86,6 +86,7 @@ func (SchedulerToFrontendStatus) EnumDescriptor() ([]byte, []int) {
 // To signal that querier is ready to accept another request, querier sends empty message.
 type QuerierToScheduler struct {
 	QuerierID string `protobuf:"bytes,1,opt,name=querierID,proto3" json:"querierID,omitempty"`
+	LoopID    string `protobuf:"bytes,2,opt,name=loopID,proto3" json:"loopID,omitempty"`
 }
 
 func (m *QuerierToScheduler) Reset()      { *m = QuerierToScheduler{} }
@@ -127,6 +128,13 @@ func (m *QuerierToScheduler) GetQuerierID() string {
 	return ""
 }
 
+func (m *QuerierToScheduler) GetLoopID() string {
+	if m != nil {
+		return m.LoopID
+	}
+	return ""
+}
+
 type SchedulerToQuerier struct {
 	// Query ID as reported by frontend. When querier sends the response back to frontend (using frontendAddress),
 	// it identifies the query by using this ID.
@@ -141,6 +149,7 @@ type SchedulerToQuerier struct {
 	StatsEnabled bool `protobuf:"varint,5,opt,name=statsEnabled,proto3" json:"statsEnabled,omitempty"`
 	// How much time did query spend in the queue.
 	QueueTimeNanos int64 `protobuf:"varint,6,opt,name=queueTimeNanos,proto3" json:"queueTimeNanos,omitempty"`
+	ShouldStop     bool  `protobuf:"varint,7,opt,name=shouldStop,proto3" json:"shouldStop,omitempty"`
 }
 
 func (m *SchedulerToQuerier) Reset()      { *m = SchedulerToQuerier{} }
@@ -217,6 +226,91 @@ func (m *SchedulerToQuerier) GetQueueTimeNanos() int64 {
 	return 0
 }
 
+func (m *SchedulerToQuerier) GetShouldStop() bool {
+	if m != nil {
+		return m.ShouldStop
+	}
+	return false
+}
+
+type NotifyStreamShutdownRequest struct {
+	LoopID string `protobuf:"bytes,1,opt,name=loopID,proto3" json:"loopID,omitempty"`
+}
+
+func (m *NotifyStreamShutdownRequest) Reset()      { *m = NotifyStreamShutdownRequest{} }
+func (*NotifyStreamShutdownRequest) ProtoMessage() {}
+func (*NotifyStreamShutdownRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+}
+func (m *NotifyStreamShutdownRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NotifyStreamShutdownRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NotifyStreamShutdownRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NotifyStreamShutdownRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NotifyStreamShutdownRequest.Merge(m, src)
+}
+func (m *NotifyStreamShutdownRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *NotifyStreamShutdownRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_NotifyStreamShutdownRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NotifyStreamShutdownRequest proto.InternalMessageInfo
+
+func (m *NotifyStreamShutdownRequest) GetLoopID() string {
+	if m != nil {
+		return m.LoopID
+	}
+	return ""
+}
+
+type NotifyStreamShutdownResponse struct {
+}
+
+func (m *NotifyStreamShutdownResponse) Reset()      { *m = NotifyStreamShutdownResponse{} }
+func (*NotifyStreamShutdownResponse) ProtoMessage() {}
+func (*NotifyStreamShutdownResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
+}
+func (m *NotifyStreamShutdownResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *NotifyStreamShutdownResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_NotifyStreamShutdownResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *NotifyStreamShutdownResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NotifyStreamShutdownResponse.Merge(m, src)
+}
+func (m *NotifyStreamShutdownResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *NotifyStreamShutdownResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_NotifyStreamShutdownResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_NotifyStreamShutdownResponse proto.InternalMessageInfo
+
 type FrontendToScheduler struct {
 	Type FrontendToSchedulerType `protobuf:"varint,1,opt,name=type,proto3,enum=schedulerpb.FrontendToSchedulerType" json:"type,omitempty"`
 	// Used by INIT message. Will be put into all requests passed to querier.
@@ -233,7 +327,7 @@ type FrontendToScheduler struct {
 func (m *FrontendToScheduler) Reset()      { *m = FrontendToScheduler{} }
 func (*FrontendToScheduler) ProtoMessage() {}
 func (*FrontendToScheduler) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{2}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
 }
 func (m *FrontendToScheduler) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -312,7 +406,7 @@ type SchedulerToFrontend struct {
 func (m *SchedulerToFrontend) Reset()      { *m = SchedulerToFrontend{} }
 func (*SchedulerToFrontend) ProtoMessage() {}
 func (*SchedulerToFrontend) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{3}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
 }
 func (m *SchedulerToFrontend) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -362,7 +456,7 @@ type NotifyQuerierShutdownRequest struct {
 func (m *NotifyQuerierShutdownRequest) Reset()      { *m = NotifyQuerierShutdownRequest{} }
 func (*NotifyQuerierShutdownRequest) ProtoMessage() {}
 func (*NotifyQuerierShutdownRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{4}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{6}
 }
 func (m *NotifyQuerierShutdownRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -404,7 +498,7 @@ type NotifyQuerierShutdownResponse struct {
 func (m *NotifyQuerierShutdownResponse) Reset()      { *m = NotifyQuerierShutdownResponse{} }
 func (*NotifyQuerierShutdownResponse) ProtoMessage() {}
 func (*NotifyQuerierShutdownResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_2b3fc28395a6d9c5, []int{5}
+	return fileDescriptor_2b3fc28395a6d9c5, []int{7}
 }
 func (m *NotifyQuerierShutdownResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -438,6 +532,8 @@ func init() {
 	proto.RegisterEnum("schedulerpb.SchedulerToFrontendStatus", SchedulerToFrontendStatus_name, SchedulerToFrontendStatus_value)
 	proto.RegisterType((*QuerierToScheduler)(nil), "schedulerpb.QuerierToScheduler")
 	proto.RegisterType((*SchedulerToQuerier)(nil), "schedulerpb.SchedulerToQuerier")
+	proto.RegisterType((*NotifyStreamShutdownRequest)(nil), "schedulerpb.NotifyStreamShutdownRequest")
+	proto.RegisterType((*NotifyStreamShutdownResponse)(nil), "schedulerpb.NotifyStreamShutdownResponse")
 	proto.RegisterType((*FrontendToScheduler)(nil), "schedulerpb.FrontendToScheduler")
 	proto.RegisterType((*SchedulerToFrontend)(nil), "schedulerpb.SchedulerToFrontend")
 	proto.RegisterType((*NotifyQuerierShutdownRequest)(nil), "schedulerpb.NotifyQuerierShutdownRequest")
@@ -447,49 +543,53 @@ func init() {
 func init() { proto.RegisterFile("scheduler.proto", fileDescriptor_2b3fc28395a6d9c5) }
 
 var fileDescriptor_2b3fc28395a6d9c5 = []byte{
-	// 660 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x54, 0x3d, 0x4f, 0xdb, 0x50,
-	0x14, 0xf5, 0xcb, 0x87, 0x81, 0x1b, 0x0a, 0xee, 0x03, 0xda, 0x34, 0xa2, 0xc6, 0xb2, 0x2a, 0x94,
-	0x32, 0x24, 0x28, 0x1d, 0xda, 0x01, 0x55, 0x4a, 0xc1, 0x94, 0xa8, 0xd4, 0x81, 0x97, 0x17, 0xf5,
-	0x63, 0x89, 0x92, 0xf8, 0x91, 0x44, 0x80, 0x9f, 0xf1, 0x87, 0xaa, 0x6c, 0x1d, 0x3b, 0xf6, 0x67,
-	0xf4, 0xa7, 0x74, 0x64, 0x64, 0xe8, 0x50, 0xcc, 0xd2, 0x91, 0xa5, 0x7b, 0x15, 0xc7, 0x49, 0x9d,
-	0x90, 0x00, 0xdb, 0x7d, 0x27, 0xe7, 0xc4, 0xf7, 0x9c, 0x7b, 0xdf, 0x83, 0x45, 0xa7, 0xd9, 0x66,
-	0x86, 0x77, 0xc2, 0xec, 0x9c, 0x65, 0x73, 0x97, 0xe3, 0xd4, 0x10, 0xb0, 0x1a, 0x99, 0xe5, 0x16,
-	0x6f, 0xf1, 0x00, 0xcf, 0xf7, 0xaa, 0x3e, 0x25, 0xb3, 0xd9, 0xea, 0xb8, 0x6d, 0xaf, 0x91, 0x6b,
-	0xf2, 0xd3, 0x7c, 0xcb, 0xae, 0x1f, 0xd5, 0xcd, 0x7a, 0xde, 0x70, 0x8e, 0x3b, 0x6e, 0xbe, 0xed,
-	0xba, 0x56, 0xcb, 0xb6, 0x9a, 0xc3, 0xa2, 0xaf, 0x50, 0x0b, 0x80, 0x0f, 0x3d, 0x66, 0x77, 0x98,
-	0x4d, 0x79, 0x65, 0xf0, 0xff, 0x78, 0x15, 0xe6, 0xce, 0xfa, 0x68, 0x69, 0x27, 0x8d, 0x14, 0x94,
-	0x9d, 0x23, 0xff, 0x01, 0xf5, 0x2f, 0x02, 0x3c, 0xe4, 0x52, 0x1e, 0xea, 0x71, 0x1a, 0x66, 0x7a,
-	0x9c, 0x6e, 0x28, 0x49, 0x90, 0xc1, 0x11, 0xbf, 0x84, 0x54, 0xef, 0xb3, 0x84, 0x9d, 0x79, 0xcc,
-	0x71, 0xd3, 0x31, 0x05, 0x65, 0x53, 0x85, 0x95, 0xdc, 0xb0, 0x95, 0x3d, 0x4a, 0x0f, 0xc2, 0x1f,
-	0x49, 0x94, 0x89, 0xb3, 0xb0, 0x78, 0x64, 0x73, 0xd3, 0x65, 0xa6, 0x51, 0x34, 0x0c, 0x9b, 0x39,
-	0x4e, 0x3a, 0x1e, 0x74, 0x33, 0x0e, 0xe3, 0x47, 0x20, 0x7a, 0x4e, 0xd0, 0x6e, 0x22, 0x20, 0x84,
-	0x27, 0xac, 0xc2, 0xbc, 0xe3, 0xd6, 0x5d, 0x47, 0x33, 0xeb, 0x8d, 0x13, 0x66, 0xa4, 0x93, 0x0a,
-	0xca, 0xce, 0x92, 0x11, 0x0c, 0xaf, 0xc3, 0xc2, 0x99, 0xc7, 0x3c, 0x46, 0x3b, 0xa7, 0x4c, 0xaf,
-	0x9b, 0xdc, 0x49, 0x8b, 0x0a, 0xca, 0xc6, 0xc9, 0x18, 0xaa, 0x7e, 0x8b, 0xc1, 0xd2, 0x6e, 0xf8,
-	0xdd, 0x68, 0x5a, 0xaf, 0x20, 0xe1, 0x76, 0x2d, 0x16, 0xb8, 0x5e, 0x28, 0x3c, 0xcb, 0x45, 0xe6,
-	0x94, 0x9b, 0xc0, 0xa7, 0x5d, 0x8b, 0x91, 0x40, 0x31, 0xc9, 0x5f, 0x6c, 0xb2, 0xbf, 0x48, 0xb8,
-	0xf1, 0xd1, 0x70, 0xa7, 0x39, 0x1f, 0x0b, 0x3d, 0x79, 0xef, 0xd0, 0xc7, 0x23, 0x13, 0x6f, 0x46,
-	0xa6, 0x1e, 0xc3, 0x52, 0x64, 0x03, 0x06, 0x26, 0xf1, 0x6b, 0x10, 0x7b, 0x34, 0xcf, 0x09, 0xb3,
-	0x58, 0x1f, 0xc9, 0x62, 0x82, 0xa2, 0x12, 0xb0, 0x49, 0xa8, 0xc2, 0xcb, 0x90, 0x64, 0xb6, 0xcd,
-	0xed, 0x30, 0x85, 0xfe, 0x41, 0xdd, 0x82, 0x55, 0x9d, 0xbb, 0x9d, 0xa3, 0x6e, 0xb8, 0x69, 0x95,
-	0xb6, 0xe7, 0x1a, 0xfc, 0x8b, 0x39, 0x68, 0xf8, 0xf6, 0x6d, 0x5d, 0x83, 0xa7, 0x53, 0xd4, 0x8e,
-	0xc5, 0x4d, 0x87, 0x6d, 0x6c, 0xc1, 0xe3, 0x29, 0x53, 0xc2, 0xb3, 0x90, 0x28, 0xe9, 0x25, 0x2a,
-	0x09, 0x38, 0x05, 0x33, 0x9a, 0x7e, 0x58, 0xd5, 0xaa, 0x9a, 0x84, 0x30, 0x80, 0xb8, 0x5d, 0xd4,
-	0xb7, 0xb5, 0x7d, 0x29, 0xb6, 0xd1, 0x84, 0x27, 0x53, 0x7d, 0x61, 0x11, 0x62, 0xe5, 0x77, 0x92,
-	0x80, 0x15, 0x58, 0xa5, 0xe5, 0x72, 0xed, 0x7d, 0x51, 0xff, 0x54, 0x23, 0xda, 0x61, 0x55, 0xab,
-	0xd0, 0x4a, 0xed, 0x40, 0x23, 0x35, 0xaa, 0xe9, 0x45, 0x9d, 0x4a, 0x08, 0xcf, 0x41, 0x52, 0x23,
-	0xa4, 0x4c, 0xa4, 0x18, 0x7e, 0x08, 0x0f, 0x2a, 0x7b, 0x55, 0x4a, 0x4b, 0xfa, 0xdb, 0xda, 0x4e,
-	0xf9, 0x83, 0x2e, 0xc5, 0x0b, 0xbf, 0x50, 0x24, 0xef, 0x5d, 0x6e, 0x0f, 0xae, 0x5c, 0x15, 0x52,
-	0x61, 0xb9, 0xcf, 0xb9, 0x85, 0xd7, 0x46, 0xe2, 0xbe, 0x79, 0xaf, 0x33, 0x6b, 0xd3, 0xe6, 0x11,
-	0x72, 0x55, 0x21, 0x8b, 0x36, 0x11, 0x36, 0x61, 0x65, 0x62, 0x64, 0xf8, 0xf9, 0x88, 0xfe, 0xb6,
-	0xa1, 0x64, 0x36, 0xee, 0x43, 0xed, 0x4f, 0xa0, 0x60, 0xc1, 0x72, 0xd4, 0xdd, 0x70, 0x9d, 0x3e,
-	0xc2, 0xfc, 0xa0, 0x0e, 0xfc, 0x29, 0x77, 0x5d, 0xad, 0x8c, 0x72, 0xd7, 0xc2, 0xf5, 0x1d, 0xbe,
-	0x29, 0x9e, 0x5f, 0xca, 0xc2, 0xc5, 0xa5, 0x2c, 0x5c, 0x5f, 0xca, 0xe8, 0xab, 0x2f, 0xa3, 0x1f,
-	0xbe, 0x8c, 0x7e, 0xfa, 0x32, 0x3a, 0xf7, 0x65, 0xf4, 0xdb, 0x97, 0xd1, 0x1f, 0x5f, 0x16, 0xae,
-	0x7d, 0x19, 0x7d, 0xbf, 0x92, 0x85, 0xf3, 0x2b, 0x59, 0xb8, 0xb8, 0x92, 0x85, 0xcf, 0xd1, 0x17,
-	0xb8, 0x21, 0x06, 0x0f, 0xe8, 0x8b, 0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x9d, 0xe2, 0x46, 0x88,
-	0xa8, 0x05, 0x00, 0x00,
+	// 730 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x55, 0x4d, 0x53, 0xda, 0x50,
+	0x14, 0xcd, 0x0b, 0x1f, 0xea, 0xc5, 0x2a, 0x7d, 0x62, 0x4b, 0xa9, 0x7d, 0x32, 0x99, 0x8e, 0x43,
+	0x5d, 0x80, 0x43, 0xa7, 0xd3, 0x2e, 0x9c, 0xce, 0x50, 0x8d, 0x95, 0xd6, 0x06, 0x4d, 0xc2, 0xf4,
+	0x63, 0xc3, 0x00, 0x79, 0x02, 0x23, 0xe6, 0xc5, 0x7c, 0x4c, 0x87, 0x5d, 0x97, 0x5d, 0x76, 0xd3,
+	0xff, 0xd0, 0x9f, 0xd2, 0xee, 0x5c, 0xba, 0xac, 0xb8, 0xe9, 0xd2, 0x9f, 0xd0, 0x21, 0x09, 0x18,
+	0x30, 0xa8, 0xbb, 0xf7, 0x6e, 0xee, 0x39, 0xdc, 0x7b, 0xce, 0xbd, 0x3c, 0x58, 0xb4, 0x9a, 0x6d,
+	0xaa, 0x39, 0x5d, 0x6a, 0xe6, 0x0d, 0x93, 0xd9, 0x0c, 0x27, 0x46, 0x01, 0xa3, 0x91, 0x49, 0xb5,
+	0x58, 0x8b, 0xb9, 0xf1, 0xc2, 0xe0, 0xe4, 0xa5, 0x64, 0x36, 0x5a, 0x1d, 0xbb, 0xed, 0x34, 0xf2,
+	0x4d, 0x76, 0x5c, 0x68, 0x99, 0xf5, 0xc3, 0xba, 0x5e, 0x2f, 0x68, 0xd6, 0x51, 0xc7, 0x2e, 0xb4,
+	0x6d, 0xdb, 0x68, 0x99, 0x46, 0x73, 0x74, 0xf0, 0x10, 0xc2, 0x3b, 0xc0, 0x07, 0x0e, 0x35, 0x3b,
+	0xd4, 0x54, 0x99, 0x32, 0xe4, 0xc7, 0x2b, 0x30, 0x77, 0xe2, 0x45, 0xcb, 0xdb, 0x69, 0x94, 0x45,
+	0xb9, 0x39, 0xf9, 0x2a, 0x80, 0x1f, 0x40, 0xbc, 0xcb, 0x98, 0x51, 0xde, 0x4e, 0xf3, 0xee, 0x27,
+	0xff, 0x26, 0xfc, 0xe4, 0x01, 0x8f, 0x38, 0x54, 0xe6, 0xf3, 0xe2, 0x34, 0xcc, 0x0c, 0xb0, 0x3d,
+	0x9f, 0x2a, 0x2a, 0x0f, 0xaf, 0xf8, 0x25, 0x24, 0x06, 0xe5, 0xc8, 0xf4, 0xc4, 0xa1, 0x96, 0xed,
+	0xb2, 0x25, 0x8a, 0xcb, 0xf9, 0x51, 0x89, 0xbb, 0xaa, 0xba, 0xef, 0x7f, 0x94, 0x83, 0x99, 0x38,
+	0x07, 0x8b, 0x87, 0x26, 0xd3, 0x6d, 0xaa, 0x6b, 0x25, 0x4d, 0x33, 0xa9, 0x65, 0xa5, 0x23, 0x6e,
+	0x29, 0x93, 0xe1, 0x41, 0xad, 0x8e, 0xe5, 0xb6, 0x11, 0xf5, 0x6a, 0xf5, 0x6e, 0x58, 0x80, 0x79,
+	0xcb, 0xae, 0xdb, 0x96, 0xa8, 0xd7, 0x1b, 0x5d, 0xaa, 0xa5, 0x63, 0x59, 0x94, 0x9b, 0x95, 0xc7,
+	0x62, 0x78, 0x0d, 0x16, 0x4e, 0x1c, 0xea, 0x50, 0xb5, 0x73, 0x4c, 0xa5, 0xba, 0xce, 0xac, 0x74,
+	0x3c, 0x8b, 0x72, 0x11, 0x79, 0x22, 0x8a, 0x09, 0x80, 0xd5, 0x66, 0x4e, 0x57, 0x53, 0x6c, 0x66,
+	0xa4, 0x67, 0x5c, 0xa6, 0x40, 0x44, 0x78, 0x01, 0x8f, 0x25, 0x66, 0x77, 0x0e, 0x7b, 0x8a, 0x6d,
+	0xd2, 0xfa, 0xb1, 0xd2, 0x76, 0x6c, 0x8d, 0x7d, 0xd5, 0x87, 0xcd, 0x5c, 0xc9, 0x89, 0xc6, 0xe4,
+	0x24, 0xb0, 0x12, 0x0e, 0xb3, 0x0c, 0xa6, 0x5b, 0x54, 0xf8, 0xce, 0xc3, 0xd2, 0x8e, 0xdf, 0x6e,
+	0xd0, 0xbc, 0x57, 0x10, 0xb5, 0x7b, 0x06, 0x75, 0xd9, 0x16, 0x8a, 0x4f, 0xf3, 0x81, 0xb1, 0xc9,
+	0x87, 0xe4, 0xab, 0x3d, 0x83, 0xca, 0x2e, 0x22, 0x4c, 0x56, 0x3e, 0x5c, 0xd6, 0x80, 0xa7, 0x91,
+	0x71, 0x4f, 0xa7, 0x09, 0x3e, 0xe1, 0x75, 0xec, 0xce, 0x5e, 0x4f, 0x3a, 0x15, 0xbf, 0xee, 0x94,
+	0x70, 0x04, 0x4b, 0x81, 0xc1, 0x1b, 0x36, 0x89, 0x5f, 0x43, 0x7c, 0x90, 0xe6, 0x58, 0xbe, 0x16,
+	0x6b, 0x63, 0x5a, 0x84, 0x20, 0x14, 0x37, 0x5b, 0xf6, 0x51, 0x38, 0x05, 0x31, 0x6a, 0x9a, 0xcc,
+	0xf4, 0x55, 0xf0, 0x2e, 0xc2, 0xe6, 0xd0, 0x17, 0x7f, 0xc0, 0x27, 0xfd, 0xbc, 0x71, 0x79, 0x84,
+	0x55, 0x78, 0x32, 0x05, 0xed, 0xd9, 0xba, 0xbe, 0x09, 0x0f, 0xa7, 0xb8, 0x84, 0x67, 0x21, 0x5a,
+	0x96, 0xca, 0x6a, 0x92, 0xc3, 0x09, 0x98, 0x11, 0xa5, 0x83, 0xaa, 0x58, 0x15, 0x93, 0x08, 0x03,
+	0xc4, 0xb7, 0x4a, 0xd2, 0x96, 0xb8, 0x97, 0xe4, 0xd7, 0x9b, 0xf0, 0x68, 0x6a, 0x5f, 0x38, 0x0e,
+	0x7c, 0xe5, 0x7d, 0x92, 0xc3, 0x59, 0x58, 0x51, 0x2b, 0x95, 0xda, 0x87, 0x92, 0xf4, 0xb9, 0x26,
+	0x8b, 0x07, 0x55, 0x51, 0x51, 0x95, 0xda, 0xbe, 0x28, 0xd7, 0x54, 0x51, 0x2a, 0x49, 0x6a, 0x12,
+	0xe1, 0x39, 0x88, 0x89, 0xb2, 0x5c, 0x91, 0x93, 0x3c, 0xbe, 0x0f, 0xf7, 0x94, 0xdd, 0xaa, 0xaa,
+	0x96, 0xa5, 0xb7, 0xb5, 0xed, 0xca, 0x47, 0x29, 0x19, 0x29, 0xfe, 0xe1, 0x03, 0x7a, 0xef, 0x30,
+	0x73, 0xb8, 0xe9, 0x55, 0x48, 0xf8, 0xc7, 0x3d, 0xc6, 0x0c, 0xbc, 0x3a, 0x26, 0xf7, 0xf5, 0xbf,
+	0x99, 0xcc, 0xea, 0x34, 0x3f, 0xfc, 0x5c, 0x81, 0xcb, 0xa1, 0x0d, 0x84, 0x8f, 0x20, 0x15, 0xb6,
+	0x08, 0x38, 0x37, 0x06, 0xbf, 0x61, 0xc5, 0x32, 0xcf, 0xee, 0x90, 0xe9, 0xc9, 0x8f, 0x75, 0x58,
+	0x0e, 0xf5, 0x07, 0x87, 0x71, 0x84, 0x4f, 0x40, 0x66, 0xfd, 0x2e, 0xa9, 0xde, 0xef, 0x15, 0x0d,
+	0x48, 0x05, 0xa5, 0x1c, 0xcd, 0xee, 0x27, 0x98, 0x1f, 0x9e, 0x5d, 0x31, 0xb3, 0xb7, 0xed, 0x71,
+	0x26, 0x7b, 0xdb, 0x74, 0x7b, 0x72, 0xbe, 0x29, 0x9d, 0x9e, 0x13, 0xee, 0xec, 0x9c, 0x70, 0x97,
+	0xe7, 0x04, 0x7d, 0xeb, 0x13, 0xf4, 0xab, 0x4f, 0xd0, 0xef, 0x3e, 0x41, 0xa7, 0x7d, 0x82, 0xfe,
+	0xf6, 0x09, 0xfa, 0xd7, 0x27, 0xdc, 0x65, 0x9f, 0xa0, 0x1f, 0x17, 0x84, 0x3b, 0xbd, 0x20, 0xdc,
+	0xd9, 0x05, 0xe1, 0xbe, 0x04, 0x5f, 0x9f, 0x46, 0xdc, 0x7d, 0x3c, 0x9e, 0xff, 0x0f, 0x00, 0x00,
+	0xff, 0xff, 0xbb, 0xde, 0x98, 0xe7, 0xa4, 0x06, 0x00, 0x00,
 }
 
 func (x FrontendToSchedulerType) String() string {
@@ -526,6 +626,9 @@ func (this *QuerierToScheduler) Equal(that interface{}) bool {
 		return false
 	}
 	if this.QuerierID != that1.QuerierID {
+		return false
+	}
+	if this.LoopID != that1.LoopID {
 		return false
 	}
 	return true
@@ -565,6 +668,54 @@ func (this *SchedulerToQuerier) Equal(that interface{}) bool {
 		return false
 	}
 	if this.QueueTimeNanos != that1.QueueTimeNanos {
+		return false
+	}
+	if this.ShouldStop != that1.ShouldStop {
+		return false
+	}
+	return true
+}
+func (this *NotifyStreamShutdownRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NotifyStreamShutdownRequest)
+	if !ok {
+		that2, ok := that.(NotifyStreamShutdownRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.LoopID != that1.LoopID {
+		return false
+	}
+	return true
+}
+func (this *NotifyStreamShutdownResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*NotifyStreamShutdownResponse)
+	if !ok {
+		that2, ok := that.(NotifyStreamShutdownResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
 		return false
 	}
 	return true
@@ -684,9 +835,10 @@ func (this *QuerierToScheduler) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 5)
+	s := make([]string, 0, 6)
 	s = append(s, "&schedulerpb.QuerierToScheduler{")
 	s = append(s, "QuerierID: "+fmt.Sprintf("%#v", this.QuerierID)+",\n")
+	s = append(s, "LoopID: "+fmt.Sprintf("%#v", this.LoopID)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -694,7 +846,7 @@ func (this *SchedulerToQuerier) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 11)
 	s = append(s, "&schedulerpb.SchedulerToQuerier{")
 	s = append(s, "QueryID: "+fmt.Sprintf("%#v", this.QueryID)+",\n")
 	if this.HttpRequest != nil {
@@ -704,6 +856,26 @@ func (this *SchedulerToQuerier) GoString() string {
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
 	s = append(s, "StatsEnabled: "+fmt.Sprintf("%#v", this.StatsEnabled)+",\n")
 	s = append(s, "QueueTimeNanos: "+fmt.Sprintf("%#v", this.QueueTimeNanos)+",\n")
+	s = append(s, "ShouldStop: "+fmt.Sprintf("%#v", this.ShouldStop)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NotifyStreamShutdownRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&schedulerpb.NotifyStreamShutdownRequest{")
+	s = append(s, "LoopID: "+fmt.Sprintf("%#v", this.LoopID)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *NotifyStreamShutdownResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 4)
+	s = append(s, "&schedulerpb.NotifyStreamShutdownResponse{")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -782,6 +954,8 @@ type SchedulerForQuerierClient interface {
 	// Long-running loop is used to detect broken connection between scheduler and querier. This is important
 	// for scheduler to keep a list of connected queriers up-to-date.
 	QuerierLoop(ctx context.Context, opts ...grpc.CallOption) (SchedulerForQuerier_QuerierLoopClient, error)
+	// The querier notifies the scheduler that it wishes to gracefully terminate a QuerierLoop stream.
+	NotifyStreamShutdown(ctx context.Context, in *NotifyStreamShutdownRequest, opts ...grpc.CallOption) (*NotifyStreamShutdownResponse, error)
 	// The querier notifies the query-scheduler that it started a graceful shutdown.
 	NotifyQuerierShutdown(ctx context.Context, in *NotifyQuerierShutdownRequest, opts ...grpc.CallOption) (*NotifyQuerierShutdownResponse, error)
 }
@@ -825,6 +999,15 @@ func (x *schedulerForQuerierQuerierLoopClient) Recv() (*SchedulerToQuerier, erro
 	return m, nil
 }
 
+func (c *schedulerForQuerierClient) NotifyStreamShutdown(ctx context.Context, in *NotifyStreamShutdownRequest, opts ...grpc.CallOption) (*NotifyStreamShutdownResponse, error) {
+	out := new(NotifyStreamShutdownResponse)
+	err := c.cc.Invoke(ctx, "/schedulerpb.SchedulerForQuerier/NotifyStreamShutdown", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *schedulerForQuerierClient) NotifyQuerierShutdown(ctx context.Context, in *NotifyQuerierShutdownRequest, opts ...grpc.CallOption) (*NotifyQuerierShutdownResponse, error) {
 	out := new(NotifyQuerierShutdownResponse)
 	err := c.cc.Invoke(ctx, "/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown", in, out, opts...)
@@ -843,6 +1026,8 @@ type SchedulerForQuerierServer interface {
 	// Long-running loop is used to detect broken connection between scheduler and querier. This is important
 	// for scheduler to keep a list of connected queriers up-to-date.
 	QuerierLoop(SchedulerForQuerier_QuerierLoopServer) error
+	// The querier notifies the scheduler that it wishes to gracefully terminate a QuerierLoop stream.
+	NotifyStreamShutdown(context.Context, *NotifyStreamShutdownRequest) (*NotifyStreamShutdownResponse, error)
 	// The querier notifies the query-scheduler that it started a graceful shutdown.
 	NotifyQuerierShutdown(context.Context, *NotifyQuerierShutdownRequest) (*NotifyQuerierShutdownResponse, error)
 }
@@ -853,6 +1038,9 @@ type UnimplementedSchedulerForQuerierServer struct {
 
 func (*UnimplementedSchedulerForQuerierServer) QuerierLoop(srv SchedulerForQuerier_QuerierLoopServer) error {
 	return status.Errorf(codes.Unimplemented, "method QuerierLoop not implemented")
+}
+func (*UnimplementedSchedulerForQuerierServer) NotifyStreamShutdown(ctx context.Context, req *NotifyStreamShutdownRequest) (*NotifyStreamShutdownResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NotifyStreamShutdown not implemented")
 }
 func (*UnimplementedSchedulerForQuerierServer) NotifyQuerierShutdown(ctx context.Context, req *NotifyQuerierShutdownRequest) (*NotifyQuerierShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NotifyQuerierShutdown not implemented")
@@ -888,6 +1076,24 @@ func (x *schedulerForQuerierQuerierLoopServer) Recv() (*QuerierToScheduler, erro
 	return m, nil
 }
 
+func _SchedulerForQuerier_NotifyStreamShutdown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NotifyStreamShutdownRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulerForQuerierServer).NotifyStreamShutdown(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/schedulerpb.SchedulerForQuerier/NotifyStreamShutdown",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulerForQuerierServer).NotifyStreamShutdown(ctx, req.(*NotifyStreamShutdownRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SchedulerForQuerier_NotifyQuerierShutdown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(NotifyQuerierShutdownRequest)
 	if err := dec(in); err != nil {
@@ -910,6 +1116,10 @@ var _SchedulerForQuerier_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "schedulerpb.SchedulerForQuerier",
 	HandlerType: (*SchedulerForQuerierServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "NotifyStreamShutdown",
+			Handler:    _SchedulerForQuerier_NotifyStreamShutdown_Handler,
+		},
 		{
 			MethodName: "NotifyQuerierShutdown",
 			Handler:    _SchedulerForQuerier_NotifyQuerierShutdown_Handler,
@@ -1062,6 +1272,13 @@ func (m *QuerierToScheduler) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.LoopID) > 0 {
+		i -= len(m.LoopID)
+		copy(dAtA[i:], m.LoopID)
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.LoopID)))
+		i--
+		dAtA[i] = 0x12
+	}
 	if len(m.QuerierID) > 0 {
 		i -= len(m.QuerierID)
 		copy(dAtA[i:], m.QuerierID)
@@ -1092,6 +1309,16 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.ShouldStop {
+		i--
+		if m.ShouldStop {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x38
+	}
 	if m.QueueTimeNanos != 0 {
 		i = encodeVarintScheduler(dAtA, i, uint64(m.QueueTimeNanos))
 		i--
@@ -1138,6 +1365,59 @@ func (m *SchedulerToQuerier) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x8
 	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NotifyStreamShutdownRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NotifyStreamShutdownRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NotifyStreamShutdownRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.LoopID) > 0 {
+		i -= len(m.LoopID)
+		copy(dAtA[i:], m.LoopID)
+		i = encodeVarintScheduler(dAtA, i, uint64(len(m.LoopID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *NotifyStreamShutdownResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *NotifyStreamShutdownResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *NotifyStreamShutdownResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	return len(dAtA) - i, nil
 }
 
@@ -1319,6 +1599,10 @@ func (m *QuerierToScheduler) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovScheduler(uint64(l))
 	}
+	l = len(m.LoopID)
+	if l > 0 {
+		n += 1 + l + sovScheduler(uint64(l))
+	}
 	return n
 }
 
@@ -1349,6 +1633,31 @@ func (m *SchedulerToQuerier) Size() (n int) {
 	if m.QueueTimeNanos != 0 {
 		n += 1 + sovScheduler(uint64(m.QueueTimeNanos))
 	}
+	if m.ShouldStop {
+		n += 2
+	}
+	return n
+}
+
+func (m *NotifyStreamShutdownRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.LoopID)
+	if l > 0 {
+		n += 1 + l + sovScheduler(uint64(l))
+	}
+	return n
+}
+
+func (m *NotifyStreamShutdownResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
 	return n
 }
 
@@ -1432,6 +1741,7 @@ func (this *QuerierToScheduler) String() string {
 	}
 	s := strings.Join([]string{`&QuerierToScheduler{`,
 		`QuerierID:` + fmt.Sprintf("%v", this.QuerierID) + `,`,
+		`LoopID:` + fmt.Sprintf("%v", this.LoopID) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1447,6 +1757,26 @@ func (this *SchedulerToQuerier) String() string {
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
 		`StatsEnabled:` + fmt.Sprintf("%v", this.StatsEnabled) + `,`,
 		`QueueTimeNanos:` + fmt.Sprintf("%v", this.QueueTimeNanos) + `,`,
+		`ShouldStop:` + fmt.Sprintf("%v", this.ShouldStop) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NotifyStreamShutdownRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&NotifyStreamShutdownRequest{`,
+		`LoopID:` + fmt.Sprintf("%v", this.LoopID) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *NotifyStreamShutdownResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&NotifyStreamShutdownResponse{`,
 		`}`,
 	}, "")
 	return s
@@ -1564,6 +1894,38 @@ func (m *QuerierToScheduler) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.QuerierID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LoopID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.LoopID = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1776,6 +2138,164 @@ func (m *SchedulerToQuerier) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ShouldStop", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ShouldStop = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NotifyStreamShutdownRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NotifyStreamShutdownRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NotifyStreamShutdownRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LoopID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowScheduler
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.LoopID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipScheduler(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) < 0 {
+				return ErrInvalidLengthScheduler
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *NotifyStreamShutdownResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowScheduler
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: NotifyStreamShutdownResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: NotifyStreamShutdownResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		default:
 			iNdEx = preIndex
 			skippy, err := skipScheduler(dAtA[iNdEx:])

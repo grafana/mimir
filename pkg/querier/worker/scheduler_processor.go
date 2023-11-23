@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/google/uuid"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
@@ -100,38 +100,65 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 	}
 }
 
-func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
+func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := sp.schedulerClientFactory(conn)
 
-	backoff := backoff.New(ctx, processorBackoffConfig)
+	backoff := backoff.New(workerCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
-		c, err := schedulerClient.QuerierLoop(ctx)
-		if err == nil {
-			err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID})
-		}
-
-		if err != nil {
-			level.Warn(sp.log).Log("msg", "error contacting scheduler", "err", err, "addr", address)
+		if sp.runOneLoop(workerCtx, schedulerClient, address) {
+			backoff.Reset()
+		} else {
 			backoff.Wait()
-			continue
 		}
-
-		if err := sp.querierLoop(ctx, c, address); err != nil {
-			// Do not log an error if the query-scheduler is shutting down.
-			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
-				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
-			}
-
-			backoff.Wait()
-			continue
-		}
-
-		backoff.Reset()
 	}
 }
 
+func (sp *schedulerProcessor) runOneLoop(workerCtx context.Context, schedulerClient schedulerpb.SchedulerForQuerierClient, address string) bool {
+	loopID := uuid.NewString() // TODO: better random ID?
+	loopCtx, loopCtxCancel := context.WithCancelCause(context.Background())
+	defer loopCtxCancel(util.NewCancellationErrorf("runOneLoop finished")) // Ensure we don't leave the QuerierLoop stream running after this iteration of the loop.
+
+	c, err := schedulerClient.QuerierLoop(loopCtx)
+	if err == nil {
+		err = c.Send(&schedulerpb.QuerierToScheduler{QuerierID: sp.querierID, LoopID: loopID})
+	}
+
+	if err != nil {
+		level.Warn(sp.log).Log("msg", "error contacting scheduler", "err", err, "addr", address)
+		return false
+	}
+
+	done := make(chan struct{})
+	defer close(done)
+
+	go func() {
+		select {
+		case <-done:
+			// Nothing more to do, stream has ended.
+		case <-workerCtx.Done():
+			// Tell the scheduler to abort the stream.
+			if _, err := schedulerClient.NotifyStreamShutdown(context.Background(), &schedulerpb.NotifyStreamShutdownRequest{LoopID: loopID}); err != nil {
+				level.Warn(sp.log).Log("msg", "failed to notify scheduler that stream should be shut down", "err", err, "addr", address)
+				// The NotifyStreamShutdown call might fail if the scheduler has crashed, or if it's an older version that doesn't support this method, so all we can do here is abort the loop context.
+				loopCtxCancel(util.NewCancellationErrorf("failed to notify scheduler that stream should be shut down: %w", err))
+			}
+		}
+	}()
+
+	if err := sp.querierLoop(c, address); err != nil {
+		// Do not log an error if the query-scheduler is shutting down.
+		if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
+			level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+		}
+
+		return false
+	}
+
+	return true
+}
+
 // querierLoop loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(workerCtx context.Context, c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string) (err error) {
+func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed (which is how the scheduler signals that a query should be cancelled).
 	// We deliberately don't make this a child of workerCtx so that we can complete an inflight query even after a worker is stopped - workerCtx is
 	// cancelled when the scheduler begins shutting down.
@@ -142,25 +169,29 @@ func (sp *schedulerProcessor) querierLoop(workerCtx context.Context, c scheduler
 
 	var queryComplete chan struct{}
 
+	waitForQueryToComplete := func(reason string) {
+		if queryComplete == nil {
+			return
+		}
+
+		level.Debug(sp.log).Log("msg", "waiting until inflight query is complete", "reason", reason, "addr", address)
+		<-queryComplete
+		level.Debug(sp.log).Log("msg", "inflight query is complete", "reason", reason, "addr", address)
+	}
+
 	for {
 		request, err := c.Recv()
 		if err != nil {
-			if status.Code(err) == codes.Canceled && workerCtx.Err() != nil && queryComplete != nil {
-				// This worker has been asked to shut down, and the Recv() call aborted because of this.
-				// Wait for query execution (if any) to finish.
-				//
-				// Note that the gRPC client translates client-side context cancellations to a gRPC-style error with codes.Canceled -
-				// it does not return the 'raw' context.Canceled error.
-				//
-				// We can't use c.Context() in the check above because the gRPC client will cancel this context before Recv() returns any kind of error.
-				level.Debug(sp.log).Log("msg", "querier worker context has been canceled, waiting until inflight query is complete", "addr", address)
-				<-queryComplete
-				level.Debug(sp.log).Log("msg", "querier worker context has been canceled and inflight query is complete, canceling the execution context too", "addr", address)
-			}
-
-			// Once we get to here, we want to abort the running query (if any), which is handled by the deferred cancel call above.
-
+			// TODO: if we get an error here, check if it's because the query was cancelled
+			// - If it was cancelled, then we should cancel the query context created above and return nil
+			// - If it wasn't cancelled, then we should wait for the query to complete before returning and return the error
 			return err
+		}
+
+		if request.ShouldStop {
+			// We called NotifyStreamShutdown. Wait for query execution (if any) to finish.
+			waitForQueryToComplete("querier worker is shutting down")
+			return nil
 		}
 
 		queryComplete = make(chan struct{})

@@ -375,6 +375,11 @@ func (m *schedulerForQuerierClientMock) NotifyQuerierShutdown(ctx context.Contex
 	return args.Get(0).(*schedulerpb.NotifyQuerierShutdownResponse), args.Error(1)
 }
 
+func (m *schedulerForQuerierClientMock) NotifyStreamShutdown(ctx context.Context, in *schedulerpb.NotifyStreamShutdownRequest, opts ...grpc.CallOption) (*schedulerpb.NotifyStreamShutdownResponse, error) {
+	args := m.Called(ctx, in, opts)
+	return args.Get(0).(*schedulerpb.NotifyStreamShutdownResponse), args.Error(1)
+}
+
 type querierLoopClientMock struct {
 	mock.Mock
 }
