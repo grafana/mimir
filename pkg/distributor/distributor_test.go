@@ -2248,6 +2248,48 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 
 }
 
+func BenchmarkDistributor_ActiveSeries(b *testing.B) {
+	const numIngesters = 3
+	const numSeries = 10e3
+
+	// Create distributor and ingesters.
+	distributors, _, _ := prepare(b, prepConfig{
+		numIngesters:    numIngesters,
+		happyIngesters:  numIngesters,
+		numDistributors: 1,
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	// Push test data.
+	metrics := make([][]mimirpb.LabelAdapter, numSeries)
+	samples := make([]mimirpb.Sample, numSeries)
+
+	for i := 0; i < numSeries; i++ {
+		metrics[i] = mkLabels(10)
+		metrics[i] = append(metrics[i], mimirpb.LabelAdapter{Name: "series_no", Value: fmt.Sprintf("series_%d", i)})
+		samples[i] = mimirpb.Sample{TimestampMs: time.Now().UnixNano() / int64(time.Millisecond), Value: 1}
+	}
+
+	_, err := distributors[0].Push(
+		ctx,
+		mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API),
+	)
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	// Run the benchmark.
+	for n := 0; n < b.N; n++ {
+		_, err := distributors[0].ActiveSeries(
+			ctx,
+			[]*labels.Matcher{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "foo")},
+		)
+		require.NoError(b, err)
+	}
+}
+
 func TestDistributor_LabelNames(t *testing.T) {
 	const numIngesters = 5
 
@@ -3272,7 +3314,7 @@ type prepConfig struct {
 	timeOut bool
 }
 
-func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
 	ingesters := []mockIngester{}
 	for i := 0; i < cfg.happyIngesters; i++ {
 		zone := ""
