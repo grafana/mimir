@@ -1019,6 +1019,9 @@ github.com/twmb/franz-go/pkg/kgo
 github.com/twmb/franz-go/pkg/kgo/internal/sticky
 github.com/twmb/franz-go/pkg/kversion
 github.com/twmb/franz-go/pkg/sasl
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20231112180303-a6d10d4ad935
+## explicit; go 1.20
+github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.7.0
 ## explicit; go 1.18
 github.com/twmb/franz-go/pkg/kmsg

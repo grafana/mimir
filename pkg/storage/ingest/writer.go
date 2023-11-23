@@ -71,7 +71,6 @@ func NewWriter(kafkaAddress, kafkaTopic string, logger log.Logger, reg prometheu
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-// TODO unit test
 func (w *Writer) WriteSync(ctx context.Context, partitionID int, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	startTime := time.Now()
 

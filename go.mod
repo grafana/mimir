@@ -101,6 +101,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/twmb/franz-go v1.15.2 // indirect
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20231112180303-a6d10d4ad935 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0 // indirect
 	github.com/twmb/franz-go/plugin/kprom v1.1.0 // indirect
 )
