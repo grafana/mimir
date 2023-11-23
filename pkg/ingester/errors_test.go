@@ -246,22 +246,22 @@ func TestErrorWithStatus(t *testing.T) {
 		statusCode           codes.Code
 		doNotLog             bool
 		expectedErrorMessage string
-		expectedErrorDetails *mimirpb.WriteErrorDetails
+		expectedErrorDetails *mimirpb.ErrorDetails
 	}{
-		"new errorWithStatus backed by an ingesterError contains WriteErrorDetails": {
+		"new errorWithStatus backed by an ingesterError contains ErrorDetails": {
 			originErr:            ingesterErr,
 			statusCode:           codes.Unimplemented,
 			expectedErrorMessage: errMsg,
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()},
 		},
-		"new errorWithStatus backed by a DoNotLog error of ingesterError contains WriteErrorDetails": {
+		"new errorWithStatus backed by a DoNotLog error of ingesterError contains ErrorDetails": {
 			originErr:            middleware.DoNotLogError{Err: ingesterErr},
 			statusCode:           codes.Unimplemented,
 			doNotLog:             true,
 			expectedErrorMessage: errMsg,
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()},
 		},
-		"new errorWithStatus backed by a non-ingesterError doesn't contain WriteErrorDetails": {
+		"new errorWithStatus backed by a non-ingesterError doesn't contain ErrorDetails": {
 			originErr:            nonIngesterErr,
 			statusCode:           codes.Unimplemented,
 			expectedErrorMessage: errMsg,
@@ -359,7 +359,7 @@ func TestHandlePushErrorWithGRPC(t *testing.T) {
 		doNotLogExpected    bool
 		expectedCode        codes.Code
 		expectedMessage     string
-		expectedDetails     *mimirpb.WriteErrorDetails
+		expectedDetails     *mimirpb.ErrorDetails
 		expectedTranslation error
 	}{
 		"a generic error gets translated into an Internal gRPC error without details": {
@@ -379,123 +379,123 @@ func TestHandlePushErrorWithGRPC(t *testing.T) {
 			err:             newUnavailableError(services.Stopping),
 			expectedCode:    codes.Unavailable,
 			expectedMessage: newUnavailableError(services.Stopping).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"a wrapped unavailableError gets translated into a non-loggable errorWithStatus Unavailable error": {
 			err:             fmt.Errorf("wrapped: %w", newUnavailableError(services.Stopping)),
 			expectedCode:    codes.Unavailable,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newUnavailableError(services.Stopping).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"an instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error with details": {
 			err:              newInstanceLimitReachedError("instance limit reached"),
 			expectedCode:     codes.Unavailable,
 			expectedMessage:  newInstanceLimitReachedError("instance limit reached").Error(),
-			expectedDetails:  &mimirpb.WriteErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
+			expectedDetails:  &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 			doNotLogExpected: true,
 		},
 		"a wrapped instanceLimitReachedError gets translated into a non-loggable errorWithStatus Unavailable error with details": {
 			err:              fmt.Errorf("wrapped: %w", newInstanceLimitReachedError("instance limit reached")),
 			expectedCode:     codes.Unavailable,
 			expectedMessage:  fmt.Sprintf("wrapped: %s", newInstanceLimitReachedError("instance limit reached").Error()),
-			expectedDetails:  &mimirpb.WriteErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
+			expectedDetails:  &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 			doNotLogExpected: true,
 		},
 		"a tsdbUnavailableError gets translated into an errorWithStatus Internal error with details": {
 			err:             newTSDBUnavailableError("tsdb stopping"),
 			expectedCode:    codes.Internal,
 			expectedMessage: newTSDBUnavailableError("tsdb stopping").Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"a wrapped tsdbUnavailableError gets translated into a non-loggable errorWithStatus Internal error with details": {
 			err:             fmt.Errorf("wrapped: %w", newTSDBUnavailableError("tsdb stopping")),
 			expectedCode:    codes.Internal,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBUnavailableError("tsdb stopping").Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"a sampleError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newSampleError("id", "sample error", timestamp, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newSampleError("id", "sample error", timestamp, labelAdapters).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped sampleError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newSampleError("id", "sample error", timestamp, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newSampleError("id", "sample error", timestamp, labelAdapters).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a exemplarError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped exemplarError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newExemplarError("id", "exemplar error", timestamp, labelAdapters, labelAdapters).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a tsdbIngestExemplarErr gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped tsdbIngestExemplarErr gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newTSDBIngestExemplarErr(originalErr, timestamp, labelAdapters, labelAdapters).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perUserSeriesLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newPerUserSeriesLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerUserSeriesLimitReachedError(10).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perUserSeriesLimitReachedError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerUserSeriesLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserSeriesLimitReachedError(10).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perUserMetadataLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newPerUserMetadataLimitReachedError(10),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerUserMetadataLimitReachedError(10).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perUserMetadataLimitReachedError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerUserMetadataLimitReachedError(10)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerUserMetadataLimitReachedError(10).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newPerMetricSeriesLimitReachedError(10, labels),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerMetricSeriesLimitReachedError(10, labels).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricSeriesLimitReachedError(10, labels).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
 			err:             newPerMetricMetadataLimitReachedError(10, labels),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: newPerMetricMetadataLimitReachedError(10, labels).Error(),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into a non-loggable errorWithStatus FailedPrecondition error with details": {
 			err:             fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
 			expectedCode:    codes.FailedPrecondition,
 			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, labels).Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	}
 
@@ -698,12 +698,12 @@ func checkIngesterError(t *testing.T, err error, expectedCause mimirpb.ErrorCaus
 	}
 }
 
-func checkErrorWithStatusDetails(t *testing.T, details []any, expectedDetails *mimirpb.WriteErrorDetails) {
+func checkErrorWithStatusDetails(t *testing.T, details []any, expectedDetails *mimirpb.ErrorDetails) {
 	if expectedDetails == nil {
 		require.Empty(t, details)
 	} else {
 		require.Len(t, details, 1)
-		errDetails, ok := details[0].(*mimirpb.WriteErrorDetails)
+		errDetails, ok := details[0].(*mimirpb.ErrorDetails)
 		require.True(t, ok)
 		require.Equal(t, expectedDetails, errDetails)
 	}
