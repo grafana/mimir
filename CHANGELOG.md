@@ -26,7 +26,7 @@
   * `http.StatusAccepted` (202) code is replaced with `codes.AlreadyExists`.
   * `http.BadRequest` (400) code is replaced with `codes.FailedPrecondition`.
   * `http.StatusTooManyRequests` (429) and the non-standard `529` (The service is overloaded) codes are replaced with `codes.ResourceExhausted`.
-* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, `Push()` will return only gRPC errors. This feature changes the following status codes: #6443
+* [CHANGE] Ingester: by setting the newly introduced experimental CLI flag `-ingester.return-only-grpc-errors` to true, `Push()` will return only gRPC errors. This feature changes the following status codes: #6443 #6723
   * `http.StatusBadRequest` (400) is replaced with `codes.FailedPrecondition`.
   * `http.StatusServiceUnavailable` (503) and `codes.Unknown` are replaced with `codes.Internal`.
 * [CHANGE] Upgrade Node.js to v20. #6540

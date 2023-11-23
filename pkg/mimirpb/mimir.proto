@@ -46,7 +46,7 @@ enum ErrorCause {
   TSDB_UNAVAILABLE = 8;
 }
 
-message WriteErrorDetails {
+message ErrorDetails {
   ErrorCause Cause = 1;
 }
 

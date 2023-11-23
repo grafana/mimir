@@ -132,7 +132,7 @@ func TestDistributor_Push(t *testing.T) {
 		metadata             int
 		expectedError        error
 		expectedGRPCError    *status.Status
-		expectedErrorDetails *mimirpb.WriteErrorDetails
+		expectedErrorDetails *mimirpb.ErrorDetails
 		expectedMetrics      string
 		timeOut              bool
 		configure            func(*Config)
@@ -195,7 +195,7 @@ func TestDistributor_Push(t *testing.T) {
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
 			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionRateLimitedError(20, 20).Error()),
-			expectedErrorDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -583,7 +583,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		testData := testData
@@ -662,7 +662,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		},
 	}
 
-	expectedErrorDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
+	expectedErrorDetails := &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED}
 
 	for testName, testData := range tests {
 		testData := testData
@@ -901,7 +901,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		samples          int
 		expectedResponse *mimirpb.WriteResponse
 		expectedError    *status.Status
-		expectedDetails  *mimirpb.WriteErrorDetails
+		expectedDetails  *mimirpb.ErrorDetails
 	}{
 		{
 			enableTracker:    true,
@@ -919,7 +919,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.AlreadyExists, newReplicasDidNotMatchError("instance0", "instance2").Error()),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH},
 		},
 		// If the HA tracker is disabled we should still accept samples that have both labels.
 		{
@@ -938,7 +938,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			cluster:         "cluster0",
 			samples:         5,
 			expectedError:   status.New(codes.FailedPrecondition, fmt.Sprintf(labelValueTooLongMsgFormat, "instance1234567890123456789012345678901234567890", formatLabelSet(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
-			expectedDetails: &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA},
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -1447,7 +1447,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 	}
 
-	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -2875,8 +2875,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
-	replicasDidNotMatchDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
-	tooManyClusterDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
+	replicasDidNotMatchDetails := &mimirpb.ErrorDetails{Cause: mimirpb.REPLICAS_DID_NOT_MATCH}
+	tooManyClusterDetails := &mimirpb.ErrorDetails{Cause: mimirpb.TOO_MANY_CLUSTERS}
 
 	type testCase struct {
 		name              string
@@ -2887,7 +2887,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
 		expectErrs        []*status.Status
-		expectDetails     []*mimirpb.WriteErrorDetails
+		expectDetails     []*mimirpb.ErrorDetails
 	}
 	testCases := []testCase{
 		{
@@ -2926,7 +2926,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
 			expectErrs:        []*status.Status{status.New(codes.Internal, "no org id")},
-			expectDetails:     []*mimirpb.WriteErrorDetails{nil},
+			expectDetails:     []*mimirpb.ErrorDetails{nil},
 		}, {
 			name:            "perform HA deduplication",
 			ctx:             ctxWithUser,
@@ -2939,7 +2939,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
-			expectDetails:     []*mimirpb.WriteErrorDetails{nil, replicasDidNotMatchDetails},
+			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
@@ -2959,7 +2959,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				status.New(codes.FailedPrecondition, newTooManyClustersError(1).Error()),
 				status.New(codes.FailedPrecondition, newTooManyClustersError(1).Error()),
 			},
-			expectDetails: []*mimirpb.WriteErrorDetails{nil, replicasDidNotMatchDetails, tooManyClusterDetails, tooManyClusterDetails},
+			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails, tooManyClusterDetails, tooManyClusterDetails},
 		},
 	}
 
@@ -4368,7 +4368,7 @@ func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
 	now := model.Now()
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
-	expectedDetails := &mimirpb.WriteErrorDetails{Cause: mimirpb.BAD_DATA}
+	expectedDetails := &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA}
 
 	for name, tc := range map[string]struct {
 		metadata    []*mimirpb.MetricMetadata
@@ -5133,9 +5133,9 @@ func TestHandlePushError(t *testing.T) {
 			if testData.expectedGRPCError == nil {
 				require.Equal(t, testData.expectedOtherError, err)
 			} else {
-				var expectedDetails *mimirpb.WriteErrorDetails
+				var expectedDetails *mimirpb.ErrorDetails
 				if distributorErr, ok := testData.pushError.(distributorError); ok {
-					expectedDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+					expectedDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
 				}
 				checkGRPCError(t, testData.expectedGRPCError, expectedDetails, err)
 			}
@@ -5170,7 +5170,7 @@ func searchToken(tokens []uint32, key uint32) int {
 	return i
 }
 
-func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails *mimirpb.WriteErrorDetails, err error) {
+func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails *mimirpb.ErrorDetails, err error) {
 	stat, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, expectedStatus.Code(), stat.Code())
@@ -5180,7 +5180,7 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 	} else {
 		details := stat.Details()
 		require.Len(t, details, 1)
-		errorDetails, ok := details[0].(*mimirpb.WriteErrorDetails)
+		errorDetails, ok := details[0].(*mimirpb.ErrorDetails)
 		require.True(t, ok)
 		require.Equal(t, expectedDetails, errorDetails)
 	}
@@ -5188,7 +5188,7 @@ func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails
 
 func createStatusWithDetails(t *testing.T, code codes.Code, message string, cause mimirpb.ErrorCause) *status.Status {
 	stat := status.New(code, message)
-	statWithDetails, err := stat.WithDetails(&mimirpb.WriteErrorDetails{Cause: cause})
+	statWithDetails, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: cause})
 	require.NoError(t, err)
 	return statWithDetails
 }
