@@ -1180,6 +1180,11 @@ instance_limits:
 # disabled.
 # CLI flag: -ingester.track-ingester-owned-series
 [track_ingester_owned_series: <boolean> | default = false]
+
+# (experimental) How often to check for ring changes and possibly recompute
+# owned series as a result of detected change.
+# CLI flag: -ingester.owned-series-update-interval
+[owned_series_update_interval: <duration> | default = 15s]
 ```
 
 ### querier

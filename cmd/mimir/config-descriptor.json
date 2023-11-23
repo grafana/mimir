@@ -3053,6 +3053,17 @@
           "fieldFlag": "ingester.track-ingester-owned-series",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "owned_series_update_interval",
+          "required": false,
+          "desc": "How often to check for ring changes and possibly recompute owned series as a result of detected change.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ingester.owned-series-update-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

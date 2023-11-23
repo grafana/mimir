@@ -176,9 +176,9 @@ type Config struct {
 
 	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
 
-	UseIngesterOwnedSeriesForLimits bool `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
-	UpdateIngesterOwnedSeries       bool `yaml:"track_ingester_owned_series" category:"experimental"`
-	OwnedSeriesUpdateInterval       time.Duration
+	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
+	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
+	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -300,7 +300,6 @@ type Ingester struct {
 	errorSamplers ingesterErrSamplers
 
 	// Used by ownedSeries to check if ring has changed.
-	// TODO(pstibrany): only keep ingesters from the same zone.
 	ownedSeriesLastReplicaSet ring.ReplicationSet
 }
 
@@ -766,8 +765,18 @@ func (i *Ingester) applyTSDBSettings() {
 
 func (i *Ingester) updateLocalLimitMetrics() {
 	for _, userID := range i.getTSDBUsers() {
-		// TODO: use owned shard size, if used.
-		localValue := i.limiter.maxSeriesPerUser(userID, i.limiter.getShardSize(userID))
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		localValue := 0
+		if db.useOwnedSeriesForLimits {
+			_, shards := db.OwnedSeriesAndShards()
+			localValue = i.limiter.maxSeriesPerUser(userID, shards)
+		} else {
+			localValue = i.limiter.maxSeriesPerUser(userID, i.limiter.getShardSize(userID))
+		}
 
 		// update metrics
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
@@ -3490,6 +3499,8 @@ func (i *Ingester) ownedSeriesStarting(ctx context.Context) error {
 	return nil
 }
 
+// This function runs periodically. It checks if ring has changed, and updates number of owned series for any
+// user that requires it (due to ring change, compaction, shard size change, ...).
 func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
 	rs, err := i.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
 	if err != nil {
