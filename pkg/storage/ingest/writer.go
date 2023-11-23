@@ -125,27 +125,20 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int) (*kgo.Client, error
 		return writer, nil
 	}
 
-	// Optimistically create the new writer without taking the lock.
+	w.writersMx.Lock()
+	defer w.writersMx.Unlock()
+
+	// Ensure a new writer wasn't created in the meanwhile. If so, use it.
+	writer = w.writers[partitionID]
+	if writer != nil {
+		return writer, nil
+	}
 	newWriter, err := w.newKafkaWriter(partitionID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Ensure a new writer wasn't created in the meanwhile. If so, cache it.
-	w.writersMx.Lock()
-	writer = w.writers[partitionID]
-	if writer == nil {
-		w.writers[partitionID] = newWriter
-		writer = newWriter
-	}
-	w.writersMx.Unlock()
-
-	// If the new writer wasn't used, then just close it.
-	if writer != newWriter {
-		newWriter.Close()
-	}
-
-	return writer, nil
+	w.writers[partitionID] = newWriter
+	return newWriter, nil
 }
 
 // newKafkaWriter creates a new Kafka client used to write to a specific partition.
