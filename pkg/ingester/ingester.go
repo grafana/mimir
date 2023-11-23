@@ -2268,7 +2268,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 	userDB.TriggerRecomputeOwnedSeries("new user")
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limiter.getShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limits.IngestionTenantShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
