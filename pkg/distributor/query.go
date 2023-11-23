@@ -34,7 +34,9 @@ import (
 var (
 	// readNoExtend is a ring.Operation that only selects instances marked as ring.ACTIVE.
 	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
-	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	// We include ring.PENDING instances as well to ensure we don't miss any instances that have
+	// recently started and we may not have observed in the ring.ACTIVE state yet.
+	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
