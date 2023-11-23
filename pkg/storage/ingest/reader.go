@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -38,18 +39,21 @@ type PartitionReader struct {
 	client *kgo.Client
 
 	consumer RecordConsumer
+	metrics  *readerMetrics
 
 	logger log.Logger
 	reg    prometheus.Registerer
 }
 
 func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer RecordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+	metrics := newReaderMetrics(reg)
 	r := &PartitionReader{
 		kafkaAddress: kafkaAddress,
 		kafkaTopic:   kafkaTopic,
 		partition:    partitionID,
 		reg:          reg,
 		consumer:     consumer,
+		metrics:      metrics,
 		logger:       log.With(logger, "partition", partitionID),
 	}
 
@@ -87,6 +91,7 @@ func (r *PartitionReader) run(ctx context.Context) error {
 		}
 		level.Debug(r.logger).Log("msg", "fetched records", "num_records", fetches.NumRecords())
 
+		r.recordFetchesLag(fetches)
 		r.consumeFetches(consumeCtx, fetches)
 		r.commitFetches(consumeCtx, fetches)
 	}
@@ -116,15 +121,27 @@ func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
 	fetches.EachRecord(func(record *kgo.Record) {
 		level.Debug(r.logger).Log("msg", "fetched record", "offset", record.Offset)
+		defer prometheus.NewTimer(r.metrics.processingTime).ObserveDuration()
 
-		err := r.consumer.Consume(ctx, Record{
-			Content:  record.Value,
-			TenantID: string(record.Key),
-		})
+		err := r.consumer.Consume(ctx, mapRecord(record))
 		if err != nil {
 			level.Error(r.logger).Log("msg", "encountered error processing record; skipping", "offset", record.Offset, "err", err)
 			// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
 		}
+	})
+}
+
+func mapRecord(record *kgo.Record) Record {
+	return Record{
+		Content:  record.Value,
+		TenantID: string(record.Key),
+	}
+}
+
+func (r *PartitionReader) recordFetchesLag(fetches kgo.Fetches) {
+	processingStart := time.Now()
+	fetches.EachRecord(func(record *kgo.Record) {
+		r.metrics.receiveDelay.Observe(processingStart.Sub(record.Timestamp).Seconds())
 	})
 }
 
@@ -175,4 +192,43 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 func (r *PartitionReader) stop(error) error {
 	r.client.Close()
 	return nil
+}
+
+type readerMetrics struct {
+	processingTime prometheus.Histogram
+	receiveDelay   prometheus.Histogram
+}
+
+func newReaderMetrics(reg prometheus.Registerer) *readerMetrics {
+	factory := promauto.With(reg)
+	return &readerMetrics{
+		processingTime: factory.NewSummary(prometheus.SummaryOpts{
+			Name: "cortex_ingest_storage_reader_processing_time_seconds",
+			Help: "Time taken to process a single record (write request).",
+			Objectives: map[float64]float64{
+				0.5:   0.05,
+				0.90:  0.01,
+				0.99:  0.001,
+				0.995: 0.001,
+				0.999: 0.001,
+				1:     0.001,
+			},
+			MaxAge:     time.Minute,
+			AgeBuckets: 10,
+		}),
+		receiveDelay: factory.NewSummary(prometheus.SummaryOpts{
+			Name: "cortex_ingest_storage_reader_receive_delay_seconds",
+			Help: "Delay between producing a record and receiving it in the consumer.",
+			Objectives: map[float64]float64{
+				0.5:   0.05,
+				0.90:  0.01,
+				0.99:  0.001,
+				0.995: 0.001,
+				0.999: 0.001,
+				1:     0.001,
+			},
+			MaxAge:     time.Minute,
+			AgeBuckets: 10,
+		}),
+	}
 }
