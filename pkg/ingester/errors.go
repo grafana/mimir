@@ -47,14 +47,14 @@ type errorWithStatus struct {
 // newErrorWithStatus creates a new errorWithStatus backed by the given error,
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting errorWithStatus will be enriched by the details backed by
-// ingesterError.errorCause. These details are of type mimirpb.WriteErrorDetails.
+// ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
 func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 	var (
 		ingesterErr  ingesterError
-		errorDetails *mimirpb.WriteErrorDetails
+		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
-		errorDetails = &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()}
+		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
 	}
 	stat := status.New(code, originalErr.Error())
 
@@ -103,14 +103,14 @@ func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 }
 
 // writeErrorDetails is needed for testing purposes only. It returns the
-// mimirpb.WriteErrorDetails object stored in this error's status, if any
+// mimirpb.ErrorDetails object stored in this error's status, if any
 // or nil otherwise.
-func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
+func (e errorWithStatus) writeErrorDetails() *mimirpb.ErrorDetails {
 	details := e.status.Details()
 	if len(details) != 1 {
 		return nil
 	}
-	if errDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+	if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 		return errDetails
 	}
 	return nil
@@ -120,7 +120,7 @@ func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
 // if the given error and this error are equal, i.e., if they are both of
 // type errorWithStatus, if their underlying statuses have the same code,
 // messages, and if both have either no details, or exactly one detail
-// of type mimirpb.WriteErrorDetails, which are equal too.
+// of type mimirpb.ErrorDetails, which are equal too.
 func (e errorWithStatus) equals(err error) bool {
 	if err == nil {
 		return false

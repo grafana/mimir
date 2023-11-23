@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -373,10 +372,7 @@ func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _
 		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
 	default:
 		if r.StatusCode/100 == 5 {
-			return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
-				Code: int32(r.StatusCode),
-				Body: mustReadResponseBody(r),
-			})
+			return nil, apierror.New(apierror.TypeInternal, string(mustReadResponseBody(r)))
 		}
 	}
 

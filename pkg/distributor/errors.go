@@ -172,7 +172,7 @@ func newIngesterPushError(stat *status.Status) ingesterPushError {
 	errorCause := mimirpb.UNKNOWN_CAUSE
 	details := stat.Details()
 	if len(details) == 1 {
-		if errorDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
 		}
 	}
@@ -197,11 +197,11 @@ var _ distributorError = ingesterPushError{}
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
 		distributorErr distributorError
-		errDetails     *mimirpb.WriteErrorDetails
+		errDetails     *mimirpb.ErrorDetails
 		errCode        = codes.Internal
 	)
 	if errors.As(pushErr, &distributorErr) {
-		errDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
 		switch distributorErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			errCode = codes.FailedPrecondition
