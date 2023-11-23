@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -346,11 +347,24 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}, nil
 }
 
-type noopConsumer struct {
+// pusher is an ingester server that accepts pushes.
+type pusher interface {
+	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 
-func (n noopConsumer) Consume(record ingest.Record) error {
-	return nil
+type ingesterConsumer struct {
+	p pusher
+}
+
+func (n ingesterConsumer) Consume(ctx context.Context, record ingest.Record) error {
+	wr := &mimirpb.WriteRequest{}
+	err := wr.Unmarshal(record.Content)
+	if err != nil {
+		return errors.Wrap(err, "parsing ingest consumer write request")
+	}
+	ctx = user.InjectOrgID(ctx, record.TenantID)
+	_, err = n.p.Push(ctx, wr)
+	return errors.Wrap(err, "consuming write request")
 }
 
 // New returns an Ingester that uses Mimir block storage.
@@ -417,7 +431,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
-		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, partitionID, noopConsumer{}, log.With(logger, "component", "ingest_reader"), registerer)
+		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, partitionID, ingesterConsumer{p: i}, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingestion client")
 		}

@@ -132,4 +132,4 @@ func startReader(t *testing.T, ctx context.Context, addr string, topicName strin
 
 type consumerFunc func(Record) error
 
-func (f consumerFunc) Consume(record Record) error { return f(record) }
+func (f consumerFunc) Consume(ctx context.Context, record Record) error { return f(record) }

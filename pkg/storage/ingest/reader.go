@@ -20,11 +20,12 @@ import (
 const consumerGroup = "mimir"
 
 type Record struct {
-	Content []byte
+	TenantID string
+	Content  []byte
 }
 
 type RecordConsumer interface {
-	Consume(Record) error
+	Consume(context.Context, Record) error
 }
 
 type PartitionReader struct {
@@ -71,17 +72,23 @@ func (r *PartitionReader) start(ctx context.Context) error {
 }
 
 func (r *PartitionReader) run(ctx context.Context) error {
+	consumeCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	for ctx.Err() == nil {
 		fetches := r.client.PollFetches(ctx)
 		if fetches.Err() != nil {
+			if errors.Is(fetches.Err(), context.Canceled) {
+				return nil
+			}
 			err := collectFetchErrs(fetches)
 			level.Error(r.logger).Log("msg", "encountered error while fetching", "err", err)
 			continue
 		}
 		level.Debug(r.logger).Log("msg", "fetched records", "num_records", fetches.NumRecords())
 
-		r.consumeFetches(fetches)
-		r.commitFetches(ctx, fetches)
+		r.consumeFetches(consumeCtx, fetches)
+		r.commitFetches(consumeCtx, fetches)
 	}
 
 	return nil
@@ -106,11 +113,14 @@ func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches
 	}
 }
 
-func (r *PartitionReader) consumeFetches(fetches kgo.Fetches) {
+func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
 	fetches.EachRecord(func(record *kgo.Record) {
 		level.Debug(r.logger).Log("msg", "fetched record", "offset", record.Offset)
 
-		err := r.consumer.Consume(Record{Content: record.Value})
+		err := r.consumer.Consume(ctx, Record{
+			Content:  record.Value,
+			TenantID: string(record.Key),
+		})
 		if err != nil {
 			level.Error(r.logger).Log("msg", "encountered error processing record; skipping", "offset", record.Offset, "err", err)
 			// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
