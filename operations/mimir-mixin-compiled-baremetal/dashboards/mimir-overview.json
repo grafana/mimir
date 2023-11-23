@@ -810,7 +810,7 @@
                         "color": "#A1C4FC"
                      },
                      {
-                        "alias": "other",
+                        "alias": "\"active series\" queries",
                         "color": "#C788DE"
                      }
                   ],
@@ -865,7 +865,13 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars)\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=\"prometheus_api_v1_cardinality_active_series\"}[$__rate_interval])) > 0",
+                        "format": "time_series",
+                        "legendFormat": "\"active series\" queries",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars|cardinality_active_series)\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "other",
                         "legendLink": null
