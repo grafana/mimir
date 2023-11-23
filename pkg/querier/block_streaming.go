@@ -195,6 +195,13 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 	totalChunks := 0
 
 	translateReceivedError := func(err error) error {
+		if errors.Is(err, context.Canceled) {
+			// If there's a more detailed cancellation reason available, return that.
+			if cause := context.Cause(s.ctx); cause != nil {
+				return fmt.Errorf("aborted stream because query was cancelled: %w", cause)
+			}
+		}
+
 		if !errors.Is(err, io.EOF) {
 			return err
 		}

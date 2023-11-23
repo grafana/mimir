@@ -83,6 +83,8 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
+  - Reusable ingester push worker
+    - `-distributor.reusable-ingester-push-workers`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -107,6 +109,7 @@ The following features are currently experimental:
     - `ingester.ring.token-generation-strategy`
     - `ingester.ring.spread-minimizing-zones`
     - `ingester.ring.spread-minimizing-join-ring-in-order`
+  - Allow ingester's `Push()` to return gRPC errors only: `-ingester.return-only-grpc-errors`.
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
@@ -127,6 +130,7 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
+  - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

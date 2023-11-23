@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -134,6 +135,7 @@ func TestDistributor_Push(t *testing.T) {
 		expectedErrorDetails *mimirpb.WriteErrorDetails
 		expectedMetrics      string
 		timeOut              bool
+		configure            func(*Config)
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -292,6 +294,22 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.009
 			`,
 		},
+		"A push to 3 happy ingesters using batch worker gouroutines should succeed": {
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
+			expectedMetrics: `
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.004
+			`,
+			configure: func(cfg *Config) {
+				// 2 workers, so 1 push would need to spawn a new goroutine.
+				cfg.ReusableIngesterPushWorkers = 2
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			limits := &validation.Limits{}
@@ -305,6 +323,7 @@ func TestDistributor_Push(t *testing.T) {
 				numDistributors: 1,
 				limits:          limits,
 				timeOut:         tc.timeOut,
+				configure:       tc.configure,
 			})
 
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
@@ -334,6 +353,42 @@ func TestDistributor_Push(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
+	limits := &validation.Limits{}
+	flagext.DefaultValues(limits)
+	limits.IngestionRate = 20
+	limits.IngestionBurstSize = 20
+
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
+		configure: func(cfg *Config) {
+			// 2 workers, so 1 push would need to spawn a new goroutine.
+			cfg.ReusableIngesterPushWorkers = 2
+		},
+	})
+	require.Len(t, ds, 1)
+	distributor := ds[0]
+
+	require.NotNil(t, distributor.ingesterDoBatchPushWorkers)
+	counter := atomic.NewInt64(0)
+	originalIngesterDoBatchPushWorkers := distributor.ingesterDoBatchPushWorkers
+	distributor.ingesterDoBatchPushWorkers = func(f func()) {
+		counter.Inc()
+		originalIngesterDoBatchPushWorkers(f)
+	}
+
+	request := makeWriteRequest(123456789000, 3, 5, false, false)
+	ctx := user.InjectOrgID(context.Background(), "user")
+	response, err := distributor.Push(ctx, request)
+
+	require.NoError(t, err)
+	require.Equal(t, emptyResponse, response)
+	require.GreaterOrEqual(t, counter.Load(), int64(3))
 }
 
 func TestDistributor_ContextCanceledRequest(t *testing.T) {

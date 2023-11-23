@@ -1,5 +1,16 @@
 ## Upcoming Release
 
+## 0.4.0
+
+## Improvements
+
+- Always cancel Context on when a Timeout policy is exceeded
+
+## API changes
+
+- Rename Fn -> Func and DelayFunction -> DelayFunc
+- Change some params from int to uint
+
 ## 0.3.1
 
 ### Improvements

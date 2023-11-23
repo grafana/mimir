@@ -49,7 +49,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestOtelMetricsToMetadata(t *testing.T) {
+func TestOTelMetricsToMetadata(t *testing.T) {
 	otelMetrics := pmetric.NewMetrics()
 	rs := otelMetrics.ResourceMetrics().AppendEmpty()
 	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
@@ -68,23 +68,44 @@ func TestOtelMetricsToMetadata(t *testing.T) {
 	gaugeDatapointTwo := gaugeMetricTwo.DataPoints().AppendEmpty()
 	gaugeDatapointTwo.Attributes().PutStr("label1", "value2")
 
-	sampleMetadata := []*mimirpb.MetricMetadata{
+	testCases := []struct {
+		name           string
+		enableSuffixes bool
+	}{
 		{
-			Help:             "",
-			Unit:             "Count",
-			Type:             mimirpb.GAUGE,
-			MetricFamilyName: "name",
+			name:           "OTel metric suffixes enabled",
+			enableSuffixes: true,
 		},
 		{
-			Help:             "",
-			Unit:             "Count",
-			Type:             mimirpb.GAUGE,
-			MetricFamilyName: "test",
+			name:           "OTel metric suffixes disabled",
+			enableSuffixes: false,
 		},
 	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			countSfx := ""
+			if tc.enableSuffixes {
+				countSfx = "_Count"
+			}
+			sampleMetadata := []*mimirpb.MetricMetadata{
+				{
+					Help:             "",
+					Unit:             "Count",
+					Type:             mimirpb.GAUGE,
+					MetricFamilyName: "name" + countSfx,
+				},
+				{
+					Help:             "",
+					Unit:             "Count",
+					Type:             mimirpb.GAUGE,
+					MetricFamilyName: "test" + countSfx,
+				},
+			}
 
-	res := otelMetricsToMetadata(otelMetrics)
-	assert.Equal(t, sampleMetadata, res)
+			res := otelMetricsToMetadata(tc.enableSuffixes, otelMetrics)
+			assert.Equal(t, sampleMetadata, res)
+		})
+	}
 }
 
 func TestHandlerOTLPPush(t *testing.T) {
@@ -268,7 +289,12 @@ func TestHandlerOTLPPush(t *testing.T) {
 				req.Header.Set("Content-Encoding", tt.encoding)
 			}
 
-			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, nil, RetryConfig{}, nil, tt.verifyFunc, log.NewNopLogger())
+			limits, err := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(map[string]*validation.Limits{}),
+			)
+			require.NoError(t, err)
+			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, tt.verifyFunc, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
@@ -321,9 +347,15 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
+	limits, err := validation.NewOverrides(
+		validation.Limits{},
+		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
+	)
+	require.NoError(t, err)
+
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -361,9 +393,15 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	metric2.SetName(name)
 	metric2.SetEmptyGauge()
 
+	limits, err := validation.NewOverrides(
+		validation.Limits{},
+		validation.NewMockTenantLimits(map[string]*validation.Limits{}),
+	)
+	require.NoError(t, err)
+
 	req := createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler := OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
@@ -389,7 +427,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPRequest(t, pmetricotlp.NewExportRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, true, nil, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
+	handler = OTLPHandler(100000, nil, false, true, limits, RetryConfig{}, nil, func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
@@ -402,7 +440,6 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
-
 	// createOTLPRequest will create a request which is BIGGER with compression (37 vs 58 bytes).
 	// Hence creating a dummy request.
 	var b bytes.Buffer
@@ -970,8 +1007,8 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 }
 
 func TestHandler_ToHTTPStatus(t *testing.T) {
-	userID := "user"
-	originalMsg := "this is an error"
+	const userID = "user"
+	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
 	tooManyClustersErr := newTooManyClustersError(10)

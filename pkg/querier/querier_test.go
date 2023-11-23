@@ -207,26 +207,22 @@ func TestQuerier(t *testing.T) {
 		},
 	}
 
-	for _, query := range queries {
-		for _, iterators := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
-				// Generate TSDB head used to simulate querying the long-term storage.
-				db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), query.valueType)
+	for _, q := range queries {
+		t.Run(q.query, func(t *testing.T) {
+			// Generate TSDB head used to simulate querying the long-term storage.
+			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 
-				cfg.Iterators = iterators
+			// No samples returned by ingesters.
+			distributor := &mockDistributor{}
+			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				// No samples returned by ingesters.
-				distributor := &mockDistributor{}
-				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
-				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+			require.NoError(t, err)
 
-				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-				require.NoError(t, err)
-
-				queryable, _, _ := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
-				testRangeQuery(t, queryable, through, query)
-			})
-		}
+			queryable, _, _ := New(cfg, overrides, distributor, db, nil, log.NewNopLogger(), nil)
+			testRangeQuery(t, queryable, through, q)
+		})
 	}
 }
 
@@ -318,86 +314,6 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		{T: 1635746640000, F: 78},
 		{T: 1635746700000, F: 80},
 	}, m[0].Floats)
-}
-
-// TestBatchMergeChunks is a regression test to catch one particular case
-// when the Batch merger iterator was corrupting memory by not copying
-// Batches by value because the Batch itself was not possible to copy
-// by value.
-func TestBatchMergeChunks(t *testing.T) {
-	var (
-		logger     = log.NewNopLogger()
-		queryStart = mustParseTime("2021-11-01T06:00:00Z")
-		queryEnd   = mustParseTime("2021-11-01T06:01:00Z")
-		queryStep  = time.Second
-	)
-
-	var cfg Config
-	flagext.DefaultValues(&cfg)
-	cfg.BatchIterators = true // Always use the Batch iterator - regression test
-
-	limits := defaultLimitsConfig()
-	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
-	s1 := []mimirpb.Sample{}
-	s2 := []mimirpb.Sample{}
-
-	for i := 0; i < 12; i++ {
-		s1 = append(s1, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
-		if i != 9 { // let series 3 miss a point
-			s2 = append(s2, mimirpb.Sample{Value: float64(i * 15000), TimestampMs: queryStart.Add(time.Duration(i) * time.Second).UnixMilli()})
-		}
-	}
-
-	c1 := convertToChunks(t, samplesToInterface(s1))
-	c2 := convertToChunks(t, samplesToInterface(s2))
-	chunks12 := []client.Chunk{}
-	chunks12 = append(chunks12, c1...)
-	chunks12 = append(chunks12, c2...)
-
-	chunks21 := []client.Chunk{}
-	chunks21 = append(chunks21, c2...)
-	chunks21 = append(chunks21, c1...)
-
-	// Mock distributor to return chunks that need merging.
-	distributor := &mockDistributor{}
-	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				// Series with chunks in the 1,2 order, that need merge
-				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
-					Chunks: chunks12,
-				},
-				// Series with chunks in the 2,1 order, that need merge
-				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
-					Chunks: chunks21,
-				},
-			},
-		},
-		nil)
-
-	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     logger,
-		MaxSamples: 1e6,
-		Timeout:    1 * time.Minute,
-	})
-
-	queryable, _, _ := New(cfg, overrides, distributor, nil, nil, logger, nil)
-	ctx := user.InjectOrgID(context.Background(), "user-1")
-	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
-	require.NoError(t, err)
-
-	r := query.Exec(ctx)
-	m, err := r.Matrix()
-	require.NoError(t, err)
-
-	require.Equal(t, 2, m.Len())
-	require.ElementsMatch(t, m[0].Floats, m[1].Floats)
-	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
