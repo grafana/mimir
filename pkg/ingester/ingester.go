@@ -3513,7 +3513,7 @@ func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
 
 	start := time.Now()
 	i.ownedSeriesUpdate(ctx, ringChanged)
-	level.Info(i.logger).Log("msg", "owned series: updated owned series for all users", "duration", time.Since(start))
+	level.Info(i.logger).Log("msg", "owned series: updated owned series for all users", "duration", time.Since(start), "ringChanged", ringChanged)
 	return nil
 }
 
@@ -3539,23 +3539,20 @@ func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringC
 
 	reason := db.requiresOwnedSeriesUpdate.Swap("") // Clear reason, so that other reasons can be set while we run update here.
 	if reason == "" {
-		if ringChanged {
-			reason = "ring changed"
-		} else {
-			_, ownedShardSize := db.OwnedSeriesAndShards()
-			if shardSize != ownedShardSize {
-				reason = "shard size changed"
-			}
+		_, ownedShardSize := db.OwnedSeriesAndShards()
+		if shardSize != ownedShardSize {
+			reason = "shard size changed"
 		}
 	}
 
-	if reason == "" {
+	if !ringChanged && reason == "" {
 		// Nothing to do for this tenant.
 		return
 	}
 
+	// We need to check for tokens even if ringChanged is false... we may be here because of ring-check failure in previous
+	// iteration.
 	subr := i.ingestersRing.ShuffleShard(userID, shardSize)
-	level.Info(i.logger).Log("msg", "owned series: subring for user", "user", userID, "ingester", i.lifecycler.ID, "subringContainsIngester", subr.HasInstance(i.lifecycler.ID), "ingestersInSubring", subr.InstancesCount(), "RF", subr.ReplicationFactor())
 
 	ranges, err := subr.GetTokenRangesForInstance(i.lifecycler.ID)
 	if err != nil {
@@ -3565,11 +3562,17 @@ func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringC
 		} else {
 			level.Error(i.logger).Log("msg", "owned series: failed to get token ranges from user's subring", "user", userID, "ingester", i.lifecycler.ID, "err", err)
 
-			// If we failed to run the update, put the reason back. We need to keep trying.
-			db.TriggerRecomputeOwnedSeries(reason)
+			// If we failed to run the update, set the new reason, to make sure we do the check in next iteration.
+			db.TriggerRecomputeOwnedSeries("update failed")
 			return
 		}
 	}
 
-	db.UpdateTokenRangesAndRecomputeOwnedSeries(ranges, shardSize, reason, i.logger)
+	if db.UpdateTokenRanges(ranges) && reason == "" {
+		reason = "ring changed"
+	}
+
+	if reason != "" {
+		db.RecomputeOwnedSeries(shardSize, reason, i.logger)
+	}
 }

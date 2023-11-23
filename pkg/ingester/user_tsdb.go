@@ -136,7 +136,7 @@ type userTSDB struct {
 	ownedTokenRangesMtx sync.Mutex
 	ownedTokenRanges    ring.TokenRanges
 
-	requiresOwnedSeriesUpdate atomic.String
+	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -511,15 +511,7 @@ func (u *userTSDB) TriggerRecomputeOwnedSeries(reason string) {
 	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
 }
 
-func (u *userTSDB) UpdateTokenRangesAndRecomputeOwnedSeries(ranges ring.TokenRanges, shardSize int, reason string, logger log.Logger) {
-	if !u.updateTokenRanges(ranges) {
-		// If token ranges have not changed, we don't need to recompute owned series. But we should store shardSize, which may be different from before.
-		u.ownedSeriesMtx.Lock()
-		u.ownedSeriesShardSize = shardSize
-		u.ownedSeriesMtx.Unlock()
-		return
-	}
-
+func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log.Logger) {
 	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
 	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
 
@@ -556,8 +548,8 @@ func (u *userTSDB) UpdateTokenRangesAndRecomputeOwnedSeries(ranges ring.TokenRan
 	level.Info(logger).Log("msg", "owned series: recomputed owned series for user", "user", u.userID, "reason", reason, "ownedSeriesCountBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "ownedSeriesCountAfter", ownedNew, "shardSizeAfter", shardSize, "duration", dur, "repeats", repeats)
 }
 
-// updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
-func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
+// UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+func (u *userTSDB) UpdateTokenRanges(newTokenRanges []uint32) bool {
 	// Check for changes outside critical section.
 	u.ownedTokenRangesMtx.Lock()
 	prev := u.ownedTokenRanges
