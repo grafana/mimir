@@ -52,7 +52,7 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer Reco
 		kafkaTopic:   kafkaTopic,
 		partition:    partitionID,
 		reg:          reg,
-		consumer:     consumer,
+		consumer:     consumer, // TODO consume records in parallel
 		metrics:      metrics,
 		logger:       log.With(logger, "partition", partitionID),
 	}
