@@ -40,7 +40,7 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, logger log.Lo
 		logger:       log.With(logger, "partition", partitionID),
 	}
 
-	r.Service = services.NewBasicService(r.start, r.run, nil)
+	r.Service = services.NewBasicService(r.start, r.run, r.stop)
 	return r, nil
 }
 
@@ -120,4 +120,9 @@ func (r *PartitionReader) newKafkaReader(ctx context.Context, partition int32, r
 	}
 
 	return client, nil
+}
+
+func (r *PartitionReader) stop(error) error {
+	r.client.Close()
+	return nil
 }
