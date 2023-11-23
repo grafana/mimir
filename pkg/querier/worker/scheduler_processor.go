@@ -222,7 +222,9 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 	var c client.PoolClient
 
-	bof := backoff.New(ctx, backoff.Config{
+	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
+	frontendCtx := context.WithoutCancel(ctx)
+	bof := backoff.New(frontendCtx, backoff.Config{
 		MinBackoff: 5 * time.Millisecond,
 		MaxBackoff: 100 * time.Millisecond,
 		MaxRetries: maxNotifyFrontendRetries,
@@ -233,9 +235,6 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		if err != nil {
 			break
 		}
-
-		// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
-		frontendCtx := context.WithoutCancel(ctx)
 
 		// Response is empty and uninteresting.
 		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
