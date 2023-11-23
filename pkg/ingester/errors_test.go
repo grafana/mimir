@@ -239,7 +239,7 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 
 func TestTooBusyError(t *testing.T) {
 	require.Error(t, tooBusyError)
-	require.Equal(t, tooBusyErrorMsg, tooBusyError.Error())
+	require.Equal(t, "the ingester is currently too busy to process queries, try again later", tooBusyError.Error())
 	checkIngesterError(t, tooBusyError, mimirpb.TOO_BUSY, false)
 
 	wrappedErr := wrapOrAnnotateWithUser(tooBusyError, userID)
@@ -360,7 +360,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 }
 
 func TestHandlePushError(t *testing.T) {
-	originalMsg := "this is an error"
+	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
@@ -528,7 +528,7 @@ func TestHandlePushError(t *testing.T) {
 }
 
 func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
-	originalMsg := "this is an error"
+	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
@@ -689,7 +689,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 }
 
 func TestHandleReadError(t *testing.T) {
-	originalMsg := "this is an error"
+	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 
 	testCases := map[string]struct {
@@ -742,7 +742,7 @@ func TestHandleReadError(t *testing.T) {
 }
 
 func TestHandleReadErrorWithHTTPGRPC(t *testing.T) {
-	originalMsg := "this is an error"
+	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 
 	testCases := map[string]struct {

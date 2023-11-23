@@ -1270,8 +1270,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
-func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, qeErr error) {
-	defer func() { qeErr = i.handleReadError(qeErr) }()
+func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1328,8 +1328,8 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	return result, nil
 }
 
-func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, lvErr error) {
-	defer func() { lvErr = i.handleReadError(lvErr) }()
+func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1368,8 +1368,8 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}, nil
 }
 
-func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, lnErr error) {
-	defer func() { lnErr = i.handleReadError(lnErr) }()
+func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1409,8 +1409,8 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 }
 
 // MetricsForLabelMatchers implements IngesterServer.
-func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, mlErr error) {
-	defer func() { mlErr = i.handleReadError(mlErr) }()
+func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1480,8 +1480,8 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	return result, nil
 }
 
-func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, usErr error) {
-	defer func() { usErr = i.handleReadError(usErr) }()
+func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1502,8 +1502,8 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	return createUserStats(db, req)
 }
 
-func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, auErr error) {
-	defer func() { auErr = i.handleReadError(auErr) }()
+func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1533,8 +1533,8 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 // So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (lnvErr error) {
-	defer func() { lnvErr = i.handleReadError(lnvErr) }()
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -1566,8 +1566,8 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 // We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
 const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (lvcErr error) {
-	defer func() { lvcErr = i.handleReadError(lvcErr) }()
+func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -1647,8 +1647,8 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (qsErr error) {
-	defer func() { qsErr = i.handleReadError(qsErr) }()
+func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -3188,11 +3188,7 @@ func (i *Ingester) handleReadError(err error) error {
 		return nil
 	}
 
-	if errors.Is(err, context.Canceled) {
-		return err
-	}
-
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
 
@@ -3301,8 +3297,8 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 }
 
 // MetricsMetadata returns all the metrics metadata of a user.
-func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, mmErr error) {
-	defer func() { mmErr = i.handleReadError(mmErr) }()
+func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
+	defer func() { err = i.handleReadError(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
