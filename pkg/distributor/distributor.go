@@ -1430,7 +1430,7 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 // This function is used when ingest storage is enabled.
 // TODO unit test
 func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
-	partitionID, err := ingest.IngesterPartition(ingester)
+	partitionID, err := ingest.IngesterPartition(ingester.Id)
 	if err != nil {
 		return err
 	}

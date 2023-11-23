@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -208,17 +207,17 @@ func (p *kafkaStaticPartitioner) Partition(_ *kgo.Record, _ int) int {
 // Regular expression used to parse the ingester numeric ID.
 var ingesterIDRegexp = regexp.MustCompile(".*([0-9]+)$")
 
-func IngesterPartition(ingester ring.InstanceDesc) (int, error) {
+func IngesterPartition(ingesterID string) (int, error) {
 	// TODO  This is a very hacky way to assign partitions, because it doesn't work when scaling in/out ingesters,
 	// 		and also because it assumes a specific naming (but that assumption is also made in the spread minimizing tokens generator).
-	match := ingesterIDRegexp.FindStringSubmatch(ingester.Id)
+	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
-		return 0, fmt.Errorf("unable to get the partition ID for %s", ingester.Id)
+		return 0, fmt.Errorf("unable to get the partition ID for %s", ingesterID)
 	}
 
 	partitionID, err := strconv.Atoi(match[1])
 	if err != nil {
-		return 0, fmt.Errorf("unable to get the partition ID for %s", ingester.Id)
+		return 0, fmt.Errorf("unable to get the partition ID for %s", ingesterID)
 	}
 	return partitionID, nil
 }
