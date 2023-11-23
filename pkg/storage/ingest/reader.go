@@ -18,6 +18,14 @@ import (
 // consumerGroup is only used to store commit offsets, not for actual consuming.
 const consumerGroup = "mimir"
 
+type Record struct {
+	Content []byte
+}
+
+type RecordConsumer interface {
+	Consume(Record) error
+}
+
 type PartitionReader struct {
 	services.Service
 
@@ -27,9 +35,16 @@ type PartitionReader struct {
 
 	client *kgo.Client
 
+	consumer RecordConsumer
+
 	logger log.Logger
 	reg    prometheus.Registerer
 }
+
+type noopConsumer struct {
+}
+
+func (n noopConsumer) Consume(record Record) error { return nil }
 
 func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
@@ -37,6 +52,7 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, logger log.Lo
 		kafkaTopic:   kafkaTopic,
 		partition:    partitionID,
 		reg:          reg,
+		consumer:     noopConsumer{},
 		logger:       log.With(logger, "partition", partitionID),
 	}
 
@@ -60,21 +76,33 @@ func (r *PartitionReader) run(ctx context.Context) error {
 			level.Error(r.logger).Log("msg", "encountered error while fetching", errs)
 			continue
 		}
-		fetches.EachRecord(func(record *kgo.Record) {
-			level.Debug(r.logger).Log("msg", "fetched record", "offset", record.Offset)
-			// TODO dimitarvdimitrov
-		})
-
-		committed, err := kadm.NewClient(r.client).CommitOffsets(ctx, consumerGroup, kadm.OffsetsFromFetches(fetches))
-		if err != nil {
-			level.Error(r.logger).Log("msg", "encountered error while committing offsets", err)
-		} else {
-			committedOffset, _ := committed.Lookup(r.kafkaTopic, r.partition)
-			level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
-		}
+		r.consumeFetches(fetches)
+		r.commitFetches(ctx, fetches)
 	}
 
 	return nil
+}
+
+func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches) {
+	committed, err := kadm.NewClient(r.client).CommitOffsets(ctx, consumerGroup, kadm.OffsetsFromFetches(fetches))
+	if err != nil {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", err)
+	} else {
+		committedOffset, _ := committed.Lookup(r.kafkaTopic, r.partition)
+		level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
+	}
+}
+
+func (r *PartitionReader) consumeFetches(fetches kgo.Fetches) {
+	fetches.EachRecord(func(record *kgo.Record) {
+		level.Debug(r.logger).Log("msg", "fetched record", "offset", record.Offset)
+
+		err := r.consumer.Consume(Record{Content: record.Value})
+		if err != nil {
+			level.Error(r.logger).Log("msg", "encountered error processing record; skipping", "offset", record.Offset, "err", err)
+			// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
+		}
+	})
 }
 
 func (r *PartitionReader) newKafkaReader(ctx context.Context, partition int32, reg prometheus.Registerer) (*kgo.Client, error) {
