@@ -221,16 +221,20 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		}
 	}
 	var c client.PoolClient
-	var retries int
 
-	for {
+	// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
+	frontendCtx := context.WithoutCancel(ctx)
+	bof := backoff.New(frontendCtx, backoff.Config{
+		MinBackoff: 5 * time.Millisecond,
+		MaxBackoff: 100 * time.Millisecond,
+		MaxRetries: maxNotifyFrontendRetries,
+	})
+
+	for bof.Ongoing() {
 		c, err = sp.frontendPool.GetClientFor(frontendAddress)
 		if err != nil {
 			break
 		}
-
-		// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
-		frontendCtx := context.WithoutCancel(ctx)
 
 		// Response is empty and uninteresting.
 		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
@@ -238,18 +242,16 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			HttpResponse: response,
 			Stats:        stats,
 		})
-		if err == nil || retries >= maxNotifyFrontendRetries {
+		if err == nil {
 			break
 		}
-		// If the used connection returned and error, remove it from the pool and retry.
-		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", retries)
-
-		sp.frontendPool.RemoveClientFor(frontendAddress)
-		retries++
+		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
+		sp.frontendPool.RemoveClient(c, frontendAddress)
+		bof.Wait()
 	}
 
 	if err != nil {
-		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress)
+		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
 }
 
