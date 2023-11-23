@@ -12,8 +12,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"regexp"
-	"strconv"
 	"sync"
 	"time"
 
@@ -65,9 +63,6 @@ var (
 	reasonDistributorMaxIngestionRate             = globalerror.DistributorMaxIngestionRate.LabelValue()
 	reasonDistributorMaxInflightPushRequests      = globalerror.DistributorMaxInflightPushRequests.LabelValue()
 	reasonDistributorMaxInflightPushRequestsBytes = globalerror.DistributorMaxInflightPushRequestsBytes.LabelValue()
-
-	// Regular expression used to parse the ingester numeric ID.
-	ingesterIDRegexp = regexp.MustCompile(".*([0-9]+)$")
 )
 
 const (
@@ -1435,16 +1430,9 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 // This function is used when ingest storage is enabled.
 // TODO unit test
 func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
-	// TODO  This is a very hacky way to assign partitions, because it doesn't work when scaling in/out ingesters,
-	// 		and also because it assumes a specific naming (but that assumption is also made in the spread minimizing tokens generator).
-	match := ingesterIDRegexp.FindStringSubmatch(ingester.Id)
-	if len(match) == 0 {
-		return fmt.Errorf("unable to get the partition ID from %s", ingester.Id)
-	}
-
-	partitionID, err := strconv.Atoi(match[1])
+	partitionID, err := ingest.IngesterPartition(ingester)
 	if err != nil {
-		return fmt.Errorf("unable to get the partition ID from %s", ingester.Id)
+		return err
 	}
 
 	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, timeseries, metadata, source)
