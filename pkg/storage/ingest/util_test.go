@@ -8,7 +8,7 @@ import (
 )
 
 func TestIngesterPartition(t *testing.T) {
-	t.Run("should parse the ingester ID and return the partition ID", func(t *testing.T) {
+	t.Run("with zones", func(t *testing.T) {
 		actual, err := IngesterPartition("ingester-zone-a-0")
 		require.NoError(t, err)
 		assert.Equal(t, 0, actual)
@@ -44,6 +44,36 @@ func TestIngesterPartition(t *testing.T) {
 		actual, err = IngesterPartition("ingester-zone-c-2")
 		require.NoError(t, err)
 		assert.Equal(t, 10, actual)
+
+		actual, err = IngesterPartition("mimir-write-zone-a-1")
+		require.NoError(t, err)
+		assert.Equal(t, 4, actual)
+
+		actual, err = IngesterPartition("mimir-write-zone-b-1")
+		require.NoError(t, err)
+		assert.Equal(t, 5, actual)
+
+		actual, err = IngesterPartition("mimir-write-zone-c-1")
+		require.NoError(t, err)
+		assert.Equal(t, 6, actual)
+	})
+
+	t.Run("without zones", func(t *testing.T) {
+		actual, err := IngesterPartition("ingester-0")
+		require.NoError(t, err)
+		assert.Equal(t, 0, actual)
+
+		actual, err = IngesterPartition("ingester-1")
+		require.NoError(t, err)
+		assert.Equal(t, 4, actual)
+
+		actual, err = IngesterPartition("mimir-write-0")
+		require.NoError(t, err)
+		assert.Equal(t, 0, actual)
+
+		actual, err = IngesterPartition("mimir-write-1")
+		require.NoError(t, err)
+		assert.Equal(t, 4, actual)
 	})
 
 	t.Run("should return error if the ingester ID has a non supported format", func(t *testing.T) {
@@ -53,7 +83,10 @@ func TestIngesterPartition(t *testing.T) {
 		_, err = IngesterPartition("ingester-zone-X-0")
 		require.Error(t, err)
 
-		_, err = IngesterPartition("ingester-zone-a--1")
+		_, err = IngesterPartition("ingester-zone-a-")
+		require.Error(t, err)
+
+		_, err = IngesterPartition("ingester-zone-a")
 		require.Error(t, err)
 	})
 }
