@@ -61,8 +61,13 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, logger log.Lo
 }
 
 func (r *PartitionReader) start(ctx context.Context) error {
-	var err error
-	r.client, err = r.newKafkaReader(ctx, r.partition, r.reg)
+	offset, err := r.fetchLastCommittedOffset(ctx)
+	if err != nil {
+		return err
+	}
+	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", offset)
+
+	r.client, err = r.newKafkaReader(offset, r.reg)
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
@@ -105,34 +110,17 @@ func (r *PartitionReader) consumeFetches(fetches kgo.Fetches) {
 	})
 }
 
-func (r *PartitionReader) newKafkaReader(ctx context.Context, partition int32, reg prometheus.Registerer) (*kgo.Client, error) {
+func (r *PartitionReader) newKafkaReader(offset int64, reg prometheus.Registerer) (*kgo.Client, error) {
 	metrics := kprom.NewMetrics("cortex_ingest_storage_reader",
 		kprom.Registerer(reg),
 		kprom.WithClientLabel(),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
-	var adm *kadm.Client
-	{
-		cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaAddress))
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to create admin client")
-		}
-		adm = kadm.NewClient(cl)
-		defer adm.Close()
-	}
-
-	offsets, err := adm.ListCommittedOffsets(ctx, r.kafkaTopic)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to fetch group offsets")
-	}
-	offset, _ := offsets.Lookup(r.kafkaTopic, partition)
-	level.Info(r.logger).Log("msg", "resuming consumption from offset", "offset", offset.Offset)
-
 	client, err := kgo.NewClient(
-		kgo.ClientID(fmt.Sprintf("partition-%d", partition)),
+		kgo.ClientID(fmt.Sprintf("partition-%d", r.partition)),
 		kgo.SeedBrokers(r.kafkaAddress),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			r.kafkaTopic: {partition: kgo.NewOffset().At(offset.Offset)},
+			r.kafkaTopic: {r.partition: kgo.NewOffset().At(offset)},
 		}),
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(100_000_000),
@@ -148,6 +136,22 @@ func (r *PartitionReader) newKafkaReader(ctx context.Context, partition int32, r
 	}
 
 	return client, nil
+}
+
+func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
+	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaAddress))
+	if err != nil {
+		return 0, errors.Wrap(err, "unable to create admin client")
+	}
+	adm := kadm.NewClient(cl)
+	defer adm.Close()
+
+	offsets, err := adm.ListCommittedOffsets(ctx, r.kafkaTopic)
+	if err != nil {
+		return 0, errors.Wrap(err, "unable to fetch group offsets")
+	}
+	offset, _ := offsets.Lookup(r.kafkaTopic, r.partition)
+	return offset.Offset, nil
 }
 
 func (r *PartitionReader) stop(error) error {
