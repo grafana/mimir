@@ -9,6 +9,8 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
+    self.zookeeper +
+    self.kafka +
     {},
 
   write:: {
@@ -85,6 +87,38 @@ std.manifestYamlDoc({
         '9001:9001',
       ],
       volumes: ['.data-minio:/data:delegated'],
+    },
+  },
+
+  zookeeper:: {
+    zookeeper: {
+      image: 'confluentinc/cp-zookeeper:latest',
+      environment: [
+        'ZOOKEEPER_CLIENT_PORT=2181',
+        'ZOOKEEPER_TICK_TIME=2000',
+      ],
+      ports: [
+        '22181:22181',
+      ],
+    },
+  },
+
+  kafka:: {
+    kafka: {
+      image: 'confluentinc/cp-kafka:latest',
+      depends_on: ['zookeeper'],
+      environment: [
+        'KAFKA_BROKER_ID=1',
+        'KAFKA_NUM_PARTITIONS=100',  // Default number of partitions for auto-created topics.
+        'KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181',
+        'KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092',
+        'KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT',
+        'KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT',
+        'KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1',
+      ],
+      ports: [
+        '29092:29092',
+      ],
     },
   },
 

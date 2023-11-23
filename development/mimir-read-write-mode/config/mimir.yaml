@@ -9,6 +9,11 @@ common:
       secret_access_key: supersecret
       insecure:          true
 
+ingest_storage:
+  enabled:       true
+  kafka_address: kafka:9092
+  kafka_topic:   mimir-ingester
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
