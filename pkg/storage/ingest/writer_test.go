@@ -43,7 +43,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	writer := NewWriter(addrs[0], topicName, log.NewNopLogger(), reg)
 
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
-		partitionID := 0
+		const partitionID = 0
 
 		err := writer.WriteSync(ctx, partitionID, tenantID, timeseries, nil, mimirpb.API)
 		require.NoError(t, err)
