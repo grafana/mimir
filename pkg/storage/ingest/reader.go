@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,18 +42,13 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-type noopConsumer struct {
-}
-
-func (n noopConsumer) Consume(record Record) error { return nil }
-
-func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer RecordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaAddress: kafkaAddress,
 		kafkaTopic:   kafkaTopic,
 		partition:    partitionID,
 		reg:          reg,
-		consumer:     noopConsumer{},
+		consumer:     consumer,
 		logger:       log.With(logger, "partition", partitionID),
 	}
 
@@ -77,15 +73,27 @@ func (r *PartitionReader) start(ctx context.Context) error {
 func (r *PartitionReader) run(ctx context.Context) error {
 	for ctx.Err() == nil {
 		fetches := r.client.PollFetches(ctx)
-		if errs := fetches.Errors(); len(errs) > 0 {
-			level.Error(r.logger).Log("msg", "encountered error while fetching", errs)
+		if fetches.Err() != nil {
+			err := collectFetchErrs(fetches)
+			level.Error(r.logger).Log("msg", "encountered error while fetching", "err", err)
 			continue
 		}
+		level.Debug(r.logger).Log("msg", "fetched records", "num_records", fetches.NumRecords())
+
 		r.consumeFetches(fetches)
 		r.commitFetches(ctx, fetches)
 	}
 
 	return nil
+}
+
+func collectFetchErrs(fetches kgo.Fetches) (_ error) {
+	mErr := multierror.New()
+	fetches.EachError(func(s string, i int32, err error) {
+		// TODO handle errors properly, there can be some error we can ignore and some errors for which we have to reset the kafka client. See docs on EachError
+		mErr.Add(err)
+	})
+	return mErr.Err()
 }
 
 func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches) {

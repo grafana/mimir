@@ -346,6 +346,13 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	}, nil
 }
 
+type noopConsumer struct {
+}
+
+func (n noopConsumer) Consume(record ingest.Record) error {
+	return nil
+}
+
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, activeGroupsCleanupService *util.ActiveGroupsCleanupService, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
@@ -410,7 +417,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
-		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, int32(partitionID), log.With(logger, "component", "ingest_reader"), registerer)
+		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, partitionID, noopConsumer{}, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingestion client")
 		}
