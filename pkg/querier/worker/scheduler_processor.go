@@ -247,6 +247,7 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			break
 		}
 		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
+		sp.frontendPool.RemoveClient(c, frontendAddress)
 		bof.Wait()
 	}
 
