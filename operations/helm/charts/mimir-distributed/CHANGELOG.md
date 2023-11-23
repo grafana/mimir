@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add support for not setting replicas for distributor, querier, and query-frontend. #6373
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
+* [ENHANCEMENT] Make Memcached connection limit configurable. #6715
 
 ## 5.1.3
 
