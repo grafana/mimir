@@ -228,8 +228,12 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 		if err != nil {
 			break
 		}
+
+		// Even if this query has been cancelled, we still want to tell the frontend about it, otherwise the frontend will wait for a result until it times out.
+		frontendCtx := context.WithoutCancel(ctx)
+
 		// Response is empty and uninteresting.
-		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(ctx, &frontendv2pb.QueryResultRequest{
+		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
 			QueryID:      queryID,
 			HttpResponse: response,
 			Stats:        stats,
