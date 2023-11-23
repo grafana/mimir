@@ -13,7 +13,7 @@ type kafkaLogger struct {
 
 func newKafkaLogger(logger log.Logger, level kgo.LogLevel) *kafkaLogger {
 	return &kafkaLogger{
-		logger: logger,
+		logger: log.With(logger, "component", "kafka"),
 		level:  level,
 	}
 }

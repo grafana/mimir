@@ -70,6 +70,10 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
 	github.com/thanos-io/objstore v0.0.0-20231112185854-37752ee64d98
+	github.com/twmb/franz-go v1.15.2
+	github.com/twmb/franz-go/pkg/kadm v1.10.0
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20231112180303-a6d10d4ad935
+	github.com/twmb/franz-go/plugin/kprom v1.1.0
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.0.0-rcv0018
 	go.opentelemetry.io/otel v1.19.0
@@ -100,10 +104,7 @@ require (
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/twmb/franz-go v1.15.2 // indirect
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20231112180303-a6d10d4ad935 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0 // indirect
-	github.com/twmb/franz-go/plugin/kprom v1.1.0 // indirect
 )
 
 require (
