@@ -21,10 +21,12 @@ import (
 var ownedSeriesRingOp = ring.NewOp([]ring.InstanceState{ring.PENDING, ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 
 const (
-	recomputeOwnedSeriesReasonEarlyCompaction = "early compaction"
-	recomputeOwnedSeriesReasonCompaction      = "compaction"
-	recomputeOwnedSeriesReasonNewUser         = "new user"
-	recomputeOwnedSeriesReasonUpdateFailed    = "update failed"
+	recomputeOwnedSeriesReasonEarlyCompaction      = "early compaction"
+	recomputeOwnedSeriesReasonCompaction           = "compaction"
+	recomputeOwnedSeriesReasonNewUser              = "new user"
+	recomputeOwnedSeriesReasonGetTokenRangesFailed = "token ranges failed"
+	recomputeOwnedSeriesReasonUpdateFailed         = "update failed"
+	recomputeOwnedSeriesReasonRingChanged          = "ring changed"
 )
 
 type ownedSeriesService struct {
@@ -135,11 +137,10 @@ func (oss *ownedSeriesService) ownedSeriesUpdateForTenant(userID string, db *use
 		return false
 	}
 
-	// We need to check for tokens even if ringChanged is false... we may be here because of ring-check failure in previous
-	// iteration.
-	subr := oss.ingestersRing.ShuffleShard(userID, shardSize)
+	// We need to check for tokens even if ringChanged is false, because we may be here because of previous ring check failure.
+	subring := oss.ingestersRing.ShuffleShard(userID, shardSize)
 
-	ranges, err := subr.GetTokenRangesForInstance(oss.instanceID)
+	ranges, err := subring.GetTokenRangesForInstance(oss.instanceID)
 	if err != nil {
 		if errors.Is(err, ring.ErrInstanceNotFound) {
 			// This ingester doesn't own the tenant anymore, so there will be no "owned" series.
@@ -147,18 +148,20 @@ func (oss *ownedSeriesService) ownedSeriesUpdateForTenant(userID string, db *use
 		} else {
 			level.Error(oss.logger).Log("msg", "failed to get token ranges from user's subring", "user", userID, "ingester", oss.instanceID, "err", err)
 
-			// If we failed to run the update, set the new reason, to make sure we do the check in next iteration.
-			db.TriggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonUpdateFailed)
+			// If we failed to get token ranges, set the new reason, to make sure we do the check in next iteration.
+			db.TriggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonGetTokenRangesFailed)
 			return false
 		}
 	}
 
 	if db.UpdateTokenRanges(ranges) && reason == "" {
-		reason = "ring changed"
+		reason = recomputeOwnedSeriesReasonRingChanged
 	}
 
 	if reason != "" {
-		db.RecomputeOwnedSeries(shardSize, reason, oss.logger)
+		if db.RecomputeOwnedSeries(shardSize, reason, oss.logger) {
+			db.TriggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonUpdateFailed)
+		}
 		return true
 	}
 	return false

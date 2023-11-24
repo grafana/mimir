@@ -513,42 +513,68 @@ func (u *userTSDB) TriggerRecomputeOwnedSeries(reason string) {
 
 // RecomputeOwnedSeries recomputes owned series for current token ranges.
 //
+// This method returns true, if recomputation of owned series failed multiple times due to too
+// many new series being added during the computation. If no such problem happened, this method returns false.
+//
 // This method and UpdateTokenRanges should be only called from the same goroutine. (ownedSeries service)
-func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log.Logger) {
+func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (retry bool) {
 	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
 	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
 
+	const (
+		maxAttempts   = 3
+		maxSeriesDiff = 100
+	)
+
 	start := time.Now()
-	repeats := 0
 
-	ownedPrev, shardSizePrev := u.OwnedSeriesAndShards()
+	prevOwnedSeriesCount, shardSizePrev := u.OwnedSeriesAndShards()
 
+	reportError := false
+	attempts := 0
 	var ownedNew int
-	for {
+	for attempts < maxAttempts {
+		attempts++
+
 		ownedNew = u.computeOwnedSeries()
 
-		// Try to update the values, but only if no new series were added in the meantime.
 		u.ownedSeriesMtx.Lock()
-		if u.ownedSeriesCount == ownedPrev {
-			// No new series was added while computing owned series.
+
+		// Check how many new series were added while we were computing owned series.
+		seriesDiff := u.ownedSeriesCount - prevOwnedSeriesCount
+		seriesDiffOk := seriesDiff >= 0 && seriesDiff < maxSeriesDiff // seriesDiff should always be >= 0, but in case it isn't, we can try again.
+		if seriesDiffOk || attempts == maxAttempts {
+			// If less than maxSeriesDiff were added while computing owned series, we can update our values.
 			u.ownedSeriesCount = ownedNew
 			u.ownedSeriesShardSize = shardSize
+
 			u.ownedSeriesMtx.Unlock()
+
+			if !seriesDiffOk {
+				reportError = true
+			}
 			break
 		}
 
-		// If some series was created in the meantime, our new number of owned series may be wrong
+		// If too many series were created in the meantime, our new number of owned series may be wrong
 		// (it may or may not include the new series, we don't know). In that case, just run the computation again.
-		ownedPrev = u.ownedSeriesCount
+		prevOwnedSeriesCount = u.ownedSeriesCount
 		shardSizePrev = u.ownedSeriesShardSize
 
 		u.ownedSeriesMtx.Unlock()
-		repeats++
 	}
 
-	dur := time.Since(start)
-
-	level.Info(logger).Log("msg", "owned series: recomputed owned series for user", "user", u.userID, "reason", reason, "ownedSeriesBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "ownedSeriesAfter", ownedNew, "shardSizeAfter", shardSize, "duration", dur, "repeats", repeats)
+	level.Info(logger).Log("msg", "owned series: recomputed owned series for user",
+		"user", u.userID,
+		"reason", reason,
+		"ownedSeriesBefore", prevOwnedSeriesCount,
+		"ownedSeriesAfter", ownedNew,
+		"shardSizeBefore", shardSizePrev,
+		"shardSizeAfter", shardSize,
+		"duration", time.Since(start),
+		"attempts", attempts,
+		"updateError", reportError)
+	return reportError
 }
 
 // UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
