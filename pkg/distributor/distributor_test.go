@@ -58,7 +58,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -3789,7 +3788,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	}
 
 	for _, series := range req.Timeseries {
-		hash := util.ShardByAllLabelAdapters(orgid, series.Labels)
+		hash := mimirpb.ShardByAllLabelAdapters(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
 			// Make a copy because the request Timeseries are reused
@@ -3811,7 +3810,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	}
 
 	for _, m := range req.Metadata {
-		hash := util.ShardByMetricName(orgid, m.MetricFamilyName)
+		hash := mimirpb.ShardByMetricName(orgid, m.MetricFamilyName)
 		set, ok := i.metadata[hash]
 		if !ok {
 			set = map[mimirpb.MetricMetadata]struct{}{}

@@ -573,11 +573,11 @@ func (d *Distributor) stopping(_ error) error {
 }
 
 func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return util.ShardByAllLabelAdapters(userID, labels)
+	return mimirpb.ShardByAllLabelAdapters(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	return util.ShardByMetricName(userID, metricName)
+	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,

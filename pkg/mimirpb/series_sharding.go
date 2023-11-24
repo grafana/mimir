@@ -1,9 +1,7 @@
-package util
+package mimirpb
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ShardByMetricName returns the token for the given metric. The provided metricName
@@ -33,7 +31,7 @@ func ShardByAllLabels(userID string, ls labels.Labels) uint32 {
 }
 
 // ShardByAllLabelAdapters is like ShardByAllLabel, but uses LabelAdapter type.
-func ShardByAllLabelAdapters(userID string, ls []mimirpb.LabelAdapter) uint32 {
+func ShardByAllLabelAdapters(userID string, ls []LabelAdapter) uint32 {
 	h := ShardByUser(userID)
 	for _, l := range ls {
 		h = HashAdd32(h, l.Name)
