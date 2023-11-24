@@ -357,8 +357,6 @@ func TestHandleIngesterPushError(t *testing.T) {
 	// Ensure that the errors created by httpgrpc get translated into
 	// other errors created by httpgrpc with the same code, and with
 	// a more explanatory message.
-	// TODO: this is needed for backwards compatibility and will be removed
-	// in mimir 2.12.0.
 	httpgrpcTests := map[string]struct {
 		ingesterPushError error
 		expectedStatus    int32
