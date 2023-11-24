@@ -151,6 +151,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #5956 #6488 #6539
+* [ENHANCEMENT] Document native histograms query and visualization. #6231
 
 ### Tools
 
