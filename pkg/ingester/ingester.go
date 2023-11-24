@@ -573,15 +573,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
-	localLimitMetricUpdateTicker := time.NewTicker(time.Second * 15)
-	defer localLimitMetricUpdateTicker.Stop()
-
-	var ownedSeriesUpdateTickerCh <-chan time.Time
-	if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
-		ownedSeriesUpdateTicker := time.NewTicker(time.Second * 15)
-		defer ownedSeriesUpdateTicker.Stop()
-		ownedSeriesUpdateTickerCh = ownedSeriesUpdateTicker.C
-	}
+	limitMetricsUpdateTicker := time.NewTicker(time.Second * 15)
+	defer limitMetricsUpdateTicker.Stop()
 
 	for {
 		select {
@@ -602,10 +595,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.updateActiveSeries(time.Now())
 		case <-usageStatsUpdateTicker.C:
 			i.updateUsageStats()
-		case <-localLimitMetricUpdateTicker.C:
-			i.updateLocalLimitMetrics()
-		case <-ownedSeriesUpdateTickerCh:
-			i.updateOwnedSeriesMetrics()
+		case <-limitMetricsUpdateTicker.C:
+			i.updateMetrics()
 		case <-ctx.Done():
 			return nil
 		case err := <-i.subservicesWatcher.Chan():
@@ -763,34 +754,26 @@ func (i *Ingester) applyTSDBSettings() {
 	}
 }
 
-func (i *Ingester) updateLocalLimitMetrics() {
+func (i *Ingester) updateMetrics() {
 	for _, userID := range i.getTSDBUsers() {
 		db := i.getTSDB(userID)
 		if db == nil {
 			continue
 		}
 
-		localValue := 0
-		if db.useOwnedSeriesForLimits {
-			_, shards := db.OwnedSeriesAndShards()
-			localValue = i.limiter.maxSeriesPerUser(userID, shards)
-		} else {
-			localValue = i.limiter.maxSeriesPerUser(userID, i.limiter.getShardSize(userID))
+		localLimitShards := i.limiter.getShardSize(userID)
+		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
+			ownedSeries, shards := db.OwnedSeriesAndShards()
+			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(ownedSeries))
+
+			if i.cfg.UseIngesterOwnedSeriesForLimits {
+				localLimitShards = shards
+			}
 		}
 
+		localLimit := i.limiter.maxSeriesPerUser(userID, localLimitShards)
 		// update metrics
-		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localValue))
-	}
-}
-
-func (i *Ingester) updateOwnedSeriesMetrics() {
-	for _, userID := range i.getTSDBUsers() {
-		db := i.getTSDB(userID)
-		if db == nil {
-			continue
-		}
-		c, _ := db.OwnedSeriesAndShards()
-		i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(c))
+		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
 }
 
