@@ -1271,7 +1271,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1329,7 +1329,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 }
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1369,7 +1369,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 }
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1410,7 +1410,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1481,7 +1481,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 }
 
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1503,7 +1503,7 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 }
 
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
@@ -1534,7 +1534,7 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -1567,7 +1567,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -1648,7 +1648,7 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return err
 	}
@@ -3172,18 +3172,18 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	if err == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := i.handlePushError(err)
+	handledErr := i.mapPushErrorToErrorWithStatus(err)
 	return nil, handledErr
 }
 
-func (i *Ingester) handlePushError(err error) error {
+func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
 	if i.cfg.ReturnOnlyGRPCErrors {
-		return handlePushError(err)
+		return mapPushErrorToErrorWithStatus(err)
 	}
-	return handlePushErrorWithHTTPGRPC(err)
+	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
 }
 
-func (i *Ingester) handleReadError(err error) error {
+func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -3193,9 +3193,9 @@ func (i *Ingester) handleReadError(err error) error {
 	}
 
 	if i.cfg.ReturnOnlyGRPCErrors {
-		return handleReadError(err)
+		return mapReadErrorToErrorWithStatus(err)
 	}
-	return handleReadErrorWithHTTPGRPC(err)
+	return mapReadErrorToErrorWithHTTPOrGRPCStatus(err)
 }
 
 // pushMetadata returns number of ingested metadata.
@@ -3298,7 +3298,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
-	defer func() { err = i.handleReadError(err) }()
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}

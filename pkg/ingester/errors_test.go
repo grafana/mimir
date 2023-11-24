@@ -359,7 +359,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.Equal(t, wrappingErr, errors.Unwrap(wrappedSafeErr))
 }
 
-func TestHandlePushError(t *testing.T) {
+func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
@@ -512,7 +512,7 @@ func TestHandlePushError(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := handlePushError(tc.err)
+			handledErr := mapPushErrorToErrorWithStatus(tc.err)
 			stat, ok := status.FromError(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
@@ -527,7 +527,7 @@ func TestHandlePushError(t *testing.T) {
 	}
 }
 
-func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
+func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
@@ -677,7 +677,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := handlePushErrorWithHTTPGRPC(tc.err)
+			handledErr := mapPushErrorToErrorWithHTTPOrGRPCStatus(tc.err)
 			require.Equal(t, tc.expectedTranslation, handledErr)
 			if tc.doNotLogExpected {
 				var doNotLogError middleware.DoNotLogError
@@ -688,7 +688,7 @@ func TestHandlePushErrorWithHTTPGRPC(t *testing.T) {
 	}
 }
 
-func TestHandleReadError(t *testing.T) {
+func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 
@@ -731,7 +731,7 @@ func TestHandleReadError(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := handleReadError(tc.err)
+			handledErr := mapReadErrorToErrorWithStatus(tc.err)
 			stat, ok := status.FromError(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
@@ -741,7 +741,7 @@ func TestHandleReadError(t *testing.T) {
 	}
 }
 
-func TestHandleReadErrorWithHTTPGRPC(t *testing.T) {
+func TestMapReadErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 
@@ -772,7 +772,7 @@ func TestHandleReadErrorWithHTTPGRPC(t *testing.T) {
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			handledErr := handleReadErrorWithHTTPGRPC(tc.err)
+			handledErr := mapReadErrorToErrorWithHTTPOrGRPCStatus(tc.err)
 			require.Equal(t, tc.expectedTranslation, handledErr)
 		})
 	}

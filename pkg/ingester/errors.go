@@ -80,7 +80,7 @@ func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 // newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
 // and containing the given HTTP status code.
 // TODO this is needed for backwards compatibility only and should be removed
-// in mimir 2.12.0.
+// in mimir 2.14.0.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -553,7 +553,8 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-func handlePushError(err error) error {
+// mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
+func mapPushErrorToErrorWithStatus(err error) error {
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -575,11 +576,11 @@ func handlePushError(err error) error {
 	return newErrorWithStatus(wrappedErr, errCode)
 }
 
-// handlePushErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
 // errorWithStatus, which may contain both HTTP and gRPC error codes.
 // TODO this method is needed only for the backwards compatibility,
-// and should be removed in mimir 2.12.0.
-func handlePushErrorWithHTTPGRPC(err error) error {
+// and should be removed in mimir 2.14.0.
+func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
@@ -596,7 +597,8 @@ func handlePushErrorWithHTTPGRPC(err error) error {
 	return err
 }
 
-func handleReadError(err error) error {
+// mapReadErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
+func mapReadErrorToErrorWithStatus(err error) error {
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -612,11 +614,11 @@ func handleReadError(err error) error {
 	return newErrorWithStatus(err, errCode)
 }
 
-// handleReadErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// mapReadErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
 // errorWithStatus, which may contain both HTTP and gRPC error codes.
 // TODO this method is needed only for the backwards compatibility,
-// and should be removed in mimir 2.12.0.
-func handleReadErrorWithHTTPGRPC(err error) error {
+// and should be removed in mimir 2.14.0.
+func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	var (
 		ingesterErr ingesterError
 	)
