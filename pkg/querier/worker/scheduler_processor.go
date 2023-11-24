@@ -18,6 +18,7 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
@@ -121,7 +122,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 			continue
 		}
 
-		if err := sp.querierLoop(c, address, inflightQuery); err != nil {
+		if err := sp.querierLoop(execCtx, c, address, inflightQuery); err != nil {
 			// Do not log an error if the query-scheduler is shutting down.
 			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
 				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
@@ -136,20 +137,45 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 }
 
 // process loops processing requests on an established stream.
-func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) (err error) {
+func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb.SchedulerForQuerier_QuerierLoopClient, address string, inflightQuery *atomic.Bool) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancelCause(c.Context())
+	// Note that we deliberately don't use c.Context() here, as that is cancelled as soon as the gRPC client observes an error,
+	// but we don't always want to cancel queries if the scheduler stream reports an error (eg. if the scheduler crashed).
+	ctx, cancel := context.WithCancelCause(execCtx)
 	defer func() {
 		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
 	}()
 
+	var queryComplete chan struct{}
+
+	waitForQuery := func(err error) {
+		select {
+		case <-queryComplete:
+			// Query is already complete, nothing to do.
+			return
+		default:
+			// Query is not complete.
+			level.Info(sp.log).Log("msg", "query-scheduler loop received non-cancellation error, waiting for inflight query to complete...", "err", err, "address", address)
+			<-queryComplete
+			level.Info(sp.log).Log("msg", "query-scheduler loop received non-cancellation error and inflight query is complete, continuing", "err", err, "address", address)
+		}
+	}
+
 	for {
 		request, err := c.Recv()
 		if err != nil {
+			// If the query was cancelled, we don't want to wait for it to complete: we want to cancel it, which will be
+			// handled by the deferred context cancellation above.
+			// If we got another kind of error (eg. scheduler crashed), continue processing the query.
+			if !grpcutil.IsCanceled(err) && queryComplete != nil {
+				waitForQuery(err)
+			}
+
 			return err
 		}
 
 		inflightQuery.Store(true)
+		queryComplete = make(chan struct{})
 
 		// Handle the request on a "background" goroutine, so we go back to
 		// blocking on c.Recv().  This allows us to detect the stream closing
@@ -158,6 +184,7 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 		// paired with a Send.
 		go func() {
 			defer inflightQuery.Store(false)
+			defer close(queryComplete)
 
 			// Create a per-request context and cancel it once we're done processing the request.
 			// This is important for queries that stream chunks from ingesters to the querier, as SeriesChunksStreamReader relies
