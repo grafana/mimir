@@ -243,7 +243,7 @@ func handleIngesterPushError(err error) error {
 	if util.IsHTTPStatusCode(statusCode) {
 		// TODO This code is needed for backwards compatibility, since ingesters may still return
 		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-		// it. This code should be removed in mimir 2.14.0.
+		// it. This code should be removed together with the removal of `-ingester.return-only-grpc-errors`.
 		// Wrap HTTP gRPC error with more explanatory message.
 		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
 	}
@@ -259,7 +259,8 @@ func isClientError(err error) bool {
 
 	// TODO This code is needed for backwards compatibility, since ingesters may still return
 	// errors with HTTP status code created by httpgrpc.Errorf(). If err is one of those errors,
-	// we treat 4xx errors as client errors. This code should be removed in mimir 2.14.0.
+	// we treat 4xx errors as client errors. This code should be removed together with the removal
+	// of `-ingester.return-only-grpc-errors`.
 
 	if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
 		return true
