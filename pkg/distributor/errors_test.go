@@ -357,8 +357,6 @@ func TestHandleIngesterPushError(t *testing.T) {
 	// Ensure that the errors created by httpgrpc get translated into
 	// other errors created by httpgrpc with the same code, and with
 	// a more explanatory message.
-	// TODO this method is needed only for the backwards compatibility, and should be removed
-	// together with the removal of `-ingester.return-only-grpc-errors`.
 	httpgrpcTests := map[string]struct {
 		ingesterPushError error
 		expectedStatus    int32
