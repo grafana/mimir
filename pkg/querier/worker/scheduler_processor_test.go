@@ -41,7 +41,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 			// No query to execute, so wait until terminated.
 			<-loopClient.Context().Done()
-			return nil, loopClient.Context().Err()
+			return nil, toRPCErr(loopClient.Context().Err())
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
@@ -73,7 +73,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-loopClient.Context().Done()
-				return nil, loopClient.Context().Err()
+				return nil, toRPCErr(loopClient.Context().Err())
 			}
 		})
 
@@ -123,7 +123,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 			default:
 				// Wait until query execution has begun, then simulate the scheduler shutting down.
 				<-queryEvaluationBegun
-				return nil, schedulerpb.ErrSchedulerIsNotRunning
+				return nil, toRPCErr(schedulerpb.ErrSchedulerIsNotRunning)
 			}
 		})
 
@@ -204,7 +204,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
-				return nil, processClient.Context().Err()
+				return nil, toRPCErr(processClient.Context().Err())
 			}
 		})
 
@@ -390,4 +390,24 @@ func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2p
 	f.queryResultCalls.Inc()
 
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+// This function emulates the error-translating behaviour of google.golang.org/grpc.toRPCErr(),
+// which is used by the gRPC client to translate errors (including client-side context cancellations)
+// to gRPC-style errors.
+//
+// This implementation does not cover all the cases supported by the real implementation - it has just
+// enough to support the test cases in this file.
+//
+// Based on https://github.com/grpc/grpc-go/blob/c0aa20a8ac825f86edd59b2cab842de6da77a841/rpc_util.go#L874.
+func toRPCErr(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, context.Canceled) {
+		return status.Error(codes.Canceled, context.Canceled.Error())
+	}
+
+	return status.Error(codes.Unknown, err.Error())
 }
