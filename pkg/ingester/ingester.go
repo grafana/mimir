@@ -3498,17 +3498,20 @@ func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
 	i.ownedSeriesLastReplicaSet = rs
 
 	start := time.Now()
-	i.ownedSeriesUpdate(ctx, ringChanged)
-	level.Info(i.logger).Log("msg", "owned series: updated owned series for all users", "duration", time.Since(start), "ringChanged", ringChanged)
+	updatedUsers := i.ownedSeriesUpdate(ctx, ringChanged)
+	if updatedUsers > 0 {
+		level.Info(i.logger).Log("msg", "owned series: updated owned series for users", "updatedUsers", updatedUsers, "duration", time.Since(start), "ringChanged", ringChanged)
+	}
 	return nil
 }
 
 // ownedSeriesUpdate iterates over all open TSDBs and updates owned series for all users that need it, either
 // because of external trigger (new user, compaction), or because of changed token ranges.
-func (i *Ingester) ownedSeriesUpdate(ctx context.Context, ringChanged bool) {
+func (i *Ingester) ownedSeriesUpdate(ctx context.Context, ringChanged bool) int {
+	updatedUsers := 0
 	for _, userID := range i.getTSDBUsers() {
 		if ctx.Err() != nil {
-			return
+			return updatedUsers
 		}
 
 		db := i.getTSDB(userID)
@@ -3516,11 +3519,15 @@ func (i *Ingester) ownedSeriesUpdate(ctx context.Context, ringChanged bool) {
 			continue
 		}
 
-		i.ownedSeriesUpdateForTenant(userID, db, ringChanged)
+		if i.ownedSeriesUpdateForTenant(userID, db, ringChanged) {
+			updatedUsers++
+		}
 	}
+	return updatedUsers
 }
 
-func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringChanged bool) {
+// Updates token ranges and recomputes owned series for user, if necessary. If recomputation happened, true is returned.
+func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringChanged bool) bool {
 	shardSize := i.limiter.getShardSize(userID)
 
 	reason := db.requiresOwnedSeriesUpdate.Swap("") // Clear reason, so that other reasons can be set while we run update here.
@@ -3533,7 +3540,7 @@ func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringC
 
 	if !ringChanged && reason == "" {
 		// Nothing to do for this tenant.
-		return
+		return false
 	}
 
 	// We need to check for tokens even if ringChanged is false... we may be here because of ring-check failure in previous
@@ -3550,7 +3557,7 @@ func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringC
 
 			// If we failed to run the update, set the new reason, to make sure we do the check in next iteration.
 			db.TriggerRecomputeOwnedSeries("update failed")
-			return
+			return false
 		}
 	}
 
@@ -3560,5 +3567,7 @@ func (i *Ingester) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringC
 
 	if reason != "" {
 		db.RecomputeOwnedSeries(shardSize, reason, i.logger)
+		return true
 	}
+	return false
 }
