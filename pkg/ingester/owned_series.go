@@ -27,6 +27,7 @@ const (
 	recomputeOwnedSeriesReasonGetTokenRangesFailed = "token ranges failed"
 	recomputeOwnedSeriesReasonUpdateFailed         = "update failed"
 	recomputeOwnedSeriesReasonRingChanged          = "ring changed"
+	recomputeOwnedSeriesReasonShardSizeChanged     = "shard size changed"
 )
 
 type ownedSeriesService struct {
@@ -66,13 +67,10 @@ func (oss *ownedSeriesService) starting(ctx context.Context) error {
 		return err
 	}
 
-	// Compute owned series before we start.
-	rs, err := oss.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
-	if err != nil {
-		return fmt.Errorf("owned series: can't cache replica set: %w", err)
+	if _, err := oss.checkRingForChanges(); err != nil {
+		return fmt.Errorf("can't read ring: %v", err)
 	}
 
-	oss.previousRing = rs
 	// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
 	oss.updateAll(ctx, true)
 	return nil
@@ -81,7 +79,7 @@ func (oss *ownedSeriesService) starting(ctx context.Context) error {
 // This function runs periodically. It checks if ring has changed, and updates number of owned series for any
 // user that requires it (due to ring change, compaction, shard size change, ...).
 func (oss *ownedSeriesService) iter(ctx context.Context) error {
-	ringChanged, err := oss.computeRingChanged()
+	ringChanged, err := oss.checkRingForChanges()
 	if err != nil {
 		level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
 		return nil // If we returned error, service would stop.
@@ -95,7 +93,8 @@ func (oss *ownedSeriesService) iter(ctx context.Context) error {
 	return nil
 }
 
-func (oss *ownedSeriesService) computeRingChanged() (bool, error) {
+// Reads current ring, stores it, and returns bool indicating whether ring has changed since last call of this method.
+func (oss *ownedSeriesService) checkRingForChanges() (bool, error) {
 	rs, err := oss.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
 	if err != nil {
 		return false, err
@@ -136,7 +135,7 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 	if reason == "" {
 		_, ownedShardSize := db.OwnedSeriesAndShards()
 		if shardSize != ownedShardSize {
-			reason = "shard size changed"
+			reason = recomputeOwnedSeriesReasonShardSizeChanged
 		}
 	}
 
