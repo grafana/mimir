@@ -346,6 +346,5 @@ func copyValues(src url.Values) url.Values {
 
 // IsHTTPStatusCode returns true if the given code is a valid HTTP status code, or false otherwise.
 func IsHTTPStatusCode(code codes.Code) bool {
-	httpStatus := http.StatusText(int(code))
-	return httpStatus != ""
+	return int(code) >= 100 && int(code) < 600
 }
