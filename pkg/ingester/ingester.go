@@ -3494,7 +3494,8 @@ func (i *Ingester) ownedSeriesIter(ctx context.Context) error {
 		return nil // If we returned error, OwnedSeries service would stop.
 	}
 
-	ringChanged := ring.HasReplicationSetChanged(i.ownedSeriesLastReplicaSet, rs)
+	// Since token ranges computation doesn't care about state, we don't need to either.
+	ringChanged := ring.HasReplicationSetChangedWithoutState(i.ownedSeriesLastReplicaSet, rs)
 	i.ownedSeriesLastReplicaSet = rs
 
 	start := time.Now()
