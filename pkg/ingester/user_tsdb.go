@@ -545,7 +545,7 @@ func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log
 
 	dur := time.Since(start)
 
-	level.Info(logger).Log("msg", "owned series: recomputed owned series for user", "user", u.userID, "reason", reason, "ownedSeriesCountBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "ownedSeriesCountAfter", ownedNew, "shardSizeAfter", shardSize, "duration", dur, "repeats", repeats)
+	level.Info(logger).Log("msg", "owned series: recomputed owned series for user", "user", u.userID, "reason", reason, "ownedSeriesBefore", ownedPrev, "shardSizeBefore", shardSizePrev, "ownedSeriesAfter", ownedNew, "shardSizeAfter", shardSize, "duration", dur, "repeats", repeats)
 }
 
 // UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
