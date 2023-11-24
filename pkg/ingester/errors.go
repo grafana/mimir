@@ -28,6 +28,11 @@ import (
 
 const (
 	integerUnavailableMsgFormat = "ingester is unavailable (current state: %s)"
+	tooBusyErrorMsg             = "the ingester is currently too busy to process queries, try again later"
+)
+
+var (
+	tooBusyError = ingesterTooBusyError{}
 )
 
 // errorWithStatus is used for wrapping errors returned by ingester.
@@ -47,14 +52,14 @@ type errorWithStatus struct {
 // newErrorWithStatus creates a new errorWithStatus backed by the given error,
 // and containing the given gRPC code. If the given error is an ingesterError,
 // the resulting errorWithStatus will be enriched by the details backed by
-// ingesterError.errorCause. These details are of type mimirpb.WriteErrorDetails.
+// ingesterError.errorCause. These details are of type mimirpb.ErrorDetails.
 func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 	var (
 		ingesterErr  ingesterError
-		errorDetails *mimirpb.WriteErrorDetails
+		errorDetails *mimirpb.ErrorDetails
 	)
 	if errors.As(originalErr, &ingesterErr) {
-		errorDetails = &mimirpb.WriteErrorDetails{Cause: ingesterErr.errorCause()}
+		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
 	}
 	stat := status.New(code, originalErr.Error())
 
@@ -74,8 +79,6 @@ func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 
 // newErrorWithHTTPStatus creates a new errorWithStatus backed by the given error,
 // and containing the given HTTP status code.
-// TODO this is needed for backwards compatibility only and should be removed
-// in mimir 2.12.0.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
 	stat, _ := status.FromError(errWithHTTPStatus)
@@ -103,14 +106,14 @@ func (e errorWithStatus) GRPCStatus() *grpcstatus.Status {
 }
 
 // writeErrorDetails is needed for testing purposes only. It returns the
-// mimirpb.WriteErrorDetails object stored in this error's status, if any
+// mimirpb.ErrorDetails object stored in this error's status, if any
 // or nil otherwise.
-func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
+func (e errorWithStatus) writeErrorDetails() *mimirpb.ErrorDetails {
 	details := e.status.Details()
 	if len(details) != 1 {
 		return nil
 	}
-	if errDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+	if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 		return errDetails
 	}
 	return nil
@@ -120,7 +123,7 @@ func (e errorWithStatus) writeErrorDetails() *mimirpb.WriteErrorDetails {
 // if the given error and this error are equal, i.e., if they are both of
 // type errorWithStatus, if their underlying statuses have the same code,
 // messages, and if both have either no details, or exactly one detail
-// of type mimirpb.WriteErrorDetails, which are equal too.
+// of type mimirpb.ErrorDetails, which are equal too.
 func (e errorWithStatus) equals(err error) bool {
 	if err == nil {
 		return false
@@ -509,6 +512,19 @@ func (e tsdbUnavailableError) errorCause() mimirpb.ErrorCause {
 // Ensure that tsdbUnavailableError is an ingesterError.
 var _ ingesterError = tsdbUnavailableError{}
 
+type ingesterTooBusyError struct{}
+
+func (e ingesterTooBusyError) Error() string {
+	return tooBusyErrorMsg
+}
+
+func (e ingesterTooBusyError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.TOO_BUSY
+}
+
+// Ensure that ingesterTooBusyError is an ingesterError.
+var _ ingesterError = ingesterTooBusyError{}
+
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler
 	sampleTimestampTooOldOOOEnabled   *log.Sampler
@@ -535,7 +551,8 @@ func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	}
 }
 
-func handlePushErrorWithGRPC(err error) error {
+// mapPushErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
+func mapPushErrorToErrorWithStatus(err error) error {
 	var (
 		ingesterErr ingesterError
 		errCode     = codes.Internal
@@ -557,11 +574,9 @@ func handlePushErrorWithGRPC(err error) error {
 	return newErrorWithStatus(wrappedErr, errCode)
 }
 
-// handlePushErrorWithHTTPGRPC maps ingesterError objects to an appropriate
+// mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
 // errorWithStatus, which may contain both HTTP and gRPC error codes.
-// TODO this method is needed only for the backwards compatibility,
-// and should be removed in mimir 2.12.0.
-func handlePushErrorWithHTTPGRPC(err error) error {
+func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
 	var ingesterErr ingesterError
 	if errors.As(err, &ingesterErr) {
 		switch ingesterErr.errorCause() {
@@ -573,6 +588,40 @@ func handlePushErrorWithHTTPGRPC(err error) error {
 			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
 		case mimirpb.TSDB_UNAVAILABLE:
 			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		}
+	}
+	return err
+}
+
+// mapReadErrorToErrorWithStatus maps the given error to the corresponding error of type errorWithStatus.
+func mapReadErrorToErrorWithStatus(err error) error {
+	var (
+		ingesterErr ingesterError
+		errCode     = codes.Internal
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.TOO_BUSY:
+			errCode = codes.ResourceExhausted
+		case mimirpb.SERVICE_UNAVAILABLE:
+			errCode = codes.Unavailable
+		}
+	}
+	return newErrorWithStatus(err, errCode)
+}
+
+// mapReadErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
+// errorWithStatus, which may contain both HTTP and gRPC error codes.
+func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
+	var (
+		ingesterErr ingesterError
+	)
+	if errors.As(err, &ingesterErr) {
+		switch ingesterErr.errorCause() {
+		case mimirpb.TOO_BUSY:
+			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
+		case mimirpb.SERVICE_UNAVAILABLE:
+			return newErrorWithStatus(err, codes.Unavailable)
 		}
 	}
 	return err

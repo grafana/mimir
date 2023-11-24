@@ -1245,9 +1245,8 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
+	// This code is needed for backwards compatibility, since ingesters may still return errors
+	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
 	if ok {
 		return pushErr

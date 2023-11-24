@@ -328,21 +328,37 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []interface{}) {
 	for k, v := range queryString {
 		var formattedValue string
-		if details != nil && (k == "start" || k == "end" || k == "step" || k == "time") {
-			switch k {
-			case "start", "time":
-				formattedValue = details.Start.Format(time.RFC3339Nano)
-			case "end":
-				formattedValue = details.End.Format(time.RFC3339Nano)
-			case "step":
-				formattedValue = strconv.FormatInt(details.Step.Milliseconds(), 10)
-			}
-		} else {
+		if details != nil {
+			formattedValue = paramValueFromDetails(details, k)
+		}
+
+		if formattedValue == "" {
 			formattedValue = strings.Join(v, ",")
 		}
 		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
 	}
 	return fields
+}
+
+// paramValueFromDetails returns the value of the parameter from details if the value there is non-zero.
+// Otherwise, it returns an empty string.
+// One reason why details field may be zero-values is if the value was not parseable.
+func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName string) string {
+	switch paramName {
+	case "start", "time":
+		if !details.Start.IsZero() {
+			return details.Start.Format(time.RFC3339Nano)
+		}
+	case "end":
+		if !details.End.IsZero() {
+			return details.End.Format(time.RFC3339Nano)
+		}
+	case "step":
+		if details.Step != 0 {
+			return strconv.FormatInt(details.Step.Milliseconds(), 10)
+		}
+	}
+	return ""
 }
 
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {

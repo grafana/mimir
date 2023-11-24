@@ -26,6 +26,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
+	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
 )
 
@@ -358,4 +359,9 @@ func copyValues(src url.Values) url.Values {
 		dst[k] = append([]string(nil), vs...)
 	}
 	return dst
+}
+
+// IsHTTPStatusCode returns true if the given code is a valid HTTP status code, or false otherwise.
+func IsHTTPStatusCode(code codes.Code) bool {
+	return int(code) >= 100 && int(code) < 600
 }

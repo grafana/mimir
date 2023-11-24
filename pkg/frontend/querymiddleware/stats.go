@@ -112,7 +112,7 @@ type QueryDetails struct {
 
 	// Start and End are the parsed start and end times of the unmodified user request.
 	Start, End time.Time
-	// MinT and MaxT are the earlest and latest points in time which the query might try to use.
+	// MinT and MaxT are the earliest and latest points in time which the query might try to use.
 	// For example, they account for range selectors and @ modifiers.
 	// MinT and MaxT may be zero-valued if the query doesn't process samples.
 	MinT, MaxT time.Time
