@@ -573,35 +573,11 @@ func (d *Distributor) stopping(_ error) error {
 }
 
 func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return shardByAllLabels(userID, labels)
+	return util.ShardByAllLabelAdapters(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	return shardByMetricName(userID, metricName)
-}
-
-// shardByMetricName returns the token for the given metric. The provided metricName
-// is guaranteed to not be retained.
-func shardByMetricName(userID string, metricName string) uint32 {
-	h := shardByUser(userID)
-	h = ingester_client.HashAdd32(h, metricName)
-	return h
-}
-
-func shardByUser(userID string) uint32 {
-	h := ingester_client.HashNew32()
-	h = ingester_client.HashAdd32(h, userID)
-	return h
-}
-
-// This function generates different values for different order of same labels.
-func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	h := shardByUser(userID)
-	for _, label := range labels {
-		h = ingester_client.HashAdd32(h, label.Name)
-		h = ingester_client.HashAdd32(h, label.Value)
-	}
-	return h
+	return util.ShardByMetricName(userID, metricName)
 }
 
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,

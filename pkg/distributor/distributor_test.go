@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
@@ -3788,7 +3789,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	}
 
 	for _, series := range req.Timeseries {
-		hash := shardByAllLabels(orgid, series.Labels)
+		hash := util.ShardByAllLabelAdapters(orgid, series.Labels)
 		existing, ok := i.timeseries[hash]
 		if !ok {
 			// Make a copy because the request Timeseries are reused
@@ -3810,7 +3811,7 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 	}
 
 	for _, m := range req.Metadata {
-		hash := shardByMetricName(orgid, m.MetricFamilyName)
+		hash := util.ShardByMetricName(orgid, m.MetricFamilyName)
 		set, ok := i.metadata[hash]
 		if !ok {
 			set = map[mimirpb.MetricMetadata]struct{}{}
@@ -4508,23 +4509,6 @@ func TestDistributorValidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-// This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
-func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
-	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "bar", Value: "baz"},
-		{Name: "sample", Value: "1"},
-	})
-
-	val2 := shardByAllLabels("test", []mimirpb.LabelAdapter{
-		{Name: "__name__", Value: "foo"},
-		{Name: "sample", Value: "1"},
-		{Name: "bar", Value: "baz"},
-	})
-
-	assert.NotEqual(t, val1, val2)
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {

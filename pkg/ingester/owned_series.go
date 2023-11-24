@@ -10,6 +10,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // Distributor uses WriteNoExtend, but we include all instance states in our operation. Reason is that we want to detect changes to the ring
@@ -158,4 +161,10 @@ func (oss *ownedSeriesService) ownedSeriesUpdateForTenant(userID string, db *use
 		return true
 	}
 	return false
+}
+
+func SecondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
+	return func(ls labels.Labels) uint32 {
+		return util.ShardByAllLabels(userID, ls)
+	}
 }
