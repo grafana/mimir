@@ -523,7 +523,7 @@ func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log
 
 	const (
 		maxAttempts   = 3
-		maxSeriesDiff = 100
+		maxSeriesDiff = 1000
 	)
 
 	start := time.Now()
