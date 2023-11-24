@@ -2770,7 +2770,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		// If head was compacted, its MinTime has changed. We need to recalculate series owned by this ingester,
 		// because in-memory series are removed during compaction.
 		if minTimeBefore != minTimeAfter {
-			userDB.TriggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonCompaction)
+			r := recomputeOwnedSeriesReasonCompaction
+			if force && forcedCompactionMaxTime != math.MaxInt64 {
+				r = recomputeOwnedSeriesReasonEarlyCompaction
+			}
+			userDB.TriggerRecomputeOwnedSeries(r)
 		}
 
 		return nil

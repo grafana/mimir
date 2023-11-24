@@ -21,9 +21,10 @@ import (
 var ownedSeriesRingOp = ring.NewOp([]ring.InstanceState{ring.PENDING, ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 
 const (
-	recomputeOwnedSeriesReasonCompaction   = "compaction"
-	recomputeOwnedSeriesReasonNewUser      = "new user"
-	recomputeOwnedSeriesReasonUpdateFailed = "update failed"
+	recomputeOwnedSeriesReasonEarlyCompaction = "early compaction"
+	recomputeOwnedSeriesReasonCompaction      = "compaction"
+	recomputeOwnedSeriesReasonNewUser         = "new user"
+	recomputeOwnedSeriesReasonUpdateFailed    = "update failed"
 )
 
 type ownedSeriesService struct {
