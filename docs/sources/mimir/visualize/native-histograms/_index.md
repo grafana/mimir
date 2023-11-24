@@ -26,12 +26,6 @@ PromQL queries of native histograms are different from those of classic histogra
 
 For more information about PromQL, refer to [Querying Prometheus](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 
-<!--
-Given an example, where a histogram metric is named `request_duration_seconds`,
-and it has some labels, you can apply an aggregation (`sum`) to the time series of the metric.
-Doing so produces a single output.
- -->
-
 ### Query your histogram’s count or sum
 
 To query the total count of observations within a histogram, use the following queries:
@@ -40,7 +34,7 @@ To query the total count of observations within a histogram, use the following q
 # Native histograms:
 histogram_count(sum(request_duration_seconds))
 
-# Classic histograms:
+# Previous classic histograms:
 sum(request_duration_seconds_count)
 ```
 
@@ -56,7 +50,7 @@ sum(request_duration_seconds_sum)
 
 ### Find rate of observations
 
-To query the rate of all observations, calculated over 5 minute time window, use the following query:
+To query the rate of all observations calculated over 5 minute time window, use the following query:
 
 ```PromQL
 # Native histograms:
@@ -66,9 +60,7 @@ histogram_count(sum(rate(request_duration_seconds[5m])))
 sum(rate(request_duration_seconds_count[5m]))
 ```
 
-In Grafana the range vector selector of `5m` would be replaced by `$__rate_interval`.
-
-To query the rate of observations below a certain limit like 2 seconds, use the following query:
+To query the rate of observations between two values such as `0` and `2` seconds, use the following query:
 
 ```PromQL
 # Native histograms:
@@ -80,13 +72,16 @@ histogram_count(sum(rate(request_duration_seconds[5m])))
 sum(rate(request_duration_seconds_bucket{le="2.5"}[5m]))
 ```
 
-There are a number of things to note here:
+There is a native histogram function that estimates the fraction of the total number of observations that fall within a certain interval, such as `[0, 2]`.
+For more information, refer to [histogram fraction](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_fraction).
 
-- Native histograms have a new dedicated function to estimate what fraction of the total number of observations fall into a certain interval, in this case [0, 2]. To learn more about the new function, go to [histogram fraction](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_fraction).
-- The previous classic histograms had no such function, meaning that in case the bucket boundaries didn't line up with the requested boundaries (like in the example above), you were out of luck and had to either accept the result as is, or do the estimation yourself.
+The previous classic histograms have no such function. Therefore, if the lower and upper bounds of the interval do not line up with the bucket boundaries of a classic histogram,
+you have to estimate the fraction manually.
 
 {{% admonition type="note" %}}
-Never use the `histogram_fraction` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which is probably not what you want.
+Only ever use the `histogram_fraction` function by including `rate` or `increase` inside of it with a suitable range selector.
+If you do not specify a range, such as `5m`, the function uses the current value of the histogram.
+In that case, the current value is an accumulated value over the lifespan of the histogram or since the histogram was last reset.
 {{% /admonition %}}
 
 ### Quantiles
@@ -102,11 +97,17 @@ histogram_quantile(0.95, sum by (le) (rate(request_duration_seconds_bucket[5m]))
 ```
 
 {{% admonition type="note" %}}
-Never use the `histogram_quantile` function without including `rate` or `increase` inside it with a suitable range selector. Not having a range like 5 minutes selected will use the current value of the histogram, which will be an accumulated value since the the histogram existed (or was last reset), which is probably not what you want.
+Only ever use the `histogram_quantile` function by including `rate` or `increase` inside of it with a suitable range selector.
+If you do not specify a range, such as `5m`, the function uses the current value of the histogram.
+In that case, the current value is an accumulated value over the lifespan of the histogram or since the histogram was last reset.
 {{% /admonition %}}
 
-## Grafana
+## Create Grafana dashboards
 
-The two panel types most relevant for native histograms are the [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/) panels.
+When creating a Grafana dashboard for your native histogram, the most relevant panel types are [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/).
 
-Regarding [Explore](/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum` and `histogram_quantile` will result in normal floating point series which you can plot as usual. Visualizing native histogram series directly in the explore view is a work in progress.
+In [Explore](https://grafana.com/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum`, and `histogram_quantile` will result in normal floating point series that you can plot as usual. 
+
+{{% admonition type="note" %}}
+Visualizing native histogram series directly in the **Explore** view is a work in progress.
+{{% /admonition %}}
