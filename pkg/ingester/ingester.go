@@ -3460,7 +3460,10 @@ type utilizationBasedLimiter interface {
 	LimitingReason() string
 }
 
-var ownedSeriesRingOp = ring.WriteNoExtend // Distributor uses WriteNoExtend.
+// Distributor uses WriteNoExtend, but we include all instance states in our operation. Reason is that we want to detect changes to the ring
+// to see if we need to recompute token ranges for this instance. Token ranges computation is independent of ring states. (It should depend on
+// "replica extension", but WriteNoExtend doesn't use that.)
+var ownedSeriesRingOp = ring.NewOp([]ring.InstanceState{ring.PENDING, ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 
 // This is Starting function for ownedSeries service. Service is only started after all TSDBs are opened.
 // Pushes are not allowed yet when this function runs.
