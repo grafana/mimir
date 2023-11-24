@@ -74,34 +74,42 @@ func (oss *ownedSeriesService) starting(ctx context.Context) error {
 
 	oss.previousRing = rs
 	// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-	oss.ownedSeriesUpdate(ctx, true)
+	oss.updateAll(ctx, true)
 	return nil
 }
 
 // This function runs periodically. It checks if ring has changed, and updates number of owned series for any
 // user that requires it (due to ring change, compaction, shard size change, ...).
 func (oss *ownedSeriesService) iter(ctx context.Context) error {
-	rs, err := oss.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
+	ringChanged, err := oss.computeRingChanged()
 	if err != nil {
 		level.Error(oss.logger).Log("msg", "can't check ring for updates", "err", err)
-		return nil // If we returned error, OwnedSeries service would stop.
+		return nil // If we returned error, service would stop.
 	}
 
-	// Since token ranges computation doesn't care about state, we don't need to either.
-	ringChanged := ring.HasReplicationSetChangedWithoutState(oss.previousRing, rs)
-	oss.previousRing = rs
-
 	start := time.Now()
-	updatedUsers := oss.ownedSeriesUpdate(ctx, ringChanged)
+	updatedUsers := oss.updateAll(ctx, ringChanged)
 	if updatedUsers > 0 {
 		level.Info(oss.logger).Log("msg", "updated owned series for users", "updatedUsers", updatedUsers, "duration", time.Since(start), "ringChanged", ringChanged)
 	}
 	return nil
 }
 
-// ownedSeriesUpdate iterates over all open TSDBs and updates owned series for all users that need it, either
+func (oss *ownedSeriesService) computeRingChanged() (bool, error) {
+	rs, err := oss.ingestersRing.GetAllHealthy(ownedSeriesRingOp)
+	if err != nil {
+		return false, err
+	}
+
+	// Since token ranges computation doesn't care about state, we don't need to either.
+	ringChanged := ring.HasReplicationSetChangedWithoutState(oss.previousRing, rs)
+	oss.previousRing = rs
+	return ringChanged, nil
+}
+
+// updateAll iterates over all open TSDBs and updates owned series for all users that need it, either
 // because of external trigger (new user, compaction), or because of changed token ranges.
-func (oss *ownedSeriesService) ownedSeriesUpdate(ctx context.Context, ringChanged bool) int {
+func (oss *ownedSeriesService) updateAll(ctx context.Context, ringChanged bool) int {
 	updatedUsers := 0
 	for _, userID := range oss.getTSDBUsers() {
 		if ctx.Err() != nil {
@@ -113,7 +121,7 @@ func (oss *ownedSeriesService) ownedSeriesUpdate(ctx context.Context, ringChange
 			continue
 		}
 
-		if oss.ownedSeriesUpdateForTenant(userID, db, ringChanged) {
+		if oss.updateTenant(userID, db, ringChanged) {
 			updatedUsers++
 		}
 	}
@@ -121,7 +129,7 @@ func (oss *ownedSeriesService) ownedSeriesUpdate(ctx context.Context, ringChange
 }
 
 // Updates token ranges and recomputes owned series for user, if necessary. If recomputation happened, true is returned.
-func (oss *ownedSeriesService) ownedSeriesUpdateForTenant(userID string, db *userTSDB, ringChanged bool) bool {
+func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringChanged bool) bool {
 	shardSize := oss.getIngesterShardSize(userID)
 
 	reason := db.requiresOwnedSeriesUpdate.Swap("") // Clear reason, so that other reasons can be set while we run update here.
@@ -167,7 +175,7 @@ func (oss *ownedSeriesService) ownedSeriesUpdateForTenant(userID string, db *use
 	return false
 }
 
-func SecondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
+func secondaryTSDBHashFunctionForUser(userID string) func(labels.Labels) uint32 {
 	return func(ls labels.Labels) uint32 {
 		return mimirpb.ShardByAllLabels(userID, ls)
 	}
