@@ -408,7 +408,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 		r := req.(*schedulerRequest)
 
-		s.queueDuration.Observe(time.Since(r.enqueueTime).Seconds())
+		queueTime := time.Since(r.enqueueTime)
+		s.queueDuration.Observe(queueTime.Seconds())
 		r.queueSpan.Finish()
 
 		/*
@@ -431,7 +432,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			continue
 		}
 
-		if err := s.forwardRequestToQuerier(querier, r); err != nil {
+		if err := s.forwardRequestToQuerier(querier, r, queueTime); err != nil {
 			return err
 		}
 	}
@@ -446,7 +447,7 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest) error {
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest, queueTime time.Duration) error {
 	// Make sure to cancel request at the end to clean up resources.
 	defer s.cancelRequestAndRemoveFromPending(req.frontendAddress, req.queryID)
 
@@ -460,6 +461,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			FrontendAddress: req.frontendAddress,
 			HttpRequest:     req.request,
 			StatsEnabled:    req.statsEnabled,
+			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
 		if err != nil {
 			errCh <- err

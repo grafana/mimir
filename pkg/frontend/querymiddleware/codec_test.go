@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -228,7 +227,8 @@ func TestDecodeFailedResponse(t *testing.T) {
 		}, nil, log.NewNopLogger())
 		require.Error(t, err)
 
-		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
 	})
@@ -732,6 +732,9 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 			StatusCode:    200,
 			Body:          io.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
+			Header: map[string][]string{
+				"Content-Type": {"application/json"},
+			},
 		}, nil, log.NewNopLogger())
 		require.NoError(b, err)
 	}

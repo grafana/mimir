@@ -9,7 +9,9 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -75,6 +77,46 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 		}
 
 		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, cardinalityResponse, cardinalityRequest.Limit))
+	})
+}
+
+func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		// Guarantee request's context is for a single tenant id
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
+			return
+		}
+
+		req, err := cardinality.DecodeActiveSeriesRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		res, err := distributor.ActiveSeries(ctx, req.Matchers)
+		if err != nil {
+			respondFromError(err, w)
+			return
+		}
+
+		var json = jsoniter.ConfigCompatibleWithStandardLibrary
+		bytes, err := json.Marshal(activeSeriesResponse{Data: res})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+
+		// Nothing we can do about this error, so ignore it.
+		_, _ = w.Write(bytes)
 	})
 }
 
@@ -204,4 +246,8 @@ type labelNamesCardinality struct {
 type labelValuesCardinalityResponse struct {
 	SeriesCountTotal uint64                  `json:"series_count_total"`
 	Labels           []labelNamesCardinality `json:"labels"`
+}
+
+type activeSeriesResponse struct {
+	Data []labels.Labels `json:"data"`
 }

@@ -33,7 +33,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:10.1.5
+    image: grafana/grafana:10.2.1
     ports:
       - 3000:3000
     volumes:
@@ -44,8 +44,8 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.37.3
-    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
+    image: grafana/agent:v0.37.4
+    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
     ports:
@@ -54,7 +54,7 @@ services:
   grafana-agent-flow:
     profiles:
       - grafana-agent-flow
-    image: grafana/agent:v0.37.3
+    image: grafana/agent:v0.37.4
     environment:
       - AGENT_MODE=flow
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "/etc/agent/config.river"]
@@ -114,7 +114,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.87.0
+    image: otel/opentelemetry-collector-contrib:0.89.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -129,7 +129,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.87.0
+    image: otel/opentelemetry-collector-contrib:0.89.0
     profiles:
       - otel-collector-otlp-push
     volumes:

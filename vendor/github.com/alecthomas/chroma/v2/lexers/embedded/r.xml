@@ -37,6 +37,9 @@
       </rule>
     </state>
     <state name="root">
+      <rule>
+        <include state="keywords"/>
+      </rule>
       <rule pattern="((?:`[^`\\]*(?:\\.[^`\\]*)*`)|(?:(?:[a-zA-z]|[_.][^0-9])[\w_.]*))\s*(?=\()">
         <token type="NameFunction"/>
       </rule>
@@ -107,9 +110,6 @@
       </rule>
       <rule>
         <include state="numbers"/>
-      </rule>
-      <rule>
-        <include state="keywords"/>
       </rule>
       <rule>
         <include state="punctuation"/>

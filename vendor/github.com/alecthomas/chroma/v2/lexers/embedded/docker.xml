@@ -5,6 +5,7 @@
     <alias>dockerfile</alias>
     <filename>Dockerfile</filename>
     <filename>Dockerfile.*</filename>
+    <filename>*.Dockerfile</filename>
     <filename>*.docker</filename>
     <mime_type>text/x-dockerfile-config</mime_type>
     <case_insensitive>true</case_insensitive>

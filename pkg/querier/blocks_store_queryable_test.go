@@ -862,7 +862,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						maxT:        maxT,
 						finder:      finder,
 						stores:      stores,
-						consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+						consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 						logger:      log.NewNopLogger(),
 						metrics:     newBlocksStoreQueryableMetrics(reg),
 						limits:      testData.limits,
@@ -1016,7 +1016,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 				maxT:        maxT,
 				finder:      finder,
 				stores:      stores,
-				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(reg),
 				limits:      &blocksStoreLimitsMock{},
@@ -1516,7 +1516,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
@@ -1587,7 +1587,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
@@ -1661,7 +1661,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				maxT:            testData.queryMaxT,
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency:     NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:          log.NewNopLogger(),
 				metrics:         newBlocksStoreQueryableMetrics(nil),
 				limits:          &blocksStoreLimitsMock{},
@@ -1735,7 +1735,7 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				maxT:        testData.queryMaxT,
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
@@ -1865,7 +1865,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck

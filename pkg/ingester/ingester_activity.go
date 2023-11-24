@@ -130,6 +130,15 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
+func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesRequest, server client.Ingester_ActiveSeriesServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(server.Context(), "Ingester/ActiveSeries", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.ActiveSeries(request, server)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

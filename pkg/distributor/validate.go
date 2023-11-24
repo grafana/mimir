@@ -78,6 +78,10 @@ var (
 		"received a native histogram sample with too many buckets, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
 		globalerror.MaxNativeHistogramBuckets,
 	)
+	notReducibleNativeHistogramMsgFormat = fmt.Sprintf(
+		"received a native histogram sample with too many buckets and cannot reduce, timestamp: %%d series: %%s, buckets: %%d, limit: %%d (%s)",
+		globalerror.NotReducibleNativeHistogram,
+	)
 	sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
@@ -107,6 +111,7 @@ var (
 type sampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 	MaxNativeHistogramBuckets(userID string) int
+	ReduceNativeHistogramOverMaxBuckets(userID string) bool
 }
 
 // sampleValidationMetrics is a collection of metrics used during sample validation.
@@ -207,7 +212,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Histogram) error {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) error {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -222,8 +227,20 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
 		}
 		if bucketCount > bucketLimit {
-			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
+				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+			}
+			for {
+				bc, err := s.ReduceResolution()
+				if err != nil {
+					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+				}
+				if bc < bucketLimit {
+					break
+				}
+			}
 		}
 	}
 

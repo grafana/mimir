@@ -586,6 +586,11 @@ grpc_tls_config:
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
 
+# If set to true, gRPC statuses will be reported in instrumentation labels with
+# their string representations. Otherwise, they will be reported as "error".
+# CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
 [graceful_shutdown_timeout: <duration> | default = 30s]
@@ -606,6 +611,11 @@ grpc_tls_config:
 # (advanced) Idle timeout for HTTP server
 # CLI flag: -server.http-idle-timeout
 [http_server_idle_timeout: <duration> | default = 2m]
+
+# Log closed connections that did not receive any response, most likely because
+# client didn't send any request within timeout.
+# CLI flag: -server.http-log-closed-connections-without-response-enabled
+[http_log_closed_connections_without_response_enabled: <boolean> | default = false]
 
 # (advanced) Limit on the size of a gRPC message this server can receive
 # (bytes).
@@ -722,6 +732,25 @@ pool:
   # cleanup.
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
+
+retry_after_header:
+  # (experimental) Enabled controls inclusion of the Retry-After header in the
+  # response: true includes it for client retry guidance, false omits it.
+  # CLI flag: -distributor.retry-after-header.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Base duration in seconds for calculating the Retry-After
+  # header in responses to 429/5xx errors.
+  # CLI flag: -distributor.retry-after-header.base-seconds
+  [base_seconds: <int> | default = 3]
+
+  # (experimental) Sets the upper limit on the number of Retry-Attempt
+  # considered for calculation. It caps the Retry-Attempt header without
+  # rejecting additional attempts, controlling exponential backoff calculations.
+  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
+  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
+  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
+  [max_backoff_exponent: <int> | default = 5]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
@@ -891,6 +920,14 @@ instance_limits:
 # (experimental) Use experimental method of limiting push requests.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+
+# (experimental) Number of pre-allocated workers used to forward push requests
+# to the ingesters. If 0, no workers will be used and a new goroutine will be
+# spawned for each ingester push request. If not enough workers available, new
+# goroutine will be spawned. (Note: this is a performance optimization, not a
+# limiting feature.)
+# CLI flag: -distributor.reusable-ingester-push-workers
+[reusable_ingester_push_workers: <int> | default = 0]
 ```
 
 ### ingester
@@ -1129,10 +1166,6 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
 
-# (experimental) Ignore cancellation when querying chunks.
-# CLI flag: -ingester.chunks-query-ignore-cancellation
-[chunks_query_ignore_cancellation: <boolean> | default = false]
-
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
 [return_only_grpc_errors: <boolean> | default = false]
@@ -1143,17 +1176,6 @@ instance_limits:
 The `querier` block configures the querier.
 
 ```yaml
-# (deprecated) Use iterators to execute query, as opposed to fully materialising
-# the series in memory.
-# CLI flag: -querier.iterators
-[iterators: <boolean> | default = false]
-
-# (deprecated) Use batch iterators to execute query, as opposed to fully
-# materialising the series in memory.  Takes precedent over the
-# -querier.iterators flag.
-# CLI flag: -querier.batch-iterators
-[batch_iterators: <boolean> | default = true]
-
 # (advanced) The time after which a metric should be queried from storage and
 # not just ingesters. 0 means all queries are sent to store. If this option is
 # enabled, the time range of the query sent to the store-gateway will be
@@ -1245,7 +1267,7 @@ store_gateway_client:
 # with a stream of chunks if the target ingester supports this, and this
 # preference will be ignored by ingesters that do not support this.
 # CLI flag: -querier.prefer-streaming-chunks-from-ingesters
-[prefer_streaming_chunks_from_ingesters: <boolean> | default = false]
+[prefer_streaming_chunks_from_ingesters: <boolean> | default = true]
 
 # (experimental) Request store-gateways stream chunks. Store-gateways will only
 # respond with a stream of chunks if the target store-gateway supports this, and
@@ -1253,8 +1275,8 @@ store_gateway_client:
 # CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
 [prefer_streaming_chunks_from_store_gateways: <boolean> | default = false]
 
-# (experimental) Number of series to buffer per ingester when streaming chunks
-# from ingesters.
+# (advanced) Number of series to buffer per ingester when streaming chunks from
+# ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
 [streaming_chunks_per_ingester_series_buffer_size: <int> | default = 256]
 
@@ -1269,12 +1291,11 @@ store_gateway_client:
 # ingesters. Enabling this option reduces resource consumption for the happy
 # path at the cost of increased latency for the unhappy path.
 # CLI flag: -querier.minimize-ingester-requests
-[minimize_ingester_requests: <boolean> | default = false]
+[minimize_ingester_requests: <boolean> | default = true]
 
-# (experimental) Delay before initiating requests to further ingesters when
-# request minimization is enabled and the initially selected set of ingesters
-# have not all responded. Ignored if -querier.minimize-ingester-requests is not
-# enabled.
+# (advanced) Delay before initiating requests to further ingesters when request
+# minimization is enabled and the initially selected set of ingesters have not
+# all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
@@ -1424,6 +1445,13 @@ results_cache:
 # downstream error is returned.
 # CLI flag: -query-frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
+
+# (experimental) Maximum time to wait for the query-frontend to become ready
+# before rejecting requests received before the frontend was ready. 0 to disable
+# (i.e. fail immediately if a request is received while the frontend is still
+# starting up)
+# CLI flag: -query-frontend.not-running-timeout
+[not_running_timeout: <duration> | default = 0s]
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
@@ -2269,6 +2297,12 @@ circuit_breaker:
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
+
+# (advanced) If set to true, gRPC status codes will be reported in "status_code"
+# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
+# they will be reported as "error"
+# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
 ```
 
 ### grpc_client
@@ -2880,6 +2914,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-native-histogram-buckets
 [max_native_histogram_buckets: <int> | default = 0]
 
+# Whether to reduce or reject native histogram samples with more buckets than
+# the configured limit.
+# CLI flag: -validation.reduce-native-histogram-over-max-buckets
+[reduce_native_histogram_over_max_buckets: <boolean> | default = true]
+
 # (advanced) Controls how far into the future incoming samples and exemplars are
 # accepted compared to the wall clock. Any sample or exemplar will be rejected
 # if its timestamp is greater than '(now + grace_period)'. This configuration is
@@ -2908,7 +2947,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) If enabled, rate limit errors will be reported to the client
 # with HTTP status code 529 (Service is overloaded). If disabled, status code
-# 429 (Too Many Requests) is used.
+# 429 (Too Many Requests) is used. Enabling
+# -distributor.retry-after-header.enabled before utilizing this option is
+# strongly recommended as it helps prevent premature request retries by the
+# client.
 # CLI flag: -distributor.service-overload-status-code-on-rate-limit-enabled
 [service_overload_status_code_on_rate_limit_enabled: <boolean> | default = false]
 
@@ -3297,6 +3339,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
+
+# (advanced) Whether to enable automatic suffixes to names of metrics ingested
+# through OTLP.
+# CLI flag: -distributor.otel-metric-suffixes-enabled
+[otel_metric_suffixes_enabled: <boolean> | default = false]
 ```
 
 ### blocks_storage
@@ -3511,12 +3558,6 @@ bucket_store:
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
   bucket_index:
-    # (deprecated) If enabled, queriers and store-gateways discover blocks by
-    # reading a bucket index (created and updated by the compactor) instead of
-    # periodically scanning the bucket.
-    # CLI flag: -blocks-storage.bucket-store.bucket-index.enabled
-    [enabled: <boolean> | default = true]
-
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
     # CLI flag: -blocks-storage.bucket-store.bucket-index.update-on-error-interval
@@ -3542,19 +3583,6 @@ bucket_store:
   # yet compacted. Negative values or 0 disable the filter.
   # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
   [ignore_blocks_within: <duration> | default = 10h]
-
-  # (deprecated) Max size - in bytes - of a chunks pool, used to reduce memory
-  # allocations. The pool is shared across all tenants. 0 to disable the limit.
-  # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
-  [max_chunk_pool_bytes: <int> | default = 2147483648]
-
-  # (deprecated) Size - in bytes - of the smallest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
-  [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
-
-  # (deprecated) Size - in bytes - of the largest chunks pool bucket.
-  # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
-  [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
@@ -4091,6 +4119,10 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.tokens-file-path
   [tokens_file_path: <string> | default = ""]
 
+  # (advanced) Number of tokens for each store-gateway.
+  # CLI flag: -store-gateway.sharding-ring.num-tokens
+  [num_tokens: <int> | default = 512]
+
   # True to enable zone-awareness and replicate blocks across different
   # availability zones. This option needs be set both on the store-gateway,
   # querier and ruler when running in microservices mode.
@@ -4505,6 +4537,17 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # files.
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
+
+# (experimental) The minimum file size in bytes used for multipart uploads. If
+# 0, the value is optimally computed for each object.
+# CLI flag: -<prefix>.s3.part-size
+[part_size: <int> | default = 0]
+
+# (experimental) If enabled, a Content-MD5 header is sent with S3 Put Object
+# requests. Consumes more resources to compute the MD5, but may improve
+# compatibility with object storage services that do not support checksums.
+# CLI flag: -<prefix>.s3.send-content-md5
+[send_content_md5: <boolean> | default = false]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

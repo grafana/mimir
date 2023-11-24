@@ -2,6 +2,8 @@
   <config>
     <name>Go Template</name>
     <alias>go-template</alias>
+    <filename>*.gotmpl</filename>
+    <filename>*.go.tmpl</filename>
   </config>
   <rules>
     <state name="template">

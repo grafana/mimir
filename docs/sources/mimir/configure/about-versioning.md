@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-versioning/
 description: Learn about guarantees for this Grafana Mimir major release.
-menuTitle: About versioning
+menuTitle: Versioning
 title: About Grafana Mimir versioning
 weight: 50
 ---
@@ -62,6 +62,10 @@ The following features are currently experimental:
     - `-distributor.enable-otlp-metadata-storage`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
     - `distributor.service-overload-status-code-on-rate-limit-enabled`
+  - Set Retry-After header in recoverable error responses
+    - `-distributor.retry-after-header.enabled`
+    - `-distributor.retry-after-header.base-seconds`
+    - `-distributor.retry-after-header.max-backoff-exponent`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -79,6 +83,8 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
+  - Reusable ingester push worker
+    - `-distributor.reusable-ingester-push-workers`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -103,6 +109,7 @@ The following features are currently experimental:
     - `ingester.ring.token-generation-strategy`
     - `ingester.ring.spread-minimizing-zones`
     - `ingester.ring.spread-minimizing-join-ring-in-order`
+  - Allow ingester's `Push()` to return gRPC errors only: `-ingester.return-only-grpc-errors`.
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
@@ -110,13 +117,11 @@ The following features are currently experimental:
     - `-ingester.client.circuit-breaker.failure-execution-threshold`
     - `-ingester.client.circuit-breaker.period`
     - `-ingester.client.circuit-breaker.cooldown-period`
-- Ignoring chunks query cancellation
-  - `-ingester.chunks-query-ignore-cancellation`
 - Querier
   - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`, `-querier.streaming-chunks-per-ingester-buffer-size`)
+  - Streaming chunks from ingester to querier (`-querier.prefer-streaming-chunks-from-ingesters`)
   - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`, `-querier.streaming-chunks-per-store-gateway-buffer-size`)
-  - Ingester query request minimisation (`-querier.minimize-ingester-requests`, `-querier.minimize-ingester-requests-hedging-delay`)
+  - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
 - Query-frontend
@@ -125,6 +130,7 @@ The following features are currently experimental:
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
+  - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -132,7 +138,9 @@ The following features are currently experimental:
   - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
 - Read-write deployment mode
-- `/api/v1/user_limits` API endpoint
+- API endpoints:
+  - `/api/v1/user_limits`
+  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -152,6 +160,7 @@ The following features are currently experimental:
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
+- Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 
 ## Deprecated features
 

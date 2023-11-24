@@ -117,7 +117,8 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 	}
 
 	span, ctx := opentracing.StartSpanFromContextWithTracer(ctx, t.tracer, spanName, mappedOptions...)
-	return ctx, NewOpenTelemetrySpanBridge(span, t.provider)
+	otelSpan := NewOpenTelemetrySpanBridge(span, t.provider)
+	return trace.ContextWithSpan(ctx, otelSpan), otelSpan
 }
 
 type OpenTelemetrySpanBridge struct {

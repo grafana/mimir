@@ -707,6 +707,11 @@ func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames
 	return args.Get(0).(uint64), args.Get(1).(*client.LabelValuesCardinalityResponse), args.Error(2)
 }
 
+func (m *mockDistributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).([]labels.Labels), args.Error(1)
+}
+
 type mockConfigProvider struct {
 	queryIngestersWithin time.Duration
 	seenUserIDs          []string

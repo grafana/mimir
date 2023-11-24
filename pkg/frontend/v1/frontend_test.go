@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 )
 
@@ -227,6 +229,75 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 	testFrontend(t, defaultFrontendConfig(), handler, test, nil, reg)
 }
 
+func TestFrontendStats(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s := stats.FromContext(r.Context())
+		s.AddQueueTime(5 * time.Second)
+		w.WriteHeader(200)
+	})
+
+	tl := testLogger{}
+
+	test := func(addr string, fr *Frontend) {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
+		require.NoError(t, err)
+		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)
+		require.NoError(t, err)
+
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+		defer resp.Body.Close()
+		_, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+
+		queryStatsFound := false
+		for _, le := range tl.getLogMessages() {
+			if le["msg"] == "query stats" {
+				require.False(t, queryStatsFound)
+				queryStatsFound = true
+				require.GreaterOrEqual(t, le["queue_time_seconds"], 5.0)
+			}
+		}
+		require.True(t, queryStatsFound)
+	}
+
+	testFrontend(t, defaultFrontendConfig(), handler, test, &tl, nil)
+}
+
+type testLogger struct {
+	mu          sync.Mutex
+	logMessages []map[string]interface{}
+}
+
+func (t *testLogger) Log(keyvals ...interface{}) error {
+	if len(keyvals)%2 != 0 {
+		panic("received uneven number of key/value pairs for log line")
+	}
+
+	entryCount := len(keyvals) / 2
+	msg := make(map[string]interface{}, entryCount)
+
+	for i := 0; i < entryCount; i++ {
+		name := keyvals[2*i].(string)
+		value := keyvals[2*i+1]
+
+		msg[name] = value
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.logMessages = append(t.logMessages, msg)
+	return nil
+}
+
+func (t *testLogger) getLogMessages() []map[string]interface{} {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]map[string]interface{}(nil), t.logMessages...)
+}
+
 func testFrontend(t *testing.T, config Config, handler http.Handler, test func(addr string, frontend *Frontend), l log.Logger, reg prometheus.Registerer) {
 	logger := log.NewNopLogger()
 	if l != nil {
@@ -261,7 +332,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	frontendv1pb.RegisterFrontendServer(grpcServer, v1)
 
 	// Default HTTP handler config.
-	handlerCfg := transport.HandlerConfig{}
+	handlerCfg := transport.HandlerConfig{QueryStatsEnabled: true}
 	flagext.DefaultValues(&handlerCfg)
 
 	rt := transport.AdaptGrpcRoundTripperToHTTPRoundTripper(v1)

@@ -37,5 +37,6 @@ prometheus.remote_write "mimir" {
   endpoint {
     url = "http://mimir-1:8001/api/v1/push"
     send_native_histograms = true
+    send_exemplars = true
   }
 }

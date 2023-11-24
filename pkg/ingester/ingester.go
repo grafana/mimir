@@ -24,7 +24,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -50,7 +49,6 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -116,7 +114,6 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
-	tooBusyErrorMsg               = "the ingester is currently too busy to process queries, try again later"
 )
 
 var (
@@ -125,11 +122,6 @@ var (
 	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
 	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
-	// This is the closest fitting Prometheus API error code for requests rejected due to limiting.
-	tooBusyError = newErrorWithHTTPStatus(
-		errors.New(tooBusyErrorMsg),
-		http.StatusServiceUnavailable,
-	)
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -182,8 +174,6 @@ type Config struct {
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
-	ChunksQueryIgnoreCancellation bool `yaml:"chunks_query_ignore_cancellation" category:"experimental"`
-
 	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
 }
 
@@ -203,7 +193,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
-	f.BoolVar(&cfg.ChunksQueryIgnoreCancellation, "ingester.chunks-query-ignore-cancellation", false, "Ignore cancellation when querying chunks.")
 	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
@@ -1281,8 +1270,9 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
-func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1338,8 +1328,9 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	return result, nil
 }
 
-func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1377,8 +1368,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}, nil
 }
 
-func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1417,8 +1409,9 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 }
 
 // MetricsForLabelMatchers implements IngesterServer.
-func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1487,8 +1480,9 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	return result, nil
 }
 
-func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1508,8 +1502,9 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	return createUserStats(db, req)
 }
 
-func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 
@@ -1538,8 +1533,9 @@ func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest)
 // So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) error {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1570,8 +1566,9 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 // We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
 const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
-func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) error {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1650,10 +1647,9 @@ func createUserStats(db *userTSDB, req *client.UserStatsRequest) (*client.UserSt
 const queryStreamBatchMessageSize = 1 * 1024 * 1024
 
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
-	start := time.Now()
-
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return err
 	}
 	if err := i.checkReadOverloaded(); err != nil {
@@ -1708,23 +1704,12 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	if streamType == QueryStreamChunks {
-		chunksCtx := ctx
-		if i.cfg.ChunksQueryIgnoreCancellation {
-			// Pass an independent context, to help investigating a problem with ingester queries
-			// getting canceled. Prior to https://github.com/grafana/mimir/pull/6085, Prometheus chunk
-			// queriers actually ignored context, so we are emulating that behavior.
-			chunksCtx = context.WithoutCancel(ctx)
-		}
 		if req.StreamingChunksBatchSize > 0 {
 			spanlog.DebugLog("msg", "using executeStreamingQuery")
-			numSeries, numSamples, err = i.executeStreamingQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
+			numSeries, numSamples, err = i.executeStreamingQuery(ctx, db, int64(from), int64(through), matchers, shard, stream, req.StreamingChunksBatchSize, spanlog)
 		} else {
 			spanlog.DebugLog("msg", "using executeChunksQuery")
-			numSeries, numSamples, err = i.executeChunksQuery(chunksCtx, db, int64(from), int64(through), matchers, shard, stream)
-		}
-
-		if i.cfg.ChunksQueryIgnoreCancellation && (ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
-			dumpContextError(ctx, err, start, spanlog)
+			numSeries, numSamples, err = i.executeChunksQuery(ctx, db, int64(from), int64(through), matchers, shard, stream)
 		}
 	} else {
 		spanlog.DebugLog("msg", "using executeSamplesQuery")
@@ -1738,19 +1723,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	i.metrics.queriedSamples.Observe(float64(numSamples))
 	spanlog.DebugLog("series", numSeries, "samples", numSamples)
 	return nil
-}
-
-// Dump context error for diagnosis.
-func dumpContextError(ctx context.Context, err error, start time.Time, spanlog *spanlogger.SpanLogger) {
-	deadline, deadlineSet := ctx.Deadline()
-	var timeout string
-	if deadlineSet {
-		timeout = fmt.Sprintf("%.2f seconds", deadline.Sub(start).Seconds())
-	} else {
-		timeout = "not set"
-	}
-	level.Debug(spanlog).Log("msg", "query context error", "cause", context.Cause(ctx), "timeout", timeout,
-		"err", err)
 }
 
 func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
@@ -1798,11 +1770,6 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
 		numSamples += len(ts.Samples) + len(ts.Histograms)
 		numSeries++
 		tsSize := ts.Size()
@@ -1899,11 +1866,6 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 			ts.Chunks = append(ts.Chunks, ch)
 			numSamples += meta.Chunk.NumSamples()
 		}
-
-		if err := it.Err(); err != nil {
-			return 0, 0, err
-		}
-
 		numSeries++
 		tsSize := ts.Size()
 
@@ -2121,10 +2083,6 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
 				numSamples += meta.Chunk.NumSamples()
-			}
-
-			if err := it.Err(); err != nil {
-				return 0, 0, 0, err
 			}
 
 			numChunks += len(seriesChunks.Chunks)
@@ -3208,33 +3166,36 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
-// TODO checkRunning should be removed once the error handling improvement is completed.
-// TODO return gRPC errors only at the topmost level.
-// Using block store, the ingester is only available when it is in a Running state. The ingester is not available
-// when stopping to prevent any read or writes to the TSDB after the ingester has closed them.
-func (i *Ingester) checkRunning() error {
-	s := i.State()
-	if s == services.Running {
-		return nil
-	}
-	return status.Error(codes.Unavailable, s.String())
-}
-
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err == nil {
 		return &mimirpb.WriteResponse{}, nil
 	}
-	handledErr := i.handlePushError(err)
+	handledErr := i.mapPushErrorToErrorWithStatus(err)
 	return nil, handledErr
 }
 
-func (i *Ingester) handlePushError(err error) error {
+func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
 	if i.cfg.ReturnOnlyGRPCErrors {
-		return handlePushErrorWithGRPC(err)
+		return mapPushErrorToErrorWithStatus(err)
 	}
-	return handlePushErrorWithHTTPGRPC(err)
+	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
+}
+
+func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	if i.cfg.ReturnOnlyGRPCErrors {
+		return mapReadErrorToErrorWithStatus(err)
+	}
+	return mapReadErrorToErrorWithHTTPOrGRPCStatus(err)
 }
 
 // pushMetadata returns number of ingested metadata.
@@ -3336,8 +3297,9 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 }
 
 // MetricsMetadata returns all the metrics metadata of a user.
-func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
-	if err := i.checkRunning(); err != nil {
+func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
+	if err := i.checkAvailable(); err != nil {
 		return nil, err
 	}
 
@@ -3358,7 +3320,7 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetad
 // CheckReady is the readiness handler used to indicate to k8s when the ingesters
 // are ready for the addition or removal of another ingester.
 func (i *Ingester) CheckReady(ctx context.Context) error {
-	if err := i.checkRunning(); err != nil {
+	if err := i.checkAvailable(); err != nil {
 		return fmt.Errorf("ingester not ready: %v", err)
 	}
 	return i.lifecycler.CheckReady(ctx)

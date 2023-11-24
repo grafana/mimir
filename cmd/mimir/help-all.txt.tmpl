@@ -53,10 +53,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -alertmanager-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
+  -alertmanager-storage.s3.part-size uint
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -alertmanager-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
+  -alertmanager-storage.s3.send-content-md5
+    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
   -alertmanager-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -alertmanager-storage.s3.sse.kms-encryption-context string
@@ -293,18 +297,12 @@ Usage of ./cmd/mimir/mimir:
     	This option controls how many series to fetch per batch. The batch size must be greater than 0. (default 5000)
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
-  -blocks-storage.bucket-store.bucket-index.enabled
-    	[deprecated] If enabled, queriers and store-gateways discover blocks by reading a bucket index (created and updated by the compactor) instead of periodically scanning the bucket. (default true)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
     	The maximum allowed age of a bucket index (last updated) before queries start failing because the bucket index is too old. The bucket index is periodically updated by the compactor, and this check is enforced in the querier (at query time). (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.update-on-error-interval duration
     	How frequently a bucket index, which previously failed to load, should be tried to load again. This option is used only by querier. (default 1m0s)
-  -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes int
-    	[deprecated] Size - in bytes - of the largest chunks pool bucket. (default 50000000)
-  -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes int
-    	[deprecated] Size - in bytes - of the smallest chunks pool bucket. (default 16000)
   -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items int
     	Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache. (default 50000)
   -blocks-storage.bucket-store.chunks-cache.attributes-ttl duration
@@ -525,8 +523,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, store-gateway will persist a sparse version of the index-header to disk on construction and load sparse index-headers from disk instead of the whole index-header. (default true)
   -blocks-storage.bucket-store.index-header.verify-on-load
     	If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.
-  -blocks-storage.bucket-store.max-chunk-pool-bytes uint
-    	[deprecated] Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
   -blocks-storage.bucket-store.meta-sync-concurrency int
@@ -695,10 +691,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -blocks-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
+  -blocks-storage.s3.part-size uint
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -blocks-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
     	S3 secret access key
+  -blocks-storage.s3.send-content-md5
+    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
   -blocks-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -blocks-storage.s3.sse.kms-encryption-context string
@@ -855,10 +855,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -common.storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
+  -common.storage.s3.part-size uint
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -common.storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
     	S3 secret access key
+  -common.storage.s3.send-content-md5
+    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
   -common.storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -common.storage.s3.sse.kms-encryption-context string
@@ -1139,12 +1143,22 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Use experimental method of limiting push requests.
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
+  -distributor.otel-metric-suffixes-enabled
+    	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.remote-timeout duration
     	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
     	Per-tenant allowed push request burst size. 0 to disable.
   -distributor.request-rate-limit float
     	Per-tenant push request rate limit in requests per second. 0 to disable.
+  -distributor.retry-after-header.base-seconds int
+    	[experimental] Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors. (default 3)
+  -distributor.retry-after-header.enabled
+    	[experimental] Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
+  -distributor.retry-after-header.max-backoff-exponent int
+    	[experimental] Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds. (default 5)
+  -distributor.reusable-ingester-push-workers int
+    	[experimental] Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1212,7 +1226,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -distributor.service-overload-status-code-on-rate-limit-enabled
-    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used.
+    	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
   -distributor.write-requests-buffer-pooling-enabled
     	[experimental] Enable pooling of buffers used for marshaling write requests.
   -enable-go-runtime-metrics
@@ -1237,8 +1251,6 @@ Usage of ./cmd/mimir/mimir:
     	After what time a series is considered to be inactive. (default 10m0s)
   -ingester.active-series-metrics-update-period duration
     	How often to update active series metrics. (default 1m0s)
-  -ingester.chunks-query-ignore-cancellation
-    	[experimental] Ignore cancellation when querying chunks.
   -ingester.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ingester.client.backoff-min-period duration
@@ -1277,6 +1289,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
+  -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
+    	If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error"
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1599,8 +1613,6 @@ Usage of ./cmd/mimir/mimir:
     	Minimum time to wait for ring stability at startup, if set to positive value. Set to 0 to disable.
   -print.config
     	Print the config and exit.
-  -querier.batch-iterators
-    	[deprecated] Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag. (default true)
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.default-evaluation-interval duration
@@ -1655,8 +1667,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
-  -querier.iterators
-    	[deprecated] Use iterators to execute query, as opposed to fully materialising the series in memory.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -1686,11 +1696,11 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.minimize-ingester-requests
-    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.
+    	[experimental] If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
-    	[experimental] Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
+    	Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -querier.minimize-ingester-requests is not enabled. (default 3s)
   -querier.prefer-streaming-chunks-from-ingesters
-    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this.
+    	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this. (default true)
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
   -querier.query-ingesters-within duration
@@ -1762,7 +1772,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.streaming-chunks-per-ingester-buffer-size uint
-    	[experimental] Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
+    	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint
     	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
@@ -1843,6 +1853,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
   -query-frontend.max-total-query-length duration
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
+  -query-frontend.not-running-timeout duration
+    	[experimental] Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
@@ -2235,10 +2247,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
   -ruler-storage.s3.native-aws-auth-enabled
     	[experimental] If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.
+  -ruler-storage.s3.part-size uint
+    	[experimental] The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.
   -ruler-storage.s3.region string
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
     	S3 secret access key
+  -ruler-storage.s3.send-content-md5
+    	[experimental] If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.
   -ruler-storage.s3.signature-version string
     	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
   -ruler-storage.s3.sse.kms-encryption-context string
@@ -2569,6 +2585,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen network, default tcp (default "tcp")
   -server.http-listen-port int
     	HTTP server listen port. (default 8080)
+  -server.http-log-closed-connections-without-response-enabled
+    	Log closed connections that did not receive any response, most likely because client didn't send any request within timeout.
   -server.http-read-header-timeout duration
     	Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.
   -server.http-read-timeout duration
@@ -2599,6 +2617,8 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
+  -server.report-grpc-codes-in-instrumentation-label-enabled
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -2671,6 +2691,8 @@ Usage of ./cmd/mimir/mimir:
     	Primary backend storage used by multi-client.
   -store-gateway.sharding-ring.multi.secondary string
     	Secondary backend storage used by multi-client.
+  -store-gateway.sharding-ring.num-tokens int
+    	Number of tokens for each store-gateway. (default 512)
   -store-gateway.sharding-ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -store-gateway.sharding-ring.replication-factor int
@@ -2717,6 +2739,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -validation.max-native-histogram-buckets int
     	Maximum number of buckets per native histogram sample. 0 to disable the limit.
+  -validation.reduce-native-histogram-over-max-buckets
+    	Whether to reduce or reject native histogram samples with more buckets than the configured limit. (default true)
   -validation.separate-metrics-group-label string
     	[experimental] Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total
   -vault.auth.approle.mount-path string

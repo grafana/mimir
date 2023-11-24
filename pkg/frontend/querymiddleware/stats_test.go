@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -21,9 +23,10 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 		req Request
 	}
 	tests := []struct {
-		name            string
-		args            args
-		expectedMetrics *strings.Reader
+		name                 string
+		args                 args
+		expectedMetrics      *strings.Reader
+		expectedQueryDetails QueryDetails
 	}{
 		{
 			name: "happy path",
@@ -47,6 +50,14 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 1
 			`),
+			expectedQueryDetails: QueryDetails{
+				QuerierStats: &querier_stats.Stats{},
+				Start:        start.Truncate(time.Millisecond),
+				End:          end.Truncate(time.Millisecond),
+				MinT:         start.Truncate(time.Millisecond).Add(-5 * time.Minute),
+				MaxT:         end.Truncate(time.Millisecond),
+				Step:         step,
+			},
 		},
 		{
 			name: "parseExpr failed",
@@ -70,15 +81,25 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
 			cortex_query_frontend_regexp_matcher_optimized_count 0
 			`),
+			expectedQueryDetails: QueryDetails{
+				QuerierStats: &querier_stats.Stats{},
+				Start:        start.Truncate(time.Millisecond),
+				End:          end.Truncate(time.Millisecond),
+				MinT:         time.Time{}, // empty because the query is invalid
+				MaxT:         time.Time{}, // empty because the query is invalid
+				Step:         step,
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			mw := newQueryStatsMiddleware(reg)
-			_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), tt.args.req)
+			mw := newQueryStatsMiddleware(reg, newEngine())
+			actualDetails, ctx := ContextWithEmptyDetails(context.Background())
+			_, err := mw.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(ctx, "test"), tt.args.req)
 			require.NoError(t, err)
 			assert.NoError(t, testutil.GatherAndCompare(reg, tt.expectedMetrics))
+			assert.Equal(t, tt.expectedQueryDetails, *actualDetails)
 		})
 	}
 }

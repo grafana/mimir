@@ -242,12 +242,21 @@ func (c *indexedTTYFormatter) Format(w io.Writer, style *chroma.Style, it chroma
 	theme := styleToEscapeSequence(c.table, style)
 	for token := it(); token != chroma.EOF; token = it() {
 		clr, ok := theme[token.Type]
+
+		// This search mimics how styles.Get() is used in tty_truecolour.go.
 		if !ok {
 			clr, ok = theme[token.Type.SubCategory()]
 			if !ok {
-				clr = theme[token.Type.Category()]
+				clr, ok = theme[token.Type.Category()]
+				if !ok {
+					clr, ok = theme[chroma.Text]
+					if !ok {
+						clr = theme[chroma.Background]
+					}
+				}
 			}
 		}
+
 		if clr != "" {
 			fmt.Fprint(w, clr)
 		}

@@ -6,7 +6,7 @@
 package queue
 
 import (
-	"container/list"
+	"errors"
 	"math/rand"
 	"sort"
 	"time"
@@ -37,9 +37,8 @@ func (s querierIDSlice) Search(x QuerierID) int {
 }
 
 type tenantRequest struct {
-	tenantID    TenantID
-	req         Request
-	maxQueriers int
+	tenantID TenantID
+	req      Request
 }
 
 type querierConn struct {
@@ -88,33 +87,30 @@ type tenantQuerierAssignments struct {
 }
 
 type queueTenant struct {
+	tenantID    TenantID
+	maxQueriers int
+
 	// seed for shuffle sharding of queriers; computed from tenantID only,
 	// and is therefore consistent between different frontends.
 	shuffleShardSeed int64
 
 	// points up to tenant order to enable efficient removal
 	orderIndex int
-
-	maxQueriers int
 }
 
 // queueBroker encapsulates access to tenant queues for pending requests
 // and maintains consistency with the tenant-querier assignments
 type queueBroker struct {
-	tenantQueues map[TenantID]*tenantQueue
+	tenantQueuesTree *TreeQueue
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
 	maxTenantQueueSize int
 }
 
-type tenantQueue struct {
-	requests *list.List
-}
-
 func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueues: map[TenantID]*tenantQueue{},
+		tenantQueuesTree: NewTreeQueue("root", maxTenantQueueSize),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
@@ -127,84 +123,64 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 	}
 }
 
-func (qb *queueBroker) len() int {
-	return len(qb.tenantQueues)
+func (qb *queueBroker) isEmpty() bool {
+	return qb.tenantQueuesTree.IsEmpty()
 }
 
-func (qb *queueBroker) enqueueRequestBack(request *tenantRequest) error {
-	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
+// enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
+//
+// Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
+func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
 
-	if queue.Len()+1 > qb.maxTenantQueueSize {
-		return ErrTooManyRequests
+	queuePath := QueuePath{string(request.tenantID)}
+	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
+	if errors.Is(err, ErrMaxQueueLengthExceeded) {
+		return errors.Join(err, ErrTooManyRequests)
 	}
-
-	queue.PushBack(request)
-	return nil
+	return err
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
-// to the front of the queue when there was a failure in forwarding the querier.
+// to the front of the queue when there was a failure in dispatching to a querier.
 //
 // max tenant queue size checks are skipped even though queue size violations
 // are not expected to occur when re-enqueuing a previously dequeued request.
-func (qb *queueBroker) enqueueRequestFront(request *tenantRequest) error {
-	queue, err := qb.getOrAddTenantQueue(request.tenantID, request.maxQueriers)
+func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
 
-	queue.PushFront(request)
-	return nil
+	queuePath := QueuePath{string(request.tenantID)}
+	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
-// getOrAddTenantQueue returns existing or new queue for tenant.
-// maxQueriers is used to compute which queriers should handle requests for this tenant.
-// If maxQueriers is <= 0, all queriers can handle this tenant's requests.
-// If maxQueriers has changed since the last call, queriers for this are recomputed.
-func (qb *queueBroker) getOrAddTenantQueue(tenantID TenantID, maxQueriers int) (*list.List, error) {
-	_, err := qb.tenantQuerierAssignments.getOrAddTenant(tenantID, maxQueriers)
-	if err != nil {
-		return nil, err
-	}
-	queue := qb.tenantQueues[tenantID]
-
-	if queue == nil {
-		queue = &tenantQueue{
-			requests: list.New(),
-		}
-		qb.tenantQueues[tenantID] = queue
+func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {
+	tenant, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantForQuerier(lastTenantIndex, querierID)
+	if tenant == nil || err != nil {
+		return nil, tenant, tenantIndex, err
 	}
 
-	return queue.requests, nil
-}
+	queuePath := QueuePath{string(tenant.tenantID)}
+	queueElement := qb.tenantQueuesTree.DequeueByPath(queuePath)
 
-func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, TenantID, int, error) {
-	tenantID, tenantIndex, err := qb.tenantQuerierAssignments.getNextTenantIDForQuerier(lastTenantIndex, querierID)
-	if err != nil {
-		return nil, tenantID, tenantIndex, err
+	queueNodeAfterDequeue := qb.tenantQueuesTree.getNode(queuePath)
+	if queueNodeAfterDequeue == nil {
+		// queue node was deleted due to being empty after dequeue
+		qb.tenantQuerierAssignments.removeTenant(tenant.tenantID)
 	}
 
-	tenantQueue := qb.tenantQueues[tenantID]
-	if tenantQueue == nil {
-		return nil, tenantID, tenantIndex, nil
+	var request *tenantRequest
+	if queueElement != nil {
+		// re-casting to same type it was enqueued as; panic would indicate a bug
+		request = queueElement.(*tenantRequest)
 	}
 
-	// queue will be nonempty as empty queues are deleted
-	queueElement := tenantQueue.requests.Front()
-	tenantQueue.requests.Remove(queueElement)
-
-	if tenantQueue.requests.Len() == 0 {
-		qb.deleteQueue(tenantID)
-	}
-
-	// re-casting to same type it was enqueued as; panic would indicate a bug
-	request := queueElement.Value.(*tenantRequest)
-
-	return request, tenantID, tenantIndex, nil
-
+	return request, tenant, tenantIndex, nil
 }
 
 func (qb *queueBroker) addQuerierConnection(querierID QuerierID) {
@@ -223,26 +199,26 @@ func (qb *queueBroker) forgetDisconnectedQueriers(now time.Time) int {
 	return qb.tenantQuerierAssignments.forgetDisconnectedQueriers(now)
 }
 
-func (qb *queueBroker) deleteQueue(tenantID TenantID) {
-	tenantQueue := qb.tenantQueues[tenantID]
-	if tenantQueue == nil {
-		return
-	}
-	delete(qb.tenantQueues, tenantID)
-	qb.tenantQuerierAssignments.removeTenant(tenantID)
-}
-
-func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex int, querierID QuerierID) (TenantID, int, error) {
+// getNextTenantForQuerier gets the next tenant in the tenant order assigned to a given querier.
+//
+// The next tenant for the querier is obtained by rotating through the global tenant order
+// starting just after the last tenant the querier received a request for, until a tenant
+// is found that is assigned to the given querier according to the querier shuffle sharding.
+// A newly connected querier provides lastTenantIndex of -1 in order to start at the beginning.
+func (tqa *tenantQuerierAssignments) getNextTenantForQuerier(lastTenantIndex int, querierID QuerierID) (*queueTenant, int, error) {
 	// check if querier is registered and is not shutting down
 	if q := tqa.queriersByID[querierID]; q == nil || q.shuttingDown {
-		return emptyTenantID, lastTenantIndex, ErrQuerierShuttingDown
+		return nil, lastTenantIndex, ErrQuerierShuttingDown
 	}
 	tenantOrderIndex := lastTenantIndex
 	for iters := 0; iters < len(tqa.tenantIDOrder); iters++ {
 		tenantOrderIndex++
 		if tenantOrderIndex >= len(tqa.tenantIDOrder) {
-			// do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap around this list,
-			// as it could skip tenant IDs if the slice has changed size since the last call
+			// Do not use modulo (e.g. i = (i + 1) % len(slice)) to wrap this index.
+			// Tenant list can change size between calls and the querier provides its external view
+			// of the lastTenantIndex it received, which is not updated when this list changes.
+			// If the tenant list shrinks and the querier-provided lastTenantIndex exceeds the
+			// length of the tenant list, wrapping via modulo would skip the beginning of the list.
 			tenantOrderIndex = 0
 		}
 
@@ -250,24 +226,37 @@ func (tqa *tenantQuerierAssignments) getNextTenantIDForQuerier(lastTenantIndex i
 		if tenantID == emptyTenantID {
 			continue
 		}
+		tenant := tqa.tenantsByID[tenantID]
 
 		tenantQuerierSet := tqa.tenantQuerierIDs[tenantID]
 		if tenantQuerierSet == nil {
 			// tenant can use all queriers
-			return tenantID, tenantOrderIndex, nil
+			return tenant, tenantOrderIndex, nil
 		} else if _, ok := tenantQuerierSet[querierID]; ok {
 			// tenant is assigned this querier
-			return tenantID, tenantOrderIndex, nil
+			return tenant, tenantOrderIndex, nil
 		}
 	}
 
-	return emptyTenantID, lastTenantIndex, nil
+	return nil, lastTenantIndex, nil
 }
 
-func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQueriers int) (*queueTenant, error) {
+func (tqa *tenantQuerierAssignments) getTenant(tenantID TenantID) (*queueTenant, error) {
+	if tenantID == emptyTenantID {
+		return nil, ErrInvalidTenantID
+	}
+	tenant := tqa.tenantsByID[tenantID]
+	return tenant, nil
+}
+
+// createOrUpdateTenant creates or updates a tenant into the tenant-querier assignment state.
+//
+// New tenants are added to the tenant order list and tenant-querier shards are shuffled if needed.
+// Existing tenants have the tenant-querier shards shuffled only if their maxQueriers has changed.
+func (tqa *tenantQuerierAssignments) createOrUpdateTenant(tenantID TenantID, maxQueriers int) error {
 	if tenantID == emptyTenantID {
 		// empty tenantID is not allowed; "" is used for free spot
-		return nil, ErrInvalidTenantID
+		return ErrInvalidTenantID
 	}
 
 	if maxQueriers < 0 {
@@ -278,12 +267,13 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 
 	if tenant == nil {
 		tenant = &queueTenant{
+			tenantID: tenantID,
+			// maxQueriers 0 enables a later check to trigger tenant-querier assignment
+			// for new queue tenants with shuffle sharding enabled
+			maxQueriers:      0,
 			shuffleShardSeed: util.ShuffleShardSeed(string(tenantID), ""),
 			// orderIndex set to sentinel value to indicate it is not inserted yet
 			orderIndex: -1,
-			// maxQueriers 0 enables a later check to trigger tenant-querier assignment
-			// for new queue tenants with shuffle sharding enabled
-			maxQueriers: 0,
 		}
 		for i, id := range tqa.tenantIDOrder {
 			if id == emptyTenantID {
@@ -303,14 +293,15 @@ func (tqa *tenantQuerierAssignments) getOrAddTenant(tenantID TenantID, maxQuerie
 		}
 	}
 
-	// tenant now either retrieved or created;
-	// tenant queriers need computed for new tenant if sharding enabled,
-	// or if the tenant already existed but its maxQueriers has changed
+	// tenant now either retrieved or created
 	if tenant.maxQueriers != maxQueriers {
+		// tenant queriers need to be computed/recomputed;
+		// either this is a new tenant with sharding enabled,
+		// or the tenant already existed but its maxQueriers has changed
 		tenant.maxQueriers = maxQueriers
 		tqa.shuffleTenantQueriers(tenantID, nil)
 	}
-	return tenant, nil
+	return nil
 }
 
 func (tqa *tenantQuerierAssignments) addQuerierConnection(querierID QuerierID) {
@@ -431,12 +422,12 @@ func (tqa *tenantQuerierAssignments) forgetDisconnectedQueriers(now time.Time) i
 }
 
 func (tqa *tenantQuerierAssignments) recomputeTenantQueriers() {
-	// Only allocate the scratchpad the first time we need it.
-	// If shuffle-sharding is disabled, it will not be used.
 	var scratchpad querierIDSlice
-
 	for tenantID, tenant := range tqa.tenantsByID {
 		if tenant.maxQueriers > 0 && tenant.maxQueriers < len(tqa.querierIDsSorted) && scratchpad == nil {
+			// shuffle sharding is enabled and the number of queriers exceeds tenant maxQueriers,
+			// meaning tenant querier assignments need computed via shuffle sharding;
+			// allocate the scratchpad the first time this case is hit and it will be reused after
 			scratchpad = make(querierIDSlice, 0, len(tqa.querierIDsSorted))
 		}
 

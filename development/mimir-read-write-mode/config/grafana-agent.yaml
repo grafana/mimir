@@ -1,6 +1,5 @@
 server:
   log_level: info
-  http_listen_port: 9091
 
 prometheus:
   global:

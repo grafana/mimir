@@ -8,7 +8,6 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
@@ -22,10 +21,12 @@ import (
 )
 
 var (
-	lvRegexp        = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
-	lvNoQueryRegexp = regexp.MustCompile(`(?s)label_values\((.+)\)`)
-	qrRegexp        = regexp.MustCompile(`(?s)query_result\((.+)\)`)
-	validMetricName = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	lvRegexp                     = regexp.MustCompile(`(?s)label_values\((.+),.+\)`)
+	lvNoQueryRegexp              = regexp.MustCompile(`(?s)label_values\((.+)\)`)
+	qrRegexp                     = regexp.MustCompile(`(?s)query_result\((.+)\)`)
+	validMetricName              = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	variableRangeQueryRangeRegex = regexp.MustCompile(`\[\$?\w+?]`)
+	variableSubqueryRangeRegex   = regexp.MustCompile(`\[\$?\w+:\$?\w+?]`)
 )
 
 type MetricsInGrafana struct {
@@ -204,15 +205,14 @@ func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error 
 	return parseErrors
 }
 
+func removeVariablesFromRanges(query string) string {
+	query = variableRangeQueryRangeRegex.ReplaceAllLiteralString(query, `[5m]`)
+	query = variableSubqueryRangeRegex.ReplaceAllLiteralString(query, `[5m:1m]`)
+	return query
+}
+
 func parseQuery(query string, metrics map[string]struct{}) error {
-	query = strings.ReplaceAll(query, `$__interval`, "5m")
-	query = strings.ReplaceAll(query, `$interval`, "5m")
-	query = strings.ReplaceAll(query, `$resolution`, "5s")
-	query = strings.ReplaceAll(query, "$__rate_interval", "15s")
-	query = strings.ReplaceAll(query, "$__range", "1d")
-	query = strings.ReplaceAll(query, "${__range_s:glob}", "30")
-	query = strings.ReplaceAll(query, "${__range_s}", "30")
-	expr, err := parser.ParseExpr(query)
+	expr, err := parser.ParseExpr(removeVariablesFromRanges(query))
 	if err != nil {
 		return err
 	}

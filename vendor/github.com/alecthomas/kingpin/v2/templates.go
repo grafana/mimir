@@ -248,7 +248,7 @@ complete -F _{{.App.Name}}_bash_autocomplete -o default {{.App.Name}}
 var ZshCompletionTemplate = `#compdef {{.App.Name}}
 
 _{{.App.Name}}() {
-    local matches=($(${words[1]} --completion-bash "${(@)words[1,$CURRENT]}"))
+    local matches=($(${words[1]} --completion-bash "${(@)words[2,$CURRENT]}"))
     compadd -a matches
 
     if [[ $compstate[nmatches] -eq 0 && $words[$CURRENT] != -* ]]; then

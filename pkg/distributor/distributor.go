@@ -17,7 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/instrument"
@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -45,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -149,6 +151,11 @@ type Distributor struct {
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
+
+	// ingesterDoBatchPushWorkers is the Go function passed to ring.DoBatchWithOptions.
+	// It can be nil, in which case a simple `go f()` will be used.
+	// See Config.ReusableIngesterPushWorkers on how to configure this.
+	ingesterDoBatchPushWorkers func(func())
 }
 
 // Config contains the configuration required to
@@ -156,6 +163,7 @@ type Distributor struct {
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
+	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
@@ -189,6 +197,7 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
+	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -199,11 +208,13 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PoolConfig.RegisterFlags(f)
 	cfg.HATrackerConfig.RegisterFlags(f)
 	cfg.DistributorRing.RegisterFlags(f, logger)
+	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
+	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 0, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -214,7 +225,10 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errInvalidTenantShardSize
 	}
 
-	return cfg.HATrackerConfig.Validate()
+	if err := cfg.HATrackerConfig.Validate(); err != nil {
+		return err
+	}
+	return cfg.RetryConfig.Validate()
 }
 
 const (
@@ -427,11 +441,22 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.push)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+
+	if cfg.ReusableIngesterPushWorkers > 0 {
+		wp := concurrency.NewReusableGoroutinesPool(cfg.ReusableIngesterPushWorkers)
+		d.ingesterDoBatchPushWorkers = wp.Go
+		// Closing the pool doesn't stop the workload it's running, we're doing this just to avoid leaking goroutines in tests.
+		subservices = append(subservices, services.NewBasicService(
+			nil,
+			func(ctx context.Context) error { <-ctx.Done(); return nil },
+			func(_ error) error { wp.Close(); return nil },
+		))
+	}
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
 	}
-
 	d.subservicesWatcher = services.NewFailureWatcher()
 	d.subservicesWatcher.WatchManager(d.subservices)
 
@@ -628,13 +653,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		}
 	}
 
-	for _, h := range ts.Histograms {
+	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
 		if delta > 0 {
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, h); err != nil {
+		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
 			return err
 		}
 	}
@@ -1220,9 +1245,8 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
+	// This code is needed for backwards compatibility, since ingesters may still return errors
+	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
 	if ok {
 		return pushErr
@@ -1304,33 +1328,40 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
 	}
 
-	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		var timeseriesCount, metadataCount int
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadataCount++
-			} else {
-				timeseriesCount++
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
+		func(ingester ring.InstanceDesc, indexes []int) error {
+			var timeseriesCount, metadataCount int
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadataCount++
+				} else {
+					timeseriesCount++
+				}
 			}
-		}
 
-		timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-		metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
+			timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
+			metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
 
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
-			} else {
-				timeseries = append(timeseries, req.Timeseries[i])
+			for _, i := range indexes {
+				if i >= initialMetadataIndex {
+					metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+				} else {
+					timeseries = append(timeseries, req.Timeseries[i])
+				}
 			}
-		}
 
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
-		if errors.Is(err, context.DeadlineExceeded) {
-			return errors.Wrap(err, deadlineExceededWrapMessage)
-		}
-		return err
-	}, func() { pushReq.CleanUp(); cancel() })
+			err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errors.Wrap(err, deadlineExceededWrapMessage)
+			}
+			return err
+		},
+		ring.DoBatchOptions{
+			Cleanup:       func() { pushReq.CleanUp(); cancel() },
+			IsClientError: isClientError,
+			Go:            d.ingesterDoBatchPushWorkers,
+		},
+	)
 
 	return err
 }
@@ -1387,27 +1418,6 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
 	return handleIngesterPushError(err)
-}
-
-func handleIngesterPushError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	if ok {
-		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(resp.Code), "%s: %s", failedPushingToIngesterMessage, resp.Body)
-	}
-
-	stat, ok := status.FromError(err)
-	if ok {
-		return newIngesterPushError(stat)
-	}
-	return errors.Wrap(err, failedPushingToIngesterMessage)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
@@ -1769,6 +1779,70 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 	return &ingester_client.LabelValuesCardinalityResponse{
 		Items: cardinalityItems,
 	}
+}
+
+// ActiveSeries queries the ingester replication set for active series matching
+// the given selector. It combines and deduplicates the results.
+func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	replicationSet, err := d.GetIngesters(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if replicationSet.ZoneCount() == 1 {
+		replicationSet.MaxErrors = 0
+	}
+
+	req, err := ingester_client.ToActiveSeriesRequest(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	res := newActiveSeriesResponse()
+
+	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
+		defer log.Finish()
+
+		stream, err := client.ActiveSeries(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		defer func() {
+			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
+			if err != nil {
+				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
+			}
+		}()
+
+		for {
+			msg, err := stream.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
+				level.Error(log).Log("msg", "error receiving active series response", "err", err)
+				ext.Error.Set(log.Span, true)
+				return nil, err
+			}
+
+			res.add(msg.Metric)
+		}
+
+		return nil, nil
+	}
+
+	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
+
+	return deduplicatedSeries, nil
 }
 
 // approximateFromZones computes a zonal value while factoring in replication.

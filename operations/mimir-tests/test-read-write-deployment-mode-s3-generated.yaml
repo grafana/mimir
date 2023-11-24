@@ -557,7 +557,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -618,7 +618,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.8.1
+        image: grafana/rollout-operator:v0.9.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -669,7 +669,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -723,7 +723,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -777,7 +777,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -831,7 +831,7 @@ spec:
         - -c 16384
         - -v
         - --extended=track_sizes
-        image: memcached:1.6.19-alpine
+        image: memcached:1.6.22-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -991,7 +991,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1176,7 +1176,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1361,7 +1361,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1492,7 +1492,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1623,7 +1623,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1754,7 +1754,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.10.3
+        image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

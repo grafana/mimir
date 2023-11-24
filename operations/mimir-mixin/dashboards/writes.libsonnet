@@ -124,7 +124,31 @@ local filename = 'mimir-writes.json';
       $.row('Distributor')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel($.queries.distributor.writeRequestsPerSecond)
+        $.panelDescription(
+          'Requests / sec',
+          |||
+            The rate of successful, failed and rejected requests to distributor.
+            Rejected requests are requests that distributor fails to handle because of distributor instance limits.
+            When distributor is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
+            When distributor is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
+          |||
+        ) +
+        $.qpsPanel($.queries.distributor.writeRequestsPerSecond) +
+        if $._config.show_rejected_requests_on_writes_dashboard then {
+          targets: [
+            {
+              legendLink: null,
+              expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
+              format: 'time_series',
+              intervalFactor: 2,
+              legendFormat: 'rejected',
+              refId: 'B',
+            },
+          ] + super.targets,
+          aliasColors+: {
+            rejected: '#EAB839',
+          },
+        } else {},
       )
       .addPanel(
         $.panel('Latency') +
@@ -146,7 +170,7 @@ local filename = 'mimir-writes.json';
           'Requests / sec',
           |||
             The rate of successful, failed and rejected requests to ingester.
-            Rejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests and ingester-max-ingestion-rate).
+            Rejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests, ingester-max-inflight-push-requests-bytes, ingester-max-ingestion-rate).
             When ingester is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
             When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
