@@ -133,8 +133,8 @@ type userTSDB struct {
 	ownedSeriesCount     int // Number of "owned" series, based on current ring.
 	ownedSeriesShardSize int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used when checking series limits.
 
-	ownedTokenRangesMtx sync.Mutex
-	ownedTokenRanges    ring.TokenRanges
+	// Only accessed by ownedSeries service, no need to synchronization.
+	ownedTokenRanges ring.TokenRanges
 
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
@@ -511,6 +511,9 @@ func (u *userTSDB) TriggerRecomputeOwnedSeries(reason string) {
 	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
 }
 
+// RecomputeOwnedSeries recomputes owned series for current token ranges.
+//
+// This method and UpdateTokenRanges should be only called from the same goroutine. (ownedSeries service)
 func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log.Logger) {
 	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
 	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
@@ -549,37 +552,16 @@ func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log
 }
 
 // UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+//
+// This method and RecomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
 func (u *userTSDB) UpdateTokenRanges(newTokenRanges []uint32) bool {
-	// Check for changes outside critical section.
-	u.ownedTokenRangesMtx.Lock()
 	prev := u.ownedTokenRanges
 	u.ownedTokenRanges = newTokenRanges
-	u.ownedTokenRangesMtx.Unlock()
 
-	if len(newTokenRanges) != len(prev) {
-		return true
-	}
-
-	for i := 0; i < len(newTokenRanges); i++ {
-		if newTokenRanges[i] != u.ownedTokenRanges[i] {
-			return true
-		}
-	}
-
-	return false
-}
-
-func (u *userTSDB) TokenRanges() []uint32 {
-	u.ownedTokenRangesMtx.Lock()
-	defer u.ownedTokenRangesMtx.Unlock()
-
-	return u.ownedTokenRanges
+	return !prev.Equal(newTokenRanges)
 }
 
 func (u *userTSDB) computeOwnedSeries() int {
-	u.ownedTokenRangesMtx.Lock()
-	defer u.ownedTokenRangesMtx.Unlock()
-
 	// This can happen if ingester doesn't own this tenant anymore.
 	if len(u.ownedTokenRanges) == 0 {
 		return 0
