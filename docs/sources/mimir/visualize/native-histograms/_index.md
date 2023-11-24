@@ -34,7 +34,7 @@ To query the total count of observations within a histogram, use the following q
 # Native histograms:
 histogram_count(sum(request_duration_seconds))
 
-# Previous classic histograms:
+# Classic histograms:
 sum(request_duration_seconds_count)
 ```
 
@@ -44,7 +44,7 @@ To query the total sum of observed values, use the following query:
 # Native histograms:
 histogram_sum(sum(request_duration_seconds))
 
-# Previous classic histograms:
+# Classic histograms:
 sum(request_duration_seconds_sum)
 ```
 
@@ -56,7 +56,7 @@ To query the rate of all observations calculated over 5 minute time window, use 
 # Native histograms:
 histogram_count(sum(rate(request_duration_seconds[5m])))
 
-# Previous classic histograms:
+# Classic histograms:
 sum(rate(request_duration_seconds_count[5m]))
 ```
 
@@ -68,14 +68,14 @@ histogram_fraction(0, 2, sum(rate(request_duration_seconds[5m])))
 *
 histogram_count(sum(rate(request_duration_seconds[5m])))
 
-# Previous classic histograms:
+# Classic histograms:
 sum(rate(request_duration_seconds_bucket{le="2.5"}[5m]))
 ```
 
 There is a native histogram function that estimates the fraction of the total number of observations that fall within a certain interval, such as `[0, 2]`.
 For more information, refer to [histogram fraction](https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_fraction).
 
-The previous classic histograms have no such function. Therefore, if the lower and upper bounds of the interval do not line up with the bucket boundaries of a classic histogram,
+Classic histograms have no such function. Therefore, if the lower and upper bounds of the interval do not line up with the bucket boundaries of a classic histogram,
 you have to estimate the fraction manually.
 
 {{% admonition type="note" %}}
@@ -92,7 +92,7 @@ To query an upper bound of observation values that 95% of observations fall unde
 # Native histograms:
 histogram_quantile(0.95, sum(rate(request_duration_seconds[5m])))
 
-# Previous classic histograms:
+# Classic histograms:
 histogram_quantile(0.95, sum by (le) (rate(request_duration_seconds_bucket[5m])))
 ```
 
