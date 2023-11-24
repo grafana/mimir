@@ -37,7 +37,7 @@ func (r ReplicationSet) Do(ctx context.Context, delay time.Duration, f func(cont
 	// Initialise the result tracker, which is use to keep track of successes and failures.
 	var tracker replicationSetResultTracker
 	if r.MaxUnavailableZones > 0 {
-		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, kitlog.NewNopLogger())
+		tracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, nil, kitlog.NewNopLogger())
 	} else {
 		tracker = newDefaultResultTracker(r.Instances, r.MaxErrors, kitlog.NewNopLogger())
 	}
@@ -123,6 +123,18 @@ type DoUntilQuorumConfig struct {
 	// total response size across all instances is reached, making further requests to other
 	// instances would not be worthwhile.
 	IsTerminalError func(error) bool
+
+	// ZoneSorter orders the provided zones in preference order, for use when MinimizeRequests is true
+	// and DoUntilQuorum is operating in zone-aware mode. If not set, zones will be used in a
+	// randomly-selected order.
+	//
+	// Earlier zones will be used first.
+	// The function can modify the provided slice of zones in place.
+	// All provided zones must be returned exactly once.
+	//
+	// This can be used to prioritise zones that are more likely to succeed, or are expected to complete
+	// faster, for example.
+	ZoneSorter ZoneSorter
 }
 
 func (c DoUntilQuorumConfig) Validate() error {
@@ -168,8 +180,12 @@ func (c DoUntilQuorumConfig) Validate() error {
 // r.MaxUnavailableZones is 1 and there are three zones, DoUntilQuorum will initially only call f for instances in two
 // zones, and only call f for instances in the remaining zone if a request in the initial two zones fails.
 //
-// DoUntilQuorum will randomly select available zones / instances such that calling DoUntilQuorum multiple times with
-// the same ReplicationSet should evenly distribute requests across all zones / instances.
+// If cfg.ZoneSorter is non-nil and DoUntilQuorum is operating in zone-aware mode, DoUntilQuorum will initiate requests
+// to zones in the order returned by the sorter.
+//
+// If cfg.ZoneSorter is nil, or DoUntilQuorum is operating in non-zone-aware mode, DoUntilQuorum will randomly select
+// available zones / instances such that calling DoUntilQuorum multiple times with the same ReplicationSet should evenly
+// distribute requests across all zones / instances.
 //
 // If cfg.HedgingDelay is non-zero, DoUntilQuorum will call f for an additional zone's instances (if zone-aware) / an
 // additional instance (if not zone-aware) every cfg.HedgingDelay until one of the termination conditions above is
@@ -249,7 +265,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	var resultTracker replicationSetResultTracker
 	var contextTracker replicationSetContextTracker
 	if r.MaxUnavailableZones > 0 || r.ZoneAwarenessEnabled {
-		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, logger)
+		resultTracker = newZoneAwareResultTracker(r.Instances, r.MaxUnavailableZones, cfg.ZoneSorter, logger)
 		contextTracker = newZoneAwareContextTracker(ctx, r.Instances)
 	} else {
 		resultTracker = newDefaultResultTracker(r.Instances, r.MaxErrors, logger)
