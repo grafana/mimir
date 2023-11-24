@@ -11,6 +11,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/grafana/dskit/httpgrpc"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -131,6 +134,11 @@ func (qb *queueBroker) isEmpty() bool {
 //
 // Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
+	if schedulerReq, ok := request.req.(*SchedulerRequest); ok {
+		httpReq, _ := httpgrpc.ToHTTPRequest(schedulerReq.Ctx, schedulerReq.Request)
+		_, _ = querymiddleware.DecodeRequest(httpReq)
+	}
+
 	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err

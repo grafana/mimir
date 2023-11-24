@@ -217,18 +217,21 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 }
 
 func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
+	return DecodeRequest(r)
+}
+
+func DecodeRequest(r *http.Request) (Request, error) {
 	switch {
 	case isRangeQuery(r.URL.Path):
-		return c.decodeRangeQueryRequest(r)
+		return decodeRangeQueryRequest(r)
 	case isInstantQuery(r.URL.Path):
-		return c.decodeInstantQueryRequest(r)
+		return decodeInstantQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
 	}
-
 }
 
-func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
+func decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
 	result.Start, err = util.ParseTime(r.FormValue("start"))
@@ -266,7 +269,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 	return &result, nil
 }
 
-func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
+func decodeInstantQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
 	result.Time, err = util.ParseTime(r.FormValue("time"))
