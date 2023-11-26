@@ -79,6 +79,8 @@ spec:
             {{- toYaml .Values.admin_api.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.admin_api.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.admin_api.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.admin_api.resources | nindent 12 }}
           securityContext:

@@ -156,6 +156,8 @@ spec:
             {{- toYaml .Values.store_gateway.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.store_gateway.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.store_gateway.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.store_gateway.resources | nindent 12 }}
           securityContext:

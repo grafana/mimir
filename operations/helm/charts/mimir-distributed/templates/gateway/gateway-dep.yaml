@@ -104,6 +104,10 @@ spec:
               protocol: TCP
           readinessProbe:
             {{- toYaml .readinessProbe | nindent 12 }}
+          livenessProbe:
+              {{- toYaml .livenessProbe | nindent 12 }}
+          startupProbe:
+              {{- toYaml .startupProbe | nindent 12 }}
           resources:
             {{- toYaml .resources | nindent 12 }}
           securityContext:
