@@ -332,7 +332,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	quorumConfig := d.queryQuorumConfig(ctx)
+	quorumConfig := d.queryQuorumConfig(ctx, replicationSet)
 	quorumConfig.IsTerminalError = func(err error) bool {
 		_, isLimitError := err.(validation.LimitError)
 		return isLimitError

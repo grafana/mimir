@@ -9,6 +9,7 @@ import (
 
 // TokenRanges describes token ranges owned by an instance.
 // It consists of [start, end] pairs, where both start and end are inclusive.
+// For example TokenRanges with values [5, 10, 20, 30] covers tokens [5..10] and [20..30].
 type TokenRanges []uint32
 
 func (tr TokenRanges) IncludesKey(key uint32) bool {
@@ -34,6 +35,20 @@ func (tr TokenRanges) IncludesKey(key uint32) bool {
 	default:
 		return false
 	}
+}
+
+func (tr TokenRanges) Equal(other TokenRanges) bool {
+	if len(tr) != len(other) {
+		return false
+	}
+
+	for i := 0; i < len(tr); i++ {
+		if tr[i] != other[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 // GetTokenRangesForInstance returns the token ranges owned by an instance in the ring.

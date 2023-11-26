@@ -248,14 +248,18 @@ type zoneAwareResultTracker struct {
 	zoneRelease         map[string]chan struct{}
 	zoneShouldStart     map[string]*atomic.Bool
 	pendingZones        []string
+	zoneSorter          ZoneSorter
 	logger              log.Logger
 }
 
-func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int, logger log.Logger) *zoneAwareResultTracker {
+type ZoneSorter func(zones []string) []string
+
+func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int, zoneSorter ZoneSorter, logger log.Logger) *zoneAwareResultTracker {
 	t := &zoneAwareResultTracker{
 		waitingByZone:       make(map[string]int),
 		failuresByZone:      make(map[string]int),
 		maxUnavailableZones: maxUnavailableZones,
+		zoneSorter:          zoneSorter,
 		logger:              logger,
 	}
 
@@ -269,7 +273,19 @@ func newZoneAwareResultTracker(instances []InstanceDesc, maxUnavailableZones int
 		t.minSuccessfulZones = 0
 	}
 
+	if t.zoneSorter == nil {
+		t.zoneSorter = defaultZoneSorter
+	}
+
 	return t
+}
+
+func defaultZoneSorter(zones []string) []string {
+	rand.Shuffle(len(zones), func(i, j int) {
+		zones[i], zones[j] = zones[j], zones[i]
+	})
+
+	return zones
 }
 
 func (t *zoneAwareResultTracker) done(instance *InstanceDesc, err error) {
@@ -338,9 +354,7 @@ func (t *zoneAwareResultTracker) startMinimumRequests() {
 		allZones = append(allZones, zone)
 	}
 
-	rand.Shuffle(len(allZones), func(i, j int) {
-		allZones[i], allZones[j] = allZones[j], allZones[i]
-	})
+	allZones = t.zoneSorter(allZones)
 
 	for i := 0; i < t.minSuccessfulZones; i++ {
 		level.Debug(t.logger).Log("msg", "starting requests to zone", "reason", "initial requests", "zone", allZones[i])

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -5444,6 +5445,148 @@ func TestSendMessageMetadata(t *testing.T) {
 
 	// Verify that d.send added message size to metadata.
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
+}
+
+func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
+	testCases := map[string]struct {
+		instances []ring.InstanceDesc
+		verify    func(t *testing.T, sortedZones []string)
+	}{
+		"no instances": {
+			instances: []ring.InstanceDesc{},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Empty(t, sortedZones)
+			},
+		},
+		"one zone": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"many zones, all instances active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+		"many zones, one instance in one zone not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones, "all zones should be present")
+				require.Equal(t, "zone-b", sortedZones[2], "zone with inactive instance should be last, but got %v", sortedZones)
+			},
+		},
+		"many zones, one instance in multiple zones not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones, "all zones should be present")
+
+				// We don't care about the order of A and B, just that they're last.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b"}, sortedZones[1:], "zones with inactive instance should be last, but got %v", sortedZones)
+			},
+		},
+		"many zones, each with one instance not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+		"many zones, some with more inactive instances than others": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a", "zone-c", "zone-b"}, sortedZones, "expected zones with the least number of inactive instances to be first")
+			},
+		},
+		"many zones, all instances inactive": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.PENDING},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+	}
+
+	d := &Distributor{
+		cfg: Config{},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			replicationSet := ring.ReplicationSet{
+				Instances:            testCase.instances,
+				ZoneAwarenessEnabled: true,
+			}
+
+			cfg := d.queryQuorumConfig(context.Background(), replicationSet)
+			sorted := cfg.ZoneSorter(uniqueZones(testCase.instances))
+
+			testCase.verify(t, sorted)
+		})
+	}
+}
+
+func uniqueZones(instances []ring.InstanceDesc) []string {
+	var zones []string
+
+	for _, i := range instances {
+		if !slices.Contains(zones, i.Zone) {
+			zones = append(zones, i.Zone)
+		}
+	}
+
+	// Randomly shuffle the zones to ensure that the test case doesn't pass by coincidence.
+	rand.Shuffle(len(zones), func(i, j int) {
+		zones[i], zones[j] = zones[j], zones[i]
+	})
+
+	return zones
 }
 
 type mockInstanceClient struct {
