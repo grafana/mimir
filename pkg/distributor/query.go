@@ -36,6 +36,8 @@ var (
 	// This should mirror the operation used when choosing ingesters to write series to (ring.WriteNoExtend).
 	// We include ring.PENDING instances as well to ensure we don't miss any instances that have
 	// recently started and we may not have observed in the ring.ACTIVE state yet.
+	// In the case where an ingester has just started, queriers may have only observed the ingester in the PENDING state,
+	// but distributors may have observed the ingester in the ACTIVE state and started sending samples.
 	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
 )
 
