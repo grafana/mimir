@@ -146,7 +146,8 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
 	}()
 
-	var queryComplete chan struct{}
+	queryComplete := make(chan struct{})
+	close(queryComplete) // Close the channel (signaling no query in progress) to simplify the logic below in the case where we receive no queries.
 
 	waitForQuery := func(err error) {
 		select {
@@ -155,9 +156,9 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			return
 		default:
 			// Query is not complete.
-			level.Info(sp.log).Log("msg", "query-scheduler loop received non-cancellation error, waiting for inflight query to complete...", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error, waiting for inflight query to complete...", "err", err, "address", address)
 			<-queryComplete
-			level.Info(sp.log).Log("msg", "query-scheduler loop received non-cancellation error and inflight query is complete, continuing", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error and inflight query is complete, continuing", "err", err, "address", address)
 		}
 	}
 
@@ -167,7 +168,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// If the query was cancelled, we don't want to wait for it to complete: we want to cancel it, which will be
 			// handled by the deferred context cancellation above.
 			// If we got another kind of error (eg. scheduler crashed), continue processing the query.
-			if !grpcutil.IsCanceled(err) && queryComplete != nil {
+			if !grpcutil.IsCanceled(err) {
 				waitForQuery(err)
 			}
 
