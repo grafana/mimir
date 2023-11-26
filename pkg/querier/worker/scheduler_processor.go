@@ -162,9 +162,13 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 		}
 	}
 
+	schedulerStreamError := atomic.NewError(nil)
+
 	for {
 		request, err := c.Recv()
 		if err != nil {
+			schedulerStreamError.Store(err)
+
 			// If the query was cancelled, we don't want to wait for it to complete: we want to cancel it, which will be
 			// handled by the deferred context cancellation above.
 			// If we got another kind of error (eg. scheduler crashed), continue processing the query.
@@ -213,7 +217,18 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// Report back to scheduler that processing of the query has finished.
 			if err := c.Send(&schedulerpb.QuerierToScheduler{}); err != nil {
-				level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
+				if previousErr := schedulerStreamError.Load(); previousErr != nil {
+					// If the stream has already been broken, it's expected that the Send() call will fail too.
+					// The error returned by Recv() is often more descriptive, so we include it in this log line as well.
+					level.Error(logger).Log(
+						"msg", "error notifying scheduler about finished query after the scheduler stream previously failed and returned error previousErr",
+						"err", err,
+						"addr", address,
+						"previousErr", previousErr,
+					)
+				} else {
+					level.Error(logger).Log("msg", "error notifying scheduler about finished query", "err", err, "addr", address)
+				}
 			}
 		}()
 	}
