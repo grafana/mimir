@@ -2240,6 +2240,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2308,6 +2309,7 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
