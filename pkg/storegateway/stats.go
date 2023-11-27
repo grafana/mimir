@@ -72,7 +72,7 @@ type queryStats struct {
 	streamingSeriesSendResponseDuration    time.Duration
 	streamingSeriesIndexHeaderLoadDuration time.Duration
 
-	// streamingSeriesAmbientTime is the total WAL time spent serving the request. It includes all other durations.
+	// streamingSeriesAmbientTime is the total wall clock time spent serving the request. It includes all other durations.
 	streamingSeriesAmbientTime time.Duration
 }
 
