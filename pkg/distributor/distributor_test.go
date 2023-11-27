@@ -679,7 +679,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
 			},
 		},
-		"Test burstFactor burst limit": {
+		"Test burstFactor burst limit in one burst": {
 			distributors:         2,
 			ingestionRate:        10,
 			ingestionBurstFactor: 2,
