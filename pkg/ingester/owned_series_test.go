@@ -25,32 +25,97 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+const ownedServiceTestUser = "test-user"
+const ownedServiceSeriesCount = 10
+
+type ownedSeriesTestContext struct {
+	seriesToWrite []series
+	seriesTokens  []uint32
+	ingesterZone  string
+
+	ownedSeries *ownedSeriesService
+	ing         *Ingester
+	db          *userTSDB
+	kvStore     *consul.Client
+
+	buf          *concurrency.SyncBuffer
+	tenantShards map[string]int
+}
+
+func (c *ownedSeriesTestContext) pushUserSeries(t *testing.T) {
+	require.NoError(t, pushSeriesToIngester(user.InjectOrgID(context.Background(), ownedServiceTestUser), t, c.ing, c.seriesToWrite))
+	db := c.ing.getTSDB(ownedServiceTestUser)
+	require.NotNil(t, db)
+	c.db = db
+}
+
+func (c *ownedSeriesTestContext) checkUpdateReasonForUser(t *testing.T, expectedReason string) {
+	require.Equal(t, expectedReason, c.db.requiresOwnedSeriesUpdate.Load())
+}
+
+func (c *ownedSeriesTestContext) checkUserSeriesOwnedAndShardsByTestedIngester(t *testing.T, series, shards int) {
+	cnt, sh := c.db.ownedSeriesAndShards()
+	require.Equal(t, series, cnt)
+	require.Equal(t, shards, sh)
+}
+
+func (c *ownedSeriesTestContext) updateOwnedSeriesAndCheckResult(t *testing.T, ringChanged bool, expectedUpdatedTenants int, expectedReason string) {
+	c.buf.Reset()
+	require.Equal(t, expectedUpdatedTenants, c.ownedSeries.updateAllTenants(context.Background(), ringChanged), c.buf.String())
+	require.Contains(t, c.buf.String(), expectedReason)
+}
+
+func (c *ownedSeriesTestContext) registerTestedIngesterIntoRing(t *testing.T, instanceID, instanceAddr, instanceZone string) {
+	c.ingesterZone = instanceZone
+
+	// Insert our ingester into the ring. When lifecycler starts, it will find this entry, and keep the tokens.
+	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+		var tokens []uint32
+		for i := 0; i < ownedServiceSeriesCount/2; i++ {
+			tokens = append(tokens, c.seriesTokens[i]+1)
+		}
+		// This instance be the second ingester in the shuffle shard (skip=1). "second" ingester will be first ingester in the shard.
+		tokens = append(tokens, userToken(ownedServiceTestUser, instanceZone, 1)+1)
+		slices.Sort(tokens)
+
+		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now())
+	})
+}
+
+// Insert second ingester to the ring, with tokens that will make it second half of the series.
+// This ingester will also be first ingester in the user's shuffle shard (skip: 0).
+func (c *ownedSeriesTestContext) registerSecondIngesterOwningHalfOfTheTokens(t *testing.T) {
+	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+		var tokens []uint32
+		for i := ownedServiceSeriesCount / 2; i < ownedServiceSeriesCount; i++ {
+			tokens = append(tokens, c.seriesTokens[i]+1)
+		}
+		tokens = append(tokens, userToken(ownedServiceTestUser, c.ingesterZone, 0)+1)
+		slices.Sort(tokens)
+
+		// Must be in the same zone, because we use RF=1, and require RF=num of zones.
+		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now())
+	})
+}
+
+func (c *ownedSeriesTestContext) removeSecondIngester(t *testing.T) {
+	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+		desc.RemoveIngester("second-ingester")
+	})
+}
+
 func TestOwnedSeriesService(t *testing.T) {
-	const testUser = "test-user"
-	const seriesCount = 10
-
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.KVStore.Mock = kvStore
-	cfg.IngesterRing.InstanceID = "first-ingester"
-	cfg.IngesterRing.NumTokens = seriesCount/2 + 1 // We will use token for half of the series + one token for user.
-	cfg.IngesterRing.ZoneAwarenessEnabled = true
-	cfg.IngesterRing.InstanceZone = "zone"
-	cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
-
 	// Generate some series, and compute their hashes.
 	var seriesToWrite []series
 	var seriesTokens []uint32
-	for seriesIdx := 0; seriesIdx < seriesCount; seriesIdx++ {
+	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
 		s := series{
 			lbls:      labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			value:     float64(0),
 			timestamp: time.Now().UnixMilli(),
 		}
 		seriesToWrite = append(seriesToWrite, s)
-		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(testUser, s.lbls))
+		seriesTokens = append(seriesTokens, mimirpb.ShardByAllLabels(ownedServiceTestUser, s.lbls))
 	}
 
 	// Verify that series tokens have some gaps between them.
@@ -59,149 +124,161 @@ func TestOwnedSeriesService(t *testing.T) {
 		require.Greater(t, seriesTokens[i]-seriesTokens[i-1], uint32(1))
 	}
 
-	// Insert our ingester into the ring. When lifecycler starts, it will find this entry, and keep the tokens.
-	updateRing(t, kvStore, func(desc *ring.Desc) {
-		var tokens []uint32
-		for i := 0; i < seriesCount/2; i++ {
-			tokens = append(tokens, seriesTokens[i]+1)
-		}
-		// This instance be the second ingester in the shuffle shard (skip=1).
-		tokens = append(tokens, userToken(testUser, cfg.IngesterRing.InstanceZone, 1)+1)
-		slices.Sort(tokens)
+	testCases := map[string]func(t *testing.T, c *ownedSeriesTestContext){
+		"empty ingester": func(t *testing.T, c *ownedSeriesTestContext) {
+			require.Equal(t, 0, c.ownedSeries.updateAllTenants(context.Background(), false))
+		},
 
-		desc.AddIngester(cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone, tokens, ring.ACTIVE, time.Now())
-	})
-	ing := setupIngester(t, cfg)
+		"update due to new user": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+			c.checkUpdateReasonForUser(t, recomputeOwnedSeriesReasonNewUser)
+			// First ingester owns all the series, even without any ownedSeries run. This is because each created series is automatically counted as "owned".
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+			c.checkUpdateReasonForUser(t, "")
+			// First ingester still owns all the series.
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+		},
 
-	// Start the ring watching.
-	rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
-	})
+		"no ring change after adding ingester": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
 
-	tenantShards := map[string]int{
-		testUser: 0, // use all ingesters
+			// Since our user doesn't have any new reason set for recomputing owned series, and we pass ringChanged=false, no recompute will happen.
+			c.checkUpdateReasonForUser(t, "")
+			c.updateOwnedSeriesAndCheckResult(t, false, 0, "")
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+		},
+
+		"ring change after adding ingester": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonNewUser)
+
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
+			c.checkUpdateReasonForUser(t, "")
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 0)
+		},
+
+		"unchanged ring, but tenant shard changed from 0 to 2": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 0)
+
+			// Now don't change the ring, but change shard size from 0 to 2, which is also our number of ingesters.
+			// This will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute.
+			c.tenantShards[ownedServiceTestUser] = 2
+
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+			c.checkUpdateReasonForUser(t, "")
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+		},
+
+		"change tenant shard size from 2 to 1, removing our ingester from the shard": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.tenantShards[ownedServiceTestUser] = 2
+
+			c.pushUserSeries(t)
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+
+			// now change to 1. This will only keep "second ingester" in the shard, so our tested ingester will own 0 series.
+			c.tenantShards[ownedServiceTestUser] = 1
+
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+			c.checkUpdateReasonForUser(t, "")
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+		},
+
+		"change tenant shard size from 1 to 2, adding our ingester to the shard": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.tenantShards[ownedServiceTestUser] = 1
+
+			c.pushUserSeries(t)
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+
+			// now change shard size to 2, which will add our tested ingester
+			c.tenantShards[ownedServiceTestUser] = 2
+
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonShardSizeChanged)
+			c.checkUpdateReasonForUser(t, "")
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount/2, 2)
+		},
+
+		"unregister second ingester owning all series": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.tenantShards[ownedServiceTestUser] = 1
+
+			c.pushUserSeries(t)
+			c.registerSecondIngesterOwningHalfOfTheTokens(t)
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 1)
+
+			// Now unregister second ingester.
+			c.removeSecondIngester(t)
+
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonRingChanged)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 1)
+		},
+
+		"early compaction removes all series": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+
+			c.updateOwnedSeriesAndCheckResult(t, true, 1, recomputeOwnedSeriesReasonNewUser)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+
+			// Run early compaction. This removes all series from memory.
+			c.ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
+			require.Equal(t, uint64(0), c.db.Head().NumSeries())
+
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonEarlyCompaction)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, 0, 0)
+		},
 	}
 
-	buf := concurrency.SyncBuffer{}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	ownedSeries := newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(&buf), nil, func(user string) int { return tenantShards[user] }, ing.getTSDBUsers, ing.getTSDB)
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.KVStore.Mock = kvStore
+			cfg.IngesterRing.InstanceID = "first-ingester"
+			cfg.IngesterRing.NumTokens = ownedServiceSeriesCount/2 + 1 // We will use token for half of the series + one token for user.
+			cfg.IngesterRing.ZoneAwarenessEnabled = true
+			cfg.IngesterRing.InstanceZone = "zone"
+			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
 
-	t.Run("no user is updated for empty ingester", func(t *testing.T) {
-		require.Equal(t, 0, ownedSeries.updateAllTenants(context.Background(), false))
-	})
+			c := ownedSeriesTestContext{
+				seriesToWrite: seriesToWrite,
+				seriesTokens:  seriesTokens,
+				kvStore:       kvStore,
+			}
 
-	require.NoError(t, pushSeriesToIngester(user.InjectOrgID(context.Background(), testUser), t, ing, seriesToWrite))
-	db := ing.getTSDB(testUser)
-	require.NotNil(t, db)
+			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
 
-	t.Run("update due to new user", func(t *testing.T) {
-		require.Equal(t, recomputeOwnedSeriesReasonNewUser, db.requiresOwnedSeriesUpdate.Load())
-		// First ingester owns all the series, even without any ownedSeries run. This is because each created series is automatically counted as "owned".
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount, c)
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonNewUser)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		// First ingester still owns all the series.
-		c, _ = db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount, c)
-	})
+			c.ing = setupIngester(t, cfg)
 
-	// Now we insert another ingester to the ring, with tokens that will make it second half of the series.
-	// This ingester will also be first ingester in the user's shuffle shard (skip: 0).
-	updateRing(t, kvStore, func(desc *ring.Desc) {
-		var tokens []uint32
-		for i := seriesCount / 2; i < seriesCount; i++ {
-			tokens = append(tokens, seriesTokens[i]+1)
-		}
-		tokens = append(tokens, userToken(testUser, cfg.IngesterRing.InstanceZone, 0)+1)
-		slices.Sort(tokens)
+			// Start the ring watching.
+			rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
+			})
 
-		// Must be in the same zone, because we use RF=1, and require RF=num of zones.
-		desc.AddIngester("another-ingester", "localhost", cfg.IngesterRing.InstanceZone, tokens, ring.ACTIVE, time.Now())
-	})
+			c.tenantShards = map[string]int{}
+			c.buf = &concurrency.SyncBuffer{}
 
-	t.Run("no update if we don't indicate ring change", func(t *testing.T) {
-		// Since our user doesn't have any new reason set for recomputing owned series, and we pass ringChanged=false, no recompute will happen.
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		buf.Reset()
-		require.Equal(t, 0, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount, c)
-	})
+			c.ownedSeries = newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(c.buf), nil, func(user string) int { return c.tenantShards[user] }, c.ing.getTSDBUsers, c.ing.getTSDB)
 
-	t.Run("update due to ring change", func(t *testing.T) {
-		// If we try again with ringChanged=true, we should see recomputed owned series.
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), true), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonRingChanged)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount/2, c)
-	})
-
-	t.Run("change shard size to 2, owned series are unchanged", func(t *testing.T) {
-		// Now don't change the ring, but change shard size. First we set it to 2, which is our number of ingesters.
-		// This will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute.
-		tenantShards[testUser] = 2
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount/2, c)
-	})
-
-	t.Run("change shard size to 1, owned series are changed", func(t *testing.T) {
-		// Next, change shard size to 1. This will cause that all series are owned by single ingester only, and it's not "our" ingester, but "another-ingester".
-		tenantShards[testUser] = 1
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, 0, c)
-	})
-
-	t.Run("change shard size back to 2, ingester will own the series again", func(t *testing.T) {
-		tenantShards[testUser] = 2
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount/2, c)
-	})
-
-	// Now let's unregister another-ingester, and keep shard-size at 1. After recomputing ownership, all series should belong to first-ingester again.
-	updateRing(t, kvStore, func(desc *ring.Desc) {
-		desc.RemoveIngester("another-ingester")
-	})
-
-	t.Run("after removal of second ingester, first ingester owns all series", func(t *testing.T) {
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), true), buf.String()) // We need to signal that ring has changed, otherwise no recomputation is done.
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonRingChanged)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, seriesCount, c)
-	})
-
-	// Do early compaction. This should remove all series from memory.
-	ing.compactBlocks(context.Background(), true, time.Now().Add(1*time.Minute).UnixMilli(), nil)
-
-	t.Run("check owned series after early compaction", func(t *testing.T) {
-		require.Equal(t, recomputeOwnedSeriesReasonEarlyCompaction, db.requiresOwnedSeriesUpdate.Load())
-		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
-		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonEarlyCompaction)
-		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.ownedSeriesAndShards()
-		require.Equal(t, 0, c)
-	})
+			tc(t, &c)
+		})
+	}
 }
 
 func TestOwnedSeriesRingChanged(t *testing.T) {
