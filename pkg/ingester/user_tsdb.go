@@ -289,15 +289,8 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	var count, shards int
-	if u.useOwnedSeriesForLimits {
-		count, shards = u.ownedSeriesAndShards()
-	} else {
-		count = int(u.Head().NumSeries())
-		shards = u.limiter.getShardSize(u.userID)
-	}
-
-	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, count, shards) {
+	series, shards := u.getSeriesAndShardsForSeriesLimit()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, shards) {
 		return globalerror.MaxSeriesPerUser
 	}
 
@@ -311,6 +304,18 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	return nil
+}
+
+// getSeriesAndShardsForSeriesLimit returns current number of series and shard size that should be used for computing
+// series limit.
+func (u *userTSDB) getSeriesAndShardsForSeriesLimit() (int, int) {
+	if u.useOwnedSeriesForLimits {
+		return u.ownedSeriesAndShards()
+	}
+
+	count := int(u.Head().NumSeries())
+	shards := u.limiter.getShardSize(u.userID)
+	return count, shards
 }
 
 func (u *userTSDB) PostCreation(metric labels.Labels) {
