@@ -123,6 +123,7 @@
       - "-activity-tracker.filepath=/activity/mimir-write-1"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-write-1"
     "image": "mimir"
@@ -143,6 +144,7 @@
       - "-activity-tracker.filepath=/activity/mimir-write-2"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-write-2"
     "image": "mimir"
@@ -163,6 +165,7 @@
       - "-activity-tracker.filepath=/activity/mimir-write-3"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-write-3"
     "image": "mimir"
