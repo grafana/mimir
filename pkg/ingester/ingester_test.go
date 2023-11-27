@@ -2104,53 +2104,91 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
-	registry := prometheus.NewRegistry()
-	ctx := user.InjectOrgID(context.Background(), userID)
-
-	// Create a mocked ingester
-	cfg := defaultIngesterTestConfig(b)
-
-	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, registry)
-	require.NoError(b, err)
-	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
-	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
-
-	// Wait until the ingester is healthy
-	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
-		return ingester.lifecycler.HealthyInstancesCount()
-	})
-
-	// Push a single time series to set the TSDB min time.
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	startTime := util.TimeToMillis(time.Now())
-
-	currTimeReq := mimirpb.ToWriteRequest(
-		metricLabelAdapters,
-		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
-		nil,
-		nil,
-		mimirpb.API,
-	)
-	_, err = ingester.Push(ctx, currTimeReq)
-	require.NoError(b, err)
-
 	const (
-		series  = 10
-		samples = 1
+		series                 = 200_000
+		requestsPerConcurrency = 1
+		samples                = 4
 	)
-
 	allLabels, allSamples := benchmarkData(series)
 
-	b.ResetTimer()
-	for iter := 0; iter < b.N; iter++ {
-		// Bump the timestamp on each of our test samples each time round the loop
-		for j := 0; j < samples; j++ {
-			for i := range allSamples {
-				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
-			}
-			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+	for _, concurrency := range []int{1, 2, 3, 4, 5} {
+		b.Run(fmt.Sprintf("series=%d,req=%d,samples=%d,concurrency=%d", series, requestsPerConcurrency, samples, concurrency), func(b *testing.B) {
+			registry := prometheus.NewRegistry()
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(b)
+			limitsCfg := defaultLimitsTestConfig()
+			limitsCfg.MaxGlobalSeriesPerUser = 100_000_000
+
+			ingester, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, "", registry)
 			require.NoError(b, err)
-		}
+			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
+			b.Cleanup(func() {
+				services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+			})
+
+			// Wait until the ingester is healthy
+			test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+				return ingester.lifecycler.HealthyInstancesCount()
+			})
+
+			startTime := util.TimeToMillis(time.Now())
+			{
+				// Push a single time series to set the TSDB min time.
+				metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+
+				currTimeReq := mimirpb.ToWriteRequest(
+					metricLabelAdapters,
+					[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
+					nil,
+					nil,
+					mimirpb.API,
+				)
+				_, err = ingester.Push(ctx, currTimeReq)
+				require.NoError(b, err)
+			}
+
+			var (
+				seriesPerReqPerConcurrency = series / requestsPerConcurrency / concurrency
+			)
+
+			pushReqs := make([][]*mimirpb.WriteRequest, concurrency)
+			wg := &sync.WaitGroup{}
+			start := make(chan struct{})
+			for i := 0; i < concurrency; i++ {
+				pushReqs[i] = make([]*mimirpb.WriteRequest, 0, b.N*samples)
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					<-start
+					for _, req := range pushReqs[i] {
+						_, err := ingester.Push(ctx, req)
+						require.NoError(b, err)
+					}
+				}(i)
+			}
+
+			for iter := 0; iter < b.N; iter++ {
+				// Bump the timestamp on each of our test samples each time round the loop
+				for j := 0; j < samples; j++ {
+					for i := range allSamples {
+						allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+					}
+
+					for seriesIdx := 0; seriesIdx < len(allLabels); {
+						for c := 0; c < concurrency && seriesIdx < len(allLabels); c++ {
+							startI, endI := seriesIdx, min(len(allLabels), seriesIdx+seriesPerReqPerConcurrency)
+							pushReqs[c] = append(pushReqs[c], mimirpb.ToWriteRequest(allLabels[startI:endI], allSamples[startI:endI], nil, nil, mimirpb.API))
+							seriesIdx += seriesPerReqPerConcurrency
+						}
+					}
+				}
+			}
+			b.ResetTimer()
+			close(start)
+			wg.Wait()
+		})
 	}
 }
 
