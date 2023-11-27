@@ -87,7 +87,7 @@ func TestOwnedSeriesService(t *testing.T) {
 
 	buf := concurrency.SyncBuffer{}
 
-	ownedSeries := newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(&buf), func(user string) int { return tenantShards[user] }, ing.getTSDBUsers, ing.getTSDB)
+	ownedSeries := newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(&buf), nil, func(user string) int { return tenantShards[user] }, ing.getTSDBUsers, ing.getTSDB)
 
 	t.Run("no user is updated for empty ingester", func(t *testing.T) {
 		require.Equal(t, 0, ownedSeries.updateAllTenants(context.Background(), false))
@@ -230,7 +230,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	const instanceID1 = "first ingester"
 	const instanceID2 = "second instance"
 
-	ownedSeries := newOwnedSeriesService(10*time.Minute, instanceID1, rng, log.NewLogfmtLogger(&buf), nil, nil, nil)
+	ownedSeries := newOwnedSeriesService(10*time.Minute, instanceID1, rng, log.NewLogfmtLogger(&buf), nil, nil, nil, nil)
 
 	updateRing(t, kvStore, func(desc *ring.Desc) {
 		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
