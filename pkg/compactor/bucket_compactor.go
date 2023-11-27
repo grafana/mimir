@@ -645,7 +645,7 @@ type BucketCompactorMetrics struct {
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
 func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg prometheus.Registerer) *BucketCompactorMetrics {
-	return &BucketCompactorMetrics{
+	bcm := &BucketCompactorMetrics{
 		groupCompactionRunsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compaction_runs_started_total",
 			Help: "Total number of group compaction attempts.",
@@ -677,6 +677,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
 		}),
 	}
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
+
+	return bcm
 }
 
 type ownCompactionJobFunc func(job *Job) (bool, error)

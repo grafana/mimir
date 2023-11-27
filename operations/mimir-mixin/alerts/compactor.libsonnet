@@ -110,7 +110,7 @@
           },
         },
         {
-          // Alert if compactor has tried to compact blocks with out-of-order chunks.
+          // Alert if compactor has tried to compact unhealthy blocks.
           alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '1m',
           expr: |||
@@ -124,7 +124,7 @@
           },
         },
         {
-          // Alert if compactor has tried to compact blocks with out-of-order chunks.
+          // Alert if compactor has tried to compact unhealthy blocks.
           // Any number greater than 1 over the last 30 minutes should be investigated quickly as it could start to impact the read path.
           alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
           'for': '30m',
