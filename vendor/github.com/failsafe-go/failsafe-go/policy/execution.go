@@ -31,7 +31,8 @@ type ExecutionInternal[R any] interface {
 	// outside the Executor.
 	IsCanceledForPolicy(policyIndex int) bool
 
-	// Copy returns a copy of the failsafe.Execution.
+	// Copy returns a copy of the failsafe.Execution. This is useful if you want to preserve the lastResult and lastError
+	// before passing the execution to an event listener, otherwise these may be changed at any time, such as by a Timeout.
 	Copy() failsafe.Execution[R]
 
 	// CopyWithResult returns a copy of the failsafe.Execution with the result.
