@@ -759,7 +759,7 @@ func (i *Ingester) updateMetrics() {
 
 		localLimitShards := i.limiter.getShardSize(userID)
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
-			ownedSeries, shards := db.OwnedSeriesAndShards()
+			ownedSeries, shards := db.ownedSeriesAndShards()
 			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(ownedSeries))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
@@ -768,7 +768,6 @@ func (i *Ingester) updateMetrics() {
 		}
 
 		localLimit := i.limiter.maxSeriesPerUser(userID, localLimitShards)
-		// update metrics
 		i.metrics.maxLocalSeriesPerUser.WithLabelValues(userID).Set(float64(localLimit))
 	}
 }
@@ -2245,7 +2244,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		useOwnedSeriesForLimits: i.cfg.UseIngesterOwnedSeriesForLimits,
 		ownedSeriesShardSize:    i.limits.IngestionTenantShardSize(userID), // initialize series shard size so that it's correct even before we update ownedSeries for the first time (during WAL replay).
 	}
-	userDB.TriggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
+	userDB.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonNewUser)
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(i.limits.IngestionTenantShardSize(userID), i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
@@ -2774,7 +2773,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			if force && forcedCompactionMaxTime != math.MaxInt64 {
 				r = recomputeOwnedSeriesReasonEarlyCompaction
 			}
-			userDB.TriggerRecomputeOwnedSeries(r)
+			userDB.triggerRecomputeOwnedSeries(r)
 		}
 
 		return nil

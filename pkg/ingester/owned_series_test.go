@@ -90,7 +90,7 @@ func TestOwnedSeriesService(t *testing.T) {
 	ownedSeries := newOwnedSeriesService(10*time.Minute, cfg.IngesterRing.InstanceID, rng, log.NewLogfmtLogger(&buf), func(user string) int { return tenantShards[user] }, ing.getTSDBUsers, ing.getTSDB)
 
 	t.Run("no user is updated for empty ingester", func(t *testing.T) {
-		require.Equal(t, 0, ownedSeries.updateAll(context.Background(), false))
+		require.Equal(t, 0, ownedSeries.updateAllTenants(context.Background(), false))
 	})
 
 	require.NoError(t, pushSeriesToIngester(user.InjectOrgID(context.Background(), testUser), t, ing, seriesToWrite))
@@ -100,13 +100,13 @@ func TestOwnedSeriesService(t *testing.T) {
 	t.Run("update due to new user", func(t *testing.T) {
 		require.Equal(t, recomputeOwnedSeriesReasonNewUser, db.requiresOwnedSeriesUpdate.Load())
 		// First ingester owns all the series, even without any ownedSeries run. This is because each created series is automatically counted as "owned".
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount, c)
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), false), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonNewUser)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
 		// First ingester still owns all the series.
-		c, _ = db.OwnedSeriesAndShards()
+		c, _ = db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount, c)
 	})
 
@@ -128,18 +128,18 @@ func TestOwnedSeriesService(t *testing.T) {
 		// Since our user doesn't have any new reason set for recomputing owned series, and we pass ringChanged=false, no recompute will happen.
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
 		buf.Reset()
-		require.Equal(t, 0, ownedSeries.updateAll(context.Background(), false), buf.String())
-		c, _ := db.OwnedSeriesAndShards()
+		require.Equal(t, 0, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount, c)
 	})
 
 	t.Run("update due to ring change", func(t *testing.T) {
 		// If we try again with ringChanged=true, we should see recomputed owned series.
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), true), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), true), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonRingChanged)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount/2, c)
 	})
 
@@ -148,10 +148,10 @@ func TestOwnedSeriesService(t *testing.T) {
 		// This will not change owned series (because we only have 2 ingesters, and both are already used), but will trigger recompute.
 		tenantShards[testUser] = 2
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), false), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount/2, c)
 	})
 
@@ -159,20 +159,20 @@ func TestOwnedSeriesService(t *testing.T) {
 		// Next, change shard size to 1. This will cause that all series are owned by single ingester only, and it's not "our" ingester, but "another-ingester".
 		tenantShards[testUser] = 1
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), false), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, 0, c)
 	})
 
 	t.Run("change shard size back to 2, ingester will own the series again", func(t *testing.T) {
 		tenantShards[testUser] = 2
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), false), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonShardSizeChanged)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount/2, c)
 	})
 
@@ -183,10 +183,10 @@ func TestOwnedSeriesService(t *testing.T) {
 
 	t.Run("after removal of second ingester, first ingester owns all series", func(t *testing.T) {
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), true), buf.String()) // We need to signal that ring has changed, otherwise no recomputation is done.
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), true), buf.String()) // We need to signal that ring has changed, otherwise no recomputation is done.
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonRingChanged)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, seriesCount, c)
 	})
 
@@ -196,10 +196,10 @@ func TestOwnedSeriesService(t *testing.T) {
 	t.Run("check owned series after early compaction", func(t *testing.T) {
 		require.Equal(t, recomputeOwnedSeriesReasonEarlyCompaction, db.requiresOwnedSeriesUpdate.Load())
 		buf.Reset()
-		require.Equal(t, 1, ownedSeries.updateAll(context.Background(), false), buf.String())
+		require.Equal(t, 1, ownedSeries.updateAllTenants(context.Background(), false), buf.String())
 		require.Contains(t, buf.String(), recomputeOwnedSeriesReasonEarlyCompaction)
 		require.Equal(t, "", db.requiresOwnedSeriesUpdate.Load())
-		c, _ := db.OwnedSeriesAndShards()
+		c, _ := db.ownedSeriesAndShards()
 		require.Equal(t, 0, c)
 	})
 }

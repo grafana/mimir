@@ -291,7 +291,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	// Total series limit.
 	var count, shards int
 	if u.useOwnedSeriesForLimits {
-		count, shards = u.OwnedSeriesAndShards()
+		count, shards = u.ownedSeriesAndShards()
 	} else {
 		count = int(u.Head().NumSeries())
 		shards = u.limiter.getShardSize(u.userID)
@@ -500,24 +500,28 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	}
 }
 
-func (u *userTSDB) OwnedSeriesAndShards() (int, int) {
+func (u *userTSDB) ownedSeriesAndShards() (int, int) {
 	u.ownedSeriesMtx.Lock()
 	defer u.ownedSeriesMtx.Unlock()
 
 	return u.ownedSeriesCount, u.ownedSeriesShardSize
 }
 
-func (u *userTSDB) TriggerRecomputeOwnedSeries(reason string) {
+func (u *userTSDB) getAndClearReasonForRecomputeOwnedSeries() string {
+	return u.requiresOwnedSeriesUpdate.Swap("")
+}
+
+func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {
 	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
 }
 
-// RecomputeOwnedSeries recomputes owned series for current token ranges.
+// recomputeOwnedSeries recomputes owned series for current token ranges.
 //
 // This method returns true, if recomputation of owned series failed multiple times due to too
 // many new series being added during the computation. If no such problem happened, this method returns false.
 //
-// This method and UpdateTokenRanges should be only called from the same goroutine. (ownedSeries service)
-func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (retry bool) {
+// This method and updateTokenRanges should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (retry bool) {
 	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
 	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
 
@@ -528,7 +532,7 @@ func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log
 
 	start := time.Now()
 
-	prevOwnedSeriesCount, shardSizePrev := u.OwnedSeriesAndShards()
+	prevOwnedSeriesCount, shardSizePrev := u.ownedSeriesAndShards()
 
 	reportError := false
 	attempts := 0
@@ -577,10 +581,10 @@ func (u *userTSDB) RecomputeOwnedSeries(shardSize int, reason string, logger log
 	return reportError
 }
 
-// UpdateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+// updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
 //
-// This method and RecomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
-func (u *userTSDB) UpdateTokenRanges(newTokenRanges []uint32) bool {
+// This method and recomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
 	prev := u.ownedTokenRanges
 	u.ownedTokenRanges = newTokenRanges
 
