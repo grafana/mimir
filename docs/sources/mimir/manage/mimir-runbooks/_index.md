@@ -638,28 +638,31 @@ How to **investigate**:
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
 
-### MimirCompactorSkippedBlocksWithOutOfOrderChunks
+### MimirCompactorSkippedUnhealthyBlocks
 
-This alert fires when compactor tries to compact a block, but finds that given block has out-of-order chunks. This indicates a bug in Prometheus TSDB library and should be investigated.
+This alert fires when compactor tries to compact a block, but finds that given block is unhealthy. This indicates a bug in Prometheus TSDB library and should be investigated.
 
 #### Compactor is failing because of `not healthy index found`
 
-The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
+The compactor may fail to compact blocks due to a corrupted block index found in one of the source blocks:
 
 ```
 level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=compactor msg="failed to compact user blocks" user=REDACTED-TENANT err="compaction: group 0@6672437747845546250: block with not healthy index found /data/compact/0@6672437747845546250/REDACTED-BLOCK; Compaction level 1; Labels: map[__org_id__:REDACTED]: 1/1183085 series have an average of 1.000 out-of-order chunks: 0.000 of these are exact duplicates (in terms of data and time range)"
 ```
 
-When this happen you should:
+When this happens, the affected block(s) will be marked as non-compact by the compactor in order to prevent the next execution from being blocked, which could potentially have a negative impact on the performance of the read path.
 
-1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers. Keep in mind that doing so the block will become invisible to the queriers too, so its series/samples will not be queried. If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss once you rename the block and stop querying it.
-2. Ensure the compactor has recovered
-3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
+If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Mimir guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss.
 
-To rename a block stored on GCS you can use the `gsutil` CLI command:
+Once this alert has been triggered, it is recommended to follow the following steps:
+
+1. Ensure the compactor has recovered.
+2. Investigate offline the root cause by downloading the corrupted block and debugging it locally
+
+To download a block stored on GCS you can use the `gsutil` CLI command:
 
 ```
-gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
+gsutil cp gs://[BUCKET_NAME]/[OBJECT_NAME] [LOCAL_DESTINATION]
 ```
 
 Where:

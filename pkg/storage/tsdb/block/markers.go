@@ -72,6 +72,8 @@ const (
 	IndexSizeExceedingNoCompactReason = "index-size-exceeding"
 	// OutOfOrderChunksNoCompactReason is a reason of to no compact block with index contains out of order chunk so that the compaction is not blocked.
 	OutOfOrderChunksNoCompactReason = "block-index-out-of-order-chunk"
+	// CriticalNoCompactReason is a reason of to no compact block that has some critical issue (e.g. corrupted index).
+	CriticalNoCompactReason = "critical"
 )
 
 // NoCompactMark marker stores reason of block being excluded from compaction if needed.
