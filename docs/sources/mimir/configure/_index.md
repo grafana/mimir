@@ -15,3 +15,9 @@ weight: 30
 Grafana Mimir's flexibility is achieved through configuration.
 
 {{< section menuTitle="true" >}}
+
+## Parameter states
+
+As you are working with parameters, be aware of their states:
+
+![Parameter states](param-states.png)

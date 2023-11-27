@@ -77,9 +77,9 @@ When new parameters are added, they can be introduced as **basic**, **advanced**
 
 If we decide to eliminate a **basic** or **advanced** parameter, we will first mark it deprecated. After two more minor releases, a deprecated flag will be removed entirely. Use the metric `deprecated_flags_inuse_total` to determine whether you're using deprecated flags.
 A configuration parameter is in maintenance and usable as expected between its deprecation and removal.
-If you configure Mimir with a removed parameter, Mimir will fail to start.
+If you configure Mimir with a removed parameter, Mimir will fail to start:
 
-![Parameter states](param-states.png)
+[Parameter states]({{< relref = ./_index#param-states.png >}})
 
 ## Use environment variables in the configuration
 
