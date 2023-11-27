@@ -134,17 +134,39 @@ func (qb *queueBroker) isEmpty() bool {
 //
 // Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
 func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueriers int) error {
+	queuePath := QueuePath{string(request.tenantID)}
+
+	// hack to pass tests regarding tenant queue length for now
+	childQueue, err := qb.tenantQueuesTree.getOrAddNode(queuePath)
+	if err != nil {
+		return err
+	}
+	if childQueue.ItemCount()+1 > childQueue.maxQueueLen {
+		return errors.Join(ErrMaxQueueLengthExceeded, ErrTooManyRequests)
+	}
+
 	if schedulerReq, ok := request.req.(*SchedulerRequest); ok {
 		httpReq, _ := httpgrpc.ToHTTPRequest(schedulerReq.Ctx, schedulerReq.Request)
 		_, _ = querymiddleware.DecodeRequest(httpReq)
+
+		//promReq, _ := querymiddleware.DecodeRequest(httpReq)
+
+		//now := time.Now()
+		//queryIngestersWithin := qb.limits.QueryIngestersWithin(string(request.tenantID))
+		//querier.ShouldQueryIngesters(queryIngestersWithin, now, promReq.GetEnd())
+
+		// simulate adding a second query dimension
+		secondaryQueueDimensions := []string{"String1", "String2", "String3"}
+		randomIndex := rand.Intn(len(secondaryQueueDimensions))
+		randomString := secondaryQueueDimensions[randomIndex]
+		queuePath = append(queuePath, randomString)
 	}
 
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+	err = qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
 	if err != nil {
 		return err
 	}
 
-	queuePath := QueuePath{string(request.tenantID)}
 	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	if errors.Is(err, ErrMaxQueueLengthExceeded) {
 		return errors.Join(err, ErrTooManyRequests)
