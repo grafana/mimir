@@ -72,6 +72,15 @@ enum FrontendToSchedulerType {
   CANCEL = 2;
 }
 
+enum QueryComponent {
+  UNSPECIFIED = 0; // fallback in case of some failure?
+  INGESTERS_ONLY = 1;
+  STORE_GATEWAYS_ONLY = 2;
+  // expressing combinations like this is seems kind of awkwardly overly-specific and brittle
+  // but I can't really see this needing more values anytime soon and gRPC is easy-ish to change
+  INGESTERS_AND_STORE_GATEWAYS = 3;
+}
+
 message FrontendToScheduler {
   FrontendToSchedulerType type = 1;
 
@@ -86,6 +95,28 @@ message FrontendToScheduler {
   string userID = 4;
   httpgrpc.HTTPRequest httpRequest = 5;
   bool statsEnabled = 6;
+
+  // enum approach: easy, clean, well defined, but brittle/highly-coupled
+  QueryComponent queryComponentHint = 7;
+
+  // multiple-booleans approach: also easy and avoids creating enum options to represent
+  // combinations of other enum options, at the cost of bloating the message with more fields.
+  // These could also be pushed down into a child struct like `AdditionalQueryHints` or similar.
+  // Suffers same drawbacks as enum in that it is highly-specific and therefore brittle.
+  bool shouldQueryIngesters = 8;
+  bool shouldQueryStoreGateways = 9;
+
+  // string array approach: most flexible and generic approach,
+  // but takes some control & decisionmaking away from scheduler (which may be a positive).
+  // The scheduler would essentially just trust the content of this string array to be the
+  // remainder of the queue dimensions to be nested under the `tenant` dimension.
+  // Prevents hardcoding stuff in the scheduler stuff, such as the labels for the queue metrics.
+  // Not sure if there might be footguns or performance issues with using arrays in gRPC.
+  repeated string additionalQueueDimensions = 10;
+
+  // single string approach: somewhere in between the struct enum/boolean approaches and the string array
+  // not sure if this is the best or the worst of both worlds.
+  string secondQueueDimension = 11;
 }
 
 enum SchedulerToFrontendStatus {
