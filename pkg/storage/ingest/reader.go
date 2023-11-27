@@ -37,7 +37,8 @@ type PartitionReader struct {
 	kafkaTopic   string
 	partitionID  int32
 
-	client *kgo.Client
+	client    *kgo.Client
+	admClient *kadm.Client
 
 	consumer RecordConsumer
 	metrics  *readerMetrics
@@ -73,6 +74,7 @@ func (r *PartitionReader) start(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "creating kafka reader client")
 	}
+	r.admClient = kadm.NewClient(r.client)
 	return nil
 }
 
@@ -109,7 +111,7 @@ func collectFetchErrs(fetches kgo.Fetches) (_ error) {
 }
 
 func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches) {
-	committed, err := kadm.NewClient(r.client).CommitOffsets(ctx, consumerGroup, kadm.OffsetsFromFetches(fetches))
+	committed, err := r.admClient.CommitOffsets(ctx, consumerGroup, kadm.OffsetsFromFetches(fetches))
 	if err != nil {
 		level.Error(r.logger).Log("msg", "encountered error while committing offsets", err)
 	} else {
@@ -218,6 +220,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 
 func (r *PartitionReader) stop(error) error {
 	r.client.Close()
+	// r.admClient needs no closing since it's using r.client
 	return nil
 }
 
