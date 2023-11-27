@@ -247,6 +247,15 @@ func TestOwnedSeriesService(t *testing.T) {
 			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonRingChanged)
 			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
 		},
+
+		"recompute after previous compuation failed": func(t *testing.T, c *ownedSeriesTestContext) {
+			c.pushUserSeries(t)
+
+			// This overwrites "new user" reason.
+			c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonComputeOwnedSeriesFailed)
+			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonComputeOwnedSeriesFailed)
+			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
+		},
 	}
 
 	for name, tc := range testCases {
