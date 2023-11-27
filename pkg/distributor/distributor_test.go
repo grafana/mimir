@@ -630,15 +630,17 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors       int
-		ingestionRate      float64
-		ingestionBurstSize int
-		pushes             []testPush
+		distributors         int
+		ingestionRate        float64
+		ingestionBurstSize   int
+		ingestionBurstFactor float64
+		pushes               []testPush
 	}{
 		"evenly share the ingestion limit across distributors": {
-			distributors:       2,
-			ingestionRate:      10,
-			ingestionBurstSize: 5,
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstSize:   5,
+			ingestionBurstFactor: 0,
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
@@ -649,9 +651,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
-			distributors:       2,
-			ingestionRate:      10,
-			ingestionBurstSize: 20,
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstSize:   20,
+			ingestionBurstFactor: 0,
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
@@ -659,6 +662,32 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{samples: 5, expectedError: nil},
 				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
+			},
+		},
+		"evenly share the ingestion burst limit across distributors": {
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstFactor: 4,
+			// This is equivalent to the test above because the ingestion rate and burst are per distributor with the burst factor meaning the burst would be:
+			// (10 (ingest rate) / 2 (number of distributors)) * 4 (burst factor)= 20 burst per distributor
+			pushes: []testPush{
+				{samples: 10, expectedError: nil},
+				{samples: 5, expectedError: nil},
+				{samples: 5, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{samples: 5, expectedError: nil},
+				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+			},
+		},
+		"Test burstFactor burst limit in one burst": {
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstFactor: 2,
+			pushes: []testPush{
+				// Burst is 10 for the distributor (10/2)*2 = 10
+				{samples: 10, expectedError: nil},
+				// We've drained the pool so this should fail until the bucket re-fills in a few seconds
+				{samples: 1, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 			},
 		},
 	}
@@ -673,6 +702,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = testData.ingestionRate
 			limits.IngestionBurstSize = testData.ingestionBurstSize
+			limits.IngestionBurstFactor = testData.ingestionBurstFactor
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{
@@ -682,16 +712,16 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				limits:          limits,
 			})
 
-			// Push samples in multiple requests to the first distributor
+			// Push samples in multiple requests to only the first distributor
 			for _, push := range testData.pushes {
 				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
-					assert.Equal(t, emptyResponse, response)
+					assert.Equal(t, emptyResponse, response, "Received error when a successful write was expected.")
 					assert.Nil(t, err)
 				} else {
-					assert.Nil(t, response)
+					assert.Nil(t, response, "Received successful write response when an error was expected.")
 					checkGRPCError(t, push.expectedError, expectedErrorDetails, err)
 				}
 			}
