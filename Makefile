@@ -65,7 +65,7 @@ JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
 DOC_SOURCES_PATH := docs/sources/mimir
 
 # Doc templates in use
-DOC_TEMPLATES := $(DOC_SOURCES_PATH)/references/configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/configuration/configuration-parameters.template
 
 # Documents to run through embedding
 DOC_EMBED := $(DOC_SOURCES_PATH)/configure/configure-the-query-frontend-work-with-prometheus.md \
