@@ -4,8 +4,8 @@ aliases:
 - ../operators-guide/configuring/reference-configuration-parameters/
 - ../reference-configuration-parameters/
 - ../references/configuration-parameters/
-description: Describes parameters used to configure Grafana Mimir.
-menuTitle: Configuration parameters
+description: Use parameters to configure Grafana Mimir.
+menuTitle: Parameters
 title: Grafana Mimir configuration parameters
 weight: 130
 ---
