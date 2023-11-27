@@ -520,21 +520,23 @@ func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {
 	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
 }
 
-// recomputeOwnedSeries recomputes owned series for current token ranges.
+// recomputeOwnedSeries recomputes owned series for current token ranges, and updates both owned series and shard size.
 //
 // This method returns true, if recomputation of owned series failed multiple times due to too
 // many new series being added during the computation. If no such problem happened, this method returns false.
 //
 // This method and updateTokenRanges should be only called from the same goroutine. (ownedSeries service)
 func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (retry bool) {
-	// We need to recompute owned series, ie. how many series in this user's Head are owned by this ingester (according to
-	// current token ranges), and updates both ownedSeries and ownedSeriesShardSize.
+	retry, _ = u.recomputeOwnedSeriesWithComputeFn(shardSize, reason, logger, u.computeOwnedSeries)
+	return retry
+}
 
-	const (
-		maxAttempts   = 3
-		maxSeriesDiff = 1000
-	)
+const (
+	recomputeOwnedSeriesMaxAttemps    = 3
+	recomputeOwnedSeriesMaxSeriesDiff = 1000
+)
 
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (retry bool, _ int) {
 	start := time.Now()
 
 	prevOwnedSeriesCount, shardSizePrev := u.ownedSeriesAndShards()
@@ -542,17 +544,17 @@ func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log
 	reportError := false
 	attempts := 0
 	var ownedNew int
-	for attempts < maxAttempts {
+	for attempts < recomputeOwnedSeriesMaxAttemps {
 		attempts++
 
-		ownedNew = u.computeOwnedSeries()
+		ownedNew = compute()
 
 		u.ownedSeriesMtx.Lock()
 
 		// Check how many new series were added while we were computing owned series.
 		seriesDiff := u.ownedSeriesCount - prevOwnedSeriesCount
-		seriesDiffOk := seriesDiff >= 0 && seriesDiff < maxSeriesDiff // seriesDiff should always be >= 0, but in case it isn't, we can try again.
-		if seriesDiffOk || attempts == maxAttempts {
+		seriesDiffOk := seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff // seriesDiff should always be >= 0, but in case it isn't, we can try again.
+		if seriesDiffOk || attempts == recomputeOwnedSeriesMaxAttemps {
 			// If less than maxSeriesDiff were added while computing owned series, we can update our values.
 			u.ownedSeriesCount = ownedNew
 			u.ownedSeriesShardSize = shardSize
@@ -583,7 +585,7 @@ func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log
 		"duration", time.Since(start),
 		"attempts", attempts,
 		"updateError", reportError)
-	return reportError
+	return reportError, attempts
 }
 
 // updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
