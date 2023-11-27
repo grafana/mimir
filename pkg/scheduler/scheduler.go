@@ -463,8 +463,8 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		// we need to cancel the downstream req. Only way we can do that is to return a gRPC error
 		// here with code Canceled and close the stream.
 		// Querier is expecting this semantics.
-		s.cancelledRequests.WithLabelValues(req.userID).Inc()
-		return status.Error(codes.Canceled, context.Cause(req.ctx).Error())
+		s.cancelledRequests.WithLabelValues(req.UserID).Inc()
+		return status.Error(codes.Canceled, context.Cause(req.Ctx).Error())
 
 	case err := <-errCh:
 		// Is there was an error handling this request due to network IO,
