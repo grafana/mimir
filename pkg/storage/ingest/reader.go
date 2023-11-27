@@ -89,7 +89,6 @@ func (r *PartitionReader) run(ctx context.Context) error {
 			level.Error(r.logger).Log("msg", "encountered error while fetching", "err", err)
 			continue
 		}
-		level.Debug(r.logger).Log("msg", "fetched records", "num_records", fetches.NumRecords())
 
 		r.recordFetchesLag(fetches)
 		r.consumeFetches(consumeCtx, fetches)
@@ -120,7 +119,6 @@ func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
 	fetches.EachRecord(func(record *kgo.Record) {
-		level.Debug(r.logger).Log("msg", "fetched record", "offset", record.Offset)
 		defer prometheus.NewTimer(r.metrics.processingTime).ObserveDuration()
 
 		err := r.consumer.Consume(ctx, mapRecord(record))
