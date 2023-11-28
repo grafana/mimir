@@ -541,7 +541,7 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 
 	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore int
 
-	success := false
+	success = false
 	attempts := 0
 	for !success && attempts < recomputeOwnedSeriesMaxAttempts {
 		attempts++
