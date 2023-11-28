@@ -1898,9 +1898,7 @@ func (r *activeSeriesResponse) result() []labels.Labels {
 	result := make([]labels.Labels, 0, len(r.series))
 	for _, series := range r.series {
 		result = append(result, series.first)
-		for _, collision := range series.collisions {
-			result = append(result, collision)
-		}
+		result = append(result, series.collisions...)
 	}
 	return result
 }
