@@ -25,13 +25,12 @@ import (
 var ownedSeriesRingOp = ring.NewOp([]ring.InstanceState{ring.PENDING, ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 
 const (
-	recomputeOwnedSeriesReasonEarlyCompaction          = "early compaction"
-	recomputeOwnedSeriesReasonCompaction               = "compaction"
-	recomputeOwnedSeriesReasonNewUser                  = "new user"
-	recomputeOwnedSeriesReasonGetTokenRangesFailed     = "token ranges check failed"
-	recomputeOwnedSeriesReasonComputeOwnedSeriesFailed = "compute owned series failed"
-	recomputeOwnedSeriesReasonRingChanged              = "ring changed"
-	recomputeOwnedSeriesReasonShardSizeChanged         = "shard size changed"
+	recomputeOwnedSeriesReasonEarlyCompaction      = "early compaction"
+	recomputeOwnedSeriesReasonCompaction           = "compaction"
+	recomputeOwnedSeriesReasonNewUser              = "new user"
+	recomputeOwnedSeriesReasonGetTokenRangesFailed = "token ranges check failed"
+	recomputeOwnedSeriesReasonRingChanged          = "ring changed"
+	recomputeOwnedSeriesReasonShardSizeChanged     = "shard size changed"
 )
 
 type ownedSeriesService struct {
@@ -60,7 +59,7 @@ func newOwnedSeriesService(interval time.Duration, instanceID string, ingesterRi
 		getTSDBUsers:         getTSDBUsers,
 		getTSDB:              getTSDB,
 		ownedSeriesCheckDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_owned_series_check_duration",
+			Name:    "cortex_ingester_owned_series_check_duration_seconds",
 			Help:    "How long does it take to check for owned series for all users.",
 			Buckets: prometheus.DefBuckets,
 		}),
@@ -192,8 +191,8 @@ func (oss *ownedSeriesService) updateTenant(userID string, db *userTSDB, ringCha
 	}
 
 	if reason != "" {
-		if db.recomputeOwnedSeries(shardSize, reason, oss.logger) {
-			db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonComputeOwnedSeriesFailed)
+		if !db.recomputeOwnedSeries(shardSize, reason, oss.logger) {
+			db.triggerRecomputeOwnedSeries(reason)
 		}
 		return true
 	}

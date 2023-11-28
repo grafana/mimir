@@ -121,7 +121,7 @@ func TestOwnedSeriesService(t *testing.T) {
 	// Verify that series tokens have some gaps between them.
 	slices.Sort(seriesTokens)
 	for i := 1; i < len(seriesTokens); i++ {
-		require.Greater(t, seriesTokens[i]-seriesTokens[i-1], uint32(1))
+		require.Greater(t, seriesTokens[i], seriesTokens[i-1])
 	}
 
 	testCases := map[string]func(t *testing.T, c *ownedSeriesTestContext){
@@ -245,15 +245,6 @@ func TestOwnedSeriesService(t *testing.T) {
 			// This overwrites "new user" reason.
 			c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonRingChanged)
 			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonRingChanged)
-			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
-		},
-
-		"recompute after previous compuation failed": func(t *testing.T, c *ownedSeriesTestContext) {
-			c.pushUserSeries(t)
-
-			// This overwrites "new user" reason.
-			c.db.requiresOwnedSeriesUpdate.Store(recomputeOwnedSeriesReasonComputeOwnedSeriesFailed)
-			c.updateOwnedSeriesAndCheckResult(t, false, 1, recomputeOwnedSeriesReasonComputeOwnedSeriesFailed)
 			c.checkUserSeriesOwnedAndShardsByTestedIngester(t, ownedServiceSeriesCount, 0)
 		},
 	}

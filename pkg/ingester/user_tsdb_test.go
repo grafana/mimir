@@ -242,10 +242,10 @@ func TestGetSeriesAndShardsForSeriesLimit(t *testing.T) {
 func TestRecomputeOwnedSeries(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		db := userTSDB{userID: "test"}
-		retry, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
 			return 10
 		})
-		require.False(t, retry)
+		require.True(t, success)
 		require.Equal(t, 1, attempts)
 		require.Equal(t, 10, db.ownedSeriesCount)
 		require.Equal(t, 5, db.ownedSeriesShardSize)
@@ -253,12 +253,12 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 
 	t.Run("increase during computation, but within limit", func(t *testing.T) {
 		db := userTSDB{userID: "test"}
-		retry, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
 			db.ownedSeriesCount += recomputeOwnedSeriesMaxSeriesDiff / 2
 			return 10
 		})
 
-		require.False(t, retry)
+		require.True(t, success)
 		require.Equal(t, 1, attempts)
 		require.Equal(t, 10, db.ownedSeriesCount)
 		require.Equal(t, 5, db.ownedSeriesShardSize)
@@ -268,19 +268,19 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		db := userTSDB{userID: "test"}
 
 		// All but last modifications of ownedSeries during compute will exceed the limit.
-		mods := make([]int, recomputeOwnedSeriesMaxAttemps)
+		mods := make([]int, recomputeOwnedSeriesMaxAttempts)
 		for i := 0; i < len(mods)-1; i++ {
 			mods[i] = 2 * recomputeOwnedSeriesMaxSeriesDiff
 		}
 		mods[len(mods)-1] = recomputeOwnedSeriesMaxSeriesDiff
 
-		retry, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
 			db.ownedSeriesCount += mods[0]
 			mods = mods[1:]
 			return 10
 		})
-		require.False(t, retry)
-		require.Equal(t, recomputeOwnedSeriesMaxAttemps, attempts)
+		require.True(t, success)
+		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
 		require.Equal(t, 10, db.ownedSeriesCount)
 		require.Equal(t, 5, db.ownedSeriesShardSize)
 	})
@@ -289,18 +289,18 @@ func TestRecomputeOwnedSeries(t *testing.T) {
 		db := userTSDB{userID: "test"}
 
 		// All modifications of ownedSeries will exceed the limit.
-		mods := make([]int, recomputeOwnedSeriesMaxAttemps)
+		mods := make([]int, recomputeOwnedSeriesMaxAttempts)
 		for i := 0; i < len(mods); i++ {
 			mods[i] = 2 * recomputeOwnedSeriesMaxSeriesDiff
 		}
 
-		retry, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
+		success, attempts := db.recomputeOwnedSeriesWithComputeFn(5, "test", log.NewNopLogger(), func() int {
 			db.ownedSeriesCount += mods[0]
 			mods = mods[1:]
 			return 10
 		})
-		require.True(t, retry)
-		require.Equal(t, recomputeOwnedSeriesMaxAttemps, attempts)
+		require.False(t, success)
+		require.Equal(t, recomputeOwnedSeriesMaxAttempts, attempts)
 		require.Equal(t, 10, db.ownedSeriesCount)
 		require.Equal(t, 5, db.ownedSeriesShardSize)
 	})
