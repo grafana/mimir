@@ -27,7 +27,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go/config"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -212,7 +214,7 @@ func TestSchedulerEnqueueWithFrontendDisconnect(t *testing.T) {
 	verifyNoPendingRequestsLeft(t, scheduler)
 }
 
-func TestCancelRequestInProgress(t *testing.T) {
+func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -241,6 +243,38 @@ func TestCancelRequestInProgress(t *testing.T) {
 	// Note: testing on querierLoop.Context() cancellation didn't work :(
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
 	require.Error(t, err)
+
+	verifyNoPendingRequestsLeft(t, scheduler)
+}
+
+func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:        schedulerpb.ENQUEUE,
+		QueryID:     1,
+		UserID:      "test",
+		HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	})
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// At this point, scheduler assumes that querier is processing the request (until it receives empty QuerierToScheduler message back).
+	// Simulate frontend disconnect.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](frontendLoop))
+
+	// Add a little sleep to make sure that scheduler notices frontend disconnect.
+	time.Sleep(500 * time.Millisecond)
+
+	// Wait for querier to receive notification that query was cancelled.
+	_, err = querierLoop.Recv()
+	require.Equal(t, codes.Canceled, status.Code(err))
 
 	verifyNoPendingRequestsLeft(t, scheduler)
 }

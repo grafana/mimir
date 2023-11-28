@@ -115,7 +115,7 @@ github.com/armon/go-metrics/prometheus
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.48.0
+# github.com/aws/aws-sdk-go v1.48.4
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -312,7 +312,7 @@ github.com/efficientgo/core/testutil/internal
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.4.0
+# github.com/failsafe-go/failsafe-go v0.4.1
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/circuitbreaker
@@ -534,7 +534,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20231123180833-92f548171755
+# github.com/grafana/dskit v0.0.0-20231126215014-4cfd2dc0d14c
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/cache

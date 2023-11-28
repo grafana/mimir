@@ -426,7 +426,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		subservices = append(subservices, distributorsLifecycler, distributorsRing)
 		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
-		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), d)
+		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
 	}
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
@@ -971,7 +971,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
+
+			burstSize := d.limits.IngestionBurstSize(userID)
+			if d.limits.IngestionBurstFactor(userID) > 0 {
+				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
+			}
+			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1436,15 +1441,32 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 		// Nothing to do.
 	}
 
-	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx), wrappedF, cleanup)
+	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
 }
 
-func (d *Distributor) queryQuorumConfig(ctx context.Context) ring.DoUntilQuorumConfig {
+func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
 	logger := spanlogger.FromContext(ctx, d.log)
+
+	zoneSorter := func(zones []string) []string {
+		inactiveCount := make(map[string]int, len(zones))
+
+		for _, i := range replicationSet.Instances {
+			if i.State != ring.ACTIVE {
+				inactiveCount[i.Zone]++
+			}
+		}
+
+		slices.SortFunc(zones, func(a, b string) int {
+			return inactiveCount[a] - inactiveCount[b]
+		})
+
+		return zones
+	}
 
 	return ring.DoUntilQuorumConfig{
 		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
 		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
+		ZoneSorter:       zoneSorter,
 		Logger:           logger,
 	}
 }
@@ -1653,7 +1675,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return struct{}{}, err
@@ -2006,7 +2028,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return zonedUserStatsResponse{}, err

@@ -1,5 +1,11 @@
 ## Upcoming Release
 
+## 0.4.1
+
+## Bug Fixes
+
+- Fixed #22 - RetryPolicy with ReturnLastFailure returning too late
+
 ## 0.4.0
 
 ## Improvements

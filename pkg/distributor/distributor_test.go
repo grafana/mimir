@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"sort"
 	"strconv"
@@ -629,15 +630,17 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors       int
-		ingestionRate      float64
-		ingestionBurstSize int
-		pushes             []testPush
+		distributors         int
+		ingestionRate        float64
+		ingestionBurstSize   int
+		ingestionBurstFactor float64
+		pushes               []testPush
 	}{
 		"evenly share the ingestion limit across distributors": {
-			distributors:       2,
-			ingestionRate:      10,
-			ingestionBurstSize: 5,
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstSize:   5,
+			ingestionBurstFactor: 0,
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
@@ -648,9 +651,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			},
 		},
 		"for each distributor, set an ingestion burst limit.": {
-			distributors:       2,
-			ingestionRate:      10,
-			ingestionBurstSize: 20,
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstSize:   20,
+			ingestionBurstFactor: 0,
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
@@ -658,6 +662,32 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{samples: 5, expectedError: nil},
 				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
+			},
+		},
+		"evenly share the ingestion burst limit across distributors": {
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstFactor: 4,
+			// This is equivalent to the test above because the ingestion rate and burst are per distributor with the burst factor meaning the burst would be:
+			// (10 (ingest rate) / 2 (number of distributors)) * 4 (burst factor)= 20 burst per distributor
+			pushes: []testPush{
+				{samples: 10, expectedError: nil},
+				{samples: 5, expectedError: nil},
+				{samples: 5, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{samples: 5, expectedError: nil},
+				{samples: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+				{metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 40).Error())},
+			},
+		},
+		"Test burstFactor burst limit in one burst": {
+			distributors:         2,
+			ingestionRate:        10,
+			ingestionBurstFactor: 2,
+			pushes: []testPush{
+				// Burst is 10 for the distributor (10/2)*2 = 10
+				{samples: 10, expectedError: nil},
+				// We've drained the pool so this should fail until the bucket re-fills in a few seconds
+				{samples: 1, metadata: 1, expectedError: status.New(codes.ResourceExhausted, newIngestionRateLimitedError(10, 20).Error())},
 			},
 		},
 	}
@@ -672,6 +702,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = testData.ingestionRate
 			limits.IngestionBurstSize = testData.ingestionBurstSize
+			limits.IngestionBurstFactor = testData.ingestionBurstFactor
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{
@@ -681,16 +712,16 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				limits:          limits,
 			})
 
-			// Push samples in multiple requests to the first distributor
+			// Push samples in multiple requests to only the first distributor
 			for _, push := range testData.pushes {
 				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
-					assert.Equal(t, emptyResponse, response)
+					assert.Equal(t, emptyResponse, response, "Received error when a successful write was expected.")
 					assert.Nil(t, err)
 				} else {
-					assert.Nil(t, response)
+					assert.Nil(t, response, "Received successful write response when an error was expected.")
 					checkGRPCError(t, push.expectedError, expectedErrorDetails, err)
 				}
 			}
@@ -5444,6 +5475,148 @@ func TestSendMessageMetadata(t *testing.T) {
 
 	// Verify that d.send added message size to metadata.
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
+}
+
+func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
+	testCases := map[string]struct {
+		instances []ring.InstanceDesc
+		verify    func(t *testing.T, sortedZones []string)
+	}{
+		"no instances": {
+			instances: []ring.InstanceDesc{},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Empty(t, sortedZones)
+			},
+		},
+		"one zone": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"many zones, all instances active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+		"many zones, one instance in one zone not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones, "all zones should be present")
+				require.Equal(t, "zone-b", sortedZones[2], "zone with inactive instance should be last, but got %v", sortedZones)
+			},
+		},
+		"many zones, one instance in multiple zones not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.ACTIVE},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones, "all zones should be present")
+
+				// We don't care about the order of A and B, just that they're last.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b"}, sortedZones[1:], "zones with inactive instance should be last, but got %v", sortedZones)
+			},
+		},
+		"many zones, each with one instance not active": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+		"many zones, some with more inactive instances than others": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.ACTIVE},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.ACTIVE},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a", "zone-c", "zone-b"}, sortedZones, "expected zones with the least number of inactive instances to be first")
+			},
+		},
+		"many zones, all instances inactive": {
+			instances: []ring.InstanceDesc{
+				{Addr: "zone-a-instance-1", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-a-instance-2", Zone: "zone-a", State: ring.PENDING},
+				{Addr: "zone-b-instance-1", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-b-instance-2", Zone: "zone-b", State: ring.PENDING},
+				{Addr: "zone-c-instance-1", Zone: "zone-c", State: ring.PENDING},
+				{Addr: "zone-c-instance-2", Zone: "zone-c", State: ring.PENDING},
+			},
+			verify: func(t *testing.T, sortedZones []string) {
+				// We don't care about the order.
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+	}
+
+	d := &Distributor{
+		cfg: Config{},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			replicationSet := ring.ReplicationSet{
+				Instances:            testCase.instances,
+				ZoneAwarenessEnabled: true,
+			}
+
+			cfg := d.queryQuorumConfig(context.Background(), replicationSet)
+			sorted := cfg.ZoneSorter(uniqueZones(testCase.instances))
+
+			testCase.verify(t, sorted)
+		})
+	}
+}
+
+func uniqueZones(instances []ring.InstanceDesc) []string {
+	var zones []string
+
+	for _, i := range instances {
+		if !slices.Contains(zones, i.Zone) {
+			zones = append(zones, i.Zone)
+		}
+	}
+
+	// Randomly shuffle the zones to ensure that the test case doesn't pass by coincidence.
+	rand.Shuffle(len(zones), func(i, j int) {
+		zones[i], zones[j] = zones[j], zones[i]
+	})
+
+	return zones
 }
 
 type mockInstanceClient struct {

@@ -88,6 +88,8 @@
 * [ENHANCEMENT] Distributor: Include source IPs in OTLP push handler logs. #6652
 * [ENHANCEMENT] Query-frontend: return clearer error message when a query request is received while shutting down. #6675
 * [ENHANCEMENT] Querier: return clearer error message when a query request is cancelled by the caller. #6697
+* [ENHANCEMENT] Compactor: Mark corrupted blocks for no-compaction to avoid blocking compactor future runs. #6588
+* [ENHANCEMENT] Distributor: Added an experimental configuration option `distributor.ingestion-burst-factor` that overrides the `distributor.ingestion-burst-size` option if set. The `distributor.ingestion-burst-factor` is used to set the underlying ingestion rate limiter token bucket's burst size to a multiple of the per distributor `distributor.ingestion-rate-limit` and the `distributor.ingestion-burst-factor`. This is disabled by default. #6662
 * [BUGFIX] Distributor: return server overload error in the event of exceeding the ingestion rate limit. #6549
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
@@ -104,6 +106,8 @@
 * [BUGFIX] Querier: fix issue where queries fail with "context canceled" error when an ingester or store-gateway fails healthcheck while the query is in progress. #6550
 * [BUGFIX] Tracing: When creating an OpenTelemetry tracing span, add it to the context for later retrieval. #6614
 * [BUGFIX] Querier: always report query results to query-frontends, even when cancelled, to ensure query-frontends don't wait for results that will otherwise never arrive. #6703
+* [BUGFIX] Querier: attempt to query ingesters in PENDING state, to reduce the likelihood that scaling up the number of ingesters in multiple zones simultaneously causes a read outage. #6726 #6727
+* [BUGFIX] Querier: don't cancel inflight queries from a query-scheduler if the stream between the querier and query-scheduler is broken. #6728
 
 ### Mixin
 
@@ -150,7 +154,8 @@
 
 ### Documentation
 
-* [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #5956 #6488 #6539
+* [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #5956 #6488 #6539 #6752
+* [ENHANCEMENT] Document native histograms query and visualization. #6231
 
 ### Tools
 

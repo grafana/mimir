@@ -162,7 +162,7 @@ func (e *execution[R]) InitializeAttempt(policyIndex int) bool {
 	}
 	e.attempts.Add(1)
 	e.attemptStartTime = time.Now()
-	if e.isCanceledForPolicy(-1) {
+	if e.isCanceled() {
 		*e.canceledIndex = -1
 		*e.canceled = nil
 	}
@@ -173,7 +173,7 @@ func (e *execution[R]) Record(result *common.PolicyResult[R]) *common.PolicyResu
 	e.mtx.Lock()
 	defer e.mtx.Unlock()
 	e.executions.Add(1)
-	if !e.isCanceledForPolicy(-1) {
+	if !e.isCanceled() {
 		*e.result = result
 		e.lastResult = result.Result
 		e.lastError = result.Error
@@ -184,7 +184,7 @@ func (e *execution[R]) Record(result *common.PolicyResult[R]) *common.PolicyResu
 func (e *execution[R]) Cancel(policyIndex int, result *common.PolicyResult[R]) {
 	e.mtx.Lock()
 	defer e.mtx.Unlock()
-	if e.isCanceledForPolicy(-1) {
+	if e.isCanceled() {
 		return
 	}
 	*e.result = result
@@ -198,6 +198,11 @@ func (e *execution[R]) Cancel(policyIndex int, result *common.PolicyResult[R]) {
 	}
 }
 
+// Requires locking externally.
+func (e *execution[R]) isCanceled() bool {
+	return *e.canceledIndex != -1
+}
+
 func (e *execution[R]) IsCanceledForPolicy(policyIndex int) bool {
 	e.mtx.Lock()
 	defer e.mtx.Unlock()
@@ -206,7 +211,7 @@ func (e *execution[R]) IsCanceledForPolicy(policyIndex int) bool {
 
 // Requires locking externally.
 func (e *execution[R]) isCanceledForPolicy(policyIndex int) bool {
-	return *e.canceledIndex > policyIndex
+	return *e.canceledIndex >= policyIndex && *e.canceledIndex != -1
 }
 
 func (e *execution[R]) Copy() Execution[R] {
