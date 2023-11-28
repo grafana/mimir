@@ -1234,7 +1234,6 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
