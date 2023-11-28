@@ -151,8 +151,6 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
 	}
-	// Limit at maxSize+1 so we can tell when the size is exceeded
-	reader = io.LimitReader(reader, int64(maxSize)+1)
 	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
 		return nil, err
@@ -217,8 +215,9 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 			buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
 		}
 
+		// Limit at maxSize+1 so we can tell when the size is exceeded
+		reader = io.LimitReader(reader, int64(maxSize)+1)
 		if _, err := buf.ReadFrom(reader); err != nil {
-			// TODO: Translate error
 			return nil, errors.Wrap(err, "read write request")
 		}
 
