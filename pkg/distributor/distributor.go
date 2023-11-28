@@ -132,6 +132,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
@@ -357,6 +358,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   newSampleValidationMetrics(reg),
 		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
 		metadataValidationMetrics: newMetadataValidationMetrics(reg),
+
+		hashCollisionCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_hash_collisions_total",
+			Help: "Number of times a hash collision was detected when de-duplicating samples.",
+		}),
 	}
 
 	// Initialize expected rejected request labels
@@ -1799,7 +1805,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	res := newActiveSeriesResponse()
+	res := newActiveSeriesResponse(d.hashCollisionCount)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
@@ -1848,16 +1854,18 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 // activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
 type activeSeriesResponse struct {
-	m       sync.Mutex
-	series  map[uint64]labels.Labels
-	builder labels.ScratchBuilder
-	lbls    labels.Labels
+	m                  sync.Mutex
+	series             map[uint64]labels.Labels
+	builder            labels.ScratchBuilder
+	lbls               labels.Labels
+	hashCollisionCount prometheus.Counter
 }
 
-func newActiveSeriesResponse() *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
 	return &activeSeriesResponse{
-		series:  make(map[uint64]labels.Labels),
-		builder: labels.NewScratchBuilder(40),
+		series:             make(map[uint64]labels.Labels),
+		builder:            labels.NewScratchBuilder(40),
+		hashCollisionCount: hashCollisionCount,
 	}
 }
 
@@ -1868,8 +1876,12 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
 	for _, metric := range series {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
-		if _, ok := r.series[lblHash]; !ok {
+		if resultLbls, ok := r.series[lblHash]; !ok {
 			r.series[lblHash] = r.lbls.Copy()
+		} else if !labels.Equal(resultLbls, r.lbls) {
+			// For now, we just count the number of collisions to be able to tell how big the
+			// effects of hash collisions are.
+			r.hashCollisionCount.Inc()
 		}
 	}
 }
