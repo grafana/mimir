@@ -69,6 +69,7 @@
     storage_azure_account_key: error 'must specify Azure account key',
 
     jaeger_agent_host: null,
+    querier_jaeger_reporter_max_queue_size: 5000,
 
     // Allow to configure the alertmanager disk.
     alertmanager_data_disk_size: '100Gi',
