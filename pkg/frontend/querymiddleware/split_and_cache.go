@@ -135,6 +135,7 @@ func newSplitAndCacheMiddleware(
 }
 
 func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+	spanLog := spanlogger.FromContext(ctx, s.logger)
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -163,6 +164,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
 			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, cacheUnalignedRequests, s.logger); !cachable {
+				level.Debug(spanLog).Log("msg", "skipping response cache as query is not cacheable", "query", splitReq.orig.GetQuery(), "reason", reason, "tenants", tenant.JoinTenantIDs(tenantIDs))
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue

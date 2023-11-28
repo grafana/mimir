@@ -556,7 +556,6 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.max-total-query-length=12000h
         - -query-frontend.query-sharding-target-series-per-shard=2500
         - -query-frontend.results-cache.backend=redis

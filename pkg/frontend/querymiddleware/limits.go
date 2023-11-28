@@ -97,6 +97,9 @@ type Limits interface {
 
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
+
+	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
+	AlignQueriesWithStep(userID string) bool
 }
 
 type limitsMiddleware struct {
