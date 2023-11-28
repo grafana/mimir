@@ -47,6 +47,7 @@
       - "-activity-tracker.filepath=/activity/mimir-backend-1"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-backend-1"
     "image": "mimir"
@@ -66,6 +67,7 @@
       - "-activity-tracker.filepath=/activity/mimir-backend-2"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-backend-2"
     "image": "mimir"
@@ -85,6 +87,7 @@
       - "-activity-tracker.filepath=/activity/mimir-read-1"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-read-1"
     "image": "mimir"
@@ -104,6 +107,7 @@
       - "-activity-tracker.filepath=/activity/mimir-read-2"
     "depends_on":
       - "minio"
+      - "kafka"
     "environment": []
     "hostname": "mimir-read-2"
     "image": "mimir"

@@ -2,11 +2,12 @@ package ingest
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -34,7 +35,7 @@ type PartitionReader struct {
 
 	kafkaAddress string
 	kafkaTopic   string
-	partition    int32
+	partitionID  int32
 
 	client *kgo.Client
 
@@ -50,7 +51,7 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer Reco
 	r := &PartitionReader{
 		kafkaAddress: kafkaAddress,
 		kafkaTopic:   kafkaTopic,
-		partition:    partitionID,
+		partitionID:  partitionID,
 		reg:          reg,
 		consumer:     consumer, // TODO consume records in parallel
 		metrics:      metrics,
@@ -62,7 +63,7 @@ func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer Reco
 }
 
 func (r *PartitionReader) start(ctx context.Context) error {
-	offset, err := r.fetchLastCommittedOffset(ctx)
+	offset, err := r.fetchLastCommittedOffsetWithRetries(ctx)
 	if err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches
 	if err != nil {
 		level.Error(r.logger).Log("msg", "encountered error while committing offsets", err)
 	} else {
-		committedOffset, _ := committed.Lookup(r.kafkaTopic, r.partition)
+		committedOffset, _ := committed.Lookup(r.kafkaTopic, r.partitionID)
 		level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
 	}
 }
@@ -144,16 +145,17 @@ func (r *PartitionReader) recordFetchesLag(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) newKafkaReader(offset int64, reg prometheus.Registerer) (*kgo.Client, error) {
+	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics("cortex_ingest_storage_reader",
-		kprom.Registerer(reg),
-		kprom.WithClientLabel(),
+		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(r.partitionID))}, reg)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	client, err := kgo.NewClient(
-		kgo.ClientID(fmt.Sprintf("partition-%d", r.partition)),
+		// Target only read-path backend agents.
+		kgo.ClientID("warpstream_proxy_target=proxy-consume"),
 		kgo.SeedBrokers(r.kafkaAddress),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			r.kafkaTopic: {r.partition: kgo.NewOffset().At(offset)},
+			r.kafkaTopic: {r.partitionID: kgo.NewOffset().At(offset)},
 		}),
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(100_000_000),
@@ -171,6 +173,33 @@ func (r *PartitionReader) newKafkaReader(offset int64, reg prometheus.Registerer
 	return client, nil
 }
 
+func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Context) (offset int64, err error) {
+	var (
+		retry = backoff.New(ctx, backoff.Config{
+			MinBackoff: 100 * time.Millisecond,
+			MaxBackoff: 2 * time.Second,
+			MaxRetries: 10,
+		})
+	)
+
+	for retry.Ongoing() {
+		offset, err = r.fetchLastCommittedOffset(ctx)
+		if err == nil {
+			return offset, nil
+		}
+
+		level.Warn(r.logger).Log("msg", "failed to fetch last committed offset", "partition", r.partitionID, "err", err)
+		retry.Wait()
+	}
+
+	// Handle the case the context was canceled before the first attempt.
+	if err == nil {
+		err = retry.Err()
+	}
+
+	return 0, err
+}
+
 func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, error) {
 	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaAddress))
 	if err != nil {
@@ -183,7 +212,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 	if err != nil {
 		return 0, errors.Wrap(err, "unable to fetch group offsets")
 	}
-	offset, _ := offsets.Lookup(r.kafkaTopic, r.partition)
+	offset, _ := offsets.Lookup(r.kafkaTopic, r.partitionID)
 	return offset.Offset, nil
 }
 

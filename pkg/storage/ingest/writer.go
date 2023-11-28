@@ -2,7 +2,7 @@ package ingest
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -145,14 +145,15 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, err
 func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 	logger := log.With(w.logger, "partition", partitionID)
 
+	// Do not export the client ID, because we use it to specify options to the backend.
 	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(w.registerer),
-		kprom.WithClientLabel(),
+		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	// TODO tune timeouts
 	return kgo.NewClient(
-		kgo.ClientID(fmt.Sprintf("partition-%d", partitionID)),
+		// Target only write-path backend agents.
+		kgo.ClientID("warpstream_proxy_target=proxy-produce"),
 		kgo.SeedBrokers(w.kafkaAddress),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.AllowAutoTopicCreation(),
