@@ -539,37 +539,31 @@ const (
 func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (failed bool, _ int) {
 	start := time.Now()
 
-	prevOwnedSeriesCount, shardSizePrev := u.ownedSeriesAndShards()
+	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore int
 
 	success := false
 	attempts := 0
-	var ownedNew int
-	for attempts < recomputeOwnedSeriesMaxAttempts {
+	for !success && attempts < recomputeOwnedSeriesMaxAttempts {
 		attempts++
 
-		ownedNew = compute()
+		ownedSeriesBefore, shardSizeBefore = u.ownedSeriesAndShards()
+
+		ownedSeriesNew = compute()
 
 		u.ownedSeriesMtx.Lock()
 
 		// Check how many new series were added while we were computing owned series.
-		seriesDiff := u.ownedSeriesCount - prevOwnedSeriesCount
-		seriesDiffOk := seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff // seriesDiff should always be >= 0, but in case it isn't, we can try again.
-		if seriesDiffOk || attempts == recomputeOwnedSeriesMaxAttempts {
-			// If less than "max series diff" were added while computing owned series, we can update our values.
-			u.ownedSeriesCount = ownedNew
-			u.ownedSeriesShardSize = shardSize
-			u.ownedSeriesMtx.Unlock()
-
-			if seriesDiffOk {
-				success = true
-			}
-			break
+		// If too many series were created in the meantime, our new number of owned series may be wrong
+		// (it may or may not include the new series, we don't know).
+		// In that case, just run the computation again -- if there are more attempts left.
+		seriesDiff := u.ownedSeriesCount - ownedSeriesBefore
+		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
+			success = true
 		}
 
-		// If too many series were created in the meantime, our new number of owned series may be wrong
-		// (it may or may not include the new series, we don't know). In that case, just run the computation again.
-		prevOwnedSeriesCount = u.ownedSeriesCount
-		shardSizePrev = u.ownedSeriesShardSize
+		// Even if we run computation again, we can start using our (possibly incorrect) values already.
+		u.ownedSeriesCount = ownedSeriesNew
+		u.ownedSeriesShardSize = shardSize
 
 		u.ownedSeriesMtx.Unlock()
 	}
@@ -583,10 +577,10 @@ func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason strin
 	l.Log("msg", "owned series: recomputed owned series for user",
 		"user", u.userID,
 		"reason", reason,
-		"ownedSeriesBefore", prevOwnedSeriesCount,
-		"ownedSeriesAfter", ownedNew,
-		"shardSizeBefore", shardSizePrev,
-		"shardSizeAfter", shardSize,
+		"ownedSeriesBefore", ownedSeriesBefore,
+		"ownedSeriesNew", ownedSeriesNew,
+		"shardSizeBefore", shardSizeBefore,
+		"shardSizeNew", shardSize,
 		"duration", time.Since(start),
 		"attempts", attempts,
 		"success", success)
