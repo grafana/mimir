@@ -20,7 +20,7 @@ To enable support for querying native histograms together with [Grafana Mimir qu
 To enable ingesting Prometheus native histograms over the [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint for all tenants, set the flag `-ingester.native-histograms-ingestion-enabled=true` on the ingesters.
 
 To limit the number of native histogram buckets per sample, set the `-validation.max-native-histogram-buckets` flag on the distributors.
-The recommended value is 160 which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms, which are a similar concept in OpenTelemetry.
+The recommended value is `160` which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms.Exponential histograms in OpenTelemetry are a similar concept to Prometheus native histograms.
 At the time of ingestion, samples with more buckets than the limit will be dropped.
 
 ## Configure native histograms per tenant
@@ -28,7 +28,7 @@ At the time of ingestion, samples with more buckets than the limit will be dropp
 To enable ingesting Prometheus native histograms over the [remote write API]({{< relref "../references/http-api#remote-write" >}}) for a tenant, set the `native_histograms_ingestion_enabled` runtime value to `true`.
 
 To limit the number of native histogram buckets per sample for a tenant, set the `max_native_histogram_buckets` runtime value.
-The recommended value is 160 which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms, which are a similar concept in OpenTelemetry.
+The recommended value is `160` which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms.Exponential histograms in OpenTelemetry are a similar concept to Prometheus native histograms.
 At the time of ingestion, samples with more buckets than the limit will be dropped.
 
 ```yaml
