@@ -106,7 +106,7 @@ In that case, the current value is an accumulated value over the lifespan of the
 
 When creating a Grafana dashboard for your native histogram, the most relevant panel types are [Histogram](/docs/grafana/latest/panels-visualizations/visualizations/histogram/) and [Heatmap](/docs/grafana/latest/panels-visualizations/visualizations/heatmap/).
 
-In [Explore](https://grafana.com/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum`, and `histogram_quantile` will result in normal floating point series that you can plot as usual.
+In [Explore](/docs/grafana/latest/explore/), the functions `histogram_count`, `histogram_sum`, and `histogram_quantile` will result in normal floating point series that you can plot as usual.
 
 {{% admonition type="note" %}}
 Visualizing native histogram series directly in the **Explore** view is a work in progress.
