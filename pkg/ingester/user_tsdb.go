@@ -536,7 +536,7 @@ const (
 	recomputeOwnedSeriesMaxSeriesDiff = 1000
 )
 
-func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (failed bool, _ int) {
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
 	start := time.Now()
 
 	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore int
