@@ -2209,6 +2209,8 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 func TestDistributor_ActiveSeries(t *testing.T) {
 	const numIngesters = 5
 
+	collision1, collision2 := labelsWithHashCollision()
+
 	pushedData := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -2217,6 +2219,8 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_1", "team", "a"), 1, 100000},
 		{labels.FromStrings(labels.MetricName, "test_1", "team", "b"), 1, 110000},
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{collision1, 3, 300000},
+		{collision2, 4, 300000},
 	}
 	tests := map[string]struct {
 		shuffleShardSize            int
@@ -2239,6 +2243,11 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_2")},
 			expectedSeries:              []labels.Labels{pushedData[2].lbls},
 			expectedNumQueriedIngesters: 3,
+		},
+		"should return all matching series even if their hash collides": {
+			requestMatchers:             []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")},
+			expectedSeries:              []labels.Labels{collision1, collision2},
+			expectedNumQueriedIngesters: numIngesters,
 		},
 	}
 
@@ -2277,6 +2286,48 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		})
 	}
 
+}
+
+func BenchmarkDistributor_ActiveSeries(b *testing.B) {
+	const numIngesters = 3
+	const numSeries = 10e3
+
+	// Create distributor and ingesters.
+	distributors, _, _ := prepare(b, prepConfig{
+		numIngesters:    numIngesters,
+		happyIngesters:  numIngesters,
+		numDistributors: 1,
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	// Push test data.
+	metrics := make([][]mimirpb.LabelAdapter, numSeries)
+	samples := make([]mimirpb.Sample, numSeries)
+
+	for i := 0; i < numSeries; i++ {
+		metrics[i] = mkLabels(10)
+		metrics[i] = append(metrics[i], mimirpb.LabelAdapter{Name: "series_no", Value: fmt.Sprintf("series_%d", i)})
+		samples[i] = mimirpb.Sample{TimestampMs: time.Now().UnixNano() / int64(time.Millisecond), Value: 1}
+	}
+
+	_, err := distributors[0].Push(
+		ctx,
+		mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API),
+	)
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	// Run the benchmark.
+	for n := 0; n < b.N; n++ {
+		_, err := distributors[0].ActiveSeries(
+			ctx,
+			[]*labels.Matcher{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "foo")},
+		)
+		require.NoError(b, err)
+	}
 }
 
 func TestDistributor_LabelNames(t *testing.T) {
@@ -2642,6 +2693,25 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	require.Equal(t, 10000, len(response.Items[0].Values))
+}
+
+// copied from pkg/ingester/activeseries/active_series_test.go
+func labelsWithHashCollision() (labels.Labels, labels.Labels) {
+	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions
+	ls1 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "l6CQ5y")
+	ls2 := labels.FromStrings("__name__", "metric", "lbl1", "value", "lbl2", "v7uDlF")
+
+	if ls1.Hash() != ls2.Hash() {
+		// These ones are the same when using -tags stringlabels
+		ls1 = labels.FromStrings("__name__", "metric", "lbl", "HFnEaGl")
+		ls2 = labels.FromStrings("__name__", "metric", "lbl", "RqcXatm")
+	}
+
+	if ls1.Hash() != ls2.Hash() {
+		panic("This code needs to be updated: find new labels with colliding hash values.")
+	}
+
+	return ls1, ls2
 }
 
 func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (context.Context, []*Distributor) {
@@ -3303,7 +3373,7 @@ type prepConfig struct {
 	timeOut bool
 }
 
-func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
 	ingesters := []mockIngester{}
 	for i := 0; i < cfg.happyIngesters; i++ {
 		zone := ""
