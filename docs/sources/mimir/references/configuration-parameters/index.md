@@ -1169,6 +1169,22 @@ instance_limits:
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
 [return_only_grpc_errors: <boolean> | default = false]
+
+# (experimental) When enabled, only series currently owned by ingester according
+# to the ring are used when checking user per-tenant series limit.
+# CLI flag: -ingester.use-ingester-owned-series-for-limits
+[use_ingester_owned_series_for_limits: <boolean> | default = false]
+
+# (experimental) This option enables tracking of ingester-owned series based on
+# ring state, even if -ingester.use-ingester-owned-series-for-limits is
+# disabled.
+# CLI flag: -ingester.track-ingester-owned-series
+[track_ingester_owned_series: <boolean> | default = false]
+
+# (experimental) How often to check for ring changes and possibly recompute
+# owned series as a result of detected change.
+# CLI flag: -ingester.owned-series-update-interval
+[owned_series_update_interval: <duration> | default = 15s]
 ```
 
 ### querier

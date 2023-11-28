@@ -3031,6 +3031,39 @@
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "use_ingester_owned_series_for_limits",
+          "required": false,
+          "desc": "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.use-ingester-owned-series-for-limits",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "track_ingester_owned_series",
+          "required": false,
+          "desc": "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.track-ingester-owned-series",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "owned_series_update_interval",
+          "required": false,
+          "desc": "How often to check for ring changes and possibly recompute owned series as a result of detected change.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15000000000,
+          "fieldFlag": "ingester.owned-series-update-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
