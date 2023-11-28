@@ -157,6 +157,7 @@
 * [CHANGE] Changed default `_config.cluster_domain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [CHANGE] Query-frontend: changed default `_config.autoscaling_query_frontend_cpu_target_utilization` from `1` to `0.75`. #6395
 * [CHANGE] Distributor: Increase HPA scale down period such that distributors are slower to scale down after autoscaling up. #6589
+* [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
 * [FEATURE] Store-gateway: Allow automated zone-by-zone downscaling, that can be enabled via the `store_gateway_automated_downscale_enabled` flag. It is disabled by default. #6149
 * [FEATURE] Ingester: Allow to configure TSDB Head early compaction using the following `_config` parameters: #6181
   * `ingester_tsdb_head_early_compaction_enabled` (disabled by default)
