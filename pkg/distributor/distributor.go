@@ -1883,10 +1883,23 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
 			r.series[lblHash] = entry{first: r.lbls.Copy()}
-		} else if !labels.Equal(e.first, r.lbls) {
-			e.collisions = append(e.collisions, r.lbls.Copy())
-			r.series[lblHash] = e
-			r.hashCollisionCount.Inc()
+		} else {
+			// A series with this hash is already present in the result set, we need to
+			// detect potential hash collisions by comparing the labels of the candidate to
+			// the labels in the result set and add the candidate if it's not present.
+			present := labels.Equal(e.first, r.lbls)
+			for _, lbls := range e.collisions {
+				if present {
+					break
+				}
+				present = labels.Equal(lbls, r.lbls)
+			}
+
+			if !present {
+				e.collisions = append(e.collisions, r.lbls.Copy())
+				r.series[lblHash] = e
+				r.hashCollisionCount.Inc()
+			}
 		}
 	}
 }
