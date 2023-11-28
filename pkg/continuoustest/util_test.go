@@ -337,9 +337,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 			},
 			series: 1,
 			expectedOutput: `Timestamp      Expected  Actual
-1701142010000  -0.913545  -0.913545
-1701142020000  -0.951057  -0.951057
-1701142030000  -0.978148  -0.978148
+1701142010000  -0.9135  -0.9135
+1701142020000  -0.9511  -0.9511
+1701142030000  -0.9781  -0.9781
 `,
 		},
 		"all values match, multiple expected series": {
@@ -350,9 +350,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
-1701142010000  -2.740636  -2.740636
-1701142020000  -2.853170  -2.853170
-1701142030000  -2.934443  -2.934443
+1701142010000  -2.7406  -2.7406
+1701142020000  -2.8532  -2.8532
+1701142030000  -2.9344  -2.9344
 `,
 		},
 		"one value differs": {
@@ -363,9 +363,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
-1701142010000  -2.740636  -2.740636
-1701142020000  -2.853170  -1.853170  (value differs!)
-1701142030000  -2.934443  -2.934443
+1701142010000  -2.7406  -2.7406
+1701142020000  -2.8532  -1.8532  (value differs!)
+1701142030000  -2.9344  -2.9344
 `,
 		},
 		"multiple values differ": {
@@ -376,9 +376,9 @@ func TestFormatExpectedAndActualValuesComparison(t *testing.T) {
 			},
 			series: 3,
 			expectedOutput: `Timestamp      Expected  Actual
-1701142010000  -2.740636  -2.740636
-1701142020000  -2.853170  -1.853170  (value differs!)
-1701142030000  -2.934443  -3.934443  (value differs!)
+1701142010000  -2.7406  -2.7406
+1701142020000  -2.8532  -1.8532  (value differs!)
+1701142030000  -2.9344  -3.9344  (value differs!)
 `,
 		},
 	}

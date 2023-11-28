@@ -418,7 +418,7 @@ func randTime(min, max time.Time) time.Time {
 }
 
 func formatExpectedAndActualValuesComparison(matrix model.Matrix, expectedSeries int, generateValue generateValueFunc) string {
-	const precision = 6
+	const precision = 4
 
 	builder := strings.Builder{}
 	builder.WriteString("Timestamp      Expected  Actual\n")
