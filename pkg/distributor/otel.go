@@ -71,24 +71,24 @@ func OTLPHandler(
 		switch contentType {
 		case pbContentType:
 			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, []byte, error) {
-				er := pmetricotlp.NewExportRequest()
+				exportReq := pmetricotlp.NewExportRequest()
 				unmarshaler := otlpProtoUnmarshaler{
-					request: &er,
+					request: &exportReq,
 				}
 				buf, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, dst, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
-					return er, buf, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+					return exportReq, buf, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 						actual: tooLargeErr.Actual,
 						limit:  tooLargeErr.Limit,
 					}.Error())
 				}
-				return er, buf, err
+				return exportReq, buf, err
 			}
 
 		case jsonContentType:
 			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, []byte, error) {
-				er := pmetricotlp.NewExportRequest()
+				exportReq := pmetricotlp.NewExportRequest()
 				var buf bytes.Buffer
 				if r.ContentLength > 0 {
 					// Extra space guarantees no reallocation
@@ -98,23 +98,23 @@ func OTLPHandler(
 					var err error
 					reader, err = gzip.NewReader(reader)
 					if err != nil {
-						return er, buf.Bytes(), errors.Wrap(err, "create gzip reader")
+						return exportReq, buf.Bytes(), errors.Wrap(err, "create gzip reader")
 					}
 				}
 
 				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
-						return er, buf.Bytes(), httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
+						return exportReq, buf.Bytes(), httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
 							actual: -1,
 							limit:  maxRecvMsgSize,
 						}.Error())
 					}
 
-					return er, buf.Bytes(), errors.Wrap(err, "read write request")
+					return exportReq, buf.Bytes(), errors.Wrap(err, "read write request")
 				}
 
-				return er, buf.Bytes(), er.UnmarshalJSON(buf.Bytes())
+				return exportReq, buf.Bytes(), exportReq.UnmarshalJSON(buf.Bytes())
 			}
 
 		default:
