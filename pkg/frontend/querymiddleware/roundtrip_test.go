@@ -289,7 +289,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
 				newTestPrometheusCodec(),

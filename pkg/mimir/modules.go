@@ -360,6 +360,14 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		t.Cfg.LimitsConfig.ResultsCacheForUnalignedQueryEnabled = t.Cfg.Frontend.QueryMiddleware.DeprecatedCacheUnalignedRequests
 	}
 
+	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
+	// We need to preserve the option in the frontend yaml for two releases
+	// If the frontend config is configured by the user, the default limit is overwritten
+	// TODO: Remove in Mimir 2.14
+	if t.Cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep != querymiddleware.DefaultDeprecatedAlignQueriesWithStep {
+		t.Cfg.LimitsConfig.AlignQueriesWithStep = t.Cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep
+	}
+
 	// make sure to set default limits before we start loading configuration into memory
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
 	ingester.SetDefaultInstanceLimitsForYAMLUnmarshalling(t.Cfg.Ingester.DefaultLimits)

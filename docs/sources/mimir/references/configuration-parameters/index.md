@@ -1429,10 +1429,6 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
 
-# Mutate incoming queries to align their start and end with their step.
-# CLI flag: -query-frontend.align-queries-with-step
-[align_queries_with_step: <boolean> | default = false]
-
 results_cache:
   # Backend for query-frontend results cache, if not empty. Supported values:
   # memcached, redis.
@@ -3182,6 +3178,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
+
+# Mutate incoming queries to align their start and end with their step to
+# improve result caching.
+# CLI flag: -query-frontend.align-queries-with-step
+[align_queries_with_step: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
