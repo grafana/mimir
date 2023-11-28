@@ -1852,10 +1852,15 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	return deduplicatedSeries, nil
 }
 
+type entry struct {
+	first      labels.Labels
+	collisions []labels.Labels
+}
+
 // activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
 type activeSeriesResponse struct {
 	m                  sync.Mutex
-	series             map[uint64]labels.Labels
+	series             map[uint64]entry
 	builder            labels.ScratchBuilder
 	lbls               labels.Labels
 	hashCollisionCount prometheus.Counter
@@ -1863,7 +1868,7 @@ type activeSeriesResponse struct {
 
 func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
 	return &activeSeriesResponse{
-		series:             make(map[uint64]labels.Labels),
+		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
 	}
@@ -1876,11 +1881,11 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
 	for _, metric := range series {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
-		if resultLbls, ok := r.series[lblHash]; !ok {
-			r.series[lblHash] = r.lbls.Copy()
-		} else if !labels.Equal(resultLbls, r.lbls) {
-			// For now, we just count the number of collisions to be able to tell how big the
-			// effects of hash collisions are.
+		if e, ok := r.series[lblHash]; !ok {
+			r.series[lblHash] = entry{first: r.lbls.Copy()}
+		} else if !labels.Equal(e.first, r.lbls) {
+			e.collisions = append(e.collisions, r.lbls.Copy())
+			r.series[lblHash] = e
 			r.hashCollisionCount.Inc()
 		}
 	}
@@ -1892,7 +1897,10 @@ func (r *activeSeriesResponse) result() []labels.Labels {
 
 	result := make([]labels.Labels, 0, len(r.series))
 	for _, series := range r.series {
-		result = append(result, series)
+		result = append(result, series.first)
+		for _, collision := range series.collisions {
+			result = append(result, collision)
+		}
 	}
 	return result
 }
