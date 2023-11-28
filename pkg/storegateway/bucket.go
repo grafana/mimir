@@ -1230,12 +1230,15 @@ func (s *BucketStore) recordStreamingSeriesStats(stats *queryStats) {
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("fetch_series_and_chunks").Observe(stats.streamingSeriesBatchLoadDuration.Seconds())
 	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("load_index_header").Observe(stats.streamingSeriesIndexHeaderLoadDuration.Seconds())
 
-	specializedTime := stats.streamingSeriesExpandPostingsDuration +
+	categorizedTime := stats.streamingSeriesExpandPostingsDuration +
 		stats.streamingSeriesBatchLoadDuration +
 		stats.streamingSeriesIndexHeaderLoadDuration +
 		stats.streamingSeriesEncodeResponseDuration +
 		stats.streamingSeriesSendResponseDuration
-	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe((stats.streamingSeriesAmbientTime - specializedTime).Seconds())
+
+	// "other" time is any time we have spent according to the wall clock,
+	// that hasn't been recorded in any of the known categories.
+	s.metrics.streamingSeriesRequestDurationByStage.WithLabelValues("other").Observe((stats.streamingSeriesAmbientTime - categorizedTime).Seconds())
 }
 
 func (s *BucketStore) recordCachedPostingStats(stats *queryStats) {
