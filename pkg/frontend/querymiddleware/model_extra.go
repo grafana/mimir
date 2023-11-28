@@ -156,6 +156,42 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
+func (r *PrometheusInstantQueryRequest) WithShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
+			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
+		}
+	} else {
+		// Hints exists, now check if nested QueryComponentHints exists
+		if newRequest.Hints.QueryComponentHints == nil {
+			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
+		} else {
+			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+			newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
+		}
+	}
+	return &newRequest
+}
+
+func (r *PrometheusInstantQueryRequest) WithShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
+	newRequest := *r
+	if newRequest.Hints == nil {
+		newRequest.Hints = &Hints{
+			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
+		}
+	} else {
+		// Hints exists, now check if nested QueryComponentHints exists
+		if newRequest.Hints.QueryComponentHints == nil {
+			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
+		} else {
+			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+			newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
+		}
+	}
+	return &newRequest
+}
+
 func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
 	sp.LogFields(
 		otlog.String("query", r.GetQuery()),

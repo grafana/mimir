@@ -112,6 +112,12 @@ message Hints {
   oneof CardinalityEstimate {
     uint64 EstimatedSeriesCount = 2;
   }
+  QueryComponentHints queryComponentHints = 3;
+}
+
+message QueryComponentHints {
+  bool ShouldQueryIngesters = 1;
+  bool ShouldQueryBlockStore = 2;
 }
 
 message QueryStatistics {
