@@ -687,7 +687,6 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-queriers-per-tenant=10

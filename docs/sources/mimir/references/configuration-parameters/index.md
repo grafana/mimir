@@ -1169,6 +1169,22 @@ instance_limits:
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
 [return_only_grpc_errors: <boolean> | default = false]
+
+# (experimental) When enabled, only series currently owned by ingester according
+# to the ring are used when checking user per-tenant series limit.
+# CLI flag: -ingester.use-ingester-owned-series-for-limits
+[use_ingester_owned_series_for_limits: <boolean> | default = false]
+
+# (experimental) This option enables tracking of ingester-owned series based on
+# ring state, even if -ingester.use-ingester-owned-series-for-limits is
+# disabled.
+# CLI flag: -ingester.track-ingester-owned-series
+[track_ingester_owned_series: <boolean> | default = false]
+
+# (experimental) How often to check for ring changes and possibly recompute
+# owned series as a result of detected change.
+# CLI flag: -ingester.owned-series-update-interval
+[owned_series_update_interval: <duration> | default = 15s]
 ```
 
 ### querier
@@ -1412,10 +1428,6 @@ The `frontend` block configures the query-frontend.
 # it.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
-
-# Mutate incoming queries to align their start and end with their step.
-# CLI flag: -query-frontend.align-queries-with-step
-[align_queries_with_step: <boolean> | default = false]
 
 results_cache:
   # Backend for query-frontend results cache, if not empty. Supported values:
@@ -3166,6 +3178,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
+
+# Mutate incoming queries to align their start and end with their step to
+# improve result caching.
+# CLI flag: -query-frontend.align-queries-with-step
+[align_queries_with_step: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

@@ -132,6 +132,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
@@ -357,6 +358,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   newSampleValidationMetrics(reg),
 		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
 		metadataValidationMetrics: newMetadataValidationMetrics(reg),
+
+		hashCollisionCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_hash_collisions_total",
+			Help: "Number of times a hash collision was detected when de-duplicating samples.",
+		}),
 	}
 
 	// Initialize expected rejected request labels
@@ -573,35 +579,11 @@ func (d *Distributor) stopping(_ error) error {
 }
 
 func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return shardByAllLabels(userID, labels)
+	return mimirpb.ShardByAllLabelAdapters(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	return shardByMetricName(userID, metricName)
-}
-
-// shardByMetricName returns the token for the given metric. The provided metricName
-// is guaranteed to not be retained.
-func shardByMetricName(userID string, metricName string) uint32 {
-	h := shardByUser(userID)
-	h = ingester_client.HashAdd32(h, metricName)
-	return h
-}
-
-func shardByUser(userID string) uint32 {
-	h := ingester_client.HashNew32()
-	h = ingester_client.HashAdd32(h, userID)
-	return h
-}
-
-// This function generates different values for different order of same labels.
-func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	h := shardByUser(userID)
-	for _, label := range labels {
-		h = ingester_client.HashAdd32(h, label.Name)
-		h = ingester_client.HashAdd32(h, label.Value)
-	}
-	return h
+	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
@@ -1820,7 +1802,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	res := newActiveSeriesResponse()
+	res := newActiveSeriesResponse(d.hashCollisionCount)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
@@ -1865,6 +1847,70 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
 
 	return deduplicatedSeries, nil
+}
+
+type entry struct {
+	first      labels.Labels
+	collisions []labels.Labels
+}
+
+// activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
+type activeSeriesResponse struct {
+	m                  sync.Mutex
+	series             map[uint64]entry
+	builder            labels.ScratchBuilder
+	lbls               labels.Labels
+	hashCollisionCount prometheus.Counter
+}
+
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
+	return &activeSeriesResponse{
+		series:             map[uint64]entry{},
+		builder:            labels.NewScratchBuilder(40),
+		hashCollisionCount: hashCollisionCount,
+	}
+}
+
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, metric := range series {
+		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
+		lblHash := r.lbls.Hash()
+		if e, ok := r.series[lblHash]; !ok {
+			r.series[lblHash] = entry{first: r.lbls.Copy()}
+		} else {
+			// A series with this hash is already present in the result set, we need to
+			// detect potential hash collisions by comparing the labels of the candidate to
+			// the labels in the result set and add the candidate if it's not present.
+			present := labels.Equal(e.first, r.lbls)
+			for _, lbls := range e.collisions {
+				if present {
+					break
+				}
+				present = labels.Equal(lbls, r.lbls)
+			}
+
+			if !present {
+				e.collisions = append(e.collisions, r.lbls.Copy())
+				r.series[lblHash] = e
+				r.hashCollisionCount.Inc()
+			}
+		}
+	}
+}
+
+func (r *activeSeriesResponse) result() []labels.Labels {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	result := make([]labels.Labels, 0, len(r.series))
+	for _, series := range r.series {
+		result = append(result, series.first)
+		result = append(result, series.collisions...)
+	}
+	return result
 }
 
 // approximateFromZones computes a zonal value while factoring in replication.

@@ -1345,6 +1345,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration
     	[experimental] Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -query-frontend.results-cache-ttl-for-out-of-order-time-window option to specify TTL for resulting cache entry.
+  -ingester.owned-series-update-interval duration
+    	[experimental] How often to check for ring changes and possibly recompute owned series as a result of detected change. (default 15s)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.read-path-cpu-utilization-limit float
@@ -1447,8 +1449,12 @@ Usage of ./cmd/mimir/mimir:
     	True to enable the zone-awareness and replicate ingested samples across different availability zones. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
   -ingester.stream-chunks-when-using-blocks
     	Stream chunks from ingesters to queriers. (default true)
+  -ingester.track-ingester-owned-series
+    	[experimental] This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.
   -ingester.tsdb-config-update-period duration
     	[experimental] Period with which to update the per-tenant TSDB configuration. (default 15s)
+  -ingester.use-ingester-owned-series-for-limits
+    	[experimental] When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.
   -log.buffered
     	[deprecated] Use a buffered logger to reduce write contention. (default true)
   -log.format string
@@ -1780,7 +1786,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-queries-with-step
-    	Mutate incoming queries to align their start and end with their step.
+    	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.cache-unaligned-requests

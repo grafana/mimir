@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors.
 
-package client
+package mimirpb
 
 // Inline and byte-free variant of hash/fnv's fnv64a.
 
