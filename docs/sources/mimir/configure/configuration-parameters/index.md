@@ -1490,6 +1490,10 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
+# (experimental) True to enable sharding of active series queries.
+# CLI flag: -query-frontend.shard-active-series-queries
+[shard_active_series_queries: <boolean> | default = false]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
