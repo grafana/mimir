@@ -123,13 +123,15 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 		}
 
 		if err := sp.querierLoop(execCtx, c, address, inflightQuery); err != nil {
-			// Do not log an error if the query-scheduler is shutting down.
-			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
-				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
-			}
+			if !grpcutil.IsCanceled(err) {
+				// Do not log an error if the query-scheduler is shutting down.
+				if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
+					level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+				}
 
-			backoff.Wait()
-			continue
+				backoff.Wait()
+				continue
+			}
 		}
 
 		backoff.Reset()
