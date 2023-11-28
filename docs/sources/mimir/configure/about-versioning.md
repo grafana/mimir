@@ -132,6 +132,7 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
+  - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

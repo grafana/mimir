@@ -20,12 +20,6 @@ import (
 )
 
 func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
-	// Enable tenant ID resolve used when tenant federation is enabled.
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-	t.Cleanup(func() {
-		tenant.WithDefaultResolver(tenant.NewSingleResolver())
-	})
-
 	tests := map[string]struct {
 		tenantIDs        []string
 		limits           map[string]mockLimits
