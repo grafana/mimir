@@ -38,7 +38,6 @@ type BucketStoreMetrics struct {
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
 	streamingSeriesBatchPreloadingLoadDuration prometheus.Histogram
 	streamingSeriesBatchPreloadingWaitDuration prometheus.Histogram
-	streamingSeriesRefsFetchDuration           prometheus.Histogram
 
 	cachedPostingsCompressions           *prometheus.CounterVec
 	cachedPostingsCompressionErrors      *prometheus.CounterVec
@@ -183,11 +182,6 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.streamingSeriesBatchPreloadingWaitDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_bucket_store_series_batch_preloading_wait_duration_seconds",
 		Help:    "Time spent by store-gateway waiting until the next batch is loaded, once the store-gateway is ready to send it. This metric is tracked only if the request is split into 2+ batches.",
-		Buckets: durationBuckets,
-	})
-	m.streamingSeriesRefsFetchDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name:    "cortex_bucket_store_series_refs_fetch_duration_seconds",
-		Help:    "Time spent by store-gateway to fetch series labels and chunk references for a single request.",
 		Buckets: durationBuckets,
 	})
 
