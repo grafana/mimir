@@ -67,7 +67,7 @@ const (
 	ActivityTracker            string = "activity-tracker"
 	API                        string = "api"
 	SanityCheck                string = "sanity-check"
-	Ring                       string = "ring"
+	IngesterRing               string = "ingester-ring"
 	RuntimeConfig              string = "runtime-config"
 	Overrides                  string = "overrides"
 	OverridesExporter          string = "overrides-exporter"
@@ -335,12 +335,12 @@ func (t *Mimir) initServer() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Mimir) initRing() (serv services.Service, err error) {
-	t.Ring, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
+	t.IngesterRing, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
 	}
-	return t.Ring, nil
+	return t.IngesterRing, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -440,7 +440,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimizeIngesterRequests = t.Cfg.Querier.MinimizeIngesterRequests
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -629,7 +629,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.Ring, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -992,7 +992,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
-	mm.RegisterModule(Ring, t.initRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
@@ -1026,15 +1026,15 @@ func (t *Mimir) setupModuleManager() error {
 		API:                      {Server},
 		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},
-		Ring:                     {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides, MemberlistKV, Vault},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:       {Ring, Overrides, Vault},
+		DistributorService:       {IngesterRing, Overrides, Vault},
 		Ingester:                 {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:          {Ring, Overrides, RuntimeConfig, MemberlistKV},
+		IngesterService:          {IngesterRing, Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
+		Queryable:                {Overrides, DistributorService, IngesterRing, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation, Vault},
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},

@@ -173,7 +173,7 @@ func TestMimir(t *testing.T) {
 			target: []string{All, AlertManager},
 			expectedEnabledModules: []string{
 				// Check random modules that we expect to be configured when using Target=All.
-				Server, IngesterService, Ring, DistributorService, Compactor,
+				Server, IngesterService, IngesterRing, DistributorService, Compactor,
 
 				// Check that Alertmanager is configured which is not part of Target=All.
 				AlertManager,
