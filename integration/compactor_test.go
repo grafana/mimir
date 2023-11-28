@@ -149,8 +149,10 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 			require.NoError(t, ixReader.Series(p.At(), &lbls, &chks))
 
 			for _, c := range chks {
-				c.Chunk, err = chkReader.Chunk(c)
+				chunk, iter, err := chkReader.ChunkOrIterable(c)
 				require.NoError(t, err)
+				require.Nil(t, iter)
+				c.Chunk = chunk
 
 				it := c.Chunk.Iterator(nil)
 				for {

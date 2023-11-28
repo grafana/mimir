@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -28,7 +27,7 @@ func main() {
 		return
 	}
 	for _, blockDir := range args {
-		err = printLabelValues(context.Background(), blockDir)
+		err = printLabelValues(blockDir)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
@@ -36,7 +35,7 @@ func main() {
 	}
 }
 
-func printLabelValues(ctx context.Context, blockDir string) error {
+func printLabelValues(blockDir string) error {
 	indexPath := filepath.Join(blockDir, "index")
 	f, err := fileutil.OpenMmapFile(indexPath)
 	if err != nil {
@@ -67,7 +66,7 @@ func printLabelValues(ctx context.Context, blockDir string) error {
 			return fmt.Errorf("reading label values symbols refs for label %q: %w", label.labelName, err)
 		}
 		for _, ref := range valuesRefs {
-			val, err := symbols.Lookup(ctx, ref)
+			val, err := symbols.Lookup(ref)
 			if err != nil {
 				return fmt.Errorf("looking up symbol: %w", err)
 			}
