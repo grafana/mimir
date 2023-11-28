@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -344,7 +345,8 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 		// Assert on value.
 		expectedValue := generateValue(ts) * float64(expectedSeries)
 		if !compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat) {
-			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f", sample.Timestamp, ts.String(), sample.Value, expectedValue)
+			comparison := formatExpectedAndActualValuesComparison(matrix, expectedSeries, generateValue)
+			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f, full result comparison:\n%s", sample.Timestamp, ts.String(), sample.Value, expectedValue, comparison)
 		}
 
 		// Assert on sample timestamp. We expect no gaps.
@@ -413,4 +415,33 @@ func randTime(min, max time.Time) time.Time {
 
 	sec := rand.Int63n(delta) + min.Unix()
 	return time.Unix(sec, 0)
+}
+
+func formatExpectedAndActualValuesComparison(matrix model.Matrix, expectedSeries int, generateValue generateValueFunc) string {
+	const precision = 6
+
+	builder := strings.Builder{}
+	builder.WriteString("Timestamp      Expected  Actual\n")
+
+	samples := matrix[0].Values
+
+	for _, sample := range samples {
+		actual := float64(sample.Value)
+		expected := float64(expectedSeries) * generateValue(sample.Timestamp.Time())
+		match := compareFloatValues(actual, expected, maxComparisonDeltaFloat)
+
+		builder.WriteString(strconv.FormatInt(int64(sample.Timestamp), 10))
+		builder.WriteString("  ")
+		builder.WriteString(strconv.FormatFloat(expected, 'f', precision, 64))
+		builder.WriteString("  ")
+		builder.WriteString(strconv.FormatFloat(actual, 'f', precision, 64))
+
+		if !match {
+			builder.WriteString("  (value differs!)")
+		}
+
+		builder.WriteString("\n")
+	}
+
+	return builder.String()
 }
