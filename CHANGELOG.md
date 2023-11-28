@@ -13,6 +13,7 @@
 * [ENHANCEMENT] Store-gateway: include more information about lazy index-header loading in traces. #6922
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
+* [FEATURE] Query-frontend: Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for tenant federated queries. #6959
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -23,6 +24,7 @@
 * [BUGFIX] Fix issue where all incoming HTTP requests have duplicate trace spans. #6920
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
+* [BUGFIX] Query-frontend: Validate tenant IDs according to documented behavior even when tenant federation is not enabled. #6959
 
 ### Mixin
 

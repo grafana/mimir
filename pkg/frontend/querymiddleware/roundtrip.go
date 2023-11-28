@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"golang.org/x/exp/slices"
 
+	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -179,6 +180,7 @@ func (f RoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 // NewTripperware returns a Tripperware configured with middlewares to limit, align, split, retry and cache requests.
 func NewTripperware(
 	cfg Config,
+	federation tenantfederation.Config,
 	log log.Logger,
 	limits Limits,
 	codec Codec,
@@ -186,7 +188,7 @@ func NewTripperware(
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, federation, log, limits, codec, cacheExtractor, engineOpts, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +200,7 @@ func NewTripperware(
 
 func newQueryTripperware(
 	cfg Config,
+	federation tenantfederation.Config,
 	log log.Logger,
 	limits Limits,
 	codec Codec,
@@ -213,14 +216,16 @@ func newQueryTripperware(
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+	federationMiddleware := newFederationMiddleware(federation)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
+		federationMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
-		newStepAlignMiddleware(limits, tenant.NewMultiResolver(), log, registerer),
+		newStepAlignMiddleware(limits, log, registerer),
 	}
 
 	var c cache.Cache
@@ -263,6 +268,7 @@ func newQueryTripperware(
 	queryInstantMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
+		federationMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,

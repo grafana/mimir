@@ -9953,6 +9953,17 @@
           "fieldFlag": "tenant-federation.max-concurrent",
           "fieldType": "int",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_tenants",
+          "required": false,
+          "desc": "The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "tenant-federation.max-tenants",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

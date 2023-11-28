@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 )
 
 func TestRangeTripperware(t *testing.T) {
@@ -65,7 +66,9 @@ func TestRangeTripperware(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
-	tw, err := NewTripperware(Config{},
+	tw, err := NewTripperware(
+		Config{},
+		tenantfederation.Config{},
 		log.NewNopLogger(),
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -117,6 +120,7 @@ func TestInstantTripperware(t *testing.T) {
 		Config{
 			ShardedQueries: true,
 		},
+		tenantfederation.Config{},
 		log.NewNopLogger(),
 		mockLimits{totalShards: totalShards},
 		codec,
@@ -289,7 +293,9 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, err := NewTripperware(Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(
+				Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
+				tenantfederation.Config{},
 				log.NewNopLogger(),
 				mockLimits{},
 				newTestPrometheusCodec(),

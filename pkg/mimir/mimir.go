@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -725,13 +724,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
-	if cfg.TenantFederation.Enabled {
-		tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
-		if cfg.Ruler.TenantFederation.Enabled {
-			util_log.WarnExperimentalUse("ruler.tenant-federation")
-		}
+	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
+		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
 
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,

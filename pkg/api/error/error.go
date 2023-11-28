@@ -14,6 +14,8 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 )
 
+var _ error = (*APIError)(nil)
+
 type Type string
 
 // adapted from https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/web/api/v1/api.go#L67-L76
@@ -31,17 +33,17 @@ const (
 	TypeNotAcceptable   Type = "not_acceptable"
 )
 
-type apiError struct {
+type APIError struct {
 	Type    Type
 	Message string
 }
 
-func (e *apiError) Error() string {
+func (e *APIError) Error() string {
 	return e.Message
 }
 
 // adapted from https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/web/api/v1/api.go#L1508-L1521
-func (e *apiError) statusCode() int {
+func (e *APIError) statusCode() int {
 	switch e.Type {
 	case TypeBadData:
 		return http.StatusBadRequest
@@ -67,9 +69,9 @@ func (e *apiError) statusCode() int {
 	return http.StatusInternalServerError
 }
 
-// HTTPResponseFromError converts an apiError into a JSON HTTP response
+// HTTPResponseFromError converts an APIError into a JSON HTTP response
 func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
-	var apiErr *apiError
+	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		return nil, false
 	}
@@ -98,29 +100,29 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 	}, true
 }
 
-// New creates a new apiError with a static string message
-func New(typ Type, msg string) error {
-	return &apiError{
+// New creates a new APIError with a static string message
+func New(typ Type, msg string) *APIError {
+	return &APIError{
 		Message: msg,
 		Type:    typ,
 	}
 }
 
-// Newf creates a new apiError with a formatted message
-func Newf(typ Type, tmpl string, args ...interface{}) error {
+// Newf creates a new APIError with a formatted message
+func Newf(typ Type, tmpl string, args ...interface{}) *APIError {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
 
-// IsAPIError returns true if the error provided is an apiError.
+// IsAPIError returns true if the error provided is an APIError.
 // This implies that HTTPResponseFromError will succeed.
 func IsAPIError(err error) bool {
-	apiErr := &apiError{}
+	apiErr := &APIError{}
 	return errors.As(err, &apiErr)
 }
 
-// IsNonRetryableAPIError returns true if err is an apiError which should be failed and not retried.
+// IsNonRetryableAPIError returns true if err is an APIError which should be failed and not retried.
 func IsNonRetryableAPIError(err error) bool {
-	apiErr := &apiError{}
+	apiErr := &APIError{}
 	// Reasoning:
 	// TypeNone and TypeNotFound are not used anywhere in Mimir nor Prometheus;
 	// TypeTimeout, TypeTooManyRequests, TypeNotAcceptable, TypeUnavailable we presume a retry of the same request will fail in the same way.
