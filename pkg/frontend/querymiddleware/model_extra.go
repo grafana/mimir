@@ -92,40 +92,66 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 	return &newRequest
 }
 
-func (q *PrometheusRangeQueryRequest) WithShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *q
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
+func (q *PrometheusRangeQueryRequest) SetShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
+	//newRequest := *q
+	//if newRequest.Hints == nil {
+	//	newRequest.Hints = &Hints{
+	//		QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
+	//	}
+	//} else {
+	//	// Hints exists, now check if nested QueryComponentHints exists
+	//	if newRequest.Hints.QueryComponentHints == nil {
+	//		newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
+	//	} else {
+	//		*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
+	//		newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
+	//	}
+	//}
+	//return &newRequest
+	if q.Hints == nil {
+		q.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
 		}
 	} else {
 		// Hints exists, now check if nested QueryComponentHints exists
-		if newRequest.Hints.QueryComponentHints == nil {
-			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
+		if q.Hints.QueryComponentHints == nil {
+			q.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
-			newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
+			q.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
 		}
 	}
-	return &newRequest
+	return q
 }
 
-func (q *PrometheusRangeQueryRequest) WithShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *q
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
+func (q *PrometheusRangeQueryRequest) SetShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
+	//newRequest := *q
+	//if newRequest.Hints == nil {
+	//	newRequest.Hints = &Hints{
+	//		QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
+	//	}
+	//} else {
+	//	// Hints exists, now check if nested QueryComponentHints exists
+	//	if newRequest.Hints.QueryComponentHints == nil {
+	//		newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
+	//	} else {
+	//		*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
+	//		newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
+	//	}
+	//}
+	//return &newRequest
+	if q.Hints == nil {
+		q.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
 		}
 	} else {
 		// Hints exists, now check if nested QueryComponentHints exists
-		if newRequest.Hints.QueryComponentHints == nil {
-			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
+		if q.Hints.QueryComponentHints == nil {
+			q.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
-			newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
+			q.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
 		}
 	}
-	return &newRequest
+	return q
 }
 
 // LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
@@ -192,40 +218,66 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
-func (r *PrometheusInstantQueryRequest) WithShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
+func (r *PrometheusInstantQueryRequest) SetShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
+	//newRequest := *r
+	//if newRequest.Hints == nil {
+	//	newRequest.Hints = &Hints{
+	//		QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
+	//	}
+	//} else {
+	//	// Hints exists, now check if nested QueryComponentHints exists
+	//	if newRequest.Hints.QueryComponentHints == nil {
+	//		newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
+	//	} else {
+	//		*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+	//		newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
+	//	}
+	//}
+	//return &newRequest
+	if r.Hints == nil {
+		r.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
 		}
 	} else {
 		// Hints exists, now check if nested QueryComponentHints exists
-		if newRequest.Hints.QueryComponentHints == nil {
-			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
+		if r.Hints.QueryComponentHints == nil {
+			r.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
-			newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
+			r.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
 		}
 	}
-	return &newRequest
+	return r
 }
 
-func (r *PrometheusInstantQueryRequest) WithShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *r
-	if newRequest.Hints == nil {
-		newRequest.Hints = &Hints{
+func (r *PrometheusInstantQueryRequest) SetShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
+	//newRequest := *r
+	//if newRequest.Hints == nil {
+	//	newRequest.Hints = &Hints{
+	//		QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
+	//	}
+	//} else {
+	//	// Hints exists, now check if nested QueryComponentHints exists
+	//	if newRequest.Hints.QueryComponentHints == nil {
+	//		newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
+	//	} else {
+	//		*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+	//		newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
+	//	}
+	//}
+	//return &newRequest
+	if r.Hints == nil {
+		r.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
 		}
 	} else {
 		// Hints exists, now check if nested QueryComponentHints exists
-		if newRequest.Hints.QueryComponentHints == nil {
-			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
+		if r.Hints.QueryComponentHints == nil {
+			r.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
-			newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
+			r.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
 		}
 	}
-	return &newRequest
+	return r
 }
 
 func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {

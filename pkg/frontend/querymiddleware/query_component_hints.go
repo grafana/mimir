@@ -42,14 +42,14 @@ func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response
 	shouldQueryIngesters := querier.ShouldQueryIngesters(
 		latestQueryIngestersWithinWindow, now, request.GetEnd(),
 	)
-	request = request.WithShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
+	request = request.SetShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
 
 	// more debuggable version of timestamps
 	//requestStart := request.GetStart()
 	//b := now.Add(-h.cfg.QueryStoreAfter)
 	//fmt.Println(b)
 	shouldQueryBlockstore := querier.ShouldQueryBlockStore(h.cfg.QueryStoreAfter, now, request.GetStart())
-	request = request.WithShouldQueryBlockStoreQueryComponentHint(shouldQueryBlockstore)
+	request = request.SetShouldQueryBlockStoreQueryComponentHint(shouldQueryBlockstore)
 
 	return h.next.Do(ctx, request)
 }
