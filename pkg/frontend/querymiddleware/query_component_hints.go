@@ -42,7 +42,16 @@ func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response
 	shouldQueryIngesters := querier.ShouldQueryIngesters(
 		latestQueryIngestersWithinWindow, now, request.GetEnd(),
 	)
-	request = request.SetShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
+	//request = request.SetShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
+	if rangeReq, ok := request.(*PrometheusRangeQueryRequest); ok {
+		if rangeReq.Hints == nil {
+			rangeReq.Hints = &Hints{
+				QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQueryIngesters},
+			}
+		} else {
+			rangeReq.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQueryIngesters}
+		}
+	}
 
 	// more debuggable version of timestamps
 	//requestStart := request.GetStart()
