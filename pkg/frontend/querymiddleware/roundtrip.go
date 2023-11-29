@@ -65,7 +65,7 @@ type Config struct {
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
-	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
+	QueryStoreAfter time.Duration `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
