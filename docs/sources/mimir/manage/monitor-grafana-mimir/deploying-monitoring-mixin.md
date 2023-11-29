@@ -12,7 +12,7 @@ weight: 20
 # Deploying the Grafana Mimir monitoring mixin
 
 Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. You can configure your Prometheus server to scrape Grafana Mimir or you can use the built-in functionality of the [Helm chart to automatically send these metrics to a remote]({{< relref "./collecting-metrics-and-logs" >}}).
-The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../references/configuration-parameters" >}}).
+The endpoint is exposed on the Mimir HTTP server address / port which can be customized through `-server.http-listen-address` and `-server.http-listen-port` CLI flags or their respective YAML [config options]({{< relref "../../configure/configuration-parameters" >}}).
 
 ## Dashboards and alerts
 
