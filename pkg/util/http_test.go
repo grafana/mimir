@@ -176,35 +176,41 @@ func TestParseProtoReader(t *testing.T) {
 	}{
 		{"rawSnappy", util.RawSnappy, 53, false, false},
 		{"noCompression", util.NoCompression, 53, false, false},
+		{"gzip", util.Gzip, 53, false, false},
 		{"too big rawSnappy", util.RawSnappy, 10, true, false},
 		{"too big decoded rawSnappy", util.RawSnappy, 50, true, false},
 		{"too big noCompression", util.NoCompression, 10, true, false},
+		{"too big gzip", util.Gzip, 10, true, false},
+		{"too big decoded gzip", util.Gzip, 50, true, false},
 
 		{"bytesbuffer rawSnappy", util.RawSnappy, 53, false, true},
 		{"bytesbuffer noCompression", util.NoCompression, 53, false, true},
+		{"bytesbuffer gzip", util.Gzip, 53, false, true},
 		{"bytesbuffer too big rawSnappy", util.RawSnappy, 10, true, true},
 		{"bytesbuffer too big decoded rawSnappy", util.RawSnappy, 50, true, true},
 		{"bytesbuffer too big noCompression", util.NoCompression, 10, true, true},
+		{"bytesbuffer too big gzip", util.Gzip, 10, true, true},
+		{"bytesbuffer too big decoded gzip", util.Gzip, 50, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			assert.Nil(t, util.SerializeProtoResponse(w, req, tt.compression))
+			require.NoError(t, util.SerializeProtoResponse(w, req, tt.compression))
 			var fromWire mimirpb.PreallocWriteRequest
 
 			reader := w.Result().Body
 			if tt.useBytesBuffer {
 				buf := bytes.Buffer{}
 				_, err := buf.ReadFrom(reader)
-				assert.Nil(t, err)
+				require.NoError(t, err)
 				reader = bytesBuffered{Buffer: &buf}
 			}
 
 			_, err := util.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, nil, &fromWire, tt.compression)
 			if tt.expectErr {
-				assert.NotNil(t, err)
+				require.Error(t, err)
 				return
 			}
-			assert.Nil(t, err)
+			require.NoError(t, err)
 			fromWire.ClearTimeseriesUnmarshalData() // non-nil unmarshal buffer in PreallocTimeseries breaks equality test
 			assert.Equal(t, req, &fromWire)
 		})
