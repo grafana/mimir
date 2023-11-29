@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-//go:build !stringlabels
+//go:build !stringlabels && !dedupelabels
 
 package mimirpb
 
