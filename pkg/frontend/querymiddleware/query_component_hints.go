@@ -39,10 +39,10 @@ func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response
 	//requestEnd := request.GetEnd()
 	//a := now.Add(-latestQueryIngestersWithinWindow)
 	//fmt.Println(a)
-	_ = querier.ShouldQueryIngesters(
+	shouldQueryIngesters := querier.ShouldQueryIngesters(
 		latestQueryIngestersWithinWindow, now, request.GetEnd(),
 	)
-	//request = request.SetShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
+	request = request.SetShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
 
 	// more debuggable version of timestamps
 	//requestStart := request.GetStart()
