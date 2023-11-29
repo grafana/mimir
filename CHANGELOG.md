@@ -6,6 +6,7 @@
 
 * [CHANGE] Ingester: Increase default value of `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to 100 MiB (previous default value was 10 MiB). #6764
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
+* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
 * [BUGFIX] Fix panic during tsdb Commit #6766
@@ -133,7 +134,7 @@
 * [BUGFIX] Querier: reduce log volume when querying ingesters with zone-awareness enabled and one or more instances in a single zone unavailable. #6381
 * [BUGFIX] Querier: don't try to query further ingesters if ingester query request minimization is enabled and a query limit is reached as a result of the responses from the initial set of ingesters. #6402
 * [BUGFIX] Ingester: Don't cache context cancellation error when querying. #6446
-* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451 #6469
+* [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6469
 * [BUGFIX] All: fix issue where traces for some inter-component gRPC calls would incorrectly show the call as failing due to cancellation. #6470
 * [BUGFIX] Querier: correctly mark streaming requests to ingesters or store-gateways as successful, not cancelled, in metrics and traces. #6471 #6505
 * [BUGFIX] Querier: fix issue where queries fail with "context canceled" error when an ingester or store-gateway fails healthcheck while the query is in progress. #6550
