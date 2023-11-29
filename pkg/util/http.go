@@ -250,7 +250,7 @@ func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compres
 		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("size", buffer.Len()))
 	}
 
-	if compression != RawSnappy {
+	if compression == NoCompression || compression == Gzip {
 		// Buffer should already be decompressed
 		return buffer.Bytes(), nil
 	}
