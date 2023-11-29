@@ -4,6 +4,12 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
+* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
+* [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
+* [BUGFIX] Fix panic during tsdb Commit #6766
+* [BUGFIX] tsdb/head: wlog exemplars after samples #6766
+
 ### Mixin
 
 ### Jsonnet

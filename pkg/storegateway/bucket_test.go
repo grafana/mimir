@@ -2889,8 +2889,9 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		}
 
 		for _, c := range chunkMetas {
-			chEnc, err := chks.Chunk(c)
-			assert.NoError(t, err)
+			chEnc, iter, err := chks.ChunkOrIterable(c)
+			require.NoError(t, err)
+			require.Nil(t, iter)
 
 			// Open Chunk.
 			if c.MaxTime == math.MaxInt64 {
