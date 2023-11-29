@@ -47,15 +47,18 @@
     ),
   },
 
-  distributor_container::
-    container.new('distributor', $._images.distributor) +
+  newDistributorContainer(name, args, envVarMap={})::
+    container.new(name, $._images.distributor) +
     container.withPorts($.distributor_ports) +
-    container.withArgsMixin($.util.mapToFlags($.distributor_args)) +
-    (if std.length($.distributor_env_map) > 0 then container.withEnvMap(std.prune($.distributor_env_map)) else {}) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
+    (if std.length(envVarMap) > 0 then container.withEnvMap(std.prune(envVarMap)) else {}) +
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
+
+  distributor_container::
+    $.newDistributorContainer('distributor', $.distributor_args, $.distributor_env_map),
 
   newDistributorDeployment(name, container)::
     deployment.new(name, 3, [container]) +
