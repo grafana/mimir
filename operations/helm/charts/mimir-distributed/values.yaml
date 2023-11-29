@@ -555,6 +555,12 @@ alertmanager:
     # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
+
   readinessProbe:
     httpGet:
       path: /ready
@@ -849,6 +855,12 @@ ingester:
     # Subdirectory of Ingester data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
     subPath: ''
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
 
 
     # Ingester data Persistent Volume Storage Class
@@ -1443,6 +1455,12 @@ store_gateway:
     # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
 
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
+
   readinessProbe:
     httpGet:
       path: /ready
@@ -1626,6 +1644,12 @@ compactor:
     #   set, choosing the default provisioner.
     #
     # storageClass: "-"
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
 
   readinessProbe:
     httpGet:
