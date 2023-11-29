@@ -1439,7 +1439,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 						"cortex_bucket_store_series_request_stage_duration_seconds":         true,
 						"cortex_bucket_store_series_batch_preloading_load_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
 						"cortex_bucket_store_series_batch_preloading_wait_duration_seconds": st.maxSeriesPerBatch < totalSeries, // Tracked only when a request is split in multiple batches.
-						"cortex_bucket_store_series_refs_fetch_duration_seconds":            true,
 					}
 
 					metrics, err := dskit_metrics.NewMetricFamilyMapFromGatherer(reg)
@@ -2890,8 +2889,9 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		}
 
 		for _, c := range chunkMetas {
-			chEnc, err := chks.Chunk(c)
-			assert.NoError(t, err)
+			chEnc, iter, err := chks.ChunkOrIterable(c)
+			require.NoError(t, err)
+			require.Nil(t, iter)
 
 			// Open Chunk.
 			if c.MaxTime == math.MaxInt64 {

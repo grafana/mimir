@@ -4,6 +4,33 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
+* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
+* [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
+* [BUGFIX] Fix panic during tsdb Commit #6766
+* [BUGFIX] tsdb/head: wlog exemplars after samples #6766
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+* [ENHANCEMENT] Include comparison of all expected and actual values when any float sample does not match. #6756
+
+### Query-tee
+
+### Documentation
+
+### Tools
+
+## 2.11.0-rc.0
+
+### Grafana Mimir
+
+* [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets. #6106
 * [CHANGE] The following deprecated configurations have been removed: #6673
   * `-querier.iterators`
   * `-querier.batch-iterators`
@@ -15,7 +42,7 @@
 * [CHANGE] Store-gateway: enable sparse index headers by default. Sparse index headers reduce the time to load an index header up to 90%. #6005
 * [CHANGE] Store-gateway: lazy-loading concurrency limit default value is now 4. #6004
 * [CHANGE] General: enabled `-log.buffered` by default. The `-log.buffered` has been deprecated and will be removed in Mimir 2.13. #6131
-* [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6129
+* [CHANGE] Ingester: changed default `-blocks-storage.tsdb.series-hash-cache-max-size-bytes` setting from `1GB` to `350MB`. The new default cache size is enough to store the hashes for all series in a ingester, assuming up to 2M in-memory series per ingester and using the default 13h retention period for local TSDB blocks in the ingesters. #6130
 * [CHANGE] Query-frontend: removed `cortex_query_frontend_workers_enqueued_requests_total`. Use `cortex_query_frontend_enqueue_duration_seconds_count` instead. #6121
 * [CHANGE] Ingester / querier: enable ingester to querier chunks streaming by default and mark it as stable. #6174
 * [CHANGE] Ingester / querier: enable ingester query request minimisation by default and mark it as stable. #6174
@@ -92,6 +119,7 @@
 * [ENHANCEMENT] Querier: return clearer error message when a query request is cancelled by the caller. #6697
 * [ENHANCEMENT] Compactor: Mark corrupted blocks for no-compaction to avoid blocking compactor future runs. #6588
 * [ENHANCEMENT] Distributor: Added an experimental configuration option `distributor.ingestion-burst-factor` that overrides the `distributor.ingestion-burst-size` option if set. The `distributor.ingestion-burst-factor` is used to set the underlying ingestion rate limiter token bucket's burst size to a multiple of the per distributor `distributor.ingestion-rate-limit` and the `distributor.ingestion-burst-factor`. This is disabled by default. #6662
+* [ENHANCEMENT] Add debug message to track tenants sending queries that are not able to benefit from caches. #6732
 * [BUGFIX] Distributor: return server overload error in the event of exceeding the ingestion rate limit. #6549
 * [BUGFIX] Ring: Ensure network addresses used for component hash rings are formatted correctly when using IPv6. #6068
 * [BUGFIX] Query-scheduler: don't retain connections from queriers that have shut down, leading to gradually increasing enqueue latency over time. #6100 #6145
@@ -110,6 +138,7 @@
 * [BUGFIX] Querier: always report query results to query-frontends, even when cancelled, to ensure query-frontends don't wait for results that will otherwise never arrive. #6703
 * [BUGFIX] Querier: attempt to query ingesters in PENDING state, to reduce the likelihood that scaling up the number of ingesters in multiple zones simultaneously causes a read outage. #6726 #6727
 * [BUGFIX] Querier: don't cancel inflight queries from a query-scheduler if the stream between the querier and query-scheduler is broken. #6728
+* [BUGFIX] Store-gateway: Fix double-counting of some duration metrics. #6616
 
 ### Mixin
 
@@ -140,6 +169,7 @@
 * [ENHANCEMENT] Store-gateway: replaced the following deprecated CLI flags: #6319
   * `-blocks-storage.bucket-store.index-header-lazy-loading-enabled` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-enabled`
   * `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` replaced with `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout`
+* [ENHANCEMENT] Store-gateway: Allow selective enablement of store-gateway automated scaling on a per-zone basis. #6302
 * [BUGFIX] Autoscaling: KEDA > 2.9 removed the ability to set metricName in the trigger metadata. To help discern which metric is used by the HPA, we set the trigger name to what was the metricName. This is available as the `scaler` label on `keda_*` metrics. #6528
 
 ### Mimirtool
@@ -147,7 +177,7 @@
 * [ENHANCEMENT] Analyze Grafana: Improve support for variables in range. #6657
 * [BUGFIX] Fix out of bounds error on export with large timespans and/or series count. #5700
 * [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
-* [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6009
+* [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6011
 * [BUGFIX] Fix template files full path being sent in `mimirtool alertmanager load` command. #6138
 
 ### Mimir Continuous Test

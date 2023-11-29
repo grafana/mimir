@@ -45,7 +45,7 @@ To get started, use the `local` client type for initial testing:
 If you are using object storage, you must set `ruler_storage_bucket_name` to the name of the bucket that you want to use.
 
 > **Note:** If ruler object storage credentials differ from the ones defined in the common section, you need to manually provide them by using additional command line arguments.
-> For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../references/configuration-parameters#ruler_storage" >}}).
+> For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/configuration-parameters#ruler_storage" >}}).
 
 ## Operational modes
 

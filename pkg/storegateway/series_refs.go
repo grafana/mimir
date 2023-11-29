@@ -750,7 +750,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		iterator = newFilteringSeriesChunkRefsSetIterator(pendingMatchers, iterator, stats)
 	}
 
-	return seriesStreamingFetchRefsDurationIterator(iterator, stats), nil
+	return iterator, nil
 }
 
 // reusedPostings is used to share the postings and matches across function calls for re-use
@@ -776,15 +776,6 @@ func (p *reusedPostingsAndMatchers) set(ps []storage.SeriesRef, matchers []*labe
 
 func (p *reusedPostingsAndMatchers) isSet() bool {
 	return p.filled
-}
-
-// seriesStreamingFetchRefsDurationIterator tracks the time spent loading series and chunk refs.
-func seriesStreamingFetchRefsDurationIterator(iterator seriesChunkRefsSetIterator, stats *safeQueryStats) genericIterator[seriesChunkRefsSet] {
-	return newNextDurationMeasuringIterator[seriesChunkRefsSet](iterator, func(duration time.Duration, _ bool) {
-		stats.update(func(stats *queryStats) {
-			stats.streamingSeriesFetchRefsDuration += duration
-		})
-	})
 }
 
 // seriesIteratorStrategy defines the strategy to use when loading the series and their chunk refs.

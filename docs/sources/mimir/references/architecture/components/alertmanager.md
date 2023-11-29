@@ -70,7 +70,7 @@ You can overwrite the default fallback configuration via the `-alertmanager.conf
 
 ### Tenant limits
 
-The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../configuration-parameters#limits" >}}).
+The Grafana Mimir Alertmanager has a number of per-tenant limits documented in [`limits`]({{< relref "../../../configure/configuration-parameters#limits" >}}).
 Each Mimir Alertmanager limit configuration parameter has an `alertmanager` prefix.
 
 ## Alertmanager UI

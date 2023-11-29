@@ -217,4 +217,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuration-parameters#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../../configure/configuration-parameters#store_gateway" >}}).
