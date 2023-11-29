@@ -1,6 +1,8 @@
 {
   local container = $.core.v1.container,
   local containerPort = $.core.v1.containerPort,
+  local deployment = $.apps.v1.deployment,
+  local service = $.core.v1.service,
 
   distributor_args::
     $._config.commonConfig +
@@ -55,17 +57,16 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  local deployment = $.apps.v1.deployment,
-
-  distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
-    deployment.new('distributor', 3, [$.distributor_container]) +
-    $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
+  newDistributorDeployment(name, container)::
+    deployment.new(name, 3, [container]) +
+    $.newMimirSpreadTopology(name, $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
-  local service = $.core.v1.service,
+  distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
+    $.newDistributorDeployment('distributor', $.distributor_container),
 
   distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
