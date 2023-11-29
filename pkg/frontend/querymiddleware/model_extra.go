@@ -108,17 +108,10 @@ func (q *PrometheusRangeQueryRequest) SetShouldQueryIngestersQueryComponentHint(
 	//	}
 	//}
 	//return &newRequest
-	if q.Hints == nil {
-		q.Hints = &Hints{
-			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
-		}
+	if q.QueryInfrastructureHints == nil {
+		q.QueryInfrastructureHints = &QueryInfrastructureHints{ShouldQueryIngesters: shouldQuery}
 	} else {
-		// Hints exists, now check if nested QueryComponentHints exists
-		if q.Hints.QueryComponentHints == nil {
-			q.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
-		} else {
-			q.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
-		}
+		q.QueryInfrastructureHints.ShouldQueryIngesters = shouldQuery
 	}
 	return q
 }
@@ -139,17 +132,10 @@ func (q *PrometheusRangeQueryRequest) SetShouldQueryBlockStoreQueryComponentHint
 	//	}
 	//}
 	//return &newRequest
-	if q.Hints == nil {
-		q.Hints = &Hints{
-			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
-		}
+	if q.QueryInfrastructureHints == nil {
+		q.QueryInfrastructureHints = &QueryInfrastructureHints{ShouldQueryBlockStore: shouldQuery}
 	} else {
-		// Hints exists, now check if nested QueryComponentHints exists
-		if q.Hints.QueryComponentHints == nil {
-			q.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
-		} else {
-			q.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
-		}
+		q.QueryInfrastructureHints.ShouldQueryBlockStore = shouldQuery
 	}
 	return q
 }
@@ -234,17 +220,10 @@ func (r *PrometheusInstantQueryRequest) SetShouldQueryIngestersQueryComponentHin
 	//	}
 	//}
 	//return &newRequest
-	if r.Hints == nil {
-		r.Hints = &Hints{
-			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
-		}
+	if r.QueryInfrastructureHints == nil {
+		r.QueryInfrastructureHints = &QueryInfrastructureHints{ShouldQueryIngesters: shouldQuery}
 	} else {
-		// Hints exists, now check if nested QueryComponentHints exists
-		if r.Hints.QueryComponentHints == nil {
-			r.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
-		} else {
-			r.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
-		}
+		r.QueryInfrastructureHints.ShouldQueryIngesters = shouldQuery
 	}
 	return r
 }
@@ -265,17 +244,10 @@ func (r *PrometheusInstantQueryRequest) SetShouldQueryBlockStoreQueryComponentHi
 	//	}
 	//}
 	//return &newRequest
-	if r.Hints == nil {
-		r.Hints = &Hints{
-			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
-		}
+	if r.QueryInfrastructureHints == nil {
+		r.QueryInfrastructureHints = &QueryInfrastructureHints{ShouldQueryBlockStore: shouldQuery}
 	} else {
-		// Hints exists, now check if nested QueryComponentHints exists
-		if r.Hints.QueryComponentHints == nil {
-			r.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
-		} else {
-			r.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
-		}
+		r.QueryInfrastructureHints.ShouldQueryBlockStore = shouldQuery
 	}
 	return r
 }

@@ -33,6 +33,8 @@ message PrometheusRangeQueryRequest {
   // Hints that could be optionally attached to the request to pass down the stack.
   // These hints can be used to optimize the query execution.
   Hints hints = 9 [(gogoproto.nullable) = true];
+
+  QueryInfrastructureHints queryInfrastructureHints = 10 [(gogoproto.nullable) = true];
 }
 
 message PrometheusInstantQueryRequest {
@@ -47,6 +49,8 @@ message PrometheusInstantQueryRequest {
   // Hints that could be optionally attached to the request to pass down the stack.
   // These hints can be used to optimize the query execution.
   Hints hints = 6 [(gogoproto.nullable) = true];
+
+  QueryInfrastructureHints queryInfrastructureHints = 10 [(gogoproto.nullable) = true];
 }
 
 message PrometheusResponseHeader {
@@ -112,10 +116,11 @@ message Hints {
   oneof CardinalityEstimate {
     uint64 EstimatedSeriesCount = 2;
   }
-  QueryComponentHints queryComponentHints = 3;
 }
 
-message QueryComponentHints {
+// QueryInfrastructureHints are hints for query optimization which are Mimir-infrastructure-aware
+// and not solely tied to properties which can be derived from a vanilla Prometheus query request
+message QueryInfrastructureHints {
   bool ShouldQueryIngesters = 1;
   bool ShouldQueryBlockStore = 2;
 }
