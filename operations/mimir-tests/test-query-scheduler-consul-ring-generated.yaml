@@ -1494,11 +1494,9 @@ spec:
       containers:
       - args:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes=104857600
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.head-compaction-interval=15m
-        - -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes=104857600
         - -blocks-storage.tsdb.ship-interval=1m
         - -blocks-storage.tsdb.wal-replay-concurrency=3
         - -common.storage.backend=gcs

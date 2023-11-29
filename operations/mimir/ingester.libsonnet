@@ -39,19 +39,6 @@
       // requested just because it spikes during the WAL replay. Therefore, the WAL replay
       // concurrency is chosen in such a way that it is always less than the current CPU request.
       'blocks-storage.tsdb.wal-replay-concurrency': std.max(1, std.floor($.util.parseCPU($.ingester_container.resources.requests.cpu) - 1)),
-
-      // This setting puts a cap on the per-TSDB head/block max PostingsForMatchers() cache size in bytes. This limit is
-      // *in addition* to the max size in items (default to 100 items).
-      //
-      // This increase is most useful on Mimir clusters with 1 tenant. If the tenant runs very high cardinality
-      // queries (e.g. a query touching 1M series / ingester) then with the default cache
-      // size of 10MB we may not be able to effectively use the cache.
-      //
-      // A single cached posting takes about 9 bytes in the cache, on average. The default max cache size as number of items
-      // is 100, so having a 100MB cache per-tenant for the TSDB Head means we can cache 100MB / 100 / 9 = 116k postings
-      // per cached entry on average.
-      'blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes': 100 * 1024 * 1024,
-      'blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes': 100 * 1024 * 1024,
     } + (
       // Optionally configure the TSDB head early compaction (only when enabled).
       if !$._config.ingester_tsdb_head_early_compaction_enabled then {} else {

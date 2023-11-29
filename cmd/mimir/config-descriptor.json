@@ -8625,7 +8625,7 @@
               "required": false,
               "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 10485760,
+              "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
               "fieldCategory": "experimental"
@@ -8669,7 +8669,7 @@
               "required": false,
               "desc": "Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0.",
               "fieldValue": null,
-              "fieldDefaultValue": 10485760,
+              "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
               "fieldCategory": "experimental"

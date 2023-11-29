@@ -752,7 +752,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 10485760)
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
@@ -782,7 +782,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
     	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 10485760)
+    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration

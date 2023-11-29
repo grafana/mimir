@@ -3827,7 +3827,7 @@ tsdb:
   # (experimental) Maximum size in bytes of the cache for postings for matchers
   # in the Head and OOOHead when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes
-  [head_postings_for_matchers_cache_max_bytes: <int> | default = 10485760]
+  [head_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
   # (experimental) Force the cache to be used for postings for matchers in the
   # Head and OOOHead, even if it's not a concurrent (query-sharding) call.
@@ -3848,7 +3848,7 @@ tsdb:
   # (experimental) Maximum size in bytes of the cache for postings for matchers
   # in each compacted block when TTL is greater than 0.
   # CLI flag: -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes
-  [block_postings_for_matchers_cache_max_bytes: <int> | default = 10485760]
+  [block_postings_for_matchers_cache_max_bytes: <int> | default = 104857600]
 
   # (experimental) Force the cache to be used for postings for matchers in
   # compacted blocks, even if it's not a concurrent (query-sharding) call.

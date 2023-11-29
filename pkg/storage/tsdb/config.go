@@ -84,6 +84,18 @@ const (
 	// not too small (too much memory).
 	DefaultPostingOffsetInMemorySampling = 32
 
+	// DefaultPostingsForMatchersCacheMaxBytes setting puts a limit cap on the per-TSDB head/block max PostingsForMatchers() cache size in bytes.
+	// This limit is *in addition* to the max size in items (default to 100 items).
+	//
+	// This increase is most useful on Mimir clusters with 1 tenant. If the tenant runs very high cardinality
+	// queries (e.g. a query touching 1M series / ingester) then with the default cache
+	// size of 10MB we may not be able to effectively use the cache.
+	//
+	// A single cached posting takes about 9 bytes in the cache, on average. The default max cache size as number of items
+	// is 100, so having a 100MB cache per-tenant for the TSDB Head means we can cache 100MB / 100 / 9 = 116k postings
+	// per cached entry on average.
+	DefaultPostingsForMatchersCacheMaxBytes = 100 * 1024 * 1024
+
 	// DefaultPartitionerMaxGapSize is the default max size - in bytes - of a gap for which the store-gateway
 	// partitioner aggregates together two bucket GET object requests.
 	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
@@ -288,11 +300,11 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")
 	f.DurationVar(&cfg.HeadPostingsForMatchersCacheTTL, "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.HeadPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.head-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
-	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", tsdb.DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
+	f.Int64Var(&cfg.HeadPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.")
 	f.BoolVar(&cfg.HeadPostingsForMatchersCacheForce, "blocks-storage.tsdb.head-postings-for-matchers-cache-force", tsdb.DefaultPostingsForMatchersCacheForce, "Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.")
 	f.DurationVar(&cfg.BlockPostingsForMatchersCacheTTL, "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl", tsdb.DefaultPostingsForMatchersCacheTTL, "How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls.")
 	f.IntVar(&cfg.BlockPostingsForMatchersCacheMaxItems, "blocks-storage.tsdb.block-postings-for-matchers-cache-size", tsdb.DefaultPostingsForMatchersCacheMaxItems, "Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0.")
-	f.Int64Var(&cfg.BlockPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes", tsdb.DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0.")
+	f.Int64Var(&cfg.BlockPostingsForMatchersCacheMaxBytes, "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes", DefaultPostingsForMatchersCacheMaxBytes, "Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0.")
 	f.BoolVar(&cfg.BlockPostingsForMatchersCacheForce, "blocks-storage.tsdb.block-postings-for-matchers-cache-force", tsdb.DefaultPostingsForMatchersCacheForce, "Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.")
 	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
