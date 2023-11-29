@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1797,10 +1798,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			indexReader := newBucketIndexReader(block, selectAllStrategy{})
 			defer indexReader.Close()
 
-			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
+			requireEqual(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
 		})
 	}
 
+}
+
+// Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.AllowUnexported(seriesChunkRefsSet{}), cmp.AllowUnexported(seriesChunkRefs{})},
+		msgAndArgs...)
 }
 
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
