@@ -87,8 +87,8 @@ const (
 	// DefaultPostingsForMatchersCacheMaxBytes setting puts a limit cap on the per-TSDB head/block max PostingsForMatchers() cache size in bytes.
 	// This limit is *in addition* to the max size in items (default to 100 items).
 	//
-	// This increase is most useful on Mimir clusters with 1 tenant. If the tenant runs very high cardinality
-	// queries (e.g. a query touching 1M series / ingester) then with the default cache
+	// This value is most useful on Mimir clusters with 1 tenant. If the tenant runs very high cardinality
+	// queries (e.g. a query touching 1M series / ingester) then with the previous default cache
 	// size of 10MB we may not be able to effectively use the cache.
 	//
 	// A single cached posting takes about 9 bytes in the cache, on average. The default max cache size as number of items
