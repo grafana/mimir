@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1826,10 +1827,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			indexReader := newBucketIndexReader(block, selectAllStrategy{})
 			defer indexReader.Close()
 
-			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
+			requireEqual(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
 		})
 	}
 
+}
+
+// Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.AllowUnexported(seriesChunkRefsSet{}), cmp.AllowUnexported(seriesChunkRefs{})},
+		msgAndArgs...)
 }
 
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
@@ -2430,9 +2438,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
