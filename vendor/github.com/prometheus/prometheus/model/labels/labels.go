@@ -487,3 +487,14 @@ func (b *ScratchBuilder) Labels() Labels {
 func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	*ls = append((*ls)[:0], b.add...)
 }
+
+// Equal returns true if the Builder would build Labels the same as passed in.
+func (b *ScratchBuilder) Equal(a Labels) bool {
+	return Equal(b.add, a)
+}
+
+// Hash returns a hash value for the label set.
+// Note: the result must be consistent with what Labels.Hash() would return.
+func (b *ScratchBuilder) Hash() uint64 {
+	return b.add.Hash()
+}
