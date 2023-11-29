@@ -201,10 +201,10 @@ func TestParseProtoReader(t *testing.T) {
 
 			_, err := util.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, nil, &fromWire, tt.compression)
 			if tt.expectErr {
-				assert.NotNil(t, err)
+				require.Error(t, err)
 				return
 			}
-			assert.Nil(t, err)
+			require.NoError(t, err)
 			fromWire.ClearTimeseriesUnmarshalData() // non-nil unmarshal buffer in PreallocTimeseries breaks equality test
 			assert.Equal(t, req, &fromWire)
 		})

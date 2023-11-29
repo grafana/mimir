@@ -202,85 +202,71 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
+	if compression != NoCompression && compression != RawSnappy && compression != Gzip {
+		return nil, fmt.Errorf("unrecognized compression type %v", compression)
+	}
 
-	switch compression {
-	case NoCompression, RawSnappy:
+	if compression == NoCompression || compression == RawSnappy {
 		buf, ok := tryBufferFromReader(reader)
 		if ok {
 			return decompressFromBuffer(dst, buf, maxSize, compression, sp)
 		}
+	}
 
-		buf = &bytes.Buffer{}
-		if expectedSize > 0 {
-			buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
-		}
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("expectedSize", expectedSize))
+	}
 
-		// Limit at maxSize+1 so we can tell when the size is exceeded
-		reader = io.LimitReader(reader, int64(maxSize)+1)
-		if _, err := buf.ReadFrom(reader); err != nil {
-			return nil, errors.Wrap(err, "read write request")
-		}
-
-		return decompressFromBuffer(dst, buf, maxSize, compression, sp)
-	case Gzip:
-		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"),
-				otlog.Int("size", expectedSize))
-		}
-
+	if compression == Gzip {
 		var err error
 		reader, err = gzip.NewReader(reader)
 		if err != nil {
 			return nil, errors.Wrap(err, "create gzip reader")
 		}
+	}
 
-		// Limit at maxSize+1 so we can tell when the size is exceeded
-		reader = io.LimitReader(reader, int64(maxSize)+1)
-		// TODO: Use dst as buffer?
-		var buf bytes.Buffer
-		if expectedSize > 0 {
-			buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
-		}
-		if _, err := buf.ReadFrom(reader); err != nil {
+	// Limit at maxSize+1 so we can tell when the size is exceeded
+	reader = io.LimitReader(reader, int64(maxSize)+1)
+	var buf bytes.Buffer
+	if expectedSize > 0 {
+		buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
+	}
+	if _, err := buf.ReadFrom(reader); err != nil {
+		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
 		}
-
-		if buf.Len() > maxSize {
-			return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
-		}
-
-		return buf.Bytes(), nil
-	default:
-		return nil, fmt.Errorf("unrecognized compression type %v", compression)
+		return nil, errors.Wrap(err, "read body")
 	}
+
+	return decompressFromBuffer(dst, &buf, maxSize, compression, sp)
 }
 
 func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
 	if buffer.Len() > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
 	}
-	switch compression {
-	case NoCompression:
-		return buffer.Bytes(), nil
-	case RawSnappy:
-		if sp != nil {
-			sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"),
-				otlog.Int("size", len(buffer.Bytes())))
-		}
-		size, err := snappy.DecodedLen(buffer.Bytes())
-		if err != nil {
-			return nil, err
-		}
-		if size > maxSize {
-			return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
-		}
-		body, err := snappy.Decode(dst, buffer.Bytes())
-		if err != nil {
-			return nil, err
-		}
-		return body, nil
+
+	if sp != nil {
+		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("size", buffer.Len()))
 	}
-	return nil, nil
+
+	if compression != RawSnappy {
+		// Buffer should already be decompressed
+		return buffer.Bytes(), nil
+	}
+
+	size, err := snappy.DecodedLen(buffer.Bytes())
+	if err != nil {
+		return nil, errors.Wrap(err, "getting snappy decoded length")
+	}
+	if size > maxSize {
+		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
+	}
+	body, err := snappy.Decode(dst, buffer.Bytes())
+	if err != nil {
+		return nil, errors.Wrap(err, "decompress snappy")
+	}
+	return body, nil
 }
 
 // tryBufferFromReader attempts to cast the reader to a `*bytes.Buffer` this is possible when using httpgrpc.
