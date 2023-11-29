@@ -1749,6 +1749,9 @@ chunks-cache:
   # -- Maximum item memory for chunks-cache (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for chunks-cache pods
   initContainers: []
 
@@ -1837,6 +1840,9 @@ index-cache:
 
   # -- Maximum item index-cache for memcached (in MB).
   maxItemMemory: 5
+
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
 
   # -- Extra init containers for index-cache pods
   initContainers: []
@@ -1927,6 +1933,9 @@ metadata-cache:
   # -- Maximum item metadata-cache for memcached (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for metadata-cache pods
   initContainers: []
 
@@ -2015,6 +2024,9 @@ results-cache:
 
   # -- Maximum item results-cache for memcached (in MB).
   maxItemMemory: 5
+
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
 
   # -- Extra init containers for results-cache pods
   initContainers: []
@@ -3460,6 +3472,9 @@ gr-aggr-cache:
   # -- Maximum item memory for graphite-aggregation-cache (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for graphite-aggregation-cache pods
   initContainers: []
 
@@ -3521,6 +3536,9 @@ gr-metricname-cache:
 
   # -- Maximum item memory for graphite-metric-name-cache (in MB).
   maxItemMemory: 1
+
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
 
   # -- Extra init containers for graphite-metric-name-cache pods
   initContainers: []

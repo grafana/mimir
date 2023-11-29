@@ -52,7 +52,7 @@ memcached {
         name: 'memcached-frontend',
         max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
         overprovision_factor: 1.05,
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_frontend_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -64,7 +64,7 @@ memcached {
         name: 'memcached-index-queries',
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
         overprovision_factor: 1.05,
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_index_queries_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -79,7 +79,7 @@ memcached {
         // Save memory by more tightly provisioning memcached chunks.
         memory_limit_mb: 6 * 1024,
         overprovision_factor: 1.05,
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_chunks_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -90,7 +90,7 @@ memcached {
       $.memcached {
         name: 'memcached-metadata',
         max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_metadata_connection_limit),
         extended_options: ['track_sizes'],
 
         // Metadata cache doesn't need much memory.
