@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"strconv"
 	"strings"
 	"sync"
@@ -413,6 +414,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		// We do not want to stop the remaining work in the cleaner if an
 		// error occurs here. Errors are logged in the function.
 		retention := c.cfgProvider.CompactorBlocksRetentionPeriod(userID)
+		extendedRetention := c.cfgProvider.CompactorBlocksExtendedRetentionPeriod(userID)
 		c.applyUserRetentionPeriod(ctx, idx, retention, userBucket, userLogger)
 	}
 
@@ -566,14 +568,32 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	}
 }
 
+func (c *BlocksCleaner) ApplyBucketRetention(policies userConfig, ctx context.Context, idx *bucketindex.Index, currentTime int64) {
+	for i, b := range userBucket.blocks {
+		// If the block is outside the default retention tier it will need to be retained in some way
+		if !checkBlockRetention(b.maxT, currentTime-policies.baseRetention) {
+			return
+		} else {
+			// Apply all valid policies to the block and update the block
+			toApply := buildPolicy(b.maxT, policies, currentTime)
+			policyHash := hashPolicy(toApply)
+			if policyHash != b.appliedPolicy {
+				userBucket.blocks[i] = applyPolicy(toApply, policyHash, b)
+			}
+		}
+	}
+}
+
 // applyUserRetentionPeriod marks blocks for deletion which have aged past the retention period.
-func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucketindex.Index, retention time.Duration, userBucket objstore.Bucket, userLogger log.Logger) {
+func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucketindex.Index, retention time.Duration, extendedRetention time.Duration, userBucket objstore.Bucket, userLogger log.Logger) {
 	// The retention period of zero is a special value indicating to never delete.
 	if retention <= 0 {
 		return
 	}
 
-	blocks := listBlocksOutsideRetentionPeriod(idx, time.Now().Add(-retention))
+	// we need to apply the extended retention policy before deletion
+
+	blocks := listBlocksOutsideRetentionPeriod(idx, time.Now().Add(-retention), time.Now().Add(-extendedRetention), time.Now())
 
 	// Attempt to mark all blocks. It is not critical if a marking fails, as
 	// the cleaner will retry applying the retention in its next cycle.
@@ -586,9 +606,18 @@ func (c *BlocksCleaner) applyUserRetentionPeriod(ctx context.Context, idx *bucke
 	level.Info(userLogger).Log("msg", "marked blocks for deletion", "num_blocks", len(blocks), "retention", retention.String())
 }
 
+type userConfig struct {
+	policies []*Policy
+}
+
+type Policy struct {
+	retentionPeriod time.Duration
+	expression      string
+}
+
 // listBlocksOutsideRetentionPeriod determines the blocks which have aged past
 // the specified retention period, and are not already marked for deletion.
-func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Time) (result bucketindex.Blocks) {
+func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Time, extendedthreshold time.Time, currentTime time.Time) (result bucketindex.Blocks) {
 	// Whilst re-marking a block is not harmful, it is wasteful and generates
 	// a warning log message. Use the block deletion marks already in-memory
 	// to prevent marking blocks already marked for deletion.
@@ -597,16 +626,77 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 		marked[d.ID] = struct{}{}
 	}
 
-	for _, b := range idx.Blocks {
+	// the blocks that are explicitely out of extended threshold, we would just delete them
+	for i, b := range idx.Blocks {
 		maxTime := time.Unix(b.MaxTime/1000, 0)
-		if maxTime.Before(threshold) {
+		config := userConfig{}
+		if maxTime.Before(extendedthreshold) {
 			if _, isMarked := marked[b.ID]; !isMarked {
 				result = append(result, b)
 			}
+		} else if maxTime.After(threshold) {
+			continue
+		}
+
+		// get policies that could be applied for the current blocks
+		toApply := buildPolicy(maxTime, config)
+		policyHash := hashPolicy(toApply)
+		if policyHash != b.AppliedPolicy {
+			idx.Blocks[i] = applyPolicy(toApply, policyHash, idx.Blocks[i])
 		}
 	}
-
 	return
+}
+
+func applyPolicy(toApply []*Policy, policyHash uint64, b block) block {
+	resultBlock := block{minT: b.minT, maxT: b.maxT}
+	resultSeries := make(map[string]interface{}, len(b.series))
+
+	for _, p := range toApply {
+		for s := range b.series {
+			// Basic matchers check I'm too lazy for regex
+			if strings.Contains(p.policy, s) {
+				resultSeries[s] = struct{}{}
+			}
+		}
+	}
+	resultBlock.series = resultSeries
+	resultBlock.appliedPolicy = policyHash
+	resultBlock.retained = b.retained + 1
+	return resultBlock
+}
+
+func hashPolicy(policies []*Policy) uint64 {
+	hash := fnv.New64()
+	for _, p := range policies {
+		_, err := hash.Write([]byte(p.expression))
+		if err != nil {
+			panic(err)
+		}
+	}
+	return hash.Sum64()
+}
+
+func buildPolicy(blockMaxTime time.Time, config userConfig) []*Policy {
+	// Figure out which policy matches
+	// If the time is explicitly after the threshold apply any config that is still valid
+	var toApply []*Policy
+	for _, p := range config.policies {
+		// You want the inverse, so any policy that is still valid we would want to apply
+		if !checkBlockRetention(blockMaxTime, time.Now().Add(-p.retentionPeriod)) {
+			toApply = append(toApply, p)
+		}
+	}
+	return toApply
+}
+
+// Returns true if the maxTime is outside the retention threshold and would be expired
+func checkBlockRetention(maxT time.Time, threshold time.Time) bool {
+	// if max t is before threshold time return true
+	if maxT.Before(threshold) {
+		return true
+	}
+	return false
 }
 
 var errStopIter = errors.New("stop iteration")
