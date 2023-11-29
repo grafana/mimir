@@ -271,6 +271,14 @@ type GetRef interface {
 	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
 }
 
+type GetRefFunc interface {
+	// Returns reference number that can be used to pass to Appender.Append(),
+	// and a set of labels that will not cause another copy when passed to Appender.Append().
+	// 0 means the appender does not have a reference to this series.
+	// hash should be a hash of lset. cmp should return true if labels match.
+	GetRefFunc(hash uint64, cmp func(labels.Labels) bool) (SeriesRef, labels.Labels)
+}
+
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
 // within Prometheus is in-memory only.
 type ExemplarAppender interface {

@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//go:build internlabels
+
+package distributor
+
+import (
+	"sync"
+
+	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
+)
+
+// activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
+type activeSeriesResponse struct {
+	m      sync.Mutex
+	series map[string]labels.Labels
+}
+
+func newActiveSeriesResponse() *activeSeriesResponse {
+	return &activeSeriesResponse{
+		series: make(map[string]labels.Labels),
+	}
+}
+
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, metric := range series {
+		lbls := mimirpb.FromLabelAdaptersToLabels(metric.Labels) // FIXME: expensive.
+		var buf [1024]byte
+		key := lbls.Bytes(buf[:])
+		if _, found := r.series[string(key)]; !found { // Look up first to avoid copying the key on duplicates.
+			r.series[string(key)] = lbls
+		}
+	}
+}
+
+func (r *activeSeriesResponse) result() []labels.Labels {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	result := make([]labels.Labels, 0, len(r.series))
+	for _, series := range r.series {
+		result = append(result, series)
+	}
+	return result
+}

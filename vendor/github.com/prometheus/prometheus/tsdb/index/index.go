@@ -1123,6 +1123,7 @@ type Reader struct {
 	symbols     *Symbols
 	nameSymbols map[uint32]string // Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
+	st *labels.SymbolTable // TODO: see if we can merge this with nameSymbols.
 
 	dec *Decoder
 
@@ -1196,6 +1197,7 @@ func newReader(b ByteSlice, c io.Closer, cacheProvider ReaderCacheProvider) (*Re
 		c:             c,
 		postings:      map[string][]postingOffset{},
 		cacheProvider: cacheProvider,
+		st:            labels.NewSymbolTable(),
 	}
 
 	// Verify header.
@@ -1672,6 +1674,8 @@ func (r *Reader) Series(id storage.SeriesRef, builder *labels.ScratchBuilder, ch
 	if d.Err() != nil {
 		return d.Err()
 	}
+	builder.SetSymbolTable(r.st)
+	builder.Reset()
 	err := r.dec.Series(d.Get(), builder, chks)
 	if err != nil {
 		return fmt.Errorf("read series: %w", err)
