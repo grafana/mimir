@@ -209,7 +209,14 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 	if compression == NoCompression || compression == RawSnappy {
 		buf, ok := tryBufferFromReader(reader)
 		if ok {
-			return decompressFromBuffer(dst, buf, maxSize, compression, sp)
+			if compression == NoCompression {
+				if buf.Len() > maxSize {
+					return nil, MsgSizeTooLargeErr{Actual: buf.Len(), Limit: maxSize}
+				}
+				return buf.Bytes(), nil
+			}
+
+			return decompressSnappyFromBuffer(dst, buf, maxSize, sp)
 		}
 	}
 
@@ -238,21 +245,19 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 		return nil, errors.Wrap(err, "read body")
 	}
 
-	return decompressFromBuffer(dst, &buf, maxSize, compression, sp)
-}
+	if compression == RawSnappy {
+		return decompressSnappyFromBuffer(dst, &buf, maxSize, sp)
+	}
 
-func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
-	if buffer.Len() > maxSize {
+	if buf.Len() > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: -1, Limit: maxSize}
 	}
+	return buf.Bytes(), nil
+}
 
+func decompressSnappyFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, sp opentracing.Span) ([]byte, error) {
 	if sp != nil {
-		sp.LogFields(otlog.Event("util.ParseProtoReader[decompress]"), otlog.Int("size", buffer.Len()))
-	}
-
-	if compression == NoCompression || compression == Gzip {
-		// Buffer should already be decompressed
-		return buffer.Bytes(), nil
+		sp.LogFields(otlog.Event("util.ParseProtoReader[decompressSnappy]"), otlog.Int("size", buffer.Len()))
 	}
 
 	size, err := snappy.DecodedLen(buffer.Bytes())
