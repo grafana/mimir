@@ -4,6 +4,12 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
+* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
+* [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
+* [BUGFIX] Fix panic during tsdb Commit #6766
+* [BUGFIX] tsdb/head: wlog exemplars after samples #6766
+
 ### Mixin
 
 ### Jsonnet
@@ -133,7 +139,6 @@
 * [BUGFIX] Querier: attempt to query ingesters in PENDING state, to reduce the likelihood that scaling up the number of ingesters in multiple zones simultaneously causes a read outage. #6726 #6727
 * [BUGFIX] Querier: don't cancel inflight queries from a query-scheduler if the stream between the querier and query-scheduler is broken. #6728
 * [BUGFIX] Store-gateway: Fix double-counting of some duration metrics. #6616
-* [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 
 ### Mixin
 
