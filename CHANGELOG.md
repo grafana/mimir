@@ -12,6 +12,8 @@
 
 ### Mimir Continuous Test
 
+* [ENHANCEMENT] Include comparison of all expected and actual values when any float sample does not match. #6756
+
 ### Query-tee
 
 ### Documentation
