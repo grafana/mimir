@@ -444,6 +444,10 @@ func (m multiTenantMockLimits) AlignQueriesWithStep(userID string) bool {
 	return m.byTenant[userID].alignQueriesWithStep
 }
 
+func (m multiTenantMockLimits) QueryIngestersWithin(userID string) time.Duration {
+	return m.byTenant[userID].queryIngestersWithin
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -467,6 +471,7 @@ type mockLimits struct {
 	resultsCacheForUnalignedQueryEnabled bool
 	blockedQueries                       []*validation.BlockedQuery
 	alignQueriesWithStep                 bool
+	queryIngestersWithin                 time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -557,6 +562,10 @@ func (m mockLimits) NativeHistogramsIngestionEnabled(string) bool {
 
 func (m mockLimits) AlignQueriesWithStep(string) bool {
 	return m.alignQueriesWithStep
+}
+
+func (m mockLimits) QueryIngestersWithin(string) time.Duration {
+	return m.queryIngestersWithin
 }
 
 type mockHandler struct {

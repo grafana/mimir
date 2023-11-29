@@ -65,6 +65,8 @@ type Config struct {
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
+	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
@@ -305,6 +307,19 @@ func newQueryTripperware(
 			queryshardingMiddleware,
 		)
 	}
+
+	// place queryComponentHints hints after all splitting and sharding
+	queryComponentHintsMiddleware := newQueryComponentHintsMiddleware(cfg, limits, codec)
+	queryRangeMiddleware = append(
+		queryRangeMiddleware,
+		newInstrumentMiddleware("query_component_hints", metrics),
+		queryComponentHintsMiddleware,
+	)
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("query_component_hints", metrics),
+		queryComponentHintsMiddleware,
+	)
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)

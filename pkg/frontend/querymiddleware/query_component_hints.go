@@ -1,3 +1,56 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package querymiddleware
+
+import (
+	"context"
+	"time"
+
+	"github.com/grafana/dskit/tenant"
+
+	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+type queryComponentHints struct {
+	cfg    Config
+	limits Limits
+	codec  Codec
+	next   Handler
+}
+
+func newQueryComponentHintsMiddleware(cfg Config, limits Limits, codec Codec) Middleware {
+	return MiddlewareFunc(func(next Handler) Handler {
+		return &queryComponentHints{
+			cfg, limits, codec, next,
+		}
+	})
+}
+
+func (c *queryComponentHints) Do(ctx context.Context, request Request) (Response, error) {
+	now := time.Now()
+	tenantIDs, err := tenant.TenantIDs(ctx)
+
+	latestQueryIngestersWithinWindow := validation.MinDurationPerTenant(tenantIDs, c.limits.QueryIngestersWithin)
+	// more debuggable version of timestamps
+	//requestEnd := request.GetEnd()
+	//a := now.Add(-latestQueryIngestersWithinWindow)
+	//fmt.Println(a)
+	shouldQueryIngesters := querier.ShouldQueryIngesters(
+		latestQueryIngestersWithinWindow, now, request.GetEnd(),
+	)
+	request = request.WithShouldQueryIngestersQueryComponentHint(shouldQueryIngesters)
+
+	// more debuggable version of timestamps
+	//requestStart := request.GetStart()
+	//b := now.Add(-c.cfg.QueryStoreAfter)
+	//fmt.Println(b)
+	shouldQueryBlockstore := querier.ShouldQueryBlockStore(c.cfg.QueryStoreAfter, now, request.GetStart())
+	request = request.WithShouldQueryBlockStoreQueryComponentHint(shouldQueryBlockstore)
+
+	if err != nil {
+		return c.next.Do(ctx, request)
+	}
+
+	return c.next.Do(ctx, request)
+}
