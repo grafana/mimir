@@ -27,11 +27,11 @@ func newQueryComponentHintsMiddleware(cfg Config, limits Limits, codec Codec) Mi
 	})
 }
 
-func (c *queryComponentHints) Do(ctx context.Context, request Request) (Response, error) {
+func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response, error) {
 	now := time.Now()
 	tenantIDs, err := tenant.TenantIDs(ctx)
 
-	latestQueryIngestersWithinWindow := validation.MinDurationPerTenant(tenantIDs, c.limits.QueryIngestersWithin)
+	latestQueryIngestersWithinWindow := validation.MinDurationPerTenant(tenantIDs, h.limits.QueryIngestersWithin)
 	// more debuggable version of timestamps
 	//requestEnd := request.GetEnd()
 	//a := now.Add(-latestQueryIngestersWithinWindow)
@@ -43,14 +43,14 @@ func (c *queryComponentHints) Do(ctx context.Context, request Request) (Response
 
 	// more debuggable version of timestamps
 	//requestStart := request.GetStart()
-	//b := now.Add(-c.cfg.QueryStoreAfter)
+	//b := now.Add(-h.cfg.QueryStoreAfter)
 	//fmt.Println(b)
-	shouldQueryBlockstore := querier.ShouldQueryBlockStore(c.cfg.QueryStoreAfter, now, request.GetStart())
+	shouldQueryBlockstore := querier.ShouldQueryBlockStore(h.cfg.QueryStoreAfter, now, request.GetStart())
 	request = request.WithShouldQueryBlockStoreQueryComponentHint(shouldQueryBlockstore)
 
 	if err != nil {
-		return c.next.Do(ctx, request)
+		return h.next.Do(ctx, request)
 	}
 
-	return c.next.Do(ctx, request)
+	return h.next.Do(ctx, request)
 }

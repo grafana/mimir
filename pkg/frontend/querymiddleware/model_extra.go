@@ -92,8 +92,8 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 	return &newRequest
 }
 
-func (r *PrometheusRangeQueryRequest) WithShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *r
+func (q *PrometheusRangeQueryRequest) WithShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request {
+	newRequest := *q
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryIngesters: shouldQuery},
@@ -103,15 +103,15 @@ func (r *PrometheusRangeQueryRequest) WithShouldQueryIngestersQueryComponentHint
 		if newRequest.Hints.QueryComponentHints == nil {
 			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryIngesters: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+			*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
 			newRequest.Hints.QueryComponentHints.ShouldQueryIngesters = shouldQuery
 		}
 	}
 	return &newRequest
 }
 
-func (r *PrometheusRangeQueryRequest) WithShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
-	newRequest := *r
+func (q *PrometheusRangeQueryRequest) WithShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request {
+	newRequest := *q
 	if newRequest.Hints == nil {
 		newRequest.Hints = &Hints{
 			QueryComponentHints: &QueryComponentHints{ShouldQueryBlockStore: shouldQuery},
@@ -121,7 +121,7 @@ func (r *PrometheusRangeQueryRequest) WithShouldQueryBlockStoreQueryComponentHin
 		if newRequest.Hints.QueryComponentHints == nil {
 			newRequest.Hints.QueryComponentHints = &QueryComponentHints{ShouldQueryBlockStore: shouldQuery}
 		} else {
-			*newRequest.Hints.QueryComponentHints = *(r.Hints.QueryComponentHints)
+			*newRequest.Hints.QueryComponentHints = *(q.Hints.QueryComponentHints)
 			newRequest.Hints.QueryComponentHints.ShouldQueryBlockStore = shouldQuery
 		}
 	}
