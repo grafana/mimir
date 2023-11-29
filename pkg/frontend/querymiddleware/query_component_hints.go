@@ -30,6 +30,9 @@ func newQueryComponentHintsMiddleware(cfg Config, limits Limits, codec Codec) Mi
 func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response, error) {
 	now := time.Now()
 	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return h.next.Do(ctx, request)
+	}
 
 	latestQueryIngestersWithinWindow := validation.MinDurationPerTenant(tenantIDs, h.limits.QueryIngestersWithin)
 	// more debuggable version of timestamps
@@ -47,10 +50,6 @@ func (h *queryComponentHints) Do(ctx context.Context, request Request) (Response
 	//fmt.Println(b)
 	shouldQueryBlockstore := querier.ShouldQueryBlockStore(h.cfg.QueryStoreAfter, now, request.GetStart())
 	request = request.WithShouldQueryBlockStoreQueryComponentHint(shouldQueryBlockstore)
-
-	if err != nil {
-		return h.next.Do(ctx, request)
-	}
 
 	return h.next.Do(ctx, request)
 }
