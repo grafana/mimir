@@ -1397,7 +1397,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	}
 
-	var builder labels.ScratchBuilder
+	builder := labels.NewScratchBuilder(0)
 	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
