@@ -292,6 +292,25 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	case NoCompression:
 	case RawSnappy:
 		data = snappy.Encode(nil, data)
+	case Gzip:
+		var buf bytes.Buffer
+		buf.Grow(len(data))
+		wr := gzip.NewWriter(&buf)
+		if _, err = wr.Write(data); err != nil {
+			err = errors.Wrap(err, "write gzip")
+			break
+		}
+		if err = wr.Close(); err != nil {
+			err = errors.Wrap(err, "close gzip writer")
+			break
+		}
+		data = buf.Bytes()
+	default:
+		err = fmt.Errorf("unrecognized compression format %v", compression)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return err
 	}
 
 	if _, err := w.Write(data); err != nil {
