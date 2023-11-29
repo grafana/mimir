@@ -2420,7 +2420,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 					}
 
 					require.NoError(t, err)
-					assert.ElementsMatch(t, testData.expectedSeries, series)
+					assertMatchingLabelSlices(t, testData.expectedSeries, series)
 
 					// Check that query stats are set correctly.
 					assert.Equal(t, uint64(len(testData.expectedSeries)), qStats.GetFetchedSeriesCount())
@@ -2440,6 +2440,25 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func assertMatchingLabelSlices(tb testing.TB, a, b []labels.Labels) {
+	tb.Helper()
+	mapA := map[string]struct{}{}
+	for i := range a {
+		mapA[a[i].String()] = struct{}{}
+	}
+	for i := range b {
+		s := b[i].String()
+		if _, found := mapA[s]; found {
+			delete(mapA, s)
+		} else {
+			tb.Errorf("entry in b not found in a: %s", s)
+		}
+	}
+	for s := range mapA {
+		tb.Errorf("entry in a not found in b: %s", s)
 	}
 }
 
