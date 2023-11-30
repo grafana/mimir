@@ -54,3 +54,20 @@ func NewCompositeMimirService(services ...*MimirService) *CompositeMimirService 
 		CompositeHTTPService: e2e.NewCompositeHTTPService(httpServices...),
 	}
 }
+
+func NewKafka(zookeeperAddr string) *e2e.HTTPService {
+	svc := e2e.NewHTTPService("kafka", "wurstmeister/kafka", e2e.NewCommand("/usr/bin/start-kafka.sh"), e2e.NewTCPReadinessProbe(9092), 9092)
+	svc.SetEnvVars(map[string]string{
+		"KAFKA_ADVERTISED_LISTENERS":           "INSIDE://kafka:9092",
+		"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "INSIDE:PLAINTEXT",
+		"KAFKA_LISTENERS":                      "INSIDE://0.0.0.0:9092",
+		"KAFKA_INTER_BROKER_LISTENER_NAME":     "INSIDE",
+		"KAFKA_ZOOKEEPER_CONNECT":              zookeeperAddr,
+	})
+	return svc
+}
+
+func NewZookeeper() *e2e.HTTPService {
+	svc := e2e.NewHTTPService("zookeeper", "wurstmeister/zookeeper", e2e.NewCommand("/bin/sh", "/usr/bin/start-zk.sh"), e2e.NewTCPReadinessProbe(2181), 2181)
+	return svc
+}

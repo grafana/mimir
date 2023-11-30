@@ -5,8 +5,10 @@ package integration
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,9 +18,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	ingesterpkg "github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -833,4 +837,173 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 			require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 		})
 	}
+}
+
+func BenchmarkIngesterPush(b *testing.B) {
+	const (
+		series                 = 200_000
+		requestsPerConcurrency = 200
+		samples                = 4
+		useKafka               = true
+		kafkaTopic             = "t1"
+	)
+	allLabels, allSamples := benchmarkData(series)
+
+	for _, concurrency := range []int{1, 2, 3, 4, 5} {
+		b.Run(fmt.Sprintf("kafka=%t,series=%d,req=%d,samples=%d,concurrency=%d", useKafka, series, requestsPerConcurrency, samples, concurrency), func(b *testing.B) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(b, err)
+			b.Cleanup(s.Close)
+
+			bucketFlags := BlocksStorageS3Flags()
+
+			// Start dependencies.
+			zk := e2emimir.NewZookeeper()
+			kafka := e2emimir.NewKafka(fmt.Sprintf("%s-zookeeper:%d", GetNetworkName(), zk.HTTPPort()))
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, bucketFlags["-blocks-storage.s3.bucket-name"])
+			require.NoError(b, s.StartAndWaitReady(consul, zk, minio, kafka))
+
+			const pushTimeout = time.Minute
+			baseFlags := map[string]string{
+				"-blocks-storage.tsdb.head-compaction-interval": "1m",
+				"-distributor.ingestion-rate-limit":             "1000000000",
+				"-distributor.ingestion-tenant-shard-size":      "0",
+				"-distributor.max-recv-msg-size":                "1121068200",
+				"-distributor.remote-timeout":                   pushTimeout.String(),
+				"-ingest-storage.enabled":                       strconv.FormatBool(useKafka),
+				"-ingest-storage.kafka-address":                 fmt.Sprintf("%s-kafka:%d", GetNetworkName(), kafka.HTTPPort()),
+				"-ingest-storage.kafka-topic":                   kafkaTopic,
+				"-ingester.client.grpc-max-send-msg-size":       "1121068200",
+				"-ingester.instance-limits.max-ingestion-rate":  "1000000000",
+				"-ingester.ring.heartbeat-period":               "1s",
+				"-ingester.ring.instance-id":                    "ingester-0",
+				"-server.grpc-max-recv-msg-size-bytes":          "1121068200",
+				"-server.grpc-max-send-msg-size-bytes":          "1121068200",
+				//"-log.level":                                    "debug",
+			}
+
+			flags := mergeFlags(
+				BlocksStorageFlags(),
+				bucketFlags,
+				baseFlags,
+			)
+
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+
+			require.NoError(b, s.StartAndWaitReady(distributor, ingester))
+
+			// Wait until distributor has updated the ring.
+			require.NoError(b, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+			require.NoError(b, err)
+			client.SetTimeout(pushTimeout)
+
+			var (
+				seriesPerReqPerConcurrency = series / requestsPerConcurrency / concurrency
+			)
+
+			pushReqs := make([][][]prompb.TimeSeries, concurrency)
+			// Generate requests
+			{
+				startTime := time.Now().UnixMilli()
+				for iter := 0; iter < b.N; iter++ {
+					// Bump the timestamp on each of our test samples each time round the loop
+					for j := 0; j < samples; j++ {
+						for i := range allSamples {
+							allSamples[i].Timestamp = startTime + int64(iter*samples+j+1)
+						}
+
+						for seriesIdx := 0; seriesIdx < len(allLabels); {
+							for c := 0; c < concurrency && seriesIdx < len(allLabels); c++ {
+								startI, endI := seriesIdx, min(len(allLabels), seriesIdx+seriesPerReqPerConcurrency)
+								series, samples := allLabels[startI:endI], allSamples[startI:endI]
+								request := make([]prompb.TimeSeries, 0, len(series))
+								for i := range series {
+									request = append(request, prompb.TimeSeries{Labels: series[i], Samples: samples[i : i+1]})
+								}
+								pushReqs[c] = append(pushReqs[c], request)
+								seriesIdx += seriesPerReqPerConcurrency
+							}
+						}
+					}
+				}
+
+				pushReqs[len(pushReqs)-1] = append(pushReqs[len(pushReqs)-1], []prompb.TimeSeries{{
+					Labels:  []prompb.Label{{Value: "marker", Name: labels.MetricName}},
+					Samples: []prompb.Sample{{Timestamp: time.Now().UnixMilli(), Value: ingesterpkg.FinalMessageSampleValue}},
+				}})
+			}
+
+			// Start producers
+			producersWg := &sync.WaitGroup{}
+			{
+				for i := 0; i < concurrency; i++ {
+					producersWg.Add(1)
+					go func(i int) {
+						defer producersWg.Done()
+						for _, req := range pushReqs[i] {
+							resp, err := client.Push(req)
+							var body []byte
+							if resp != nil && resp.Body != nil {
+								body, _ = io.ReadAll(resp.Body)
+							}
+							if assert.NoError(b, err, string(body)) {
+								assert.Equal(b, http.StatusOK, resp.StatusCode, string(body))
+							}
+						}
+					}(i)
+				}
+				if useKafka {
+					producersWg.Wait()
+				}
+			}
+			b.ResetTimer()
+			resp, err := http.Get("http://" + ingester.HTTPEndpoint() + "/ingester/do-replay") // TODO dimitarvdimitrov control replay concurrency here
+			require.NoError(b, err)
+			require.Equal(b, http.StatusOK, resp.StatusCode)
+			producersWg.Wait()
+		})
+	}
+}
+
+// Construct a set of realistic-looking samples, all with slightly different label sets
+func benchmarkData(nSeries int) (allLabels [][]prompb.Label, allSamples []prompb.Sample) {
+	// Real example from Kubernetes' embedded cAdvisor metrics, lightly obfuscated.
+	var benchmarkLabels = []prompb.Label{
+		{Name: model.MetricNameLabel, Value: "container_cpu_usage_seconds_total"},
+		{Name: "beta_kubernetes_io_arch", Value: "amd64"},
+		{Name: "beta_kubernetes_io_instance_type", Value: "c3.somesize"},
+		{Name: "beta_kubernetes_io_os", Value: "linux"},
+		{Name: "container_name", Value: "some-name"},
+		{Name: "cpu", Value: "cpu01"},
+		{Name: "failure_domain_beta_kubernetes_io_region", Value: "somewhere-1"},
+		{Name: "failure_domain_beta_kubernetes_io_zone", Value: "somewhere-1b"},
+		{Name: "id", Value: "/kubepods/burstable/pod6e91c467-e4c5-11e7-ace3-0a97ed59c75e/a3c8498918bd6866349fed5a6f8c643b77c91836427fb6327913276ebc6bde28"},
+		{Name: "image", Value: "registry/organisation/name@sha256:dca3d877a80008b45d71d7edc4fd2e44c0c8c8e7102ba5cbabec63a374d1d506"},
+		{Name: "instance", Value: "ip-111-11-1-11.ec2.internal"},
+		{Name: "job", Value: "kubernetes-cadvisor"},
+		{Name: "kubernetes_io_hostname", Value: "ip-111-11-1-11"},
+		{Name: "monitor", Value: "prod"},
+		{Name: "name", Value: "k8s_some-name_some-other-name-5j8s8_kube-system_6e91c467-e4c5-11e7-ace3-0a97ed59c75e_0"},
+		{Name: "namespace", Value: "kube-system"},
+		{Name: "pod_name", Value: "some-other-name-5j8s8"},
+	}
+
+	for j := 0; j < nSeries; j++ {
+		for i := range benchmarkLabels {
+			if benchmarkLabels[i].Name == "cpu" {
+				benchmarkLabels[i].Value = fmt.Sprintf("cpu%02d", j)
+			}
+		}
+
+		allLabels = append(allLabels, append([]prompb.Label(nil), benchmarkLabels...))
+		allSamples = append(allSamples, prompb.Sample{Timestamp: 0, Value: float64(j)})
+	}
+	return
 }
