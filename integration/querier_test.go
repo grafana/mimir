@@ -139,7 +139,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
 
 	// Start the compactor to have the bucket index created before querying.
-	// This is only required for tests using the bucket index, but doesn't hurt doing it for all of them.
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), commonFlags)
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
@@ -187,9 +186,6 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			// the store-gateway ring if blocks sharding is enabled.
 			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
-			// Wait until the querier has discovered the uploaded blocks.
-			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(2), "cortex_blocks_meta_synced"))
-
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
 			// metrics extracted from all instances.
@@ -234,6 +230,9 @@ func testQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T, stream
 			expectedFetchedSeries++ // Ingester only.
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 2, Series: 2
 			instantQueriesCount++
+
+			// Make sure the querier is using the bucket index blocks finder.
+			require.NoError(t, querier.WaitSumMetrics(e2e.Greater(0), "cortex_bucket_index_loads_total"))
 
 			comparingFunction := e2e.Equals
 			if streamingEnabled {
@@ -439,14 +438,14 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(3*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
 
-			// Wait until the querier has discovered the uploaded blocks (discovered both by the querier and store-gateway).
-			require.NoError(t, cluster.WaitSumMetricsWithOptions(e2e.Equals(float64(2*cluster.NumInstances()*2)), []string{"cortex_blocks_meta_synced"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "component", "querier"))))
-
 			// Wait until the store-gateway has synched the new uploaded blocks. The number of blocks loaded
 			// may be greater than expected if the compactor is running (there may have been compacted).
 			const shippedBlocks = 2
 			require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
+
+			// Start the compactor to have the bucket index created before querying.
+			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, s.StartAndWaitReady(compactor))
 
 			var expectedCacheRequests int
 
@@ -822,9 +821,13 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512*2), "cortex_ring_tokens_total"))
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
+	// Start the compactor to have the bucket index created before querying.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
 	// Wait until the blocks are old enough for consistency check
 	// 1 sync on startup, 3 to go over the consistency check limit explained above
-	require.NoError(t, querier.WaitSumMetrics(e2e.GreaterOrEqual(1+3), "cortex_blocks_meta_syncs_total"))
+	require.NoError(t, storeGateway.WaitSumMetrics(e2e.GreaterOrEqual(1+3), "cortex_blocks_meta_syncs_total"))
 
 	// Query back the series.
 	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
