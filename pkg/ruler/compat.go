@@ -213,10 +213,7 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			// with no selectors that are not meant to fetch any series.
 			var hasSelector bool
 			if expr, err := parser.ParseExpr(qs); err == nil {
-				for range parser.ExtractSelectors(expr) {
-					hasSelector = true
-					break
-				}
+				hasSelector = len(parser.ExtractSelectors(expr)) > 0
 			}
 			if err == nil && numSeries == 0 && hasSelector {
 				zeroFetchedSeriesCount.Add(1)
