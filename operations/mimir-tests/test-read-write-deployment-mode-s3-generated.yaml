@@ -912,6 +912,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
@@ -1097,6 +1098,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
@@ -1282,6 +1284,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached

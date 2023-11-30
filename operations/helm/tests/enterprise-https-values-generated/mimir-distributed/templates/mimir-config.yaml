@@ -64,6 +64,7 @@ data:
             addresses: dns+enterprise-https-values-mimir-index-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 5242880
+            timeout: 450ms
         metadata_cache:
           backend: memcached
           memcached:
