@@ -30,6 +30,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -54,6 +56,8 @@ type Config struct {
 
 	// This configuration is injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
+
+	QueryStoreAfter time.Duration `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -126,10 +130,15 @@ type enqueueResult struct {
 }
 
 // NewFrontend creates a new frontend.
-func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
+func NewFrontend(cfg Config, limits v1.Limits, prometheusCodec querymiddleware.Codec, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
+	toSchedulerAdapter := frontendToSchedulerAdapter{
+		cfg:             cfg,
+		limits:          limits,
+		prometheusCodec: prometheusCodec,
+	}
 
-	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, log, reg)
+	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
 	if err != nil {
 		return nil, err
 	}

@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -66,7 +67,8 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	f, err := NewFrontend(cfg, logger, reg)
+	prometheusCodec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), "json")
+	f, err := NewFrontend(cfg, limits{}, prometheusCodec, logger, reg)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -498,4 +500,17 @@ func makeLabels(namesAndValues ...string) []*dto.LabelPair {
 	}
 
 	return out
+}
+
+type limits struct {
+	queriers             int
+	queryIngestersWithin time.Duration
+}
+
+func (l limits) MaxQueriersPerUser(_ string) int {
+	return l.queriers
+}
+
+func (l limits) QueryIngestersWithin(string) time.Duration {
+	return l.queryIngestersWithin
 }

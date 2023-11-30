@@ -49,6 +49,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 type Limits interface {
 	// Returns max queriers to use per tenant, or 0 if shuffle sharding is disabled.
 	MaxQueriersPerUser(user string) int
+	QueryIngestersWithin(user string) time.Duration
 }
 
 // Frontend queues HTTP requests, dispatches them to backends, and handles retries

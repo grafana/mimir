@@ -86,6 +86,7 @@ message FrontendToScheduler {
   string userID = 4;
   httpgrpc.HTTPRequest httpRequest = 5;
   bool statsEnabled = 6;
+  repeated string additionalQueueDimensions = 7;
 }
 
 enum SchedulerToFrontendStatus {
