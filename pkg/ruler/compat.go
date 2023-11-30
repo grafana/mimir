@@ -15,6 +15,7 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -31,6 +32,8 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
+
+var rVector = regexp.MustCompile(`vector\([\d.e+/ ]+\)`)
 
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
@@ -208,7 +211,9 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			shardedQueries := stats.LoadShardedQueries()
 
 			queryTime.Add(wallTime.Seconds())
-			if err == nil && numSeries == 0 { // Do not count queries with errors for zero fetched series.
+			// Do not count queries with errors for zero fetched series, or vector queries that are not
+			// meant to fetch any series.
+			if err == nil && numSeries == 0 && !rVector.MatchString(qs) {
 				zeroFetchedSeriesCount.Add(1)
 			}
 

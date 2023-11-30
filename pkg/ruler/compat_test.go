@@ -361,6 +361,14 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	_, _ = qf(context.Background(), "test", time.Now())
 	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
 	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	_, _ = qf(context.Background(), "vector(0.995)", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	_, _ = qf(context.Background(), "vector(2.4192e+15 / 1e+09)", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
 // TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
