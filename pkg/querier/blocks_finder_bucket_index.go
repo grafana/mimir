@@ -24,6 +24,7 @@ import (
 
 var (
 	errBucketIndexBlocksFinderNotRunning = errors.New("bucket index blocks finder is not running")
+	errInvalidBlocksRange                = errors.New("invalid blocks time range")
 )
 
 type BucketIndexBlocksFinderConfig struct {
