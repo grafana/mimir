@@ -15,7 +15,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
-	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -24,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 
@@ -32,8 +32,6 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
-
-var rVector = regexp.MustCompile(`vector\([\d.e+/ ]+\)`)
 
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
@@ -211,9 +209,16 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			shardedQueries := stats.LoadShardedQueries()
 
 			queryTime.Add(wallTime.Seconds())
-			// Do not count queries with errors for zero fetched series, or vector queries that are not
-			// meant to fetch any series.
-			if err == nil && numSeries == 0 && !rVector.MatchString(qs) {
+			// Do not count queries with errors for zero fetched series, or queries
+			// with no selectors that are not meant to fetch any series.
+			var hasSelector bool
+			if expr, err := parser.ParseExpr(qs); err == nil {
+				for range parser.ExtractSelectors(expr) {
+					hasSelector = true
+					break
+				}
+			}
+			if err == nil && numSeries == 0 && hasSelector {
 				zeroFetchedSeriesCount.Add(1)
 			}
 
