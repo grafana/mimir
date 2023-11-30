@@ -931,6 +931,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable block upload validation for the tenant. (default true)
   -compactor.block-upload-verify-chunks
     	Verify chunks when uploading blocks via the upload API for the tenant. (default true)
+  -compactor.blocks-extended-retention-enabled
+    	Enable extended retention. When enabled, series are deleted based on the retention policy. When disabled, the deletion of block is based on compactor.blocks-retention-period configuration.
   -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.cleanup-concurrency int

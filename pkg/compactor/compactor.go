@@ -190,8 +190,6 @@ type ConfigProvider interface {
 	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
 	CompactorBlocksRetentionPeriod(user string) time.Duration
 
-	CompactorBlocksExtendedRetentionPeriod(user string) time.Duration
-
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
@@ -553,14 +551,10 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
 	defer ticker.Stop()
 
-	retentionConsolidateTicker := time.NewTicker(util.DurationWithJitter(time.Hour, 0.05))
-	defer retentionConsolidateTicker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			c.compactUsers(ctx)
-		case <-retentionConsolidateTicker.C:
-			c.consolidateBlockRetention(ctx)
 		case <-ctx.Done():
 			return nil
 		case err := <-c.ringSubservicesWatcher.Chan():
@@ -660,11 +654,6 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 			continue
 		}
 
-		if err = c.consolidateBlockRetention(ctx, userID); err != nil {
-			level.Error(c.logger).Log("msg", "failed to consolidate block retention", "user", userID, "err", err)
-			continue
-		}
-
 		c.compactionRunSucceededTenants.Inc()
 		level.Info(c.logger).Log("msg", "successfully compacted user blocks", "user", userID)
 	}
@@ -697,10 +686,6 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	}
 
 	succeeded = true
-}
-
-func (c *MultitenantCompactor) consolidateBlockRetention(ctx context.Context, userID string) error {
-
 }
 
 func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userID string) error {

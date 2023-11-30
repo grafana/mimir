@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/relabel"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
@@ -154,17 +154,17 @@ type Limits struct {
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
 
 	// Compactor.
-	CompactorBlocksRetentionPeriod         model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
-	CompactorPerSeriesRetentionEnabled     bool           `yaml:"compactor_blocks_extended_retention_enabled" json:"compactor_blocks_extended_retention_enabled"`
-	CompactorBlocksExtendedRetentionPeriod model.Duration `yaml:"compactor_blocks_extended_retention_period" json:"compactor_blocks_extended_retention_period"`
-	CompactorSplitAndMergeShards           int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
-	CompactorSplitGroups                   int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
-	CompactorTenantShardSize               int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
-	CompactorPartialBlockDeletionDelay     model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
-	CompactorBlockUploadEnabled            bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
-	CompactorBlockUploadValidationEnabled  bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
-	CompactorBlockUploadVerifyChunks       bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
-	CompactorBlockUploadMaxBlockSizeBytes  int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
+	CompactorBlocksRetentionPeriod           model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorPerSeriesRetentionEnabled       bool           `yaml:"compactor_blocks_extended_retention_enabled" json:"compactor_blocks_extended_retention_enabled"`
+	CompactorBlocksExtendedRetentionPolicies RetentionCfg   `yaml:"compactor_blocks_extended_retention_policies,omitempty" json:"compactor_blocks_extended_retention_policies,omitempty" doc:"nocli|description=Map of serie retention policy." category:"experimental"`
+	CompactorSplitAndMergeShards             int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorSplitGroups                     int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
+	CompactorTenantShardSize                 int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
+	CompactorPartialBlockDeletionDelay       model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
+	CompactorBlockUploadEnabled              bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlockUploadValidationEnabled    bool           `yaml:"compactor_block_upload_validation_enabled" json:"compactor_block_upload_validation_enabled"`
+	CompactorBlockUploadVerifyChunks         bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
+	CompactorBlockUploadMaxBlockSizeBytes    int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -258,7 +258,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.BoolVar(&l.CompactorPerSeriesRetentionEnabled, "compactor.blocks-extended-retention-enabled", false, "Enable extended retention. When enabled, series are deleted based on the retention policy. When disabled, the deletion of block is based on compactor.blocks-retention-period configuration.")
-	f.Var(&l.CompactorBlocksExtendedRetentionPeriod, "compactor.blocks-extended-retention-period", "Delete configured series older than the extended specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
@@ -684,10 +683,6 @@ func (o *Overrides) CompactorPerSeriesRetentionEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).CompactorPerSeriesRetentionEnabled
 }
 
-func (o *Overrides) CompactorBlocksExtendedRetentionPeriod(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).CompactorBlocksExtendedRetentionPeriod)
-}
-
 // CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
@@ -735,6 +730,10 @@ func (o *Overrides) CompactorBlockUploadMaxBlockSizeBytes(userID string) int64 {
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
 func (o *Overrides) MetricRelabelConfigs(userID string) []*relabel.Config {
 	return o.getOverridesForUser(userID).MetricRelabelConfigs
+}
+
+func (o *Overrides) CompactorSerieRetentionConfigs(userID string) RetentionCfg {
+	return o.getOverridesForUser(userID).CompactorBlocksExtendedRetentionPolicies
 }
 
 // NativeHistogramsIngestionEnabled returns whether to ingest native histograms in the ingester

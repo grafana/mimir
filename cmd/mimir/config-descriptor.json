@@ -3755,6 +3755,24 @@
         },
         {
           "kind": "field",
+          "name": "compactor_blocks_extended_retention_enabled",
+          "required": false,
+          "desc": "Enable extended retention. When enabled, series are deleted based on the retention policy. When disabled, the deletion of block is based on compactor.blocks-retention-period configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.blocks-extended-retention-enabled",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "block",
+          "name": "compactor_blocks_extended_retention_policies",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
           "name": "compactor_split_and_merge_shards",
           "required": false,
           "desc": "The number of shards to use when splitting blocks. 0 to disable splitting.",

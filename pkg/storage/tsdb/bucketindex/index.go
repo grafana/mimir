@@ -73,7 +73,6 @@ type Block struct {
 	// Block ID.
 	ID ulid.ULID `json:"block_id"`
 
-	AppliedPolicy uint64 `json:"applied_policy"`
 	// MinTime and MaxTime specify the time range all samples in the block are in (millis precision).
 	MinTime int64 `json:"min_time"`
 	MaxTime int64 `json:"max_time"`
@@ -143,8 +142,6 @@ func (m *Block) String() string {
 
 	return fmt.Sprintf("%s (min time: %s max time: %s, compactor shard: %s)", m.ID, minT.String(), maxT.String(), shard)
 }
-
-
 
 func BlockFromThanosMeta(meta block.Meta) *Block {
 	segmentsFormat, segmentsNum := detectBlockSegmentsFormat(meta)
