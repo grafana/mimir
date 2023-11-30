@@ -90,3 +90,10 @@ func TestIngesterPartition(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestKafkaClientID(t *testing.T) {
+	assert.Equal(t, "", kafkaClientID("", ""))
+	assert.Equal(t, "warpstream_proxy_target=proxy-produce", kafkaClientID("proxy-produce", ""))
+	assert.Equal(t, "warpstream_proxy_target=proxy-produce,warpstream_az", kafkaClientID("proxy-produce", "us-east-2a"))
+	assert.Equal(t, "warpstream_az=us-east-2a", kafkaClientID("", "us-east-2a"))
+}

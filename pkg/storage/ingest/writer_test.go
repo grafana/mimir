@@ -40,7 +40,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	require.Len(t, addrs, 1)
 
 	// Init writer.
-	writer := NewWriter(addrs[0], topicName, log.NewNopLogger(), reg)
+	writer := NewWriter(addrs[0], topicName, "", log.NewNopLogger(), reg)
 
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
 		const partitionID = 0

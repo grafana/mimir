@@ -431,7 +431,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
-		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, partitionID, ingesterConsumer{p: i}, log.With(logger, "component", "ingest_reader"), registerer)
+		i.ingestReader, err = ingest.NewReader(ingestCfg.KafkaAddress, ingestCfg.KafkaTopic, ingestCfg.KafkaAvailabilityZone, partitionID, ingesterConsumer{p: i}, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingestion client")
 		}

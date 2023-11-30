@@ -379,6 +379,14 @@ Usage of ./cmd/mimir/mimir:
     	Print basic help.
   -help-all
     	Print help, also including advanced and experimental parameters.
+  -ingest-storage.enabled
+    	True to enable the ingestion via object storage.
+  -ingest-storage.kafka-address string
+    	The Kafka backend address.
+  -ingest-storage.kafka-availability-zone string
+    	The availability zone of the Kafka backend. Keep it empty if any availability zone is fine, or Kafka is only running in a single availability zone.
+  -ingest-storage.kafka-topic string
+    	The Kafka topic name.
   -ingester.max-global-metadata-per-metric int
     	The maximum number of metadata per metric, across the cluster. 0 to disable.
   -ingester.max-global-metadata-per-user int

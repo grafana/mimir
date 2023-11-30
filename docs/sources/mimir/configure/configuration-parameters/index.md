@@ -188,6 +188,25 @@ api:
 # The frontend block configures the query-frontend.
 [frontend: <frontend>]
 
+ingest_storage:
+  # True to enable the ingestion via object storage.
+  # CLI flag: -ingest-storage.enabled
+  [enabled: <boolean> | default = false]
+
+  # The Kafka backend address.
+  # CLI flag: -ingest-storage.kafka-address
+  [kafka_address: <string> | default = ""]
+
+  # The Kafka topic name.
+  # CLI flag: -ingest-storage.kafka-topic
+  [kafka_topic: <string> | default = ""]
+
+  # The availability zone of the Kafka backend. Keep it empty if any
+  # availability zone is fine, or Kafka is only running in a single availability
+  # zone.
+  # CLI flag: -ingest-storage.kafka-availability-zone
+  [kafka_availability_zone: <string> | default = ""]
+
 # The blocks_storage block configures the blocks storage.
 [blocks_storage: <blocks_storage>]
 

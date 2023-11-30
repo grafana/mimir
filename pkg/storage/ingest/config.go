@@ -13,8 +13,9 @@ var (
 type Config struct {
 	Enabled bool `yaml:"enabled"`
 
-	KafkaAddress string `yaml:"kafka_address"`
-	KafkaTopic   string `yaml:"kafka_topic"`
+	KafkaAddress          string `yaml:"kafka_address"`
+	KafkaTopic            string `yaml:"kafka_topic"`
+	KafkaAvailabilityZone string `yaml:"kafka_availability_zone"` // TODO default may be auto-detected
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -23,6 +24,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// Kafka backend.
 	f.StringVar(&cfg.KafkaAddress, "ingest-storage.kafka-address", "", "The Kafka backend address.")
 	f.StringVar(&cfg.KafkaTopic, "ingest-storage.kafka-topic", "", "The Kafka topic name.")
+	f.StringVar(&cfg.KafkaAvailabilityZone, "ingest-storage.kafka-availability-zone", "", "The availability zone of the Kafka backend. Keep it empty if any availability zone is fine, or Kafka is only running in a single availability zone.")
 }
 
 // Validate the config.

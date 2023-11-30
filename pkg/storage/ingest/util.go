@@ -42,3 +42,17 @@ func IngesterPartition(ingesterID string) (int32, error) {
 	partitionID := int32(ingesterSeq<<2) | (zoneID & 0x3)
 	return partitionID, nil
 }
+
+func kafkaClientID(role, availabilityZone string) string {
+	var params []string
+
+	if role != "" {
+		params = append(params, fmt.Sprintf("warpstream_proxy_target=%s", role))
+	}
+
+	if availabilityZone != "" {
+		params = append(params, fmt.Sprintf("warpstream_az=%s", availabilityZone))
+	}
+
+	return strings.Join(params, ",")
+}

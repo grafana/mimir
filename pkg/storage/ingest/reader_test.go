@@ -124,7 +124,7 @@ func produceRecord(t *testing.T, ctx context.Context, writeClient *kgo.Client, t
 }
 
 func startReader(t *testing.T, ctx context.Context, addr string, topicName string, partitionID int32, consumer consumerFunc, reg *prometheus.Registry) {
-	reader, err := NewReader(addr, topicName, partitionID, consumer, log.NewNopLogger(), reg)
+	reader, err := NewReader(addr, topicName, "", partitionID, consumer, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
 	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, reader) })

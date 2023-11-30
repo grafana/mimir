@@ -22,10 +22,11 @@ import (
 type Writer struct {
 	services.Service
 
-	kafkaAddress string
-	kafkaTopic   string
-	logger       log.Logger
-	registerer   prometheus.Registerer
+	kafkaAddress          string
+	kafkaTopic            string
+	kafkaAvailabilityZone string
+	logger                log.Logger
+	registerer            prometheus.Registerer
 
 	// We create 1 writer per partition to better parallelize the workload.
 	// TODO close idle writers
@@ -37,13 +38,14 @@ type Writer struct {
 	writeBytesTotal prometheus.Counter
 }
 
-func NewWriter(kafkaAddress, kafkaTopic string, logger log.Logger, reg prometheus.Registerer) *Writer {
+func NewWriter(kafkaAddress, kafkaTopic, kafkaAvailabilityZone string, logger log.Logger, reg prometheus.Registerer) *Writer {
 	w := &Writer{
-		kafkaAddress: kafkaAddress,
-		kafkaTopic:   kafkaTopic,
-		logger:       logger,
-		registerer:   reg,
-		writers:      map[int32]*kgo.Client{},
+		kafkaAddress:          kafkaAddress,
+		kafkaTopic:            kafkaTopic,
+		kafkaAvailabilityZone: kafkaAvailabilityZone,
+		logger:                logger,
+		registerer:            reg,
+		writers:               map[int32]*kgo.Client{},
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
@@ -153,7 +155,7 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 	// TODO tune timeouts
 	return kgo.NewClient(
 		// Target only write-path backend agents.
-		kgo.ClientID("warpstream_proxy_target=proxy-produce"),
+		kgo.ClientID(kafkaClientID("proxy-produce", w.kafkaAvailabilityZone)),
 		kgo.SeedBrokers(w.kafkaAddress),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.AllowAutoTopicCreation(),

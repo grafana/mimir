@@ -33,9 +33,10 @@ type RecordConsumer interface {
 type PartitionReader struct {
 	services.Service
 
-	kafkaAddress string
-	kafkaTopic   string
-	partitionID  int32
+	kafkaAddress          string
+	kafkaTopic            string
+	kafkaAvailabilityZone string
+	partitionID           int32
 
 	client    *kgo.Client
 	admClient *kadm.Client
@@ -47,16 +48,17 @@ type PartitionReader struct {
 	reg    prometheus.Registerer
 }
 
-func NewReader(kafkaAddress, kafkaTopic string, partitionID int32, consumer RecordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewReader(kafkaAddress, kafkaTopic, kafkaAvailabilityZone string, partitionID int32, consumer RecordConsumer, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := newReaderMetrics(reg)
 	r := &PartitionReader{
-		kafkaAddress: kafkaAddress,
-		kafkaTopic:   kafkaTopic,
-		partitionID:  partitionID,
-		reg:          reg,
-		consumer:     consumer, // TODO consume records in parallel
-		metrics:      metrics,
-		logger:       log.With(logger, "partition", partitionID),
+		kafkaAddress:          kafkaAddress,
+		kafkaTopic:            kafkaTopic,
+		kafkaAvailabilityZone: kafkaAvailabilityZone,
+		partitionID:           partitionID,
+		reg:                   reg,
+		consumer:              consumer, // TODO consume records in parallel
+		metrics:               metrics,
+		logger:                log.With(logger, "partition", partitionID),
 	}
 
 	r.Service = services.NewBasicService(r.start, r.run, r.stop)
@@ -154,7 +156,7 @@ func (r *PartitionReader) newKafkaReader(offset int64, reg prometheus.Registerer
 
 	client, err := kgo.NewClient(
 		// Target only read-path backend agents.
-		kgo.ClientID("warpstream_proxy_target=proxy-consume"),
+		kgo.ClientID(kafkaClientID("proxy-consume", r.kafkaAvailabilityZone)),
 		kgo.SeedBrokers(r.kafkaAddress),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			r.kafkaTopic: {r.partitionID: kgo.NewOffset().At(offset)},
