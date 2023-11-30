@@ -139,8 +139,8 @@ func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesReques
 	return i.ing.ActiveSeries(request, server)
 }
 
-func (i *ActivityTrackerWrapper) DoReplay(http.ResponseWriter, *http.Request) {
-
+func (i *ActivityTrackerWrapper) DoReplay(w http.ResponseWriter, r *http.Request) {
+	i.ing.DoReplay(w, r)
 }
 
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {

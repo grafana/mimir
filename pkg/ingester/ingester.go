@@ -3254,9 +3254,10 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
-func (i *Ingester) DoReplay(http.ResponseWriter, *http.Request) {
+func (i *Ingester) DoReplay(r http.ResponseWriter, _ *http.Request) {
 	close(i.startReplaying)
 	<-i.doneReplaying
+	r.WriteHeader(http.StatusOK)
 }
 
 const FinalMessageSampleValue = float64(-1234567890)
