@@ -17,6 +17,7 @@
 ### Jsonnet
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
+* [FEATURE] Distributor: added `distributor_node_affinity_matchers` setting support. #6782
 
 ### Mimirtool
 
