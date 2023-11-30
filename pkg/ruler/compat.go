@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 
@@ -208,8 +209,14 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			shardedQueries := stats.LoadShardedQueries()
 
 			queryTime.Add(wallTime.Seconds())
-			if err == nil && numSeries == 0 { // Do not count queries with errors for zero fetched series.
-				zeroFetchedSeriesCount.Add(1)
+			// Do not count queries with errors for zero fetched series, or queries
+			// with no selectors that are not meant to fetch any series.
+			if err == nil && numSeries == 0 {
+				if expr, err := parser.ParseExpr(qs); err == nil {
+					if len(parser.ExtractSelectors(expr)) > 0 {
+						zeroFetchedSeriesCount.Add(1)
+					}
+				}
 			}
 
 			// Log ruler query stats.
