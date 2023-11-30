@@ -522,14 +522,6 @@ How to **fix** it:
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant's rule groups across all ingesters.
 - Decrease the total number of ruler replicas by the number of idle replicas.
 
-### MimirQuerierHasNotScanTheBucket
-
-This alert fires when a Mimir querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
-
-How to **investigate**:
-
-- Look for any scan error in the querier logs (ie. networking or rate limiting issues)
-
 ### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
