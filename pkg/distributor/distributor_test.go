@@ -1908,7 +1908,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		},
 		"max label name length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
-				limits.MaxLabelNameLength = 1024
+				limits.MaxLabelNameLength = 200
 			},
 			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
 				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
@@ -1916,7 +1916,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long name.
-					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
+					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.200d", 1), "xxx")
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1929,7 +1929,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		},
 		"max label value length limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
-				limits.MaxLabelValueLength = 1024
+				limits.MaxLabelValueLength = 200
 			},
 			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
 				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
@@ -1937,7 +1937,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long value.
-					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.2000d", 1))
+					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.200d", 1))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
