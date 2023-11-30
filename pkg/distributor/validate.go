@@ -441,7 +441,7 @@ func formatLabelSet(ls []mimirpb.LabelAdapter) string {
 }
 
 func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
-	metric := mimirpb.FromLabelAdaptersToMetric(ls).String()
+	metric := formatLabelSet(ls)
 	ellipsis := ""
 
 	if utf8.RuneCountInString(metric) > 200 {
