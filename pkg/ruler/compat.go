@@ -211,12 +211,12 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedS
 			queryTime.Add(wallTime.Seconds())
 			// Do not count queries with errors for zero fetched series, or queries
 			// with no selectors that are not meant to fetch any series.
-			var hasSelector bool
-			if expr, err := parser.ParseExpr(qs); err == nil {
-				hasSelector = len(parser.ExtractSelectors(expr)) > 0
-			}
-			if err == nil && numSeries == 0 && hasSelector {
-				zeroFetchedSeriesCount.Add(1)
+			if err == nil && numSeries == 0 {
+				if expr, err := parser.ParseExpr(qs); err == nil {
+					if len(parser.ExtractSelectors(expr)) > 0 {
+						zeroFetchedSeriesCount.Add(1)
+					}
+				}
 			}
 
 			// Log ruler query stats.
