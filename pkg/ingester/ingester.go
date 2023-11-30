@@ -303,7 +303,10 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
-	ingestReader *ingest.PartitionReader
+	ingestReader   *ingest.PartitionReader
+	startReplaying chan struct{}
+	serving        *atomic.Bool
+	doneReplaying  chan struct{}
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -405,6 +408,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
+	i.startReplaying = make(chan struct{})
+	i.doneReplaying = make(chan struct{})
+	i.serving = atomic.NewBool(false)
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
 		if err != nil {
@@ -3248,8 +3254,21 @@ func (i *Ingester) checkAvailable() error {
 	return newUnavailableError(s)
 }
 
+func (i *Ingester) DoReplay(http.ResponseWriter, *http.Request) {
+	close(i.startReplaying)
+	<-i.doneReplaying
+}
+
+const FinalMessageSampleValue = float64(-1234567890)
+
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	if !i.serving.Load() {
+		<-i.startReplaying
+	}
+	if len(req.Timeseries) == 1 && len(req.Timeseries[0].Samples) == 1 && req.Timeseries[0].Samples[0].Value == FinalMessageSampleValue {
+		defer close(i.doneReplaying)
+	}
 	err := i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err == nil {
 		return &mimirpb.WriteResponse{}, nil

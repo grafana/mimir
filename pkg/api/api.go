@@ -259,6 +259,9 @@ type Ingester interface {
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
 	TenantTSDBHandler(http.ResponseWriter, *http.Request)
+
+	// TODO dimitarvdimitrov remove
+	DoReplay(http.ResponseWriter, *http.Request)
 }
 
 // RegisterIngester registers the ingester HTTP and gRPC services.
@@ -270,6 +273,7 @@ func (a *API) RegisterIngester(i Ingester) {
 		{Dangerous: true, Desc: "Trigger ingester shutdown", Path: "/ingester/shutdown"},
 	})
 
+	a.RegisterRoute("/ingester/do-replay", http.HandlerFunc(i.DoReplay), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")

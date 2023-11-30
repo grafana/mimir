@@ -139,6 +139,10 @@ func (i *ActivityTrackerWrapper) ActiveSeries(request *client.ActiveSeriesReques
 	return i.ing.ActiveSeries(request, server)
 }
 
+func (i *ActivityTrackerWrapper) DoReplay(http.ResponseWriter, *http.Request) {
+
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)
