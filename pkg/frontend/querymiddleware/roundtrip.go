@@ -312,13 +312,14 @@ func newQueryTripperware(
 	queryComponentHintsMiddleware := newQueryComponentHintsMiddleware(cfg, limits, codec)
 	queryRangeMiddleware = append(
 		queryRangeMiddleware,
+		newInstrumentMiddleware("query_component_hints", metrics),
 		queryComponentHintsMiddleware,
 	)
-	//queryInstantMiddleware = append(
-	//	queryInstantMiddleware,
-	//	newInstrumentMiddleware("query_component_hints", metrics),
-	//	queryComponentHintsMiddleware,
-	//)
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("query_component_hints", metrics),
+		queryComponentHintsMiddleware,
+	)
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)

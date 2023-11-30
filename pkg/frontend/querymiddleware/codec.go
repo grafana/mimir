@@ -109,8 +109,8 @@ type Request interface {
 	WithTotalQueriesHint(int32) Request
 	// WithEstimatedSeriesCountHint WithEstimatedCardinalityHint adds a cardinality estimate to this request's Hints.
 	WithEstimatedSeriesCountHint(uint64) Request
-	SetShouldQueryIngestersQueryComponentHint(shouldQuery bool) Request
-	SetShouldQueryBlockStoreQueryComponentHint(shouldQuery bool) Request
+	WithShouldQueryIngestersQueryInfrastructureHint(shouldQuery bool) Request
+	WithShouldQueryBlockStoreQueryInfrastructureHint(shouldQuery bool) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
 	LogToSpan(opentracing.Span)
