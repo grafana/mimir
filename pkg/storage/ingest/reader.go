@@ -27,7 +27,7 @@ type Record struct {
 }
 
 type RecordConsumer interface {
-	Consume(context.Context, []Record) error
+	Consume(context.Context, Record) error
 }
 
 type PartitionReader struct {
@@ -123,20 +123,15 @@ func (r *PartitionReader) commitFetches(ctx context.Context, fetches kgo.Fetches
 }
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
-	records := make([]Record, 0, len(fetches.Records()))
-
-	var minOffset, maxOffset int
 	fetches.EachRecord(func(record *kgo.Record) {
-		minOffset = min(minOffset, int(record.Offset))
-		maxOffset = max(maxOffset, int(record.Offset))
-		records = append(records, mapRecord(record))
-	})
+		defer prometheus.NewTimer(r.metrics.processingTime).ObserveDuration()
 
-	err := r.consumer.Consume(ctx, records)
-	if err != nil {
-		level.Error(r.logger).Log("msg", "encountered error processing records; skipping", "min_offset", minOffset, "max_offset", maxOffset, "err", err)
-		// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
-	}
+		err := r.consumer.Consume(ctx, mapRecord(record))
+		if err != nil {
+			level.Error(r.logger).Log("msg", "encountered error processing record; skipping", "offset", record.Offset, "err", err)
+			// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
+		}
+	})
 }
 
 func mapRecord(record *kgo.Record) Record {
