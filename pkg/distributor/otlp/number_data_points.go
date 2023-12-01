@@ -7,14 +7,13 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/value"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// addSingleSumNumberDataPoint converts the Gauge metric data point to a
+// addSingleGaugeNumberDataPoint converts the Gauge metric data point to a
 // Prometheus time series with samples and labels. The result is stored in the
 // series map.
 func addSingleGaugeNumberDataPoint(
@@ -23,8 +22,8 @@ func addSingleGaugeNumberDataPoint(
 	metric pmetric.Metric,
 	settings Settings,
 	series map[string]*mimirpb.TimeSeries,
+	name string,
 ) {
-	name := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
@@ -57,8 +56,8 @@ func addSingleSumNumberDataPoint(
 	metric pmetric.Metric,
 	settings Settings,
 	series map[string]*mimirpb.TimeSeries,
+	name string,
 ) {
-	name := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),

@@ -69,7 +69,6 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // tsMap will be unmodified if either labels or sample is nil, but can still be modified if the exemplar is nil.
 func addSample(tsMap map[string]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
 	datatype string) string {
-
 	if sample == nil || labels == nil || tsMap == nil {
 		return ""
 	}
@@ -146,9 +145,9 @@ func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) string 
 	return b.String()
 }
 
-// createAttributes creates a slice of Cortex Label with OTLP attributes and pairs of string values.
-// Unpaired string value is ignored. String pairs overwrites OTLP labels if collision happens, and the overwrite is
-// logged. Resultant label names are sanitized.
+// createAttributes creates a slice of Mimir labels with OTLP attributes and pairs of string values.
+// Unpaired string values are ignored. String pairs overwrite OTLP labels if collision happens, and the overwrite is
+// logged. Resulting label names are sanitized.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string, extras ...string) []mimirpb.LabelAdapter {
 	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
