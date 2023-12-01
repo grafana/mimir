@@ -38,8 +38,9 @@ func TestReader(t *testing.T) {
 
 	const content = "special content"
 	recordsProcessed := atomic.NewInt64(0)
-	consumer := consumerFunc(func(record Record) error {
-		assert.EqualValues(t, content, record.Content)
+	consumer := consumerFunc(func(records []Record) error {
+		assert.Len(t, records, 1)
+		assert.EqualValues(t, content, records[0].Content)
 		recordsProcessed.Inc()
 		return nil
 	})
@@ -78,8 +79,9 @@ func TestReader_IgnoredConsumerErrors(t *testing.T) {
 
 	const content = "special content"
 	recordsProcessed := atomic.NewInt64(0)
-	consumer := consumerFunc(func(record Record) error {
-		assert.EqualValues(t, content, record.Content)
+	consumer := consumerFunc(func(records []Record) error {
+		assert.Len(t, records, 1)
+		assert.EqualValues(t, content, records[0].Content)
 		recordsProcessed.Inc()
 		return errors.New("failed")
 	})
@@ -130,6 +132,6 @@ func startReader(t *testing.T, ctx context.Context, addr string, topicName strin
 	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, reader) })
 }
 
-type consumerFunc func(Record) error
+type consumerFunc func([]Record) error
 
-func (f consumerFunc) Consume(ctx context.Context, record Record) error { return f(record) }
+func (f consumerFunc) Consume(ctx context.Context, records []Record) error { return f(records) }
