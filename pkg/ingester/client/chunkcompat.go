@@ -25,7 +25,7 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 	haveReachedEndOfStreamingSeriesLabels := false
 
 	for _, response := range responses {
-		series, err := TimeSeriesChunksToMatrix(from, through, response.Chunkseries)
+		series, err := timeSeriesChunksToMatrix(from, through, response.Chunkseries)
 		if err != nil {
 			return nil, err
 		}
@@ -65,8 +65,8 @@ func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse)
 	return result, nil
 }
 
-// TimeSeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
-func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChunk) (model.Matrix, error) {
+// timeSeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
+func timeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChunk) (model.Matrix, error) {
 	if serieses == nil {
 		return nil, nil
 	}

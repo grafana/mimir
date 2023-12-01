@@ -1017,7 +1017,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 		metadata          int
 		matchers          []*labels.Matcher
 		expectedIngesters int
-		expectedResponse  model.Matrix
+		expectedResponse  []client.TimeSeriesChunk
 		expectedError     error
 		shuffleShardSize  int
 	}
@@ -1143,14 +1143,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
 
-			var m model.Matrix
-			if len(resp.Chunkseries) == 0 {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, nil)
-			} else {
-				m, err = client.TimeSeriesChunksToMatrix(0, 10, resp.Chunkseries)
-			}
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedResponse.String(), m.String())
+			assert.ElementsMatch(t, tc.expectedResponse, resp.Chunkseries)
 
 			// Check how many ingesters have been queried.
 			// Due to the quorum the distributor could cancel the last request towards ingesters
@@ -3778,30 +3771,38 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 	}
 }
 
-func expectedResponse(start, end int, histograms bool) model.Matrix {
+func expectedResponse(start, end int, histograms bool) []client.TimeSeriesChunk {
 	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
-	result := model.Matrix{}
+	result := []client.TimeSeriesChunk{}
 	for i := start; i < end; i++ {
-		ss := &model.SampleStream{
-			Metric: model.Metric{
-				model.MetricNameLabel: "foo",
-				"bar":                 "baz",
-				"sample":              model.LabelValue(fmt.Sprintf("%d", i)),
+		ts := &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: "foo"},
+				{Name: "bar", Value: "baz"},
+				{Name: "sample", Value: fmt.Sprintf("%d", i)},
 			},
-			Values: []model.SamplePair{
+			Samples: []mimirpb.Sample{
 				{
-					Value:     model.SampleValue(i),
-					Timestamp: model.Time(i),
+					Value:       float64(i),
+					TimestampMs: int64(i),
 				},
 			},
 		}
 		if histograms {
-			ss.Histograms = []model.SampleHistogramPair{
-				{
-					Histogram: util_test.GenerateTestSampleHistogram(i),
-					Timestamp: model.Time(i),
-				},
+			if i%2 == 0 {
+				h := util_test.GenerateTestHistogram(i)
+				ts.Histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(int64(i), h)}
+			} else {
+				h := util_test.GenerateTestFloatHistogram(i)
+				ts.Histograms = []mimirpb.Histogram{mimirpb.FromFloatHistogramToHistogramProto(int64(i), h)}
 			}
+		}
+
+		chunks := makeChunksFromTimeseries(ts)
+
+		ss := client.TimeSeriesChunk{
+			Labels: ts.Labels,
+			Chunks: chunks,
 		}
 		result = append(result, ss)
 	}
@@ -4073,7 +4074,7 @@ func makeChunksFromTimeseries(ts *mimirpb.TimeSeries) []client.Chunk {
 	}
 	if hexists {
 		chunks = append(chunks, makeWireChunk(hc))
-			}
+	}
 	if fhexists {
 		chunks = append(chunks, makeWireChunk(fhc))
 	}
