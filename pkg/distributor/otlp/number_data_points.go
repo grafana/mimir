@@ -18,19 +18,11 @@ import (
 // series map.
 func addSingleGaugeNumberDataPoint(
 	pt pmetric.NumberDataPoint,
-	resource pcommon.Resource,
 	metric pmetric.Metric,
-	settings Settings,
 	series map[string]*mimirpb.TimeSeries,
+	labels []mimirpb.LabelAdapter,
 	name string,
 ) {
-	labels := createAttributes(
-		resource,
-		pt.Attributes(),
-		settings.ExternalLabels,
-		model.MetricNameLabel,
-		name,
-	)
 	sample := &mimirpb.Sample{
 		// convert ns to ms
 		TimestampMs: convertTimeStamp(pt.Timestamp()),

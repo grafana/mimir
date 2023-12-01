@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/prometheus/common/model"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -59,8 +60,15 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
 						// For each data point, createAttributes is called for its attributes
-						//
-						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
+						pt := dataPoints.At(x)
+						labels := createAttributes(
+							resource,
+							pt.Attributes(),
+							settings.ExternalLabels,
+							model.MetricNameLabel,
+							promName,
+						)
+						addSingleGaugeNumberDataPoint(pt, metric, tsMap, labels, promName)
 					}
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()

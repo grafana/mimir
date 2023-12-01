@@ -152,6 +152,18 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
 
+	// TODO: Make a hash of all the attribute pairs + serviceName + instance,
+	//       and try to return corresponding entry. Otherwise make new, and enter in map.
+
+	// Ensure attributes are sorted by key for consistent merging of keys which
+	// collide when sanitized.
+	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
+	attributes.Range(func(key string, value pcommon.Value) bool {
+		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
+		return true
+	})
+	sort.Stable(ByLabelName(labels))
+
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
 	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
 
@@ -166,19 +178,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	// map ensures no duplicate label name
 	l := make(map[string]string, maxLabelCount)
 
-	// Ensure attributes are sorted by key for consistent merging of keys which
-	// collide when sanitized.
-	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
-	attributes.Range(func(key string, value pcommon.Value) bool {
-		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
-		return true
-	})
-	sort.Stable(ByLabelName(labels))
-
 	for _, label := range labels {
 		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
-		if existingLabel, alreadyExists := l[finalKey]; alreadyExists {
-			l[finalKey] = existingLabel + ";" + label.Value
+		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
+			l[finalKey] = existingValue + ";" + label.Value
 		} else {
 			l[finalKey] = label.Value
 		}
