@@ -47,6 +47,8 @@
     ),
   },
 
+  distributor_node_affinity_matchers:: [],
+
   newDistributorContainer(name, args, envVarMap={})::
     container.new(name, $._images.distributor) +
     container.withPorts($.distributor_ports) +
@@ -60,16 +62,24 @@
   distributor_container::
     $.newDistributorContainer('distributor', $.distributor_args, $.distributor_env_map),
 
-  newDistributorDeployment(name, container)::
+  newDistributorDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 3, [container]) +
     $.newMimirSpreadTopology(name, $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
+    (
+      if std.length(nodeAffinityMatchers) == 0 then {} else (
+        deployment.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.withNodeSelectorTerms(
+          local sorted = std.sort(nodeAffinityMatchers, function(x) x.key);
+          $.core.v1.nodeSelectorTerm.withMatchExpressions(sorted)
+        )
+      )
+    ) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
-    $.newDistributorDeployment('distributor', $.distributor_container),
+    $.newDistributorDeployment('distributor', $.distributor_container, $.distributor_node_affinity_matchers),
 
   distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +

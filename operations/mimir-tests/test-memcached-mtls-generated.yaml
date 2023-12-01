@@ -1602,6 +1602,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -blocks-storage.bucket-store.index-cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
         - -blocks-storage.bucket-store.index-cache.memcached.tls-enabled=true

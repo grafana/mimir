@@ -224,7 +224,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
 	defer cancel()
 
-	resp, err := q.sendRequest(ctx, &req)
+	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		return promql.Vector{}, err
@@ -282,7 +282,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	return req, nil
 }
 
-func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest, logger log.Logger) (*httpgrpc.HTTPResponse, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
@@ -300,7 +300,7 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		if !retry.Ongoing() {
 			return nil, err
 		}
-		level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 		retry.Wait()
 
 		// Avoid masking last known error if context was cancelled while waiting.

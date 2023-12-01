@@ -1799,6 +1799,11 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
 			}
 		}
+
+		if err := it.Err(); err != nil {
+			return 0, 0, err
+		}
+
 		numSamples += len(ts.Samples) + len(ts.Histograms)
 		numSeries++
 		tsSize := ts.Size()
@@ -1895,6 +1900,11 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 			ts.Chunks = append(ts.Chunks, ch)
 			numSamples += meta.Chunk.NumSamples()
 		}
+
+		if err := it.Err(); err != nil {
+			return 0, 0, err
+		}
+
 		numSeries++
 		tsSize := ts.Size()
 
@@ -2112,6 +2122,10 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 
 				seriesChunks.Chunks = append(seriesChunks.Chunks, ch)
 				numSamples += meta.Chunk.NumSamples()
+			}
+
+			if err := it.Err(); err != nil {
+				return 0, 0, 0, err
 			}
 
 			numChunks += len(seriesChunks.Chunks)

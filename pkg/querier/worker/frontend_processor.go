@@ -88,6 +88,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 			if !grpcutil.IsCanceled(err) {
 				level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
 				backoff.Wait()
+				continue
 			}
 		}
 

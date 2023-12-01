@@ -11,9 +11,6 @@ weight: 50
 
 The bucket index is a per-tenant file that contains the list of blocks and block deletion marks in the storage. The bucket index is stored in the backend object storage, is periodically updated by the compactor, and used by queriers, store-gateways, and rulers (in [internal]({{< relref "../components/ruler#internal" >}}) operational mode) to discover blocks in the storage.
 
-The bucket index is enabled by default, but is optional. It can be disabled via `-blocks-storage.bucket-store.bucket-index.enabled=false` (or its respective YAML configuration option).
-Disabling the bucket index is not recommended.
-
 ## Benefits
 
 The [querier]({{< relref "../components/querier" >}}), [store-gateway]({{< relref "../components/store-gateway" >}}) and [ruler]({{< relref "../components/ruler" >}}) must have an almost[^1] up-to-date view of the storage bucket, in order to find the right blocks to look up at query time (querier) and to load a block's [index-header]({{< relref "../binary-index-header" >}}) (store-gateway).
