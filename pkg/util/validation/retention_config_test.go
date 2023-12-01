@@ -137,3 +137,71 @@ func TestRetentionConfigs_SerializeDeserialize(t *testing.T) {
 		assert.Equal(t, obj, reSerialized)
 	})
 }
+
+func TestRetentionConfig_Ordering(t *testing.T) {
+	dr1, err := model.ParseDuration("1y")
+	require.NoError(t, err)
+	dr2, err := model.ParseDuration("2y")
+	require.NoError(t, err)
+	dr3, err := model.ParseDuration("3y")
+	require.NoError(t, err)
+	dr4, err := model.ParseDuration("4y")
+	require.NoError(t, err)
+	dr5, err := model.ParseDuration("5y")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		inputA   RetentionCfg
+		inputB   RetentionCfg
+		expected []model.Duration
+	}{
+		{
+			name: "ShouldOrderCorrectly",
+			inputA: mustNewRetentionConfigFromMap(t, map[model.Duration][]string{
+				dr3: {
+					`{aaa='bar'}`,
+					`{bbb='foo'}`},
+				dr1: {
+					`{ccc='bar'}`,
+				},
+				dr5: {
+					`{ddd='bar'}`,
+				},
+				dr2: {
+					`{eee='bar'}`,
+				},
+				dr4: {
+					`{fff='bar'}`,
+				},
+			}),
+			inputB: mustNewRetentionConfigFromMap(t, map[model.Duration][]string{
+				dr2: {
+					`{eee='bar'}`,
+				},
+				dr3: {
+					`{aaa='bar'}`,
+					`{bbb='foo'}`},
+				dr4: {
+					`{fff='bar'}`,
+				},
+				dr1: {
+					`{ccc='bar'}`,
+				},
+				dr5: {
+					`{ddd='bar'}`,
+				},
+			}),
+			expected: []model.Duration{dr1, dr2, dr3, dr4, dr5},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for i, d := range test.expected {
+				assert.Equal(t, d, test.inputA.config[i].Duration)
+			}
+			assert.EqualValues(t, test.inputA.config, test.inputB.config)
+		})
+	}
+}
