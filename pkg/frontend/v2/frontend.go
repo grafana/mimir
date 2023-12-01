@@ -31,7 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	v1 "github.com/grafana/mimir/pkg/frontend/v1"
+	"github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
