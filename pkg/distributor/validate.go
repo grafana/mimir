@@ -6,9 +6,10 @@
 package distributor
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"strings"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -418,30 +419,46 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
 func formatLabelSet(ls []mimirpb.LabelAdapter) string {
-	metricName, hasMetricName := "", false
+	var space [1024]byte
+	var quoteSpace [256]byte
+	b := bytes.NewBuffer(space[:0])
+	metricNameIndex := -1
 
-	labelStrings := make([]string, 0, len(ls))
-	for _, l := range ls {
-		if l.Name == model.MetricNameLabel && !hasMetricName && l.Value != "" {
-			metricName = l.Value
-			hasMetricName = true
-		} else {
-			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", l.Name, l.Value))
+	for i, l := range ls {
+		if l.Name == model.MetricNameLabel {
+			b.WriteString(l.Value)
+			metricNameIndex = i
+			break
 		}
 	}
 
-	if len(labelStrings) == 0 {
-		if hasMetricName {
-			return metricName
+	count := 0
+	for i, l := range ls {
+		if i == metricNameIndex {
+			continue
 		}
+		if count == 0 {
+			b.WriteByte('{')
+		} else {
+			b.WriteByte(',')
+			b.WriteByte(' ')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.Write(strconv.AppendQuote(quoteSpace[:0], l.Value))
+		count++
+	}
+	if count > 0 {
+		b.WriteByte('}')
+	}
+	if b.Len() == 0 {
 		return "{}"
 	}
-
-	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ", "))
+	return b.String()
 }
 
 func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
-	metric := mimirpb.FromLabelAdaptersToMetric(ls).String()
+	metric := formatLabelSet(ls)
 	ellipsis := ""
 
 	if utf8.RuneCountInString(metric) > 200 {
