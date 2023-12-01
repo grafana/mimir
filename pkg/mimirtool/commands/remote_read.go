@@ -65,11 +65,11 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("remote-read-path", "Path of the remote read endpoint.").
 			Default("/prometheus/api/v1/read").
 			StringVar(&c.remoteReadPath)
-		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").
+		cmd.Flag("id", "Grafana Mimir tenant ID. Used for basic auth and as X-Scope-OrgID HTTP header. Alternatively, set "+envVars.TenantID+".").
 			Envar(envVars.TenantID).
 			Default("").
 			StringVar(&c.tenantID)
-		cmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+		cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
 			Envar(envVars.APIKey).
 			Default("").
 			StringVar(&c.apiKey)
