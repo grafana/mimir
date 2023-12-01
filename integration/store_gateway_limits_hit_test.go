@@ -106,9 +106,10 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			// they discovered the blocks in the storage.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
 			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
-			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway))
+			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway, compactor))
 			t.Cleanup(func() {
-				require.NoError(t, scenario.Stop(querier, storeGateway))
+				require.NoError(t, scenario.Stop(querier, storeGateway, compactor))
 			})
 
 			client, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "test")
