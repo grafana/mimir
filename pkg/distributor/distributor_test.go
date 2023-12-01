@@ -3955,95 +3955,22 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 	streamingLabelResponses := []*client.QueryStreamResponse{}
 	streamingChunkResponses := []*client.QueryStreamResponse{}
 
-	series := make([]*mimirpb.PreallocTimeseries, 0, len(i.timeseries))
+	series := make([]*mimirpb.TimeSeries, 0, len(i.timeseries))
 
 	for _, ts := range i.timeseries {
 		if !match(ts.Labels, matchers) {
 			continue
 		}
 
-		series = append(series, ts)
+		series = append(series, ts.TimeSeries)
 	}
 
-	slices.SortFunc(series, func(a, b *mimirpb.PreallocTimeseries) int {
+	slices.SortFunc(series, func(a, b *mimirpb.TimeSeries) int {
 		return labels.Compare(mimirpb.FromLabelAdaptersToLabels(a.Labels), mimirpb.FromLabelAdaptersToLabels(b.Labels))
 	})
 
 	for seriesIndex, ts := range series {
-		c, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
-		if err != nil {
-			return nil, err
-		}
-
-		hc, err := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)
-		if err != nil {
-			return nil, err
-		}
-
-		fhc, err := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk)
-		if err != nil {
-			return nil, err
-		}
-
-		chunks := []chunk.EncodedChunk{c}
-		for _, sample := range ts.Samples {
-			newChunk, err := c.Add(model.SamplePair{
-				Timestamp: model.Time(sample.TimestampMs),
-				Value:     model.SampleValue(sample.Value),
-			})
-			if err != nil {
-				panic(err)
-			}
-			if newChunk != nil {
-				c = newChunk
-				chunks = append(chunks, newChunk)
-			}
-		}
-
-		hexists := false
-		fhexists := false
-		hchunks := []chunk.EncodedChunk{hc}
-		fhchunks := []chunk.EncodedChunk{fhc}
-		for _, h := range ts.Histograms {
-			if h.IsFloatHistogram() {
-				fhexists = true
-				newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h))
-				if err != nil {
-					panic(err)
-				}
-				if newChunk != nil {
-					fhc = newChunk
-					fhchunks = append(fhchunks, newChunk)
-				}
-			} else {
-				hexists = true
-				newChunk, err := hc.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
-				if err != nil {
-					panic(err)
-				}
-				if newChunk != nil {
-					hc = newChunk
-					hchunks = append(hchunks, newChunk)
-				}
-			}
-		}
-
-		wireChunks := []client.Chunk{}
-		for _, c := range chunks {
-			wireChunks = append(wireChunks, makeWireChunk(c))
-		}
-		if hexists {
-			for _, c := range hchunks {
-				// panic("got hist")
-				wireChunks = append(wireChunks, makeWireChunk(c))
-			}
-		}
-		if fhexists {
-			for _, c := range fhchunks {
-				// panic("got fhist")
-				wireChunks = append(wireChunks, makeWireChunk(c))
-			}
-		}
+		wireChunks := makeChunksFromTimeseries(ts)
 
 		if req.StreamingChunksBatchSize > 0 {
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
@@ -4090,6 +4017,67 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 	return &stream{
 		results: results,
 	}, nil
+}
+
+func makeChunksFromTimeseries(ts *mimirpb.TimeSeries) []client.Chunk {
+	if len(ts.Samples) == 0 {
+		return nil
+	}
+
+	c, _ := chunk.NewForEncoding(chunk.PrometheusXorChunk) // Can't error on this argument.
+	chunks := []client.Chunk{}
+	for _, sample := range ts.Samples {
+		newChunk, err := c.Add(model.SamplePair{
+			Timestamp: model.Time(sample.TimestampMs),
+			Value:     model.SampleValue(sample.Value),
+		})
+		if err != nil {
+			panic(err)
+		}
+		if newChunk != nil {
+			chunks = append(chunks, makeWireChunk(c))
+			c = newChunk
+		}
+	}
+	chunks = append(chunks, makeWireChunk(c))
+
+	hc, _ := chunk.NewForEncoding(chunk.PrometheusHistogramChunk)       // Can't error on this argument.
+	fhc, _ := chunk.NewForEncoding(chunk.PrometheusFloatHistogramChunk) // Can't error on this argument.
+
+	hexists := false
+	fhexists := false
+	for _, h := range ts.Histograms {
+		if h.IsFloatHistogram() {
+			fhexists = true
+			newChunk, err := fhc.AddFloatHistogram(h.Timestamp, mimirpb.FromFloatHistogramProtoToFloatHistogram(&h))
+			if err != nil {
+				panic(err)
+			}
+			if newChunk != nil {
+				chunks = append(chunks, makeWireChunk(fhc))
+				fhc = newChunk
+				fhexists = false
+			}
+		} else {
+			hexists = true
+			newChunk, err := hc.AddHistogram(h.Timestamp, mimirpb.FromHistogramProtoToHistogram(&h))
+			if err != nil {
+				panic(err)
+			}
+			if newChunk != nil {
+				chunks = append(chunks, makeWireChunk(hc))
+				hc = newChunk
+				hexists = false
+			}
+		}
+	}
+	if hexists {
+		chunks = append(chunks, makeWireChunk(hc))
+			}
+	if fhexists {
+		chunks = append(chunks, makeWireChunk(fhc))
+	}
+	return chunks
 }
 
 func (i *mockIngester) MetricsForLabelMatchers(_ context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
