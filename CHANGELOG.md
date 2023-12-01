@@ -12,6 +12,7 @@
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
 * [BUGFIX] Fix panic during tsdb Commit #6766
 * [BUGFIX] tsdb/head: wlog exemplars after samples #6766
+* [BUGFIX] Ruler: fix issue where "failed to remotely evaluate query expression, will retry" messages are logged without context such as the trace ID and do not appear in trace events. #6789
 
 ### Mixin
 
