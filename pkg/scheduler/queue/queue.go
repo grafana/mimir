@@ -13,7 +13,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -30,6 +32,23 @@ var (
 	ErrStopped             = errors.New("queue is stopped")
 	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
 )
+
+type SchedulerRequest struct {
+	FrontendAddress string
+	UserID          string
+	QueryID         uint64
+	Request         *httpgrpc.HTTPRequest
+	StatsEnabled    bool
+
+	EnqueueTime time.Time
+
+	Ctx        context.Context
+	CancelFunc context.CancelFunc
+	QueueSpan  opentracing.Span
+
+	// This is only used for testing.
+	ParentSpanContext opentracing.SpanContext
+}
 
 // UserIndex is opaque type that allows to resume iteration over users between successive calls
 // of RequestQueue.GetNextRequestForQuerier method.
