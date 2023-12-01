@@ -26,7 +26,7 @@ import (
 func BenchmarkIngesterPush(b *testing.B) {
 	const (
 		series           = 200_000
-		samples          = 12
+		samples          = 4
 		tenantName       = "t1"
 		ingesterHostname = "ingester-0"
 		kTopic           = "topic"
@@ -37,9 +37,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 
 	for _, concurrency := range []int{1} {
 		for _, requestsPerConcurrency := range []int{
-			2000,
+			//2000,
 			200,
-			20,
+			//20,
 		} {
 			b.Run(fmt.Sprintf("kafka=false,series=%d,req=%d,samples=%d,concurrency=%d", series, requestsPerConcurrency*concurrency, samples, concurrency), func(b *testing.B) {
 				registry := prometheus.NewRegistry()
@@ -50,7 +50,8 @@ func BenchmarkIngesterPush(b *testing.B) {
 				limitsCfg := defaultLimitsTestConfig()
 				limitsCfg.MaxGlobalSeriesPerUser = 100_000_000
 
-				ingester, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, "", registry)
+				ingesterDataDir := b.TempDir()
+				ingester, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, ingesterDataDir, registry)
 				require.NoError(b, err)
 				require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 				b.Cleanup(func() {
@@ -86,7 +87,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					}(i)
 				}
 
-				for iter := 0; iter < b.N; iter++ {
+				for iter := 0; iter < 1; iter++ {
 					// Bump the timestamp on each of our test samples each time round the loop
 					for j := 0; j < samples; j++ {
 						for i := range allSamples {
@@ -106,10 +107,21 @@ func BenchmarkIngesterPush(b *testing.B) {
 					}
 				}
 
-				b.ResetTimer()
 				close(start)
 				go ingester.DoReplay(httptest.NewRecorder(), nil)
 				wg.Wait()
+
+				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					ingester, err = prepareIngesterWithBlocksStorageAndLimits(b, cfg, limitsCfg, ingesterDataDir, prometheus.NewRegistry())
+					require.NoError(b, err)
+					// Restart the ingester; now we're measuring replaying these samples from the WAL
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
+					})
+				}
 			})
 			b.Run(fmt.Sprintf("kafka=true,series=%d,req=%d,samples=%d,concurrency=%d", series, requestsPerConcurrency, samples, concurrency), func(b *testing.B) {
 				registry := prometheus.NewRegistry()
@@ -130,6 +142,8 @@ func BenchmarkIngesterPush(b *testing.B) {
 				cfg.IngestStorageConfig.KafkaAddress = kafkaAddr
 				cfg.IngestStorageConfig.Enabled = true
 				cfg.IngesterRing.InstanceID = ingesterHostname
+				cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1 // disable WAL so we can test proper replay
+				cfg.ActiveSeriesMetrics.Enabled = false               // disable active series because they aren't present in the WAL replay. We want to get to a more fair comparison
 
 				limitsCfg := defaultLimitsTestConfig()
 				limitsCfg.MaxGlobalSeriesPerUser = 100_000_000
@@ -184,7 +198,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 				// Start producers
 
 				for i := 0; i < concurrency; i++ {
-					writer := ingest.NewWriter(kafkaAddr, kTopic, log.NewNopLogger(), prometheus.NewRegistry())
+					writer := ingest.NewWriter(kafkaAddr, kTopic, "", log.NewNopLogger(), prometheus.NewRegistry())
 					for _, req := range pushReqs[i] {
 						err = writer.WriteSync(ctx, kPartition, tenantName, req, nil, mimirpb.API)
 						assert.NoError(b, err)
