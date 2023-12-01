@@ -37,9 +37,9 @@ func BenchmarkIngesterPush(b *testing.B) {
 
 	for _, concurrency := range []int{1} {
 		for _, requestsPerConcurrency := range []int{
-			//2000,
+			2000,
 			200,
-			//20,
+			20,
 		} {
 			b.Run(fmt.Sprintf("kafka=false,series=%d,req=%d,samples=%d,concurrency=%d", series, requestsPerConcurrency*concurrency, samples, concurrency), func(b *testing.B) {
 				registry := prometheus.NewRegistry()

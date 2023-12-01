@@ -51,7 +51,6 @@ func (c IngesterConsumer) consumeRequests(ctx context.Context, reqC chan parsedR
 			errC <- errors.Wrap(err, "consuming write request")
 			return
 		}
-		mimirpb.ReuseSlice(wr.WriteRequest.Timeseries)
 	}
 }
 
