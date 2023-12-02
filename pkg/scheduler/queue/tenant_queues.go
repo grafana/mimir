@@ -136,12 +136,30 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	queuePath := QueuePath{string(request.tenantID)}
+	queuePath, err := makeQueuePath(request)
+	if err != nil {
+		return err
+	}
+
 	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	if errors.Is(err, ErrMaxQueueLengthExceeded) {
 		return errors.Join(err, ErrTooManyRequests)
 	}
 	return err
+}
+
+func makeQueuePath(request *tenantRequest) (QueuePath, error) {
+	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+		if len(schedulerRequest.AdditionalQueueDimensions) > 1 {
+			return nil, ErrTooManyQueueDimensions
+		}
+		if len(schedulerRequest.AdditionalQueueDimensions) == 1 {
+			return QueuePath{string(request.tenantID), schedulerRequest.AdditionalQueueDimensions[0]}, nil
+		}
+	}
+	// else request.req is a frontend/v1.request,
+	// or a SchedulerRequest with no AdditionalQueueDimensions
+	return QueuePath{string(request.tenantID)}, nil
 }
 
 // enqueueRequestFront should only be used for re-enqueueing previously dequeued requests

@@ -319,11 +319,12 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	userID := msg.GetUserID()
 
 	req := &queue.SchedulerRequest{
-		FrontendAddress: frontendAddr,
-		UserID:          msg.UserID,
-		QueryID:         msg.QueryID,
-		Request:         msg.HttpRequest,
-		StatsEnabled:    msg.StatsEnabled,
+		FrontendAddress:           frontendAddr,
+		UserID:                    msg.UserID,
+		QueryID:                   msg.QueryID,
+		Request:                   msg.HttpRequest,
+		StatsEnabled:              msg.StatsEnabled,
+		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
 
 	now := time.Now()

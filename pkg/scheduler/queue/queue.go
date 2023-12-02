@@ -27,18 +27,20 @@ const (
 )
 
 var (
-	ErrInvalidTenantID     = errors.New("invalid tenant id")
-	ErrTooManyRequests     = errors.New("too many outstanding requests")
-	ErrStopped             = errors.New("queue is stopped")
-	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
+	ErrInvalidTenantID        = errors.New("invalid tenant id")
+	ErrTooManyRequests        = errors.New("too many outstanding requests")
+	ErrStopped                = errors.New("queue is stopped")
+	ErrQuerierShuttingDown    = errors.New("querier has informed the scheduler it is shutting down")
+	ErrTooManyQueueDimensions = errors.New("too many additional queue dimensions provided")
 )
 
 type SchedulerRequest struct {
-	FrontendAddress string
-	UserID          string
-	QueryID         uint64
-	Request         *httpgrpc.HTTPRequest
-	StatsEnabled    bool
+	FrontendAddress           string
+	UserID                    string
+	QueryID                   uint64
+	Request                   *httpgrpc.HTTPRequest
+	StatsEnabled              bool
+	AdditionalQueueDimensions []string
 
 	EnqueueTime time.Time
 

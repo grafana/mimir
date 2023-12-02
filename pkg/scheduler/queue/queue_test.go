@@ -9,12 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -29,8 +31,24 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
+// cannot import constants from frontend/v2 due to import cycle,
+// but content of the strings should not matter as much as the number of options
+var secondQueueDimensionOptions = []string{
+	"ingester",
+	"store-gateway",
+	"ingester|store-gateway",
+}
+
+func randAdditionalQueueDimension() []string {
+	idx := rand.Intn(len(secondQueueDimensionOptions))
+	return secondQueueDimensionOptions[idx : idx+1]
+}
+
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	req := "the query request"
+	req := &SchedulerRequest{
+		Ctx:     context.Background(),
+		Request: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+	}
 	maxQueriers := 0
 
 	for _, numTenants := range []int{1, 10, 1000} {
@@ -76,6 +94,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 
 								for i := 0; i < requestCount; i++ {
 									for {
+										req.AdditionalQueueDimensions = randAdditionalQueueDimension()
 										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriers, func() {})
 										if err == nil {
 											break
@@ -175,7 +194,12 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" hash falls in the querier-1 shard.
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", "request", 1, nil))
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+	}
+	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
 
 	startTime := time.Now()
 	querier2wg.Wait()
@@ -256,9 +280,14 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	queueBroker.addQuerierConnection(querierID)
 
 	tenantMaxQueriers := 0 // no sharding
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+	}
 	tr := tenantRequest{
 		tenantID: TenantID("tenant-1"),
-		req:      "request",
+		req:      req,
 	}
 
 	require.Nil(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}))
