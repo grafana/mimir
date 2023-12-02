@@ -169,7 +169,7 @@ type ingesterPushError struct {
 }
 
 // newIngesterPushError creates a ingesterPushError error representing the given status object.
-func newIngesterPushError(stat *status.Status) ingesterPushError {
+func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.UNKNOWN_CAUSE
 	details := stat.Details()
 	if len(details) == 1 {
@@ -177,14 +177,15 @@ func newIngesterPushError(stat *status.Status) ingesterPushError {
 			errorCause = errorDetails.GetCause()
 		}
 	}
+	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
-		message: stat.Message(),
+		message: message,
 		cause:   errorCause,
 	}
 }
 
 func (e ingesterPushError) Error() string {
-	return fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, e.message)
+	return e.message
 }
 
 func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
@@ -230,24 +231,25 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	return stat.Err()
 }
 
-func handleIngesterPushError(err error) error {
+func translateIngesterPushError(err error, ingesterID string) error {
 	if err == nil {
 		return nil
 	}
 
+	wrapErrorMessage := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		return errors.Wrap(err, failedPushingToIngesterMessage)
+		return errors.Wrap(err, wrapErrorMessage)
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
 		// This code is needed for backwards compatibility, since ingesters may still return errors
 		// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
+		return httpgrpc.Errorf(int(statusCode), "%s: %s", wrapErrorMessage, stat.Message())
 	}
 
-	return newIngesterPushError(stat)
+	return newIngesterPushError(stat, ingesterID)
 }
 
 func isClientError(err error) bool {

@@ -1404,7 +1404,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
-	return handleIngesterPushError(err)
+	return translateIngesterPushError(err, ingester.Id)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
