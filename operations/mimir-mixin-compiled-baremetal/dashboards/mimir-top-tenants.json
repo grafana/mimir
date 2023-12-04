@@ -127,7 +127,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -254,7 +254,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"} )\n)\n)",
+                        "expr": "topk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n)",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -343,7 +343,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"} )\n)\n\nand\ntopk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"} @ end())\n)\n - sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"} @ start())\n)\n)\n",
+                        "expr": "sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} )\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} )\n)\n\nand\ntopk($limit, sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ end())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ end())\n)\n - sum by (user) (\n  (\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n      -\n      sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"} @ start())\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"} @ start())\n)\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
@@ -468,7 +468,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -557,7 +557,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
+                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
@@ -682,7 +682,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -771,7 +771,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
+                        "expr": "sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval]))\nand\ntopk($limit,\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ end()))\n  -\n  sum by (user) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*|distributor.*|cortex|mimir|mimir-write.*))\"}[$__rate_interval] @ start()))\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{ user }}",
@@ -896,7 +896,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1023,7 +1023,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,

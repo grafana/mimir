@@ -17,6 +17,8 @@
 
 ### Mixin
 
+* [CHANGE] The `job` label matcher for distributor and gateway have been extended to include any deployment matching `distributor.*` and `cortex-gw.*` respectively. This change allows to match custom and multi-zone distributor and gateway deployments too. #6817
+
 ### Jsonnet
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764

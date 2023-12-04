@@ -70,7 +70,7 @@
     // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
-      distributor: ['distributor', 'cortex', 'mimir', 'mimir-write.*'],
+      distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
       ruler: ['ruler', 'cortex', 'mimir', 'mimir-backend.*'],
@@ -78,15 +78,15 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
-      gateway: ['gateway', 'cortex-gw', 'cortex-gw-internal'],
+      gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
       alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
       overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
 
       // The following are job matchers used to select all components in a given "path".
-      write: ['distributor', 'ingester.*', 'mimir-write.*'],
+      write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
     },
