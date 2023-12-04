@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -74,7 +73,7 @@ func testPartitionChunksOutputIsSortedByLabels(t *testing.T, encoding chunk.Enco
 		allChunks = append(allChunks, ch)
 	}
 
-	res := partitionChunks(allChunks, 0, 1000, batch.NewChunkMergeIterator)
+	res := partitionChunks(allChunks, 0, 1000)
 
 	// collect labels from each series
 	var seriesLabels []labels.Labels

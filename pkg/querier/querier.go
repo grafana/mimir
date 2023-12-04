@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -133,9 +132,9 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, batch.NewChunkMergeIterator, limits, queryMetrics, logger)
+	distributorQueryable := newDistributorQueryable(distributor, limits, queryMetrics, logger)
 
-	queryable := newQueryable(distributorQueryable, storeQueryable, batch.NewChunkMergeIterator, cfg, limits, queryMetrics, logger)
+	queryable := newQueryable(distributorQueryable, storeQueryable, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
@@ -179,7 +178,6 @@ func (q *chunkQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 func newQueryable(
 	distributor storage.Queryable,
 	blockStore storage.Queryable,
-	chunkIterFn chunkIteratorFunc,
 	cfg Config,
 	limits *validation.Overrides,
 	queryMetrics *stats.QueryMetrics,
@@ -193,7 +191,6 @@ func newQueryable(
 			cfg:                cfg,
 			minT:               minT,
 			maxT:               maxT,
-			chunkIterFn:        chunkIterFn,
 			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
 			limits:             limits,
 			logger:             logger,
@@ -208,7 +205,6 @@ type multiQuerier struct {
 	blockStore   storage.Queryable
 	queryMetrics *stats.QueryMetrics
 	cfg          Config
-	chunkIterFn  chunkIteratorFunc
 	minT, maxT   int64
 
 	maxQueryIntoFuture time.Duration
@@ -484,7 +480,7 @@ func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesS
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
-	chunksSet := partitionChunks(chunks, mq.minT, mq.maxT, mq.chunkIterFn)
+	chunksSet := partitionChunks(chunks, mq.minT, mq.maxT)
 
 	if len(otherSets) == 0 {
 		return chunksSet

@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
@@ -42,11 +43,10 @@ type Distributor interface {
 	ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
+func newDistributorQueryable(distributor Distributor, cfgProvider distributorQueryableConfigProvider, queryMetrics *stats.QueryMetrics, logger log.Logger) storage.Queryable {
 	return distributorQueryable{
 		logger:       logger,
 		distributor:  distributor,
-		iteratorFn:   iteratorFn,
 		cfgProvider:  cfgProvider,
 		queryMetrics: queryMetrics,
 	}
@@ -59,7 +59,6 @@ type distributorQueryableConfigProvider interface {
 type distributorQueryable struct {
 	logger       log.Logger
 	distributor  Distributor
-	iteratorFn   chunkIteratorFunc
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
 }
@@ -70,7 +69,6 @@ func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error)
 		distributor:  d.distributor,
 		mint:         mint,
 		maxt:         maxt,
-		chunkIterFn:  d.iteratorFn,
 		queryMetrics: d.queryMetrics,
 		cfgProvider:  d.cfgProvider,
 	}, nil
@@ -80,7 +78,6 @@ type distributorQuerier struct {
 	logger       log.Logger
 	distributor  Distributor
 	mint, maxt   int64
-	chunkIterFn  chunkIteratorFunc
 	cfgProvider  distributorQueryableConfigProvider
 	queryMetrics *stats.QueryMetrics
 }
@@ -147,11 +144,10 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 
 		serieses = append(serieses, &chunkSeries{
-			labels:            ls,
-			chunks:            chunks,
-			chunkIteratorFunc: q.chunkIterFn,
-			mint:              minT,
-			maxt:              maxT,
+			labels: ls,
+			chunks: chunks,
+			mint:   minT,
+			maxt:   maxT,
 		})
 	}
 
@@ -162,7 +158,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	if len(results.StreamingSeries) > 0 {
 		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
 		streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-			chunkIteratorFunc: q.chunkIterFn,
+			chunkIteratorFunc: batch.NewChunkMergeIterator,
 			mint:              minT,
 			maxt:              maxT,
 			queryMetrics:      q.queryMetrics,
