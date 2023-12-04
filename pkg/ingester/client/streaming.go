@@ -94,6 +94,9 @@ func (s *SeriesChunksStreamReader) StartBuffering() {
 
 		if err := s.readStream(log); err != nil {
 			s.errorChan <- err
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			level.Error(log).Log("msg", "received error while streaming chunks from ingester", "err", err)
 			ext.Error.Set(log.Span, true)
 		}
