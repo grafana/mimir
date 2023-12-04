@@ -14,13 +14,13 @@ import (
 	"regexp" //lint:ignore faillint Required by kingpin for regexp flags
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"

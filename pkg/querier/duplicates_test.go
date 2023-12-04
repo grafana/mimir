@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -118,7 +119,7 @@ type testQueryable struct {
 	ts storage.SeriesSet
 }
 
-func (t *testQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (t *testQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	return testQuerier{ts: t.ts}, nil
 }
 
@@ -126,15 +127,15 @@ type testQuerier struct {
 	ts storage.SeriesSet
 }
 
-func (m testQuerier) Select(_ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+func (m testQuerier) Select(context.Context, bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return m.ts
 }
 
-func (m testQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m testQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 
-func (m testQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m testQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

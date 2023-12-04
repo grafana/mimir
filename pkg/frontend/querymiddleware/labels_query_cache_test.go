@@ -11,21 +11,22 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	testGenericQueryCacheRoundTrip(t, newLabelsQueryCacheRoundTripper, "label_names_and_values", map[string]testGenericQueryCacheRequestType{
 		"label names request": {
-			url:            mustParseURL(t, `/prometheus/api/v1/labels?start=2023-07-05T01:00:00Z&end=2023-07-05T08:00:00Z&match[]={job="test_1"}&match[]={job!="test_2"}`),
+			reqPath:        "/prometheus/api/v1/labels",
+			reqData:        url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}, "match[]": []string{`{job="test_1"}`, `{job!="test_2"}`}},
 			cacheKey:       "user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}",
 			hashedCacheKey: labelNamesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
 		"label values request": {
-			url:            mustParseURL(t, `/prometheus/api/v1/label/test/values?start=2023-07-05T01:00:00Z&end=2023-07-05T08:00:00Z&match[]={job="test_1"}&match[]={job!="test_2"}`),
+			reqPath:        "/prometheus/api/v1/label/test/values",
+			reqData:        url.Values{"start": []string{"2023-07-05T01:00:00Z"}, "end": []string{"2023-07-05T08:00:00Z"}, "match[]": []string{`{job="test_1"}`, `{job!="test_2"}`}},
 			cacheKey:       "user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}",
 			hashedCacheKey: labelValuesQueryCachePrefix + cacheHashKey("user-1:1688515200000\x001688544000000\x00test\x00{job!=\"test_2\"},{job=\"test_1\"}"),
 		},
@@ -42,14 +43,14 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 	}{
 		"no parameters provided": {
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				labelName,
 				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				"",
 			}, string(stringParamSeparator)),
 		},
@@ -59,13 +60,13 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				labelName,
 				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				"",
 			}, string(stringParamSeparator)),
 		},
@@ -74,13 +75,13 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				"end": []string{"2023-07-05T07:00:00Z"},
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				labelName,
 				"",
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
 				fmt.Sprintf("%d", mustParseTime("2023-07-05T08:00:00Z")),
 				"",
 			}, string(stringParamSeparator)),
@@ -90,14 +91,14 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 				"match[]": []string{`{second!="2",first="1"}`},
 			},
 			expectedCacheKeyWithLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				labelName,
 				`{first="1",second!="2"}`,
 			}, string(stringParamSeparator)),
 			expectedCacheKeyWithoutLabelName: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				`{first="1",second!="2"}`,
 			}, string(stringParamSeparator)),
 		},
@@ -142,11 +143,8 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
-					req, err := http.NewRequest("GET", "http://localhost"+requestTypeData.requestPath+"?"+testData.params.Encode(), nil)
-					require.NoError(t, err)
-
 					c := &labelsQueryCache{}
-					actual, err := c.parseRequest(req)
+					actual, err := c.parseRequest(requestTypeData.requestPath, testData.params)
 					require.NoError(t, err)
 
 					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.cacheKeyPrefix)
@@ -189,11 +187,11 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 			}, string(stringParamSeparator)),
 		},
 		"start and end time match prometheus min/max time": {
-			startTime: util.PrometheusMinTime.UnixMilli(),
-			endTime:   util.PrometheusMaxTime.UnixMilli(),
+			startTime: v1.MinTime.UnixMilli(),
+			endTime:   v1.MaxTime.UnixMilli(),
 			expectedCacheKey: strings.Join([]string{
-				fmt.Sprintf("%d", util.PrometheusMinTime.UnixMilli()),
-				fmt.Sprintf("%d", util.PrometheusMaxTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MinTime.UnixMilli()),
+				fmt.Sprintf("%d", v1.MaxTime.UnixMilli()),
 				"",
 			}, string(stringParamSeparator)),
 		},
@@ -325,7 +323,7 @@ func TestParseRequestMatchersParam(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, req.ParseForm())
 
-				actual, err := parseRequestMatchersParam(req, paramName)
+				actual, err := parseRequestMatchersParam(req.Form, paramName)
 				require.NoError(t, err)
 
 				assert.Equal(t, testData.expected, actual)
@@ -337,7 +335,7 @@ func TestParseRequestMatchersParam(t *testing.T) {
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				require.NoError(t, req.ParseForm())
 
-				actual, err := parseRequestMatchersParam(req, "match[]")
+				actual, err := parseRequestMatchersParam(req.Form, "match[]")
 				require.NoError(t, err)
 
 				assert.Equal(t, testData.expected, actual)

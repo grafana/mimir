@@ -13,7 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
-	lru "github.com/hashicorp/golang-lru/simplelru"
+	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -43,7 +43,7 @@ type InMemoryIndexCache struct {
 	mtx sync.Mutex
 
 	logger           log.Logger
-	lru              *lru.LRU
+	lru              *lru.LRU[cacheKey, []byte]
 	maxSizeBytes     uint64
 	maxItemSizeBytes uint64
 
@@ -179,15 +179,14 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	return c, nil
 }
 
-func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
-	k := key.(cacheKey)
-	typ := k.typ()
-	entrySize := sliceSize(val.([]byte))
+func (c *InMemoryIndexCache) onEvict(key cacheKey, val []byte) {
+	typ := key.typ()
+	entrySize := sliceSize(val)
 
 	c.evicted.WithLabelValues(typ).Inc()
 	c.current.WithLabelValues(typ).Dec()
 	c.currentSize.WithLabelValues(typ).Sub(float64(entrySize))
-	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + k.size()))
+	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + key.size()))
 
 	c.curSize -= entrySize
 }
@@ -204,7 +203,7 @@ func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
 		return nil, false
 	}
 	c.hits.WithLabelValues(typ).Inc()
-	return v.([]byte), true
+	return v, true
 }
 
 func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {

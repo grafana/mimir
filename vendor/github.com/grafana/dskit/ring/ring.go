@@ -75,6 +75,9 @@ type ReadRing interface {
 
 	// CleanupShuffleShardCache should delete cached shuffle-shard subrings for given identifier.
 	CleanupShuffleShardCache(identifier string)
+
+	// GetTokenRangesForInstance returns the token ranges owned by an instance in the ring
+	GetTokenRangesForInstance(instanceID string) (TokenRanges, error)
 }
 
 var (
@@ -238,16 +241,19 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name:        "ring_tokens_total",
 			Help:        "Number of tokens in the ring",
-			ConstLabels: map[string]string{"name": name}}),
+			ConstLabels: map[string]string{"name": name},
+		}),
 		oldestTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_oldest_member_timestamp",
 			Help:        "Timestamp of the oldest member in the ring.",
-			ConstLabels: map[string]string{"name": name}},
+			ConstLabels: map[string]string{"name": name},
+		},
 			[]string{"state"}),
 		logger: logger,
 	}
@@ -304,6 +310,11 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		}
 	}
 
+	// Ensure the ID of each InstanceDesc is set based on the map of instances. This
+	// handles the case where some components are running older lifecyclers which do
+	// not set the instance ID when registering in the ring.
+	ringDesc.setInstanceIDs()
+
 	rc := prevRing.RingCompare(ringDesc)
 	if rc == Equal || rc == EqualButStatesAndTimestamps {
 		// No need to update tokens or zones. Only states and timestamps
@@ -352,6 +363,26 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		return ReplicationSet{}, ErrEmptyRing
 	}
 
+	instances, err := r.findInstancesForKey(key, op, bufDescs, bufHosts, bufZones, nil)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	healthyInstances, maxFailure, err := r.strategy.Filter(instances, op, r.cfg.ReplicationFactor, r.cfg.HeartbeatTimeout, r.cfg.ZoneAwarenessEnabled)
+	if err != nil {
+		return ReplicationSet{}, err
+	}
+
+	return ReplicationSet{
+		Instances: healthyInstances,
+		MaxErrors: maxFailure,
+	}, nil
+}
+
+// Returns instances for given key and operation. Instances are not filtered through ReplicationStrategy.
+// InstanceFilter can ignore uninteresting instances that would otherwise be part of the output, and can also stop search early.
+// This function needs to be called with read lock on the ring.
+func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, bufZones []string, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
 	var (
 		n            = r.cfg.ReplicationFactor
 		instances    = bufDescs[:0]
@@ -374,7 +405,7 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		info, ok := r.ringInstanceByToken[token]
 		if !ok {
 			// This should never happen unless a bug in the ring code.
-			return ReplicationSet{}, ErrInconsistentTokensInfo
+			return nil, ErrInconsistentTokensInfo
 		}
 
 		// We want n *distinct* instances && distinct zones.
@@ -402,18 +433,18 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 			distinctZones = append(distinctZones, info.Zone)
 		}
 
-		instances = append(instances, instance)
+		include, keepGoing := true, true
+		if instanceFilter != nil {
+			include, keepGoing = instanceFilter(info.InstanceID)
+		}
+		if include {
+			instances = append(instances, instance)
+		}
+		if !keepGoing {
+			break
+		}
 	}
-
-	healthyInstances, maxFailure, err := r.strategy.Filter(instances, op, r.cfg.ReplicationFactor, r.cfg.HeartbeatTimeout, r.cfg.ZoneAwarenessEnabled)
-	if err != nil {
-		return ReplicationSet{}, err
-	}
-
-	return ReplicationSet{
-		Instances: healthyInstances,
-		MaxErrors: maxFailure,
-	}, nil
+	return instances, nil
 }
 
 // GetAllHealthy implements ReadRing.
@@ -515,9 +546,10 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}
 
 	return ReplicationSet{
-		Instances:           healthyInstances,
-		MaxErrors:           maxErrors,
-		MaxUnavailableZones: maxUnavailableZones,
+		Instances:            healthyInstances,
+		MaxErrors:            maxErrors,
+		MaxUnavailableZones:  maxUnavailableZones,
+		ZoneAwarenessEnabled: r.cfg.ZoneAwarenessEnabled,
 	}, nil
 }
 
@@ -525,9 +557,9 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 // In case of zone-awareness, this method takes into account only tokens of
 // the same zone. More precisely, for each instance only the distance between
 // its tokens and tokens of the instances from the same zone will be considered.
-func (r *Desc) CountTokens() map[string]int {
+func (r *Desc) CountTokens() map[string]int64 {
 	var (
-		owned               = make(map[string]int, len(r.Ingesters))
+		owned               = make(map[string]int64, len(r.Ingesters))
 		ringTokensByZone    = r.getTokensByZone()
 		ringInstanceByToken = r.getTokensInfo()
 	)
@@ -1069,3 +1101,36 @@ func (op Operation) ShouldExtendReplicaSetOnState(s InstanceState) bool {
 
 // All states are healthy, no states extend replica set.
 var allStatesRingOperation = Operation(0x0000ffff)
+
+// numberOfKeysOwnedByInstance returns how many of the supplied keys are owned by given instance.
+func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instanceID string, bufDescs []InstanceDesc, bufHosts []string, bufZones []string) (int, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	if r.ringDesc == nil || len(r.ringTokens) == 0 {
+		return 0, ErrEmptyRing
+	}
+
+	// Instance is not in this ring, it can't own any key.
+	if _, ok := r.ringDesc.Ingesters[instanceID]; !ok {
+		return 0, nil
+	}
+
+	owned := 0
+	for _, tok := range keys {
+		i, err := r.findInstancesForKey(tok, op, bufDescs, bufHosts, bufZones, func(foundInstanceID string) (include, keepGoing bool) {
+			if foundInstanceID == instanceID {
+				// If we've found our instance, we can stop.
+				return true, false
+			}
+			return false, true
+		})
+		if err != nil {
+			return 0, err
+		}
+		if len(i) > 0 {
+			owned++
+		}
+	}
+	return owned, nil
+}

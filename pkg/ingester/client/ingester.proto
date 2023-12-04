@@ -36,6 +36,8 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+
+  rpc ActiveSeries(ActiveSeriesRequest) returns (stream ActiveSeriesResponse) {};
 }
 
 message LabelNamesAndValuesRequest {
@@ -129,6 +131,10 @@ message ExemplarQueryRequest {
   repeated LabelMatchers matchers = 3;
 }
 
+message ActiveSeriesRequest {
+  repeated LabelMatcher matchers = 1;
+}
+
 message QueryResponse {
   repeated cortexpb.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
 }
@@ -153,6 +159,7 @@ message QueryStreamResponse {
 
 message QueryStreamSeries {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  int64 chunk_count = 2;
 }
 
 message QueryStreamSeriesChunks {
@@ -216,10 +223,17 @@ message MetricsForLabelMatchersResponse {
 }
 
 message MetricsMetadataRequest {
+  sint32 limit = 1;
+  sint32 limit_per_metric = 2;
+  string metric = 3;
 }
 
 message MetricsMetadataResponse {
   repeated cortexpb.MetricMetadata metadata = 1;
+}
+
+message ActiveSeriesResponse {
+  repeated cortexpb.Metric metric = 1;
 }
 
 message TimeSeriesChunk {

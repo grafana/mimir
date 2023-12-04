@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -30,7 +31,7 @@ type ProxyBackend struct {
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool) *ProxyBackend {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) *ProxyBackend {
 	return &ProxyBackend{
 		name:      name,
 		endpoint:  endpoint,
@@ -42,6 +43,9 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 			},
 			Transport: &http.Transport{
 				Proxy: http.ProxyFromEnvironment,
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: skipTLSVerify,
+				},
 				DialContext: (&net.Dialer{
 					Timeout:   30 * time.Second,
 					KeepAlive: 30 * time.Second,

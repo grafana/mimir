@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-	"github.com/weaveworks/common/httpgrpc"
 	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -180,6 +179,8 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
+	promWarningsMap := make(map[string]struct{}, 0)
+	var present struct{}
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
@@ -192,6 +193,14 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
+		for _, warning := range pr.Warnings {
+			promWarningsMap[warning] = present
+		}
+	}
+
+	var promWarnings []string
+	for warning := range promWarningsMap {
+		promWarnings = append(promWarnings, warning)
 	}
 
 	// Merge the responses.
@@ -203,6 +212,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),
 		},
+		Warnings: promWarnings,
 	}, nil
 }
 
@@ -353,15 +363,17 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
-	if r.StatusCode/100 == 5 {
-		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
-			Code: int32(r.StatusCode),
-			Body: mustReadResponseBody(r),
-		})
-	} else if r.StatusCode == http.StatusTooManyRequests {
+	switch r.StatusCode {
+	case http.StatusServiceUnavailable:
+		return nil, apierror.New(apierror.TypeUnavailable, string(mustReadResponseBody(r)))
+	case http.StatusTooManyRequests:
 		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadResponseBody(r)))
-	} else if r.StatusCode == http.StatusRequestEntityTooLarge {
+	case http.StatusRequestEntityTooLarge:
 		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadResponseBody(r)))
+	default:
+		if r.StatusCode/100 == 5 {
+			return nil, apierror.New(apierror.TypeInternal, string(mustReadResponseBody(r)))
+		}
 	}
 
 	log := spanlogger.FromContext(ctx, logger)

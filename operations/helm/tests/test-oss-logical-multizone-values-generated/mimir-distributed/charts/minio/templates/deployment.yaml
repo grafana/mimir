@@ -4,10 +4,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-oss-logical-multizone-values-minio
-  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-5.0.7
+    chart: minio-5.0.14
     release: test-oss-logical-multizone-values
     heritage: Helm
 spec:
@@ -28,19 +27,19 @@ spec:
         app: minio
         release: test-oss-logical-multizone-values
       annotations:
-        checksum/secrets: 53b423e9933991e58d4f8d92553917f5bd1c8692702b98a3ee66546cd6459ff1
-        checksum/config: 4ad3f1da657c9f3ebda211aba13c1015873f9bb6d404155d31003d903ab57e69
+        checksum/secrets: a00390ce8e4dd432408dd6203507322a50bcada86e5399b3df02d6bf3ee5acf9
+        checksum/config: 657a48eb902c69b83986b720ff9d101131d5b3730e04737701ac3a75cea8d6c4
     spec:
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-
+      
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-02-10T18-48-39Z"
+          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

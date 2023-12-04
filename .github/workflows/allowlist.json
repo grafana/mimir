@@ -14,5 +14,13 @@
   {
     "name": "github.com/stretchr/testify",
     "reason": "the library is only used in tests"
+  },
+  {
+    "name": "github.com/hashicorp/golang-lru/v2",
+    "reason": "stable library, getting bugfixes"
+  },
+  {
+    "name": "github.com/google/uuid",
+    "reason": "stable library, getting bugfixes"
   }
 ]

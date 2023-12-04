@@ -7,20 +7,39 @@ weight: 160
 
 # Configure native histograms
 
-To enable support for ingesting Prometheus native histograms over the [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint, set the flag `-ingester.native-histograms-ingestion-enabled=true` on ingesters.
+Prometheus native histograms ingestion is an **experimental** feature of Grafana Mimir.
 
-To enable support for querying native histograms together with [Grafana Mimir query sharding]({{< relref "../references/architecture/query-sharding" >}}), set the flag `-query-frontend.query-result-response-format=protobuf` on query frontends.
+You can configure native histograms ingestion via the Prometheus [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint globally or per tenant.
 
-> **Note:** Native histograms is an experimental feature of Grafana Mimir.
+{{% admonition type="note" %}}
+To enable support for querying native histograms together with [Grafana Mimir query sharding]({{< relref "../references/architecture/query-sharding" >}}), make sure that the flag `-query-frontend.query-result-response-format` is set to its default `protobuf` value on query frontends.
+{{% /admonition %}}
 
-## Configure Prometheus to write native histograms to Grafana Mimir
+## Configure native histograms globally
 
-To enable experimental support for scraping and ingesting native histograms in Prometheus, [enable the feature](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) with the flag `--enable-feature=native-histograms`.
+To enable ingesting Prometheus native histograms over the [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint for all tenants, set the flag `-ingester.native-histograms-ingestion-enabled=true` on the ingesters.
 
-To enable Prometheus remote write to send native histograms to Grafana Mimir, add the `send_native_histograms: true` parameter to your remote write configuration, for example:
+To limit the number of native histogram buckets per sample, set the `-validation.max-native-histogram-buckets` flag on the distributors.
+The recommended value is `160` which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms.
+Exponential histograms in OpenTelemetry are a similar concept to Prometheus native histograms.
+At the time of ingestion, samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the `-validation.reduce-native-histogram-over-max-buckets` option to `false`.
+
+## Configure native histograms per tenant
+
+To enable ingesting Prometheus native histograms over the [remote write API]({{< relref "../references/http-api#remote-write" >}}) for a tenant, set the `native_histograms_ingestion_enabled` runtime value to `true`.
+
+To limit the number of native histogram buckets per sample for a tenant, set the `max_native_histogram_buckets` runtime value.
+The recommended value is `160` which is the default in the [OpenTelemetry SDK](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) for exponential histograms.
+Exponential histograms in OpenTelemetry are a similar concept to Prometheus native histograms.
+At the time of ingestion, samples with more buckets than the limit will be scaled down, meaning that the resolution will be reduced and buckets will be merged until either the number of buckets is under the limit or the minimal resolution is reached. The behavior can be changed to dropping such samples by setting the `-validation.reduce-native-histogram-over-max-buckets` option to `false`.
 
 ```yaml
-remote_write:
-  - url: <your-url>
-    send_native_histograms: true
+overrides:
+  tenant1:
+    native_histograms_ingestion_enabled: true
+    max_native_histogram_buckets: 160
 ```
+
+To learn more about sending native histograms to Mimir or Grafana Cloud Metrics via Grafana Agent or Prometheus,
+see [Scrape and send native histograms with Grafana Agent]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-grafana-agent" >}}) or
+[Scrape and send native histograms with Prometheus]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-prometheus" >}}).

@@ -14,16 +14,18 @@ import (
 const (
 	defaultTenantLabel   = "__tenant_id__"
 	retainExistingPrefix = "original_"
-	maxConcurrency       = 16
+	defaultConcurrency   = 16
 )
 
 type Config struct {
 	// Enabled switches on support for multi tenant query federation
-	Enabled bool `yaml:"enabled"`
+	Enabled       bool `yaml:"enabled"`
+	MaxConcurrent int  `yaml:"max_concurrent" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "tenant-federation.enabled", false, "If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.")
+	f.IntVar(&cfg.MaxConcurrent, "tenant-federation.max-concurrent", defaultConcurrency, "The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query.")
 }
 
 // filterValuesByMatchers applies matchers to inputed `idLabelName` and

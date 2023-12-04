@@ -74,10 +74,11 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: testCase.batches}
+			ctx := context.Background()
+			mockClient := &mockQueryStreamClient{ctx: ctx, batches: testCase.batches}
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
-			reader := NewSeriesChunksStreamReader(mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+			reader := NewSeriesChunksStreamReader(ctx, mockClient, 5, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			for i, expected := range [][]Chunk{series0, series1, series2, series3, series4} {
@@ -95,7 +96,7 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 	}
 }
 
-func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
+func TestSeriesChunksStreamReader_AbortsWhenParentContextCancelled(t *testing.T) {
 	// Ensure that the buffering goroutine is not leaked after context cancellation.
 	test.VerifyNoLeak(t)
 
@@ -112,12 +113,13 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
+	streamCtx := context.Background()
+	mockClient := &mockQueryStreamClient{ctx: streamCtx, batches: batches}
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	parentCtx, cancel := context.WithCancel(context.Background())
+	reader := NewSeriesChunksStreamReader(parentCtx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	cancel()
 	reader.StartBuffering()
 
@@ -135,7 +137,43 @@ func TestSeriesChunksStreamReader_AbortsWhenContextCancelled(t *testing.T) {
 		}
 	}
 
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after context cancelled")
+	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after parent context cancelled")
+	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+}
+
+func TestSeriesChunksStreamReader_DoesNotAbortWhenStreamContextCancelled(t *testing.T) {
+	// Ensure that the buffering goroutine is not leaked after context cancellation.
+	test.VerifyNoLeak(t)
+
+	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
+	batches := [][]QueryStreamSeriesChunks{
+		{
+			{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+		},
+		{
+			{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
+		},
+		{
+			{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+		},
+	}
+
+	streamCtx, cancel := context.WithCancel(context.Background())
+	mockClient := &mockQueryStreamClient{ctx: streamCtx, batches: batches}
+	cleanedUp := atomic.NewBool(false)
+	cleanup := func() { cleanedUp.Store(true) }
+
+	parentCtx := context.Background()
+	reader := NewSeriesChunksStreamReader(parentCtx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
+	cancel()
+	reader.StartBuffering()
+
+	for i := 0; i < 3; i++ {
+		_, err := reader.GetChunks(uint64(i))
+		require.NoError(t, err, "expected GetChunks to not report context cancellation error from stream context")
+	}
+
+	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after stream exhausted")
 	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
 }
 
@@ -146,14 +184,22 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
+	ctx := context.Background()
+	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has series with index 0")
+	expectedError := "attempted to read series at index 1 from ingester chunks stream, but the stream has series with index 0"
+	require.EqualError(t, err, expectedError)
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(3)
+	require.EqualError(t, err, "attempted to read series at index 3 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
@@ -164,9 +210,10 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 		},
 	}
 
-	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
+	ctx := context.Background()
+	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 	cleanup := func() {}
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -175,7 +222,14 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has already been exhausted")
+	expectedError := "attempted to read series at index 1 from ingester chunks stream, but the stream has already been exhausted (was expecting 1 series)"
+	require.EqualError(t, err, expectedError)
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(3)
+	require.EqualError(t, err, "attempted to read series at index 3 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) {
@@ -186,11 +240,12 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 		},
 	}
 
-	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
+	ctx := context.Background()
+	mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 	cleanedUp := atomic.NewBool(false)
 	cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
+	reader := NewSeriesChunksStreamReader(ctx, mockClient, 3, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
 	reader.StartBuffering()
 
 	s, err := reader.GetChunks(0)
@@ -199,34 +254,64 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 
 	s, err = reader.GetChunks(1)
 	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 1 from stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series")
+	expectedError := "attempted to read series at index 1 from ingester chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series"
+	require.EqualError(t, err, expectedError)
 
 	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
 	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+
+	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+	_, err = reader.GetChunks(2)
+	require.EqualError(t, err, "attempted to read series at index 2 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
+	_, err = reader.GetChunks(3)
+	require.EqualError(t, err, "attempted to read series at index 3 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
 }
 
 func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
-	batches := [][]QueryStreamSeriesChunks{
-		{
-			{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
-			{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
-			{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+	testCases := map[string][][]QueryStreamSeriesChunks{
+		"extra series received as part of batch for last expected series": {
+			{
+				{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+				{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
+				{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+			},
+		},
+		"extra series received as part of batch after batch containing last expected series": {
+			{
+				{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+			},
+			{
+				{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
+				{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+			},
 		},
 	}
 
-	mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
-	cleanedUp := atomic.NewBool(false)
-	cleanup := func() { cleanedUp.Store(true) }
+	for name, batches := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
+			cleanedUp := atomic.NewBool(false)
+			cleanup := func() { cleanedUp.Store(true) }
 
-	reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, nil), cleanup, log.NewNopLogger())
-	reader.StartBuffering()
+			reader := NewSeriesChunksStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, 0, 0, 0, nil), cleanup, log.NewNopLogger())
+			reader.StartBuffering()
 
-	s, err := reader.GetChunks(0)
-	require.Nil(t, s)
-	require.EqualError(t, err, "attempted to read series at index 0 from stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series")
+			s, err := reader.GetChunks(0)
+			require.Nil(t, s)
+			expectedError := "attempted to read series at index 0 from ingester chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
+			require.EqualError(t, err, expectedError)
 
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
-	require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
+			require.Eventually(t, cleanedUp.Load, time.Second, 10*time.Millisecond, "expected cleanup function to be called")
+
+			// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+			_, err = reader.GetChunks(1)
+			require.EqualError(t, err, "attempted to read series at index 1 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
+			_, err = reader.GetChunks(2)
+			require.EqualError(t, err, "attempted to read series at index 2 from ingester chunks stream, but the stream previously failed and returned an error: "+expectedError)
+		})
+	}
 }
 
 func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
@@ -243,7 +328,7 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 		"query selects too many chunks": {
 			maxChunks:     2,
 			maxChunkBytes: 200,
-			expectedError: "the query exceeded the maximum number of chunks (limit: 2 chunks) (err-mimir-max-chunks-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-chunks-per-query, or contact your service administrator.",
+			expectedError: "", // The limit on the number of chunks is enforced earlier, in distributor.queryIngesterStream()
 		},
 		"query selects too many chunk bytes": {
 			maxChunks:     4,
@@ -260,11 +345,12 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 				},
 			}
 
-			mockClient := &mockQueryStreamClient{ctx: context.Background(), batches: batches}
+			ctx := context.Background()
+			mockClient := &mockQueryStreamClient{ctx: ctx, batches: batches}
 			cleanedUp := atomic.NewBool(false)
 			cleanup := func() { cleanedUp.Store(true) }
 			queryMetrics := stats.NewQueryMetrics(prometheus.NewPedanticRegistry())
-			reader := NewSeriesChunksStreamReader(mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, queryMetrics), cleanup, log.NewNopLogger())
+			reader := NewSeriesChunksStreamReader(ctx, mockClient, 1, limiter.NewQueryLimiter(0, testCase.maxChunkBytes, testCase.maxChunks, 0, queryMetrics), cleanup, log.NewNopLogger())
 			reader.StartBuffering()
 
 			_, err := reader.GetChunks(0)
@@ -276,7 +362,15 @@ func TestSeriesChunksStreamReader_ChunksLimits(t *testing.T) {
 			}
 
 			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed")
-			require.True(t, cleanedUp.Load(), "expected cleanup function to be called")
+			require.Eventually(t, cleanedUp.Load, time.Second, 10*time.Millisecond, "expected cleanup function to be called")
+
+			if testCase.expectedError != "" {
+				// Ensure we continue to return the error, even for subsequent calls to GetChunks.
+				_, err := reader.GetChunks(1)
+				require.EqualError(t, err, "attempted to read series at index 1 from ingester chunks stream, but the stream previously failed and returned an error: "+testCase.expectedError)
+				_, err = reader.GetChunks(2)
+				require.EqualError(t, err, "attempted to read series at index 2 from ingester chunks stream, but the stream previously failed and returned an error: "+testCase.expectedError)
+			}
 		})
 	}
 }

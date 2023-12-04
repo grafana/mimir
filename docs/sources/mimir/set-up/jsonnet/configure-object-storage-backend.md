@@ -57,7 +57,10 @@ If credentials are required, it is a good practice to keep them in secrets. In t
 
 ## Azure (`azure`) storage configuration options
 
-Azure storage client requires the `storage_azure_account_name` and `storage_azure_account_key` to be configured.
+[Hierarchical namespace](https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-namespace) must be disabled in Azure Blob Storage.
+Otherwise, Grafana Mimir will leave empty directories behind after deleting blocks.
+
+The Azure storage client requires the `storage_azure_account_name` and `storage_azure_account_key` to be configured.
 It is a good practice to keep them in secrets. In that case environment variable interpolation can be used:
 
 ```jsonnet
@@ -73,7 +76,7 @@ It is a good practice to keep them in secrets. In that case environment variable
 
 ## Google Cloud Storage (`gcs`) storage configuration options
 
-There are multiple [ways to configure Google Cloud Storage client]({{< relref "../../references/configuration-parameters#gcs_storage_backend" >}}).
+There are multiple [ways to configure Google Cloud Storage client]({{< relref "../../configure/configuration-parameters#gcs_storage_backend" >}}).
 If you run Mimir on Google Cloud Platform it is possible that [the environment already has the credentials configured](https://cloud.google.com/storage/docs/authentication#libauth),
 in that case the minimum jsonnet configuration is valid:
 

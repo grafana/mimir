@@ -31,16 +31,16 @@ import (
 )
 
 type mockSampleAndChunkQueryable struct {
-	queryableFn      func(ctx context.Context, mint, maxt int64) (storage.Querier, error)
-	chunkQueryableFn func(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error)
+	queryableFn      func(mint, maxt int64) (storage.Querier, error)
+	chunkQueryableFn func(mint, maxt int64) (storage.ChunkQuerier, error)
 }
 
-func (m mockSampleAndChunkQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return m.queryableFn(ctx, mint, maxt)
+func (m mockSampleAndChunkQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	return m.queryableFn(mint, maxt)
 }
 
-func (m mockSampleAndChunkQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return m.chunkQueryableFn(ctx, mint, maxt)
+func (m mockSampleAndChunkQueryable) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return m.chunkQueryableFn(mint, maxt)
 }
 
 type mockQuerier struct {
@@ -48,7 +48,7 @@ type mockQuerier struct {
 	seriesSet storage.SeriesSet
 }
 
-func (m mockQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+func (m mockQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
 	if sp == nil {
 		panic("mockQuerier: select params must be set")
 	}
@@ -60,7 +60,7 @@ type mockChunkQuerier struct {
 	seriesSet storage.SeriesSet
 }
 
-func (m mockChunkQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+func (m mockChunkQuerier) Select(_ context.Context, _ bool, sp *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
 	if sp == nil {
 		panic("mockChunkQuerier: select params must be set")
 	}
@@ -69,7 +69,7 @@ func (m mockChunkQuerier) Select(_ bool, sp *storage.SelectHints, _ ...*labels.M
 
 func TestSampledRemoteRead(t *testing.T) {
 	q := &mockSampleAndChunkQueryable{
-		queryableFn: func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		queryableFn: func(mint, maxt int64) (storage.Querier, error) {
 			return mockQuerier{
 				seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 					series.NewConcreteSeries(
@@ -293,7 +293,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 	for tn, tc := range tcs {
 		t.Run(tn, func(t *testing.T) {
 			q := &mockSampleAndChunkQueryable{
-				chunkQueryableFn: func(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+				chunkQueryableFn: func(mint, maxt int64) (storage.ChunkQuerier, error) {
 					return mockChunkQuerier{
 						seriesSet: series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 							series.NewConcreteSeries(
@@ -405,9 +405,15 @@ func getIndexedChunk(idx, samplesCount int, encoding chunkenc.Encoding) []byte {
 		case chunkenc.EncXOR:
 			ap.Append(int64(j), float64(j))
 		case chunkenc.EncHistogram:
-			ap.AppendHistogram(int64(j), test.GenerateTestHistogram(j))
+			_, _, _, err := ap.AppendHistogram(nil, int64(j), test.GenerateTestHistogram(j), true)
+			if err != nil {
+				panic(err)
+			}
 		case chunkenc.EncFloatHistogram:
-			ap.AppendFloatHistogram(int64(j), test.GenerateTestFloatHistogram(j))
+			_, _, _, err := ap.AppendFloatHistogram(nil, int64(j), test.GenerateTestFloatHistogram(j), true)
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 	return enc.Bytes()

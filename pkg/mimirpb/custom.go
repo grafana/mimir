@@ -4,7 +4,10 @@ package mimirpb
 
 import (
 	"bytes"
+	"fmt"
 	"math"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
@@ -42,6 +45,136 @@ func (h Histogram) IsFloatHistogram() bool {
 
 func (h Histogram) IsGauge() bool {
 	return h.ResetHint == Histogram_GAUGE
+}
+
+// ReduceResolution will reduce the resolution of the histogram by one level.
+// Returns the resulting bucket count and an error if the histogram is not
+// possible to reduce further.
+func (h *Histogram) ReduceResolution() (int, error) {
+	if h.IsFloatHistogram() {
+		return h.reduceFloatResolution()
+	}
+
+	return h.reduceIntResolution()
+}
+
+// The minimum schema for a histogram is -4. Currently this is hardcoded and
+// not exported from Prometheus or client_golang, so we define it here.
+const minimumHistogramSchema = -4
+
+func (h *Histogram) reduceFloatResolution() (int, error) {
+	if h.Schema == minimumHistogramSchema {
+		return 0, fmt.Errorf("cannot reduce resolution of histogram with schema %d", h.Schema)
+	}
+	h.PositiveSpans, h.PositiveCounts = reduceResolution(h.PositiveSpans, h.PositiveCounts, h.Schema, h.Schema-1, false)
+	h.NegativeSpans, h.NegativeCounts = reduceResolution(h.NegativeSpans, h.NegativeCounts, h.Schema, h.Schema-1, false)
+	h.Schema--
+	return len(h.PositiveDeltas) + len(h.NegativeDeltas), nil
+}
+
+func (h *Histogram) reduceIntResolution() (int, error) {
+	if h.Schema == minimumHistogramSchema {
+		return 0, fmt.Errorf("cannot reduce resolution of histogram with schema %d", h.Schema)
+	}
+	h.PositiveSpans, h.PositiveDeltas = reduceResolution(h.PositiveSpans, h.PositiveDeltas, h.Schema, h.Schema-1, true)
+	h.NegativeSpans, h.NegativeDeltas = reduceResolution(h.NegativeSpans, h.NegativeDeltas, h.Schema, h.Schema-1, true)
+	h.Schema--
+	return len(h.PositiveDeltas) + len(h.NegativeDeltas), nil
+}
+
+// reduceResolution reduces the input spans, buckets in origin schema to the spans, buckets in target schema.
+// The target schema must be smaller than the original schema.
+// Set deltaBuckets to true if the provided buckets are
+// deltas. Set it to false if the buckets contain absolute counts.
+// This function is ported from Prometheus: https://github.com/prometheus/prometheus/blob/main/model/histogram/generic.go#L608
+// https://github.com/prometheus/prometheus/blob/acc114fe553b660cefc71a0311792ef8be4a186a/model/histogram/generic.go#L608
+func reduceResolution[IBC histogram.InternalBucketCount](originSpans []BucketSpan, originBuckets []IBC, originSchema, targetSchema int32, deltaBuckets bool) ([]BucketSpan, []IBC) {
+	var (
+		targetSpans           []BucketSpan // The spans in the target schema.
+		targetBuckets         []IBC        // The bucket counts in the target schema.
+		bucketIdx             int32        // The index of bucket in the origin schema.
+		bucketCountIdx        int          // The position of a bucket in origin bucket count slice `originBuckets`.
+		targetBucketIdx       int32        // The index of bucket in the target schema.
+		lastBucketCount       IBC          // The last visited bucket's count in the origin schema.
+		lastTargetBucketIdx   int32        // The index of the last added target bucket.
+		lastTargetBucketCount IBC
+	)
+
+	for _, span := range originSpans {
+		// Determine the index of the first bucket in this span.
+		bucketIdx += span.Offset
+		for j := 0; j < int(span.Length); j++ {
+			// Determine the index of the bucket in the target schema from the index in the original schema.
+			targetBucketIdx = targetIdx(bucketIdx, originSchema, targetSchema)
+
+			switch {
+			case len(targetSpans) == 0:
+				// This is the first span in the targetSpans.
+				span := BucketSpan{
+					Offset: targetBucketIdx,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				lastTargetBucketIdx = targetBucketIdx
+				lastBucketCount = originBuckets[bucketCountIdx]
+				lastTargetBucketCount = originBuckets[bucketCountIdx]
+
+			case lastTargetBucketIdx == targetBucketIdx:
+				// The current bucket has to be merged into the same target bucket as the previous bucket.
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets[len(targetBuckets)-1] += lastBucketCount
+					lastTargetBucketCount += lastBucketCount
+				} else {
+					targetBuckets[len(targetBuckets)-1] += originBuckets[bucketCountIdx]
+				}
+
+			case (lastTargetBucketIdx + 1) == targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is next to the previous target bucket,
+				// so we add it to the current target span.
+				targetSpans[len(targetSpans)-1].Length++
+				lastTargetBucketIdx++
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				}
+
+			case (lastTargetBucketIdx + 1) < targetBucketIdx:
+				// The current bucket has to go into a new target bucket,
+				// and that bucket is separated by a gap from the previous target bucket,
+				// so we need to add a new target span.
+				span := BucketSpan{
+					Offset: targetBucketIdx - lastTargetBucketIdx - 1,
+					Length: 1,
+				}
+				targetSpans = append(targetSpans, span)
+				lastTargetBucketIdx = targetBucketIdx
+				if deltaBuckets {
+					lastBucketCount += originBuckets[bucketCountIdx]
+					targetBuckets = append(targetBuckets, lastBucketCount-lastTargetBucketCount)
+					lastTargetBucketCount = lastBucketCount
+				} else {
+					targetBuckets = append(targetBuckets, originBuckets[bucketCountIdx])
+				}
+			}
+
+			bucketIdx++
+			bucketCountIdx++
+		}
+	}
+
+	return targetSpans, targetBuckets
+}
+
+// targetIdx returns the bucket index in the target schema for the given bucket
+// index idx in the original schema.
+func targetIdx(idx, originSchema, targetSchema int32) int32 {
+	return ((idx - 1) >> (originSchema - targetSchema)) + 1
 }
 
 // UnsafeByteSlice is an alternative to the default handling of []byte values in protobuf messages.

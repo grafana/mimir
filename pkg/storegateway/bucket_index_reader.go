@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -59,7 +59,9 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: block.indexHeaderReader.LookupSymbol,
+			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(o)
+			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
 	}
@@ -83,7 +85,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 		cached  bool
 		promise expandedPostingsPromise
 	)
-	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "ExpandedPostings()")
 	defer func() {
 		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded, "block_id", r.block.meta.ULID.String())
 		if returnErr != nil {
@@ -221,11 +223,11 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 				postingIndex++
 			}
 
-			groupAdds = append(groupAdds, index.Merge(toMerge...))
+			groupAdds = append(groupAdds, index.Merge(ctx, toMerge...))
 		}
 	}
 
-	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
+	result := index.Without(index.Intersect(groupAdds...), index.Merge(ctx, groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
 	if err != nil {
@@ -270,7 +272,7 @@ func logSelectedPostingGroups(ctx context.Context, logger log.Logger, blockID ul
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d", i), matcherStr)
 		keyvals = append(keyvals, fmt.Sprintf("omitted_%d_size", i), groupSize)
 	}
-	level.Debug(spanlogger.FromContext(ctx, logger)).Log(keyvals...)
+	spanlogger.FromContext(ctx, logger).DebugLog(keyvals...)
 }
 
 func extractLabelMatchers(groups []postingGroup) []*labels.Matcher {
@@ -607,7 +609,7 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (ind
 func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (loadedSeries *bucketIndexLoadedSeries, err error) {
 	defer func(startTime time.Time) {
 		spanLog := spanlogger.FromContext(ctx, r.block.logger)
-		level.Debug(spanLog).Log(
+		spanLog.DebugLog(
 			"msg", "fetched series and chunk refs from object store",
 			"block_id", r.block.meta.ULID.String(),
 			"series_count", len(loadedSeries.series),
@@ -718,14 +720,14 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
+func (r *bucketIndexReader) LookupLabelsSymbols(ctx context.Context, symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
 	builder.Reset()
 	for _, s := range symbolized {
-		ln, err := r.dec.LookupSymbol(s.name)
+		ln, err := r.dec.LookupSymbol(ctx, s.name)
 		if err != nil {
 			return labels.EmptyLabels(), errors.Wrap(err, "lookup label name")
 		}
-		lv, err := r.dec.LookupSymbol(s.value)
+		lv, err := r.dec.LookupSymbol(ctx, s.value)
 		if err != nil {
 			return labels.EmptyLabels(), errors.Wrap(err, "lookup label value")
 		}

@@ -6,6 +6,8 @@
 package ingester
 
 import (
+	"time"
+
 	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,17 +36,30 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
-	activeSeriesLoading               *prometheus.GaugeVec
-	activeSeriesPerUser               *prometheus.GaugeVec
-	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesLoading                               *prometheus.GaugeVec
+	activeSeriesPerUser                               *prometheus.GaugeVec
+	activeSeriesCustomTrackersPerUser                 *prometheus.GaugeVec
+	activeSeriesPerUserNativeHistograms               *prometheus.GaugeVec
+	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
+	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
+	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
+
+	// Owned series
+	ownedSeriesPerUser *prometheus.GaugeVec
 
 	// Global limit metrics
-	maxUsersGauge           prometheus.GaugeFunc
-	maxSeriesGauge          prometheus.GaugeFunc
-	maxIngestionRate        prometheus.GaugeFunc
-	ingestionRate           prometheus.GaugeFunc
-	maxInflightPushRequests prometheus.GaugeFunc
-	inflightRequests        prometheus.GaugeFunc
+	maxUsersGauge                prometheus.GaugeFunc
+	maxSeriesGauge               prometheus.GaugeFunc
+	maxIngestionRate             prometheus.GaugeFunc
+	ingestionRate                prometheus.GaugeFunc
+	maxInflightPushRequests      prometheus.GaugeFunc
+	maxInflightPushRequestsBytes prometheus.GaugeFunc
+	inflightRequests             prometheus.GaugeFunc
+	inflightRequestsBytes        prometheus.GaugeFunc
+	inflightRequestsSummary      prometheus.Summary
+
+	// Local limit metrics
+	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
 	compactionsTriggered   prometheus.Counter
@@ -57,6 +72,7 @@ type ingesterMetrics struct {
 	openExistingTSDB prometheus.Counter
 
 	discarded *discardedMetrics
+	rejected  *prometheus.CounterVec
 
 	// Discarded metadata
 	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
@@ -75,6 +91,7 @@ func newIngesterMetrics(
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
 	inflightRequests *atomic.Int64,
+	inflightRequestsBytes *atomic.Int64,
 ) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
@@ -172,6 +189,11 @@ func newIngesterMetrics(
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
 		}, []string{"reason"}),
 
+		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_owned_series",
+			Help: "Number of currently owned series per user.",
+		}, []string{"user"}),
+
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
 			Help:        instanceLimitsHelp,
@@ -216,6 +238,17 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		maxInflightPushRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        instanceLimits,
+			Help:        instanceLimitsHelp,
+			ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
+		}, func() float64 {
+			if g := instanceLimitsFn(); g != nil {
+				return float64(g.MaxInflightPushRequestsBytes)
+			}
+			return 0
+		}),
+
 		ingestionRate: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_ingestion_rate_samples_per_second",
 			Help: "Current ingestion rate in samples/sec that ingester is using to limit access.",
@@ -236,6 +269,30 @@ func newIngesterMetrics(
 			return 0
 		}),
 
+		inflightRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "cortex_ingester_inflight_push_requests_bytes",
+			Help: "Total sum of inflight push request sizes in ingester in bytes.",
+		}, func() float64 {
+			if inflightRequestsBytes != nil {
+				return float64(inflightRequestsBytes.Load())
+			}
+			return 0
+		}),
+
+		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
+			Name:       "cortex_ingester_inflight_push_requests_summary",
+			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
+		}),
+
+		maxLocalSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "cortex_ingester_local_limits",
+			Help:        "Local per-user limits used by this ingester.",
+			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
+		}, []string{"user"}),
+
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_loading",
@@ -252,6 +309,30 @@ func newIngesterMetrics(
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
+		}, []string{"user", "name"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_series",
+			Help: "Number of currently active native histogram series per user.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeSeriesCustomTrackersPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_series_custom_tracker",
+			Help: "Number of currently active native histogram series matching a pre-configured label matchers per user.",
+		}, []string{"user", "name"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeNativeHistogramBucketsPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_buckets",
+			Help: "Number of currently active native histogram buckets per user.",
+		}, []string{"user"}),
+
+		// Not registered automatically, but only if activeSeriesEnabled is true.
+		activeNativeHistogramBucketsCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ingester_active_native_histogram_buckets_custom_tracker",
+			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
@@ -282,6 +363,10 @@ func newIngesterMetrics(
 		}),
 
 		discarded: newDiscardedMetrics(r),
+		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_instance_rejected_requests_total",
+			Help: "Requests rejected for hitting per-instance limits",
+		}, []string{"reason"}),
 
 		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
@@ -291,6 +376,13 @@ func newIngesterMetrics(
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
 		}),
 	}
+
+	// Initialize expected rejected request labels
+	m.rejected.WithLabelValues(reasonIngesterMaxIngestionRate)
+	m.rejected.WithLabelValues(reasonIngesterMaxTenants)
+	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
 
 	return m
 }
@@ -306,6 +398,9 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
 	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
+
+	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
+	m.ownedSeriesPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
@@ -315,8 +410,12 @@ func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	m.activeSeriesPerUserNativeHistograms.DeleteLabelValues(userID)
+	m.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
+		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
 }
 
@@ -324,6 +423,7 @@ type discardedMetrics struct {
 	sampleOutOfBounds    *prometheus.CounterVec
 	sampleOutOfOrder     *prometheus.CounterVec
 	sampleTooOld         *prometheus.CounterVec
+	sampleTooFarInFuture *prometheus.CounterVec
 	newValueForTimestamp *prometheus.CounterVec
 	perUserSeriesLimit   *prometheus.CounterVec
 	perMetricSeriesLimit *prometheus.CounterVec
@@ -331,12 +431,13 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
-		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
-		sampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
-		newValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
-		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
-		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+		sampleOutOfBounds:    validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleOutOfOrder:     validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
+		sampleTooOld:         validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
+		sampleTooFarInFuture: validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
+		newValueForTimestamp: validation.DiscardedSamplesCounter(r, reasonNewValueForTimestamp),
+		perUserSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
+		perMetricSeriesLimit: validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 	}
 }
 
@@ -344,6 +445,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.sampleOutOfBounds.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
+	m.sampleTooFarInFuture.DeletePartialMatch(filter)
 	m.newValueForTimestamp.DeletePartialMatch(filter)
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
@@ -353,6 +455,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
+	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
 	m.newValueForTimestamp.DeleteLabelValues(userID, group)
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
@@ -381,6 +484,7 @@ type tsdbMetrics struct {
 	tsdbChunksRemovedTotal            *prometheus.Desc
 	tsdbMmapChunkCorruptionTotal      *prometheus.Desc
 	tsdbMmapChunkQueueOperationsTotal *prometheus.Desc
+	tsdbMmapChunksTotal               *prometheus.Desc
 	tsdbOOOHistogram                  *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
@@ -493,8 +597,12 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			nil, nil),
 		tsdbMmapChunkQueueOperationsTotal: prometheus.NewDesc(
 			"cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total",
-			"Total number of memory-mapped TSDB chunk corruptions.",
+			"Total number of memory-mapped TSDB chunk operations.",
 			[]string{"operation"}, nil),
+		tsdbMmapChunksTotal: prometheus.NewDesc(
+			"cortex_ingester_tsdb_mmap_chunks_total",
+			"Total number of chunks that were memory-mapped.",
+			nil, nil),
 		tsdbOOOHistogram: prometheus.NewDesc(
 			"cortex_ingester_tsdb_sample_out_of_order_delta_seconds",
 			"Delta in seconds by which a sample is considered out-of-order.",
@@ -612,6 +720,7 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbChunksRemovedTotal
 	out <- sm.tsdbMmapChunkCorruptionTotal
 	out <- sm.tsdbMmapChunkQueueOperationsTotal
+	out <- sm.tsdbMmapChunksTotal
 	out <- sm.tsdbOOOHistogram
 	out <- sm.tsdbLoadedBlocks
 	out <- sm.tsdbSymbolTableSize
@@ -660,6 +769,7 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
 	data.SendSumOfCountersWithLabels(out, sm.tsdbMmapChunkQueueOperationsTotal, "prometheus_tsdb_chunk_write_queue_operations_total", "operation")
+	data.SendSumOfCounters(out, sm.tsdbMmapChunksTotal, "prometheus_tsdb_mmap_chunks_total")
 	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
 	data.SendSumOfGaugesPerTenant(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")

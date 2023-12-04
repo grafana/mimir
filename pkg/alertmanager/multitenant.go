@@ -20,22 +20,21 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/httpgrpc/server"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -921,7 +920,7 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 	level.Debug(am.logger).Log("msg", "message received for replication", "user", userID, "key", part.Key)
 
 	selfAddress := am.ringLifecycler.GetInstanceAddr()
-	err := ring.DoBatch(ctx, RingOp, am.ring, []uint32{shardByUser(userID)}, func(desc ring.InstanceDesc, _ []int) error {
+	err := ring.DoBatchWithOptions(ctx, RingOp, am.ring, []uint32{shardByUser(userID)}, func(desc ring.InstanceDesc, _ []int) error {
 		if desc.GetAddr() == selfAddress {
 			return nil
 		}
@@ -943,7 +942,7 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 			level.Debug(am.logger).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
 		}
 		return nil
-	}, func() {})
+	}, ring.DoBatchOptions{})
 
 	return err
 }

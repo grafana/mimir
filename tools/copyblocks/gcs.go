@@ -33,16 +33,29 @@ func (bkt *gcsBucket) Get(ctx context.Context, objectName string) (io.ReadCloser
 	return r, nil
 }
 
-func (bkt *gcsBucket) Copy(ctx context.Context, objectName string, dstBucket bucket) error {
+func (bkt *gcsBucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
 	d, ok := dstBucket.(*gcsBucket)
 	if !ok {
-		return errors.New("destination bucket wasn't a gcs bucket")
+		return errors.New("destination bucket wasn't a GCS bucket")
 	}
 	srcObj := bkt.Object(objectName)
 	dstObject := d.BucketHandle.Object(objectName)
 	copier := dstObject.CopierFrom(srcObj)
 	_, err := copier.Run(ctx)
 	return err
+}
+
+func (bkt *gcsBucket) ClientSideCopy(ctx context.Context, objectName string, dstBucket bucket) error {
+	srcObj := bkt.Object(objectName)
+	reader, err := srcObj.NewReader(ctx)
+	if err != nil {
+		return errors.Wrap(err, "failed to get GCS source object reader")
+	}
+	if err := dstBucket.Upload(ctx, objectName, reader, reader.Attrs.Size); err != nil {
+		_ = reader.Close()
+		return errors.Wrap(err, "failed to upload GCS source object to destination")
+	}
+	return errors.Wrap(reader.Close(), "failed closing GCS source object reader")
 }
 
 func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive bool) ([]string, error) {
@@ -90,9 +103,19 @@ func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive b
 	return result, nil
 }
 
-func (bkt *gcsBucket) UploadMarkerFile(ctx context.Context, objectName string) error {
+func (bkt *gcsBucket) Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	obj := bkt.Object(objectName)
 	w := obj.NewWriter(ctx)
+	n, err := io.Copy(w, reader)
+	if err != nil {
+		return errors.Wrap(err, "failed during copy stage of GCS upload")
+	}
+	if n != contentLength {
+		return errors.Wrapf(err, "unexpected content length from copy: expected=%d, actual=%d", contentLength, n)
+	}
 	return w.Close()
 }
 

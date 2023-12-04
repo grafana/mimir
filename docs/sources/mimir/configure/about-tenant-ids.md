@@ -2,7 +2,7 @@
 aliases:
   - ../configuring/about-tenant-ids/
 description: Learn about tenant ID restrictions.
-menuTitle: About tenant IDs
+menuTitle: Tenant IDs
 title: About Grafana Mimir tenant IDs
 weight: 10
 ---

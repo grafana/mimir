@@ -88,6 +88,8 @@ Under normal conditions, when a store-gateway instance shuts down, it automatica
 
 The auto-forget feature works as follows: when an healthy store-gateway instance identifies an instance in the ring that is unhealthy for longer than 10 times the configured `-store-gateway.sharding-ring.heartbeat-timeout` value, the healthy instance removes the unhealthy instance from the ring.
 
+The store-gateway auto-forget feature can be disabled by setting `-store-gateway.sharding-ring.auto-forget-enabled=false`.
+
 ### Zone-awareness
 
 Store-gateway replication optionally supports [zone-awareness]({{< relref "../../../configure/configure-zone-aware-replication" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
@@ -117,9 +119,9 @@ Keeping the index-header on the local disk makes query execution faster.
 ### Index-header lazy loading
 
 By default, a store-gateway downloads the index-headers to disk and doesn't load them to memory until required.
-When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout` has passed.
+When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
 
-Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=false` to disable index-header lazy loading.
+Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=false` to disable index-header lazy loading.
 When disabled, the store-gateway memory-maps all index-headers, which provides faster access to the data in the index-header.
 However, in a cluster with a large number of blocks, each store-gateway might have a large amount of memory-mapped index-headers, regardless of how frequently they are used at query time.
 
@@ -215,4 +217,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuration-parameters#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../../configure/configuration-parameters#store_gateway" >}}).

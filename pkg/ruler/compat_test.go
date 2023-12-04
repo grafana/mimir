@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -346,15 +346,47 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
 	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
-	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), log.NewNopLogger())
-	_, _ = qf(context.Background(), "test", time.Now())
+	qf := RecordAndReportRuleQueryMetrics(mockFunc, queryTime.WithLabelValues("userID"), zeroFetchedSeriesCount.WithLabelValues("userID"), log.NewNopLogger())
 
-	require.GreaterOrEqual(t, testutil.ToFloat64(queryTime.WithLabelValues("userID")), float64(1))
+	// Ensure we start with counters at 0.
+	require.LessOrEqual(t, float64(0), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(0), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Increment zeroFetchedSeriesCount for non-existent series.
+	_, _ = qf(context.Background(), "test", time.Now())
+	require.LessOrEqual(t, float64(1), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(1), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Increment zeroFetchedSeriesCount for another non-existent series.
+	_, _ = qf(context.Background(), "test2", time.Now())
+	require.LessOrEqual(t, float64(2), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Don't increment zeroFetchedSeriesCount for query without series selectors.
+	_, _ = qf(context.Background(), "vector(0.995)", time.Now())
+	require.LessOrEqual(t, float64(3), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Don't increment zeroFetchedSeriesCount for another query without series selectors.
+	_, _ = qf(context.Background(), "vector(2.4192e+15 / 1e+09)", time.Now())
+	require.LessOrEqual(t, float64(4), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(2), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Increment zeroFetchedSeriesCount for non-existent series even when combined with a non-series selector.
+	_, _ = qf(context.Background(), "test + vector(0.995)", time.Now())
+	require.LessOrEqual(t, float64(5), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
+
+	// Don't increment zeroFetchedSeriesCount for queries with errors.
+	_, _ = qf(context.Background(), "rate(test)", time.Now())
+	require.LessOrEqual(t, float64(6), testutil.ToFloat64(queryTime.WithLabelValues("userID")))
+	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
 // TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
@@ -471,7 +503,7 @@ func newMockQueryable() *mockQueryable {
 	}
 }
 
-func (m *mockQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
+func (m *mockQueryable) Querier(_, _ int64) (storage.Querier, error) {
 	select {
 	case <-m.called:
 		// already closed

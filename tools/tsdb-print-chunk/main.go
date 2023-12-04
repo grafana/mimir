@@ -48,9 +48,13 @@ func printChunks(blockDir string, chunkRefs []string) {
 			continue
 		}
 
-		ch, err := cr.Chunk(chunks.Meta{Ref: chunks.ChunkRef(val)})
+		ch, iter, err := cr.ChunkOrIterable(chunks.Meta{Ref: chunks.ChunkRef(val)})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to open chunk", val, "due to error:", err)
+			continue
+		}
+		if iter != nil {
+			fmt.Fprintln(os.Stderr, "Failed to open chunk", val, "got iterable")
 			continue
 		}
 

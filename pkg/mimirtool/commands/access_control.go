@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // AccessControlCommand is the kingpin command for ACLs.

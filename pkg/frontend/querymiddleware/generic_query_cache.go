@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-kit/log"
@@ -14,6 +15,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -28,8 +30,8 @@ type genericQueryRequest struct {
 }
 
 type genericQueryDelegate interface {
-	// parseRequest parses the input req and returns a genericQueryRequest, or an error if parsing fails.
-	parseRequest(req *http.Request) (*genericQueryRequest, error)
+	// parseRequest parses the input request and returns a genericQueryRequest, or an error if parsing fails.
+	parseRequest(path string, values url.Values) (*genericQueryRequest, error)
 
 	// getTTL returns the cache TTL for the input userID.
 	getTTL(userID string) time.Duration
@@ -62,7 +64,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	// Skip the cache if disabled for this request.
 	if decodeCacheDisabledOption(req) {
-		level.Debug(spanLog).Log("msg", "cache disabled for the request")
+		spanLog.DebugLog("msg", "cache disabled for the request")
 		return c.next.RoundTrip(req)
 	}
 
@@ -75,12 +77,19 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	// if it's disabled for any of tenants.
 	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.delegate.getTTL)
 	if cacheTTL <= 0 {
-		level.Debug(spanLog).Log("msg", "cache disabled for the tenant")
+		spanLog.DebugLog("msg", "cache disabled for the tenant")
 		return c.next.RoundTrip(req)
 	}
 
 	// Decode the request.
-	queryReq, err := c.delegate.parseRequest(req)
+	reqValues, err := util.ParseRequestFormWithoutConsumingBody(req)
+	if err != nil {
+		// This is considered a non-recoverable error, so we return error instead of passing
+		// the request to the downstream.
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	queryReq, err := c.delegate.parseRequest(req.URL.Path, reqValues)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.
@@ -97,7 +106,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 	res := c.fetchCachedResponse(ctx, cacheKey, hashedCacheKey)
 	if res != nil {
 		c.metrics.cacheHits.Inc()
-		level.Debug(spanLog).Log("msg", "response fetched from the cache")
+		spanLog.DebugLog("msg", "response fetched from the cache")
 		return res, nil
 	}
 
@@ -114,7 +123,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 			return res, err
 		}
 
-		c.storeCachedResponse(cachedRes, hashedCacheKey, cacheTTL)
+		c.storeCachedResponse(ctx, cachedRes, hashedCacheKey, cacheTTL)
 	}
 
 	return res, nil
@@ -127,6 +136,7 @@ func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, h
 		// Not found in the cache.
 		return nil
 	}
+	c.recordCacheHitQueryDetails(ctx, cacheHits)
 
 	// Decode the cached entry.
 	cachedRes := &CachedHTTPResponse{}
@@ -144,15 +154,36 @@ func (c *genericQueryCache) fetchCachedResponse(ctx context.Context, cacheKey, h
 	return DecodeCachedHTTPResponse(cachedRes)
 }
 
-func (c *genericQueryCache) storeCachedResponse(cachedRes *CachedHTTPResponse, hashedCacheKey string, cacheTTL time.Duration) {
+func (c *genericQueryCache) storeCachedResponse(ctx context.Context, cachedRes *CachedHTTPResponse, hashedCacheKey string, cacheTTL time.Duration) {
 	// Encode the cached entry.
 	encoded, err := cachedRes.Marshal()
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to encode cached query response", "err", err)
 		return
 	}
+	toStore := map[string][]byte{hashedCacheKey: encoded}
+	c.cache.StoreAsync(toStore, cacheTTL)
+	c.recordCacheStoreQueryDetails(ctx, toStore)
+}
 
-	c.cache.StoreAsync(map[string][]byte{hashedCacheKey: encoded}, cacheTTL)
+func (c *genericQueryCache) recordCacheHitQueryDetails(ctx context.Context, hits map[string][]byte) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil {
+		return
+	}
+	for _, val := range hits {
+		details.ResultsCacheHitBytes += len(val)
+	}
+}
+
+func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, toStore map[string][]byte) {
+	details := QueryDetailsFromContext(ctx)
+	if details == nil {
+		return
+	}
+	for _, val := range toStore {
+		details.ResultsCacheMissBytes += len(val)
+	}
 }
 
 func generateGenericQueryRequestCacheKey(tenantIDs []string, req *genericQueryRequest) (cacheKey, hashedCacheKey string) {

@@ -15,6 +15,11 @@ metadata:
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.ingester.persistentVolume.enableRetentionPolicy)  }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.ingester.persistentVolume.whenScaled }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" $args | nindent 6 }}
@@ -120,6 +125,7 @@ spec:
             - "-blocks-storage.tsdb.flush-blocks-on-shutdown=true"
             - "-ingester.ring.unregister-on-shutdown=true"
             {{- end }}
+            - "-server.grpc-max-concurrent-streams=500"
             {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"

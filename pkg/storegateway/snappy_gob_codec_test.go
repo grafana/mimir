@@ -5,9 +5,8 @@ package storegateway
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )

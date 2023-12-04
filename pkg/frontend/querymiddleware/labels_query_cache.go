@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -42,11 +44,7 @@ func (c *labelsQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (c *labelsQueryCache) parseRequest(req *http.Request) (*genericQueryRequest, error) {
-	if err := req.ParseForm(); err != nil {
-		return nil, err
-	}
-
+func (c *labelsQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string
@@ -54,28 +52,28 @@ func (c *labelsQueryCache) parseRequest(req *http.Request) (*genericQueryRequest
 
 	// Detect the request type
 	switch {
-	case strings.HasSuffix(req.URL.Path, labelNamesPathSuffix):
+	case strings.HasSuffix(path, labelNamesPathSuffix):
 		cacheKeyPrefix = labelNamesQueryCachePrefix
-	case labelValuesPathSuffix.MatchString(req.URL.Path):
+	case labelValuesPathSuffix.MatchString(path):
 		cacheKeyPrefix = labelValuesQueryCachePrefix
-		labelName = labelValuesPathSuffix.FindStringSubmatch(req.URL.Path)[1]
+		labelName = labelValuesPathSuffix.FindStringSubmatch(path)[1]
 	default:
 		return nil, errors.New("unknown labels API endpoint")
 	}
 
 	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
 	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(req, "start", util.PrometheusMinTime.UnixMilli())
+	startTime, err := parseRequestTimeParam(values, "start", v1.MinTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	endTime, err := parseRequestTimeParam(req, "end", util.PrometheusMaxTime.UnixMilli())
+	endTime, err := parseRequestTimeParam(values, "end", v1.MaxTime.UnixMilli())
 	if err != nil {
 		return nil, err
 	}
 
-	matcherSets, err := parseRequestMatchersParam(req, "match[]")
+	matcherSets, err := parseRequestMatchersParam(values, "match[]")
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +93,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	// Align start and end times to default block boundaries. The reason is that both TSDB (so the Mimir ingester)
 	// and Mimir store-gateway query the label names and values out of blocks overlapping within the start and end
 	// time. This means that for maximum granularity is the block.
-	if startTime != util.PrometheusMinTime.UnixMilli() {
+	if startTime != v1.MinTime.UnixMilli() {
 		if reminder := startTime % twoHoursMillis; reminder != 0 {
 			startTime -= reminder
 		}
 	}
-	if endTime != util.PrometheusMaxTime.UnixMilli() {
+	if endTime != v1.MaxTime.UnixMilli() {
 		if reminder := endTime % twoHoursMillis; reminder != 0 {
 			endTime += twoHoursMillis - reminder
 		}
@@ -124,8 +122,12 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	return b.String()
 }
 
-func parseRequestTimeParam(req *http.Request, paramName string, defaultValue int64) (int64, error) {
-	value := req.FormValue(paramName)
+func parseRequestTimeParam(values url.Values, paramName string, defaultValue int64) (int64, error) {
+	var value string
+	if len(values[paramName]) > 0 {
+		value = values[paramName][0]
+	}
+
 	if value == "" {
 		return defaultValue, nil
 	}
@@ -138,10 +140,10 @@ func parseRequestTimeParam(req *http.Request, paramName string, defaultValue int
 	return parsed, nil
 }
 
-func parseRequestMatchersParam(req *http.Request, paramName string) ([][]*labels.Matcher, error) {
-	matcherSets := make([][]*labels.Matcher, 0, len(req.Form[paramName]))
+func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {
+	matcherSets := make([][]*labels.Matcher, 0, len(values[paramName]))
 
-	for _, value := range req.Form[paramName] {
+	for _, value := range values[paramName] {
 
 		matchers, err := parser.ParseMetricSelector(value)
 		if err != nil {
@@ -152,22 +154,28 @@ func parseRequestMatchersParam(req *http.Request, paramName string) ([][]*labels
 
 	// Ensure stable sorting (improves query results cache hit ratio).
 	for _, set := range matcherSets {
-		slices.SortFunc(set, func(a, b *labels.Matcher) bool {
-			return compareLabelMatchers(a, b) < 0
+		slices.SortFunc(set, func(a, b *labels.Matcher) int {
+			return compareLabelMatchers(a, b)
 		})
 	}
 
-	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) bool {
+	slices.SortFunc(matcherSets, func(a, b []*labels.Matcher) int {
 		idx := 0
 
 		for ; idx < len(a) && idx < len(b); idx++ {
 			if c := compareLabelMatchers(a[idx], b[idx]); c != 0 {
-				return c < 0
+				return c
 			}
 		}
 
 		// All label matchers are equal so far. Check which one has fewer matchers.
-		return idx < len(b)
+		if idx < len(b) {
+			return -1
+		}
+		if idx < len(a) {
+			return 1
+		}
+		return 0
 	})
 
 	return matcherSets, nil

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,8 +42,8 @@ func TestTimeRoundTripUsingPrometheusMinAndMaxTimestamps(t *testing.T) {
 		input time.Time
 	}{
 		{input: refTime},
-		{input: PrometheusMinTime},
-		{input: PrometheusMaxTime},
+		{input: v1.MinTime},
+		{input: v1.MaxTime},
 	}
 
 	for i, c := range testExpr {

@@ -115,7 +115,11 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 			sdConfig = staticTarget(url)
 		}
 
-		amConfigs = append(amConfigs, amConfigWithSD(rulerConfig, url, sdConfig))
+		amCfgWithSD, err := amConfigWithSD(rulerConfig, url, sdConfig)
+		if err != nil {
+			return nil, err
+		}
+		amConfigs = append(amConfigs, amCfgWithSD)
 	}
 
 	promConfig := &config.Config{
@@ -127,7 +131,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 	return promConfig, nil
 }
 
-func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) *config.AlertmanagerConfig {
+func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config) (*config.AlertmanagerConfig, error) {
 	amConfig := &config.AlertmanagerConfig{
 		APIVersion:              config.AlertmanagerAPIVersionV2,
 		Scheme:                  url.Scheme,
@@ -158,14 +162,42 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 
 	// Whether to use TLS or not.
 	if rulerConfig.Notifier.TLSEnabled {
-		amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
-			CAFile:             rulerConfig.Notifier.TLS.CAPath,
-			CertFile:           rulerConfig.Notifier.TLS.CertPath,
-			KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
-			InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
-			ServerName:         rulerConfig.Notifier.TLS.ServerName,
+		if rulerConfig.Notifier.TLS.Reader == nil {
+			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
+				CAFile:             rulerConfig.Notifier.TLS.CAPath,
+				CertFile:           rulerConfig.Notifier.TLS.CertPath,
+				KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
+				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
+				ServerName:         rulerConfig.Notifier.TLS.ServerName,
+			}
+		} else {
+			cert, err := rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.CertPath)
+			if err != nil {
+				return nil, err
+			}
+
+			key, err := rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.KeyPath)
+			if err != nil {
+				return nil, err
+			}
+
+			var ca []byte
+			if rulerConfig.Notifier.TLS.CAPath != "" {
+				ca, err = rulerConfig.Notifier.TLS.Reader.ReadSecret(rulerConfig.Notifier.TLS.CAPath)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
+				CA:                 string(ca),
+				Cert:               string(cert),
+				Key:                config_util.Secret(key),
+				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
+				ServerName:         rulerConfig.Notifier.TLS.ServerName,
+			}
 		}
 	}
 
-	return amConfig
+	return amConfig, nil
 }

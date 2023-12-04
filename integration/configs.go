@@ -142,13 +142,13 @@ var (
 	BlocksStorageFlags = func() map[string]string {
 		return map[string]string{
 			"-blocks-storage.tsdb.block-ranges-period":          "1m",
-			"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 			"-blocks-storage.bucket-store.ignore-blocks-within": "0",
 			"-blocks-storage.bucket-store.sync-interval":        "5s",
 			"-blocks-storage.tsdb.retention-period":             "5m",
 			"-blocks-storage.tsdb.ship-interval":                "1m",
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
 			"-querier.query-store-after":                        "0",
+			"-compactor.cleanup-interval":                       "2s",
 		}
 	}
 
@@ -192,8 +192,6 @@ blocks_storage:
 
   bucket_store:
     sync_interval: 5s
-    bucket_index:
-      enabled: false 
 
   s3:
     bucket_name:       mimir-blocks

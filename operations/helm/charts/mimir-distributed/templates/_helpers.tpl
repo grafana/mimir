@@ -241,9 +241,9 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
-{{- with .ctx.Values.global.podLabels }}
+{{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
-{{- end }}
+{{ end }}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
 app: {{ include "mimir.name" .ctx }}-{{ .component }}
@@ -293,7 +293,7 @@ Params:
 */}}
 {{- define "mimir.podAnnotations" -}}
 {{- if .ctx.Values.useExternalConfig }}
-checksum/config: {{ .ctx.Values.externalConfigVersion }}
+checksum/config: {{ .ctx.Values.externalConfigVersion | quote }}
 {{- else -}}
 checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") .ctx | sha256sum }}
 {{- end }}

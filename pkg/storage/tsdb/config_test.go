@@ -56,12 +56,6 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: nil,
 		},
-		"should fail on invalid opening concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.TSDB.DeprecatedMaxTSDBOpeningConcurrencyOnStartup = 0
-			},
-			expectedErr: errInvalidOpeningConcurrency,
-		},
 		"should fail on invalid compaction interval": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
 				cfg.TSDB.HeadCompactionInterval = 0
@@ -127,12 +121,6 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.BucketStore.StreamingBatchSize = 0
 			},
 			expectedErr: errInvalidStreamingBatchSize,
-		},
-		"should fail on invalid index-header lazy loading max concurrency": {
-			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {
-				cfg.BucketStore.IndexHeaderLazyLoadingConcurrency = -1
-			},
-			expectedErr: errInvalidIndexHeaderLazyLoadingConcurrency,
 		},
 		"should fail if forced compaction is enabled but active series tracker is not": {
 			setup: func(cfg *BlocksStorageConfig, activeSeriesCfg *activeseries.Config) {

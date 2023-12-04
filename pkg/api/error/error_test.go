@@ -19,7 +19,9 @@ func TestAllPrometheusErrorTypeValues(t *testing.T) {
 		errorType := Type(prometheusErrorTypeString)
 		apiError := New(errorType, "").(*apiError)
 
-		if errorType == TypeInternal || errorType == TypeNone || errorType == TypeUnavailable {
+		if errorType == TypeUnavailable {
+			require.Equal(t, http.StatusServiceUnavailable, apiError.statusCode())
+		} else if errorType == TypeInternal || errorType == TypeNone {
 			require.Equal(t, http.StatusInternalServerError, apiError.statusCode())
 		} else {
 			// If this assertion fails, it probably means a new error type has been added to Prometheus' API.

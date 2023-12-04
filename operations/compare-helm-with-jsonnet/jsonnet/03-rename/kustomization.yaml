@@ -34,7 +34,7 @@ patches:
         value: 'mimir-query-scheduler-headless'  
 
   - target:
-      kind: 'Service|StatefulSet'
+      kind: 'Service|StatefulSet|PodDisruptionBudget'
       name: 'mimir-memcached-frontend'
     patch: |-
       - op: replace
@@ -42,7 +42,7 @@ patches:
         value: 'mimir-results-cache'
 
   - target:
-      kind: 'Service|StatefulSet'
+      kind: 'Service|StatefulSet|PodDisruptionBudget'
       name: 'mimir-memcached'
     patch: |-
       - op: replace
@@ -50,7 +50,7 @@ patches:
         value: 'mimir-chunks-cache'
 
   - target:
-      kind: 'Service|StatefulSet'
+      kind: 'Service|StatefulSet|PodDisruptionBudget'
       name: 'mimir-memcached-index-queries'
     patch: |-
       - op: replace
@@ -58,7 +58,7 @@ patches:
         value: 'mimir-index-cache'
 
   - target:
-      kind: 'Service|StatefulSet'
+      kind: 'Service|StatefulSet|PodDisruptionBudget'
       name: 'mimir-memcached-metadata'
     patch: |-
       - op: replace

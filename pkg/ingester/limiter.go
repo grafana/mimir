@@ -6,23 +6,11 @@
 package ingester
 
 import (
-	"fmt"
 	"math"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
-)
-
-var (
-	// These errors are only internal, to change the API error messages, see Limiter's methods below.
-	errMaxSeriesPerMetricLimitExceeded   = errors.New("per-metric series limit exceeded")
-	errMaxMetadataPerMetricLimitExceeded = errors.New("per-metric metadata limit exceeded")
-	errMaxSeriesPerUserLimitExceeded     = errors.New("per-user series limit exceeded")
-	errMaxMetadataPerUserLimitExceeded   = errors.New("per-user metric metadata limit exceeded")
 )
 
 // RingCount is the interface exposed by a ring implementation which allows
@@ -57,120 +45,54 @@ func NewLimiter(
 	}
 }
 
-// AssertMaxSeriesPerMetric limit has not been reached compared to the current
-// number of series in input and returns an error if so.
-func (l *Limiter) AssertMaxSeriesPerMetric(userID string, series int) error {
-	if actualLimit := l.maxSeriesPerMetric(userID); series < actualLimit {
-		return nil
-	}
-
-	return errMaxSeriesPerMetricLimitExceeded
+// IsWithinMaxSeriesPerMetric returns true if limit has not been reached compared to the current
+// number of series in input; otherwise returns false.
+func (l *Limiter) IsWithinMaxSeriesPerMetric(userID string, series int) bool {
+	actualLimit := l.maxSeriesPerMetric(userID)
+	return series < actualLimit
 }
 
-// AssertMaxMetadataPerMetric limit has not been reached compared to the current
-// number of metadata per metric in input and returns an error if so.
-func (l *Limiter) AssertMaxMetadataPerMetric(userID string, metadata int) error {
-	if actualLimit := l.maxMetadataPerMetric(userID); metadata < actualLimit {
-		return nil
-	}
-
-	return errMaxMetadataPerMetricLimitExceeded
+// IsWithinMaxMetadataPerMetric returns true if limit has not been reached compared to the current
+// number of metadata per metric in input; otherwise returns false.
+func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool {
+	actualLimit := l.maxMetadataPerMetric(userID)
+	return metadata < actualLimit
 }
 
-// AssertMaxSeriesPerUser limit has not been reached compared to the current
-// number of series in input and returns an error if so.
-func (l *Limiter) AssertMaxSeriesPerUser(userID string, series int) error {
-	if actualLimit := l.maxSeriesPerUser(userID); series < actualLimit {
-		return nil
-	}
-
-	return errMaxSeriesPerUserLimitExceeded
+// IsWithinMaxSeriesPerUser returns true if limit has not been reached compared to the current
+// number of series in input; otherwise returns false.
+func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int, userShardSize int) bool {
+	actualLimit := l.maxSeriesPerUser(userID, userShardSize)
+	return series < actualLimit
 }
 
-// AssertMaxMetricsWithMetadataPerUser limit has not been reached compared to the current
-// number of metrics with metadata in input and returns an error if so.
-func (l *Limiter) AssertMaxMetricsWithMetadataPerUser(userID string, metrics int) error {
-	if actualLimit := l.maxMetadataPerUser(userID); metrics < actualLimit {
-		return nil
-	}
-
-	return errMaxMetadataPerUserLimitExceeded
-}
-
-// FormatError returns the input error enriched with the actual limits for the given user.
-// It acts as pass-through if the input error is unknown.
-func (l *Limiter) FormatError(userID string, err error) error {
-	//nolint:errorlint // We don't expect wrapped errors.
-	switch err {
-	case errMaxSeriesPerUserLimitExceeded:
-		return l.formatMaxSeriesPerUserError(userID)
-	case errMaxSeriesPerMetricLimitExceeded:
-		return l.formatMaxSeriesPerMetricError(userID)
-	case errMaxMetadataPerUserLimitExceeded:
-		return l.formatMaxMetadataPerUserError(userID)
-	case errMaxMetadataPerMetricLimitExceeded:
-		return l.formatMaxMetadataPerMetricError(userID)
-	default:
-		return err
-	}
-}
-
-func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
-	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
-
-	return errors.New(globalerror.MaxSeriesPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerUserFlag,
-	))
-}
-
-func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
-	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
-
-	return errors.New(globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric series limit of %d exceeded", globalLimit),
-		validation.MaxSeriesPerMetricFlag,
-	))
-}
-
-func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
-	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
-
-	return errors.New(globalerror.MaxMetadataPerUser.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-user metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerUserFlag,
-	))
-}
-
-func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
-	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
-
-	return errors.New(globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("per-metric metadata limit of %d exceeded", globalLimit),
-		validation.MaxMetadataPerMetricFlag,
-	))
+// IsWithinMaxMetricsWithMetadataPerUser returns true if limit has not been reached compared to the current
+// number of metrics with metadata in input; otherwise returns false.
+func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics int) bool {
+	actualLimit := l.maxMetadataPerUser(userID)
+	return metrics < actualLimit
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalSeriesPerMetric)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetadataPerMetric)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalMetadataPerMetric)
 }
 
-func (l *Limiter) maxSeriesPerUser(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser)
+func (l *Limiter) maxSeriesPerUser(userID string, userShardSize int) int {
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, userShardSize, l.limits.MaxGlobalSeriesPerUser)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetricsWithMetadataPerUser)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalMetricsWithMetadataPerUser)
 }
 
-func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimitFn func(string) int) int {
+func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, userShardSize int, globalLimitFn func(string) int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := l.convertGlobalToLocalLimit(userID, globalLimit)
+	localLimit := l.convertGlobalToLocalLimit(userShardSize, globalLimit)
 
 	// If the limit is disabled
 	if localLimit == 0 {
@@ -180,7 +102,7 @@ func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimi
 	return localLimit
 }
 
-func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int {
+func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
@@ -196,12 +118,11 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 		// the total number of ingesters
 		ingestersInZoneCount = l.ring.InstancesCount()
 	}
-	shardSize := l.getShardSize(userID)
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
 	// cannot be written to more ingesters than that.
-	if shardSize > 0 {
-		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(shardSize, zonesCount))
+	if userShardSize > 0 {
+		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(userShardSize, zonesCount))
 	}
 
 	// This may happen, for example when the total number of ingesters is asynchronously updated, or

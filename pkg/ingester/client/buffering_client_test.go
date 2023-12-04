@@ -92,6 +92,39 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 	})
 }
 
+func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
+	_, conn := setupGrpc(t)
+
+	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewIngesterClient(conn), conn))
+
+	var requestsToSend []*mimirpb.WriteRequest
+	for i := 0; i < 100; i++ {
+		requestsToSend = append(requestsToSend, createRequest("test", 100+10*i))
+	}
+
+	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
+	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
+
+	ctx := WithSlabPool(context.Background(), slabPool)
+
+	for _, r := range requestsToSend {
+		started := make(chan bool)
+
+		// start background goroutine to cancel context. We want to hit the moment after enqueuing data frame, but before it's sent.
+		cc, cancel := context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			close(started)
+			time.Sleep(1 * time.Millisecond)
+			cancel()
+		}()
+
+		<-started
+
+		_, _ = bufferingClient.Push(cc, r)
+	}
+}
+
 func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T) {
 	serv, conn := setupGrpc(t)
 

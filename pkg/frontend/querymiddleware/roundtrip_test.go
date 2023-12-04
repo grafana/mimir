@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,8 +29,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -289,7 +289,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
 				newTestPrometheusCodec(),

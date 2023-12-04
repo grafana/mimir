@@ -63,6 +63,11 @@ type RedisClientConfig struct {
 	// Maximum number of socket connections.
 	ConnectionPoolSize int `yaml:"connection_pool_size" category:"advanced"`
 
+	// Amount of time client waits for connection if all connections
+	// are busy before returning an error.
+	// Default is ReadTimeout + 1 second.
+	ConnectionPoolTimeout time.Duration `yaml:"connection_pool_timeout" category:"advanced"`
+
 	// MinIdleConnections specifies the minimum number of idle connections which is useful when establishing
 	// new connection is slow.
 	MinIdleConnections int `yaml:"min_idle_connections" category:"advanced"`
@@ -111,6 +116,7 @@ func (c *RedisClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 	f.DurationVar(&c.DialTimeout, prefix+"dial-timeout", time.Second*5, "Client dial timeout.")
 	f.DurationVar(&c.ReadTimeout, prefix+"read-timeout", time.Second*3, "Client read timeout.")
 	f.DurationVar(&c.WriteTimeout, prefix+"write-timeout", time.Second*3, "Client write timeout.")
+	f.DurationVar(&c.ConnectionPoolTimeout, prefix+"connection-pool-timeout", time.Second*4, "Maximum duration to wait to get a connection from pool.")
 	f.IntVar(&c.ConnectionPoolSize, prefix+"connection-pool-size", 100, "Maximum number of connections in the pool.")
 	f.IntVar(&c.MinIdleConnections, prefix+"min-idle-connections", 10, "Minimum number of idle connections.")
 	f.DurationVar(&c.MaxConnectionAge, prefix+"max-connection-age", 0, "Close connections older than this duration. If the value is zero, then the pool does not close connections based on age.")
@@ -162,6 +168,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 		ReadTimeout:  config.ReadTimeout,
 		WriteTimeout: config.WriteTimeout,
 		PoolSize:     config.ConnectionPoolSize,
+		PoolTimeout:  config.ConnectionPoolTimeout,
 		MinIdleConns: config.MinIdleConnections,
 		MaxConnAge:   config.MaxConnectionAge,
 		IdleTimeout:  config.IdleTimeout,
@@ -201,6 +208,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 			"dial_timeout":              config.DialTimeout.String(),
 			"read_timeout":              config.ReadTimeout.String(),
 			"write_timeout":             config.WriteTimeout.String(),
+			"connection_pool_timeout":   config.ConnectionPoolTimeout.String(),
 			"connection_pool_size":      strconv.Itoa(config.ConnectionPoolSize),
 			"max_async_concurrency":     strconv.Itoa(config.MaxAsyncConcurrency),
 			"max_async_buffer_size":     strconv.Itoa(config.MaxAsyncBufferSize),

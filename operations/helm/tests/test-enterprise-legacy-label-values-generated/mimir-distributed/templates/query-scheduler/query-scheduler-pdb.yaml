@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/query-scheduler/query-scheduler-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-query-scheduler
+  labels:
+    app: enterprise-metrics-query-scheduler
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-query-scheduler
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

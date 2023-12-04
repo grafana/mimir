@@ -12,15 +12,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/util/extract"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -73,10 +79,10 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 var (
-	errTSDBForcedCompaction = errors.New("TSDB Head forced compaction in progress and no write request is currently allowed")
-	errTSDBEarlyCompaction  = errors.New("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
-	errTSDBClosing          = errors.New("TSDB is closing")
-	errTSDBNotActive        = errors.New("TSDB is not active")
+	errTSDBForcedCompaction = newTSDBUnavailableError("TSDB Head forced compaction in progress and no write request is currently allowed")
+	errTSDBEarlyCompaction  = newTSDBUnavailableError("TSDB Head early compaction in progress and the write request contains samples overlapping with it")
+	errTSDBClosing          = newTSDBUnavailableError("TSDB is closing")
+	errTSDBNotActive        = newTSDBUnavailableError("TSDB is not active")
 )
 
 type userTSDB struct {
@@ -88,6 +94,7 @@ type userTSDB struct {
 
 	instanceSeriesCount *atomic.Int64 // Shared across all userTSDB instances created by ingester.
 	instanceLimitsFn    func() *InstanceLimits
+	instanceErrors      *prometheus.CounterVec
 
 	stateMtx                                     sync.RWMutex
 	state                                        tsdbState
@@ -118,6 +125,18 @@ type userTSDB struct {
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
 	shippedBlocks    map[ulid.ULID]time.Time
+
+	useOwnedSeriesForLimits bool
+
+	// We use mutex, so that we can update count and shard size at the same time (when shard size changes).
+	ownedSeriesMtx       sync.Mutex
+	ownedSeriesCount     int // Number of "owned" series, based on current ring.
+	ownedSeriesShardSize int // Tenant shard size when "owned" series was last updated due to ring or shard size changes. Used when checking series limits.
+
+	// Only accessed by ownedSeries service, no need to synchronization.
+	ownedTokenRanges ring.TokenRanges
+
+	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
@@ -125,16 +144,16 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return u.db.Querier(ctx, mint, maxt)
+func (u *userTSDB) Querier(mint, maxt int64) (storage.Querier, error) {
+	return u.db.Querier(mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.ChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.ChunkQuerier(mint, maxt)
 }
 
-func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) UnorderedChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.UnorderedChunkQuerier(mint, maxt)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
@@ -154,7 +173,7 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.db.Compact()
+	return u.db.Compact(context.Background())
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
@@ -224,7 +243,7 @@ func (u *userTSDB) compactHead(blockDuration, forcedCompactionMaxTime int64) err
 		}
 	}
 
-	return u.db.CompactOOOHead()
+	return u.db.CompactOOOHead(context.Background())
 }
 
 // nextForcedHeadCompactionRange computes the next TSDB head range to compact when a forced compaction
@@ -264,13 +283,15 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	gl := u.instanceLimitsFn()
 	if gl != nil && gl.MaxInMemorySeries > 0 {
 		if series := u.instanceSeriesCount.Load(); series >= gl.MaxInMemorySeries {
+			u.instanceErrors.WithLabelValues(reasonIngesterMaxInMemorySeries).Inc()
 			return errMaxInMemorySeriesReached
 		}
 	}
 
 	// Total series limit.
-	if err := u.limiter.AssertMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())); err != nil {
-		return err
+	series, shards := u.getSeriesAndShardsForSeriesLimit()
+	if !u.limiter.IsWithinMaxSeriesPerUser(u.userID, series, shards) {
+		return globalerror.MaxSeriesPerUser
 	}
 
 	// Series per metric name limit.
@@ -278,15 +299,33 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	if err != nil {
 		return err
 	}
-	if err := u.seriesInMetric.canAddSeriesFor(u.userID, metricName); err != nil {
-		return err
+	if !u.seriesInMetric.canAddSeriesFor(u.userID, metricName) {
+		return globalerror.MaxSeriesPerMetric
 	}
 
 	return nil
 }
 
+// getSeriesAndShardsForSeriesLimit returns current number of series and shard size that should be used for computing
+// series limit.
+func (u *userTSDB) getSeriesAndShardsForSeriesLimit() (int, int) {
+	if u.useOwnedSeriesForLimits {
+		return u.ownedSeriesAndShards()
+	}
+
+	count := int(u.Head().NumSeries())
+	shards := u.limiter.getShardSize(u.userID)
+	return count, shards
+}
+
 func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.instanceSeriesCount.Inc()
+
+	// If series was just created, it must belong to this ingester. (Unless it was created while replaying WAL,
+	// but we will recompute owned series when ingester joins the ring.)
+	u.ownedSeriesMtx.Lock()
+	u.ownedSeriesCount++
+	u.ownedSeriesMtx.Unlock()
 
 	metricName, err := extract.MetricNameFromLabels(metric)
 	if err != nil {
@@ -296,17 +335,22 @@ func (u *userTSDB) PostCreation(metric labels.Labels) {
 	u.seriesInMetric.increaseSeriesForMetric(metricName)
 }
 
-func (u *userTSDB) PostDeletion(metrics ...labels.Labels) {
+func (u *userTSDB) PostDeletion(metrics map[chunks.HeadSeriesRef]labels.Labels) {
 	u.instanceSeriesCount.Sub(int64(len(metrics)))
 
-	for _, metric := range metrics {
-		metricName, err := extract.MetricNameFromLabels(metric)
+	for _, lbls := range metrics {
+		metricName, err := extract.MetricNameFromLabels(lbls)
 		if err != nil {
 			// This should never happen because it has already been checked in PreCreation().
 			continue
 		}
 		u.seriesInMetric.decreaseSeriesForMetric(metricName)
 	}
+
+	// We cannot update ownedSeriesCount here, as we don't know whether deleted series were owned by this ingester or not.
+	// Instead, we recompute owned series after each compaction.
+
+	u.activeSeries.PostDeletion(metrics)
 }
 
 // blocksToDelete filters the input blocks and returns the blocks which are safe to be deleted from the ingester.
@@ -386,13 +430,15 @@ func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
 }
 
 func (u *userTSDB) isIdle(now time.Time, idle time.Duration) bool {
-	lu := u.lastUpdate.Load()
-
-	return time.Unix(lu, 0).Add(idle).Before(now)
+	return u.getLastUpdate().Add(idle).Before(now)
 }
 
 func (u *userTSDB) setLastUpdate(t time.Time) {
-	u.lastUpdate.Store(t.Unix())
+	u.lastUpdate.Store(t.UnixMilli())
+}
+
+func (u *userTSDB) getLastUpdate() time.Time {
+	return time.UnixMilli(u.lastUpdate.Load())
 }
 
 // Checks if TSDB can be closed.
@@ -457,4 +503,113 @@ func (u *userTSDB) releaseAppendLock(acquireState tsdbState) {
 	if acquireState != forceCompacting {
 		u.inFlightAppendsStartedBeforeForcedCompaction.Done()
 	}
+}
+
+func (u *userTSDB) ownedSeriesAndShards() (int, int) {
+	u.ownedSeriesMtx.Lock()
+	defer u.ownedSeriesMtx.Unlock()
+
+	return u.ownedSeriesCount, u.ownedSeriesShardSize
+}
+
+func (u *userTSDB) getAndClearReasonForRecomputeOwnedSeries() string {
+	return u.requiresOwnedSeriesUpdate.Swap("")
+}
+
+func (u *userTSDB) triggerRecomputeOwnedSeries(reason string) {
+	u.requiresOwnedSeriesUpdate.CompareAndSwap("", reason)
+}
+
+// recomputeOwnedSeries recomputes owned series for current token ranges, and updates both owned series and shard size.
+//
+// This method returns false, if recomputation of owned series failed multiple times due to too
+// many new series being added during the computation. If no such problem happened, this method returns true.
+//
+// This method and updateTokenRanges should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) recomputeOwnedSeries(shardSize int, reason string, logger log.Logger) (success bool) {
+	success, _ = u.recomputeOwnedSeriesWithComputeFn(shardSize, reason, logger, u.computeOwnedSeries)
+	return success
+}
+
+const (
+	recomputeOwnedSeriesMaxAttempts   = 3
+	recomputeOwnedSeriesMaxSeriesDiff = 1000
+)
+
+func (u *userTSDB) recomputeOwnedSeriesWithComputeFn(shardSize int, reason string, logger log.Logger, compute func() int) (success bool, _ int) {
+	start := time.Now()
+
+	var ownedSeriesNew, ownedSeriesBefore, shardSizeBefore int
+
+	success = false
+	attempts := 0
+	for !success && attempts < recomputeOwnedSeriesMaxAttempts {
+		attempts++
+
+		ownedSeriesBefore, shardSizeBefore = u.ownedSeriesAndShards()
+
+		ownedSeriesNew = compute()
+
+		u.ownedSeriesMtx.Lock()
+
+		// Check how many new series were added while we were computing owned series.
+		// If too many series were created in the meantime, our new number of owned series may be wrong
+		// (it may or may not include the new series, we don't know).
+		// In that case, just run the computation again -- if there are more attempts left.
+		seriesDiff := u.ownedSeriesCount - ownedSeriesBefore
+		if seriesDiff >= 0 && seriesDiff <= recomputeOwnedSeriesMaxSeriesDiff {
+			success = true
+		}
+
+		// Even if we run computation again, we can start using our (possibly incorrect) values already.
+		u.ownedSeriesCount = ownedSeriesNew
+		u.ownedSeriesShardSize = shardSize
+
+		u.ownedSeriesMtx.Unlock()
+	}
+
+	var l log.Logger
+	if success {
+		l = level.Info(logger)
+	} else {
+		l = level.Warn(logger)
+	}
+	l.Log("msg", "owned series: recomputed owned series for user",
+		"user", u.userID,
+		"reason", reason,
+		"ownedSeriesBefore", ownedSeriesBefore,
+		"ownedSeriesNew", ownedSeriesNew,
+		"shardSizeBefore", shardSizeBefore,
+		"shardSizeNew", shardSize,
+		"duration", time.Since(start),
+		"attempts", attempts,
+		"success", success)
+	return success, attempts
+}
+
+// updateTokenRanges sets owned token ranges to supplied value, and returns true, if token ranges have changed.
+//
+// This method and recomputeOwnedSeries should be only called from the same goroutine. (ownedSeries service)
+func (u *userTSDB) updateTokenRanges(newTokenRanges []uint32) bool {
+	prev := u.ownedTokenRanges
+	u.ownedTokenRanges = newTokenRanges
+
+	return !prev.Equal(newTokenRanges)
+}
+
+func (u *userTSDB) computeOwnedSeries() int {
+	// This can happen if ingester doesn't own this tenant anymore.
+	if len(u.ownedTokenRanges) == 0 {
+		return 0
+	}
+
+	count := 0
+	u.Head().ForEachSecondaryHash(func(secondaryHashes []uint32) {
+		for _, sh := range secondaryHashes {
+			if u.ownedTokenRanges.IncludesKey(sh) {
+				count++
+			}
+		}
+	})
+	return count
 }

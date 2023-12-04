@@ -35,9 +35,9 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Series and exemplars')
+      $.row('Active series and native histograms')
       .addPanel(
-        local title = 'Series';
+        local title = 'All series';
         $.panel(title) +
         $.queryPanel(
           [
@@ -91,10 +91,98 @@ local filename = 'mimir-tenants.json';
           title,
           |||
             Number of active and in-memory series per user, and active series matching custom trackers (in parenthesis).
+            Note that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).
             Note that active series matching custom trackers are included in the total active series count.
           |||
         ),
       )
+      .addPanel(
+        local title = 'Native histogram series';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            |||
+              sum(
+                cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              )
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+            |||
+              sum by (name) (
+                cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              ) > 0
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+          ],
+          [
+            'active',
+            'active ({{ name }})',
+          ],
+        ) +
+        { seriesOverrides: [limit_style] } +
+        $.panelDescription(
+          title,
+          |||
+            Number of active native histogram series per user, and active native histogram series matching custom trackers (in parenthesis).
+            Note that active series matching custom trackers are included in the total active series count.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Total number of buckets used by native histogram series';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            |||
+              sum(
+                cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              )
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+            |||
+              sum by (name) (
+                cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}
+                / on(%(group_by_cluster)s) group_left
+                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+              ) > 0
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+          ],
+          [
+            'buckets',
+            'buckets ({{ name }})',
+          ],
+        ) +
+        { seriesOverrides: [limit_style] } +
+        $.panelDescription(
+          title,
+          |||
+            Total number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).
+          |||
+        ),
+      )
+    )
+
+    .addRow(
+      $.row('Samples and exemplars')
       .addPanel(
         local title = 'Series with exemplars';
         $.panel(title) +

@@ -88,7 +88,7 @@ func remoteReadSamples(
 				return
 			}
 
-			querier, err := q.Querier(ctx, int64(from), int64(to))
+			querier, err := q.Querier(int64(from), int64(to))
 			if err != nil {
 				errCh <- err
 				return
@@ -98,7 +98,7 @@ func remoteReadSamples(
 				Start: int64(from),
 				End:   int64(to),
 			}
-			seriesSet := querier.Select(false, params, matchers...)
+			seriesSet := querier.Select(ctx, false, params, matchers...)
 			resp.Results[i], err = seriesSetToQueryResponse(seriesSet)
 			errCh <- err
 		}(i, qr)
@@ -163,7 +163,7 @@ func processReadStreamedQueryRequest(
 		return err
 	}
 
-	querier, err := q.ChunkQuerier(ctx, int64(from), int64(to))
+	querier, err := q.ChunkQuerier(int64(from), int64(to))
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func processReadStreamedQueryRequest(
 	return streamChunkedReadResponses(
 		prom_remote.NewChunkedWriter(w, f),
 		// The streaming API has to provide the series sorted.
-		querier.Select(true, params, matchers...),
+		querier.Select(ctx, true, params, matchers...),
 		idx,
 		maxBytesInFrame,
 	)

@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,8 +33,8 @@ func TestCloneExpr(t *testing.T) {
 			},
 			&parser.BinaryExpr{
 				Op:  parser.ADD,
-				LHS: &parser.NumberLiteral{Val: 1, PosRange: parser.PositionRange{Start: 0, End: 1}},
-				RHS: &parser.NumberLiteral{Val: 1, PosRange: parser.PositionRange{Start: 4, End: 5}},
+				LHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 0, End: 1}},
+				RHS: &parser.NumberLiteral{Val: 1, PosRange: posrange.PositionRange{Start: 4, End: 5}},
 			},
 		},
 		{
@@ -56,13 +57,13 @@ func TestCloneExpr(t *testing.T) {
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "some_metric"),
 					},
-					PosRange: parser.PositionRange{
+					PosRange: posrange.PositionRange{
 						Start: 19,
 						End:   30,
 					},
 				},
 				Grouping: []string{"foo"},
-				PosRange: parser.PositionRange{
+				PosRange: posrange.PositionRange{
 					Start: 0,
 					End:   31,
 				},

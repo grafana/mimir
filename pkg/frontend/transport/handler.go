@@ -6,7 +6,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -20,16 +19,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/httpgrpc/server"
-
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -153,7 +151,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mtx.Lock()
 	if f.stopped {
 		f.mtx.Unlock()
-		writeError(w, fmt.Errorf("frontend not running"))
+		http.Error(w, "frontend stopped", http.StatusServiceUnavailable)
 		return
 	}
 	f.inflightRequests++
@@ -166,38 +164,27 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.mtx.Unlock()
 	}()
 
-	var stats *querier_stats.Stats
+	var queryDetails *querymiddleware.QueryDetails
 
-	// Initialise the stats in the context and make sure it's propagated
+	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
 	if f.cfg.QueryStatsEnabled {
 		var ctx context.Context
-		stats, ctx = querier_stats.ContextWithEmptyStats(r.Context())
+		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
 	}
 
+	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 
-	// Store the body contents, so we can read it multiple times.
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
-	if err != nil {
-		writeError(w, err)
-		return
-	}
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Limit the read body size.
+	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
 
-	// Parse the form, as it's needed to build the activity for the activity-tracker.
-	if err := r.ParseForm(); err != nil {
+	params, err := util.ParseRequestFormWithoutConsumingBody(r)
+	if err != nil {
 		writeError(w, apierror.New(apierror.TypeBadData, err.Error()))
 		return
 	}
-
-	// Store a copy of the params and restore the request state.
-	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
-	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
-	params := copyValues(r.Form)
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	r.Form, r.PostForm = nil, nil
 
 	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
 	defer f.at.Delete(activityIndex)
@@ -208,7 +195,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, queryResponseTime, 0, stats, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, err)
 		return
 	}
 
@@ -218,7 +205,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if f.cfg.QueryStatsEnabled {
-		writeServiceTimingHeader(queryResponseTime, hs, stats)
+		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -226,22 +213,22 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryResponseSize, _ := io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
-		f.reportSlowQuery(r, params, queryResponseTime)
+		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, queryResponseTime, queryResponseSize, stats, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
-func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration) {
+func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
 	logMessage := append([]interface{}{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
 		"path", r.URL.Path,
 		"time_taken", queryResponseTime.String(),
-	}, formatQueryString(queryString)...)
+	}, formatQueryString(details, queryString)...)
 
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
@@ -250,12 +237,16 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, queryResponseSizeBytes int64, stats *querier_stats.Stats, queryErr error) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryStartTime time.Time, queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
+	var stats *querier_stats.Stats
+	if details != nil {
+		stats = details.QuerierStats
+	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
@@ -290,8 +281,26 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
-	}, formatQueryString(queryString)...)
+		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
+	}, formatQueryString(details, queryString)...)
 
+	if details != nil {
+		// Start and End may be zero when the request wasn't a query (e.g. /metadata)
+		// or if the query was a constant expression and didn't need to process samples.
+		if !details.MinT.IsZero() && !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "length", details.MaxT.Sub(details.MinT).String())
+		}
+		if !details.MinT.IsZero() {
+			logMessage = append(logMessage, "time_since_min_time", queryStartTime.Sub(details.MinT))
+		}
+		if !details.MaxT.IsZero() {
+			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
+		}
+		logMessage = append(logMessage,
+			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
+			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+		)
+	}
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
 	}
@@ -315,11 +324,41 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func formatQueryString(queryString url.Values) (fields []interface{}) {
+// formatQueryString prefers printing start, end, and step from details if they are not nil.
+func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []interface{}) {
 	for k, v := range queryString {
-		fields = append(fields, fmt.Sprintf("param_%s", k), strings.Join(v, ","))
+		var formattedValue string
+		if details != nil {
+			formattedValue = paramValueFromDetails(details, k)
+		}
+
+		if formattedValue == "" {
+			formattedValue = strings.Join(v, ",")
+		}
+		fields = append(fields, fmt.Sprintf("param_%s", k), formattedValue)
 	}
 	return fields
+}
+
+// paramValueFromDetails returns the value of the parameter from details if the value there is non-zero.
+// Otherwise, it returns an empty string.
+// One reason why details field may be zero-values is if the value was not parseable.
+func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName string) string {
+	switch paramName {
+	case "start", "time":
+		if !details.Start.IsZero() {
+			return details.Start.Format(time.RFC3339Nano)
+		}
+	case "end":
+		if !details.End.IsZero() {
+			return details.End.Format(time.RFC3339Nano)
+		}
+	case "step":
+		if details.Step != 0 {
+			return strconv.FormatInt(details.Step.Milliseconds(), 10)
+		}
+	}
+	return ""
 }
 
 func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
@@ -345,11 +384,11 @@ func writeError(w http.ResponseWriter, err error) {
 
 	// if the error is an APIError, ensure it gets written as a JSON response
 	if resp, ok := apierror.HTTPResponseFromError(err); ok {
-		_ = server.WriteResponse(w, resp)
+		_ = httpgrpc.WriteResponse(w, resp)
 		return
 	}
 
-	server.WriteError(w, err)
+	httpgrpc.WriteError(w, err)
 }
 
 func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
@@ -379,12 +418,4 @@ func httpRequestActivity(request *http.Request, requestParams url.Values) string
 
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
-}
-
-func copyValues(src url.Values) url.Values {
-	dst := make(url.Values, len(src))
-	for k, vs := range src {
-		dst[k] = append([]string(nil), vs...)
-	}
-	return dst
 }

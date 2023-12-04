@@ -22,6 +22,24 @@ type AccessToken = exported.AccessToken
 // TokenCredential represents a credential capable of providing an OAuth token.
 type TokenCredential = exported.TokenCredential
 
+// KeyCredential contains an authentication key used to authenticate to an Azure service.
+type KeyCredential = exported.KeyCredential
+
+// NewKeyCredential creates a new instance of [KeyCredential] with the specified values.
+//   - key is the authentication key
+func NewKeyCredential(key string) *KeyCredential {
+	return exported.NewKeyCredential(key)
+}
+
+// SASCredential contains a shared access signature used to authenticate to an Azure service.
+type SASCredential = exported.SASCredential
+
+// NewSASCredential creates a new instance of [SASCredential] with the specified values.
+//   - sas is the shared access signature
+func NewSASCredential(sas string) *SASCredential {
+	return exported.NewSASCredential(sas)
+}
+
 // holds sentinel values used to send nulls
 var nullables map[reflect.Type]interface{} = map[reflect.Type]interface{}{}
 
@@ -73,15 +91,20 @@ type ClientOptions = policy.ClientOptions
 type Client struct {
 	pl runtime.Pipeline
 	tr tracing.Tracer
+
+	// cached on the client to support shallow copying with new values
+	tp     tracing.Provider
+	modVer string
 }
 
 // NewClient creates a new Client instance with the provided values.
-//   - clientName - the fully qualified name of the client ("package.Client"); this is used by the tracing provider when creating spans
+//   - clientName - the fully qualified name of the client ("module/package.Client"); this is used by the telemetry policy and tracing provider.
+//     if module and package are the same value, the "module/" prefix can be omitted.
 //   - moduleVersion - the semantic version of the containing module; used by the telemetry policy
 //   - plOpts - pipeline configuration options; can be the zero-value
 //   - options - optional client configurations; pass nil to accept the default values
 func NewClient(clientName, moduleVersion string, plOpts runtime.PipelineOptions, options *ClientOptions) (*Client, error) {
-	pkg, err := shared.ExtractPackageName(clientName)
+	mod, client, err := shared.ExtractModuleName(clientName)
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +119,16 @@ func NewClient(clientName, moduleVersion string, plOpts runtime.PipelineOptions,
 		}
 	}
 
-	pl := runtime.NewPipeline(pkg, moduleVersion, plOpts, options)
+	pl := runtime.NewPipeline(mod, moduleVersion, plOpts, options)
 
-	tr := options.TracingProvider.NewTracer(clientName, moduleVersion)
-	return &Client{pl: pl, tr: tr}, nil
+	tr := options.TracingProvider.NewTracer(client, moduleVersion)
+
+	return &Client{
+		pl:     pl,
+		tr:     tr,
+		tp:     options.TracingProvider,
+		modVer: moduleVersion,
+	}, nil
 }
 
 // Pipeline returns the pipeline for this client.
@@ -110,4 +139,12 @@ func (c *Client) Pipeline() runtime.Pipeline {
 // Tracer returns the tracer for this client.
 func (c *Client) Tracer() tracing.Tracer {
 	return c.tr
+}
+
+// WithClientName returns a shallow copy of the Client with its tracing client name changed to clientName.
+// Note that the values for module name and version will be preserved from the source Client.
+//   - clientName - the fully qualified name of the client ("package.Client"); this is used by the tracing provider when creating spans
+func (c *Client) WithClientName(clientName string) *Client {
+	tr := c.tp.NewTracer(clientName, c.modVer)
+	return &Client{pl: c.pl, tr: tr, tp: c.tp, modVer: c.modVer}
 }

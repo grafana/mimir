@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
 	"github.com/prometheus/alertmanager/nflog"
 	"github.com/prometheus/alertmanager/nflog/nflogpb"
@@ -61,19 +62,21 @@ type Notifier interface {
 // Integration wraps a notifier and its configuration to be uniquely identified
 // by name and index from its origin in the configuration.
 type Integration struct {
-	notifier Notifier
-	rs       ResolvedSender
-	name     string
-	idx      int
+	notifier     Notifier
+	rs           ResolvedSender
+	name         string
+	idx          int
+	receiverName string
 }
 
 // NewIntegration returns a new integration.
-func NewIntegration(notifier Notifier, rs ResolvedSender, name string, idx int) Integration {
+func NewIntegration(notifier Notifier, rs ResolvedSender, name string, idx int, receiverName string) Integration {
 	return Integration{
-		notifier: notifier,
-		rs:       rs,
-		name:     name,
-		idx:      idx,
+		notifier:     notifier,
+		rs:           rs,
+		name:         name,
+		idx:          idx,
+		receiverName: receiverName,
 	}
 }
 
@@ -249,37 +252,84 @@ type Metrics struct {
 	numNotificationRequestsTotal       *prometheus.CounterVec
 	numNotificationRequestsFailedTotal *prometheus.CounterVec
 	notificationLatencySeconds         *prometheus.HistogramVec
+
+	ff featurecontrol.Flagger
 }
 
-func NewMetrics(r prometheus.Registerer) *Metrics {
+func NewMetrics(r prometheus.Registerer, ff featurecontrol.Flagger) *Metrics {
+	labels := []string{"integration"}
+
+	if ff.EnableReceiverNamesInMetrics() {
+		labels = append(labels, "receiver_name")
+	}
+
 	m := &Metrics{
 		numNotifications: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "alertmanager",
 			Name:      "notifications_total",
 			Help:      "The total number of attempted notifications.",
-		}, []string{"integration"}),
+		}, labels),
 		numTotalFailedNotifications: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "alertmanager",
 			Name:      "notifications_failed_total",
 			Help:      "The total number of failed notifications.",
-		}, []string{"integration", "reason"}),
+		}, append(labels, "reason")),
 		numNotificationRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "alertmanager",
 			Name:      "notification_requests_total",
 			Help:      "The total number of attempted notification requests.",
-		}, []string{"integration"}),
+		}, labels),
 		numNotificationRequestsFailedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "alertmanager",
 			Name:      "notification_requests_failed_total",
 			Help:      "The total number of failed notification requests.",
-		}, []string{"integration"}),
+		}, labels),
 		notificationLatencySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "alertmanager",
 			Name:      "notification_latency_seconds",
 			Help:      "The latency of notifications in seconds.",
 			Buckets:   []float64{1, 5, 10, 15, 20},
-		}, []string{"integration"}),
+		}, labels),
+		ff: ff,
 	}
+
+	r.MustRegister(
+		m.numNotifications, m.numTotalFailedNotifications,
+		m.numNotificationRequestsTotal, m.numNotificationRequestsFailedTotal,
+		m.notificationLatencySeconds,
+	)
+
+	return m
+}
+
+func (m *Metrics) InitializeFor(receiver map[string][]Integration) {
+	if m.ff.EnableReceiverNamesInMetrics() {
+
+		// Reset the vectors to take into account receiver names changing after hot reloads.
+		m.numNotifications.Reset()
+		m.numNotificationRequestsTotal.Reset()
+		m.numNotificationRequestsFailedTotal.Reset()
+		m.notificationLatencySeconds.Reset()
+		m.numTotalFailedNotifications.Reset()
+
+		for name, integrations := range receiver {
+			for _, integration := range integrations {
+
+				m.numNotifications.WithLabelValues(integration.Name(), name)
+				m.numNotificationRequestsTotal.WithLabelValues(integration.Name(), name)
+				m.numNotificationRequestsFailedTotal.WithLabelValues(integration.Name(), name)
+				m.notificationLatencySeconds.WithLabelValues(integration.Name(), name)
+
+				for _, reason := range possibleFailureReasonCategory {
+					m.numTotalFailedNotifications.WithLabelValues(integration.Name(), name, reason)
+				}
+			}
+		}
+
+		return
+	}
+
+	// When the feature flag is not enabled, we just carry on registering _all_ the integrations.
 	for _, integration := range []string{
 		"email",
 		"pagerduty",
@@ -291,6 +341,9 @@ func NewMetrics(r prometheus.Registerer) *Metrics {
 		"victorops",
 		"sns",
 		"telegram",
+		"discord",
+		"webex",
+		"msteams",
 	} {
 		m.numNotifications.WithLabelValues(integration)
 		m.numNotificationRequestsTotal.WithLabelValues(integration)
@@ -301,21 +354,17 @@ func NewMetrics(r prometheus.Registerer) *Metrics {
 			m.numTotalFailedNotifications.WithLabelValues(integration, reason)
 		}
 	}
-	r.MustRegister(
-		m.numNotifications, m.numTotalFailedNotifications,
-		m.numNotificationRequestsTotal, m.numNotificationRequestsFailedTotal,
-		m.notificationLatencySeconds,
-	)
-	return m
 }
 
 type PipelineBuilder struct {
 	metrics *Metrics
+	ff      featurecontrol.Flagger
 }
 
-func NewPipelineBuilder(r prometheus.Registerer) *PipelineBuilder {
+func NewPipelineBuilder(r prometheus.Registerer, ff featurecontrol.Flagger) *PipelineBuilder {
 	return &PipelineBuilder{
-		metrics: NewMetrics(r),
+		metrics: NewMetrics(r, ff),
+		ff:      ff,
 	}
 }
 
@@ -325,7 +374,7 @@ func (pb *PipelineBuilder) New(
 	wait func() time.Duration,
 	inhibitor *inhibit.Inhibitor,
 	silencer *silence.Silencer,
-	times map[string][]timeinterval.TimeInterval,
+	intervener *timeinterval.Intervener,
 	notificationLog NotificationLog,
 	peer Peer,
 ) RoutingStage {
@@ -333,14 +382,17 @@ func (pb *PipelineBuilder) New(
 
 	ms := NewGossipSettleStage(peer)
 	is := NewMuteStage(inhibitor)
-	tas := NewTimeActiveStage(times)
-	tms := NewTimeMuteStage(times)
+	tas := NewTimeActiveStage(intervener)
+	tms := NewTimeMuteStage(intervener)
 	ss := NewMuteStage(silencer)
 
 	for name := range receivers {
 		st := createReceiverStage(name, receivers[name], wait, notificationLog, pb.metrics)
 		rs[name] = MultiStage{ms, is, tas, tms, ss, st}
 	}
+
+	pb.metrics.InitializeFor(receivers)
+
 	return rs
 }
 
@@ -466,15 +518,23 @@ func NewMuteStage(m types.Muter) *MuteStage {
 }
 
 // Exec implements the Stage interface.
-func (n *MuteStage) Exec(ctx context.Context, _ log.Logger, alerts ...*types.Alert) (context.Context, []*types.Alert, error) {
-	var filtered []*types.Alert
+func (n *MuteStage) Exec(ctx context.Context, logger log.Logger, alerts ...*types.Alert) (context.Context, []*types.Alert, error) {
+	var (
+		filtered []*types.Alert
+		muted    []*types.Alert
+	)
 	for _, a := range alerts {
 		// TODO(fabxc): increment total alerts counter.
 		// Do not send the alert if muted.
-		if !n.muter.Mutes(a.Labels) {
+		if n.muter.Mutes(a.Labels) {
+			muted = append(muted, a)
+		} else {
 			filtered = append(filtered, a)
 		}
 		// TODO(fabxc): increment muted alerts counter if muted.
+	}
+	if len(muted) > 0 {
+		level.Debug(logger).Log("msg", "Notifications will not be sent for muted alerts", "alerts", fmt.Sprintf("%v", muted))
 	}
 	return ctx, filtered, nil
 }
@@ -651,19 +711,27 @@ type RetryStage struct {
 	integration Integration
 	groupName   string
 	metrics     *Metrics
+	labelValues []string
 }
 
 // NewRetryStage returns a new instance of a RetryStage.
 func NewRetryStage(i Integration, groupName string, metrics *Metrics) *RetryStage {
+	labelValues := []string{i.Name()}
+
+	if metrics.ff.EnableReceiverNamesInMetrics() {
+		labelValues = append(labelValues, i.receiverName)
+	}
+
 	return &RetryStage{
 		integration: i,
 		groupName:   groupName,
 		metrics:     metrics,
+		labelValues: labelValues,
 	}
 }
 
 func (r RetryStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Alert) (context.Context, []*types.Alert, error) {
-	r.metrics.numNotifications.WithLabelValues(r.integration.Name()).Inc()
+	r.metrics.numNotifications.WithLabelValues(r.labelValues...).Inc()
 	ctx, alerts, err := r.exec(ctx, l, alerts...)
 
 	failureReason := DefaultReason.String()
@@ -671,7 +739,7 @@ func (r RetryStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 		if e, ok := errors.Cause(err).(*ErrorWithReason); ok {
 			failureReason = e.Reason.String()
 		}
-		r.metrics.numTotalFailedNotifications.WithLabelValues(r.integration.Name(), failureReason).Inc()
+		r.metrics.numTotalFailedNotifications.WithLabelValues(append(r.labelValues, failureReason)...).Inc()
 	}
 	return ctx, alerts, err
 }
@@ -709,7 +777,11 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 		i    = 0
 		iErr error
 	)
+
 	l = log.With(l, "receiver", r.groupName, "integration", r.integration.String())
+	if groupKey, ok := GroupKey(ctx); ok {
+		l = log.With(l, "aggrGroup", groupKey)
+	}
 
 	for {
 		i++
@@ -728,10 +800,11 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 		case <-tick.C:
 			now := time.Now()
 			retry, err := r.integration.Notify(ctx, sent...)
-			r.metrics.notificationLatencySeconds.WithLabelValues(r.integration.Name()).Observe(time.Since(now).Seconds())
-			r.metrics.numNotificationRequestsTotal.WithLabelValues(r.integration.Name()).Inc()
+			dur := time.Since(now)
+			r.metrics.notificationLatencySeconds.WithLabelValues(r.labelValues...).Observe(dur.Seconds())
+			r.metrics.numNotificationRequestsTotal.WithLabelValues(r.labelValues...).Inc()
 			if err != nil {
-				r.metrics.numNotificationRequestsFailedTotal.WithLabelValues(r.integration.Name()).Inc()
+				r.metrics.numNotificationRequestsFailedTotal.WithLabelValues(r.labelValues...).Inc()
 				if !retry {
 					return ctx, alerts, errors.Wrapf(err, "%s/%s: notify retry canceled due to unrecoverable error after %d attempts", r.groupName, r.integration.String(), i)
 				}
@@ -744,11 +817,12 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 				// integration upon context timeout.
 				iErr = err
 			} else {
-				lvl := level.Debug(l)
-				if i > 1 {
-					lvl = level.Info(l)
+				lvl := level.Info(l)
+				if i <= 1 {
+					lvl = level.Debug(log.With(l, "alerts", fmt.Sprintf("%v", alerts)))
 				}
-				lvl.Log("msg", "Notify success", "attempts", i)
+
+				lvl.Log("msg", "Notify success", "attempts", i, "duration", dur)
 				return ctx, alerts, nil
 			}
 		case <-ctx.Done():
@@ -803,13 +877,13 @@ func (n SetNotifiesStage) Exec(ctx context.Context, l log.Logger, alerts ...*typ
 }
 
 type timeStage struct {
-	Times map[string][]timeinterval.TimeInterval
+	muter types.TimeMuter
 }
 
 type TimeMuteStage timeStage
 
-func NewTimeMuteStage(ti map[string][]timeinterval.TimeInterval) *TimeMuteStage {
-	return &TimeMuteStage{ti}
+func NewTimeMuteStage(m types.TimeMuter) *TimeMuteStage {
+	return &TimeMuteStage{m}
 }
 
 // Exec implements the stage interface for TimeMuteStage.
@@ -824,7 +898,12 @@ func (tms TimeMuteStage) Exec(ctx context.Context, l log.Logger, alerts ...*type
 		return ctx, alerts, errors.New("missing now timestamp")
 	}
 
-	muted, err := inTimeIntervals(now, tms.Times, muteTimeIntervalNames)
+	// Skip this stage if there are no mute timings.
+	if len(muteTimeIntervalNames) == 0 {
+		return ctx, alerts, nil
+	}
+
+	muted, err := tms.muter.Mutes(muteTimeIntervalNames, now)
 	if err != nil {
 		return ctx, alerts, err
 	}
@@ -839,8 +918,8 @@ func (tms TimeMuteStage) Exec(ctx context.Context, l log.Logger, alerts ...*type
 
 type TimeActiveStage timeStage
 
-func NewTimeActiveStage(ti map[string][]timeinterval.TimeInterval) *TimeActiveStage {
-	return &TimeActiveStage{ti}
+func NewTimeActiveStage(m types.TimeMuter) *TimeActiveStage {
+	return &TimeActiveStage{m}
 }
 
 // Exec implements the stage interface for TimeActiveStage.
@@ -861,32 +940,16 @@ func (tas TimeActiveStage) Exec(ctx context.Context, l log.Logger, alerts ...*ty
 		return ctx, alerts, errors.New("missing now timestamp")
 	}
 
-	active, err := inTimeIntervals(now, tas.Times, activeTimeIntervalNames)
+	muted, err := tas.muter.Mutes(activeTimeIntervalNames, now)
 	if err != nil {
 		return ctx, alerts, err
 	}
 
 	// If the current time is not inside an active time, all alerts are removed from the pipeline
-	if !active {
+	if !muted {
 		level.Debug(l).Log("msg", "Notifications not sent, route is not within active time")
 		return ctx, nil, nil
 	}
 
 	return ctx, alerts, nil
-}
-
-// inTimeIntervals returns true if the current time is contained in one of the given time intervals.
-func inTimeIntervals(now time.Time, intervals map[string][]timeinterval.TimeInterval, intervalNames []string) (bool, error) {
-	for _, name := range intervalNames {
-		interval, ok := intervals[name]
-		if !ok {
-			return false, errors.Errorf("time interval %s doesn't exist in config", name)
-		}
-		for _, ti := range interval {
-			if ti.ContainsTime(now.UTC()) {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
 }

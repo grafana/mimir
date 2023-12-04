@@ -1,5 +1,93 @@
 # Release History
 
+## 1.8.0 (2023-10-05)
+
+### Features Added
+
+* Added `Claims` and `EnableCAE` fields to `policy.TokenRequestOptions`.
+* ARM bearer token policy handles CAE challenges.
+* `messaging/CloudEvent` allows you to serialize/deserialize CloudEvents, as described in the CloudEvents 1.0 specification: [link](https://github.com/cloudevents/spec)
+* Added functions `FetcherForNextLink` and `EncodeQueryParams` along with `FetcherForNextLinkOptions` to the `runtime` package to centralize creation of `Pager[T].Fetcher` from a next link URL.
+* Added types `KeyCredential` and `SASCredential` to the `azcore` package.
+  * Includes their respective constructor functions.
+* Added types `KeyCredentialPolicy` and `SASCredentialPolicy` to the `azcore/runtime` package.
+  * Includes their respective constructor functions and options types.
+
+### Breaking Changes
+> These changes affect only code written against beta versions of `v1.8.0`
+* The beta features for tracing and fakes have been omitted for this release.
+
+### Bugs Fixed
+
+* Fixed an issue that could cause some ARM RPs to not be automatically registered.
+* Block bearer token authentication for non TLS protected endpoints.
+
+### Other Changes
+
+* The following functions in the `runtime` package are now exposed from the `policy` package, and the `runtime` versions have been deprecated.
+  * `WithCaptureResponse`
+  * `WithHTTPHeader`
+  * `WithRetryOptions`
+* Updated dependencies.
+
+## 1.7.2 (2023-09-06)
+
+### Bugs Fixed
+
+* Fix default HTTP transport to work in WASM modules.
+
+## 1.7.1 (2023-08-14)
+
+## Bugs Fixed
+
+* Enable TLS renegotiation in the default transport policy.
+
+## 1.7.0 (2023-07-12)
+
+### Features Added
+* Added method `WithClientName()` to type `azcore.Client` to support shallow cloning of a client with a new name used for tracing.
+
+### Breaking Changes
+> These changes affect only code written against beta versions v1.7.0-beta.1 or v1.7.0-beta.2
+* The beta features for CAE, tracing, and fakes have been omitted for this release.
+
+## 1.7.0-beta.2 (2023-06-06)
+
+### Breaking Changes
+> These changes affect only code written against beta version v1.7.0-beta.1
+* Method `SpanFromContext()` on type `tracing.Tracer` had the `bool` return value removed.
+  * This includes the field `SpanFromContext` in supporting type `tracing.TracerOptions`.
+* Method `AddError()` has been removed from type `tracing.Span`.
+* Method `Span.End()` now requires an argument of type `*tracing.SpanEndOptions`.
+
+## 1.6.1 (2023-06-06)
+
+### Bugs Fixed
+* Fixed an issue in `azcore.NewClient()` and `arm.NewClient()` that could cause an incorrect module name to be used in telemetry.
+
+### Other Changes
+* This version contains all bug fixes from `v1.7.0-beta.1`
+
+## 1.7.0-beta.1 (2023-05-24)
+
+### Features Added
+* Restored CAE support for ARM clients.
+* Added supporting features to enable distributed tracing.
+  * Added func `runtime.StartSpan()` for use by SDKs to start spans.
+  * Added method `WithContext()` to `runtime.Request` to support shallow cloning with a new context.
+  * Added field `TracingNamespace` to `runtime.PipelineOptions`.
+  * Added field `Tracer` to `runtime.NewPollerOptions` and `runtime.NewPollerFromResumeTokenOptions` types.
+  * Added field `SpanFromContext` to `tracing.TracerOptions`.
+  * Added methods `Enabled()`, `SetAttributes()`, and `SpanFromContext()` to `tracing.Tracer`.
+  * Added supporting pipeline policies to include HTTP spans when creating clients.
+* Added package `fake` to support generated fakes packages in SDKs.
+  * The package contains public surface area exposed by fake servers and supporting APIs intended only for use by the fake server implementations.
+  * Added an internal fake poller implementation.
+
+### Bugs Fixed
+* Retry policy always clones the underlying `*http.Request` before invoking the next policy.
+* Added some non-standard error codes to the list of error codes for unregistered resource providers.
+
 ## 1.6.0 (2023-05-04)
 
 ### Features Added

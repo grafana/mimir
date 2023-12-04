@@ -184,22 +184,6 @@
           },
         },
         {
-          // Alert if the querier is not successfully scanning the bucket.
-          alert: $.alertName('QuerierHasNotScanTheBucket'),
-          'for': '5m',
-          expr: |||
-            (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds > 60 * 30)
-            and
-            cortex_querier_blocks_last_successful_scan_timestamp_seconds > 0
-          |||,
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: '%(product)s Querier %(alert_instance_variable)s in %(alert_aggregation_variables)s has not successfully scanned the bucket since {{ $value | humanizeDuration }}.' % $._config,
-          },
-        },
-        {
           // Alert if the store-gateway is not successfully synching the bucket.
           alert: $.alertName('StoreGatewayHasNotSyncTheBucket'),
           'for': '5m',

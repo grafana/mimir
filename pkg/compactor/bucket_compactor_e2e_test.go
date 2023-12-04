@@ -35,11 +35,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -250,7 +249,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
-		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactions))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
@@ -348,7 +347,7 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
-		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason)))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactions))
 		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))

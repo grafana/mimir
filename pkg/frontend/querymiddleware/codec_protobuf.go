@@ -211,6 +211,7 @@ func (f protobufFormatter) DecodeResponse(buf []byte) (*PrometheusResponse, erro
 		ErrorType: errorType,
 		Error:     resp.Error,
 		Data:      data,
+		Warnings:  resp.Warnings,
 	}, nil
 }
 

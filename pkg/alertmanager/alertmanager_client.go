@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -70,9 +71,9 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
-	factory := func(addr string) (client.PoolClient, error) {
-		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, addr, requestDuration)
-	}
+	factory := client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
+		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, inst, requestDuration)
+	})
 
 	poolCfg := client.PoolConfig{
 		CheckInterval:      10 * time.Second,
@@ -100,14 +101,14 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 
 // dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
 // and collects observations of request durations.
-func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
+func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
 	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpc.Dial(addr, opts...)
+	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to dial alertmanager %s", addr)
+		return nil, errors.Wrapf(err, "failed to dial alertmanager %s %s", inst.Id, inst.Addr)
 	}
 
 	return &alertmanagerClient{

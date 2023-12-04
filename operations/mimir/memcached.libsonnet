@@ -10,18 +10,14 @@ memcached {
   memcached+:: {
     cpu_limits:: null,
     deployment: {},
-    statefulSet:
-      statefulSet.new(self.name, 3, [
-        self.memcached_container,
-        self.memcached_exporter,
-      ], []) +
-      statefulSet.mixin.spec.withServiceName(self.name) +
-      (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-      $.util.antiAffinity,
+    statefulSet+:
+      (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
 
     service:
       $.util.serviceFor(self.statefulSet) +
       service.mixin.spec.withClusterIp('None'),
+
+    podDisruptionBudget: $.newMimirPdb(self.name),
   },
 
   // Optionally configure Memcached to use mTLS for authenticating clients
@@ -55,7 +51,8 @@ memcached {
       $.memcached {
         name: 'memcached-frontend',
         max_item_size: '%dm' % [$._config.cache_frontend_max_item_size_mb],
-        connection_limit: 16384,
+        overprovision_factor: 1.05,
+        connection_limit: std.toString($._config.cache_frontend_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_frontend_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -66,7 +63,8 @@ memcached {
       $.memcached {
         name: 'memcached-index-queries',
         max_item_size: '%dm' % [$._config.cache_index_queries_max_item_size_mb],
-        connection_limit: 16384,
+        overprovision_factor: 1.05,
+        connection_limit: std.toString($._config.cache_index_queries_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_index_queries_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -81,7 +79,7 @@ memcached {
         // Save memory by more tightly provisioning memcached chunks.
         memory_limit_mb: 6 * 1024,
         overprovision_factor: 1.05,
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_chunks_connection_limit),
         extended_options: ['track_sizes'],
       } + if $._config.memcached_chunks_mtls_enabled then $.memcached_mtls else {}
     else {},
@@ -92,11 +90,12 @@ memcached {
       $.memcached {
         name: 'memcached-metadata',
         max_item_size: '%dm' % [$._config.cache_metadata_max_item_size_mb],
-        connection_limit: 16384,
+        connection_limit: std.toString($._config.cache_metadata_connection_limit),
         extended_options: ['track_sizes'],
 
         // Metadata cache doesn't need much memory.
         memory_limit_mb: 512,
+        overprovision_factor: 1.05,
 
         statefulSet+:
           statefulSet.mixin.spec.withReplicas(1),

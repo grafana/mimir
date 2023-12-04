@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/azure"
-	"gopkg.in/yaml.v2"
 )
 
 func TestNewBucketClient(t *testing.T) {
@@ -38,13 +37,28 @@ func TestNewBucketClient(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, bkt)
 	})
+
+	t.Run("endpoint using connection string", func(t *testing.T) {
+		cfg := Config{
+			StorageAccountName:      "test",
+			StorageAccountKey:       flagext.SecretWithValue("test"),
+			StorageConnectionString: flagext.SecretWithValue("test-connection-string"),
+			ContainerName:           "test",
+			MaxRetries:              3,
+			Endpoint:                "test-endpoint",
+		}
+		bkt, err := newBucketClient(cfg, "test", log.NewNopLogger(), fakeFactory(t, cfg))
+		require.NoError(t, err)
+		require.NotNil(t, bkt)
+	})
 }
 
 // fakeFactory is a test utility to act as an azure.Bucket factory, but in reality verify the input config.
-func fakeFactory(t *testing.T, cfg Config) func(log.Logger, []byte, string) (*azure.Bucket, error) {
+func fakeFactory(t *testing.T, cfg Config) func(log.Logger, azure.Config, string) (*azure.Bucket, error) {
 	expCfg := azure.DefaultConfig
 	expCfg.StorageAccountName = cfg.StorageAccountName
 	expCfg.StorageAccountKey = cfg.StorageAccountKey.String()
+	expCfg.StorageConnectionString = cfg.StorageConnectionString.String()
 	expCfg.ContainerName = cfg.ContainerName
 	expCfg.MaxRetries = cfg.MaxRetries
 	expCfg.UserAssignedID = cfg.UserAssignedID
@@ -52,11 +66,9 @@ func fakeFactory(t *testing.T, cfg Config) func(log.Logger, []byte, string) (*az
 		expCfg.Endpoint = cfg.Endpoint
 	}
 
-	return func(_ log.Logger, c []byte, _ string) (*azure.Bucket, error) {
+	return func(_ log.Logger, azCfg azure.Config, _ string) (*azure.Bucket, error) {
 		t.Helper()
 
-		var azCfg azure.Config
-		require.NoError(t, yaml.Unmarshal(c, &azCfg))
 		assert.Equal(t, expCfg, azCfg)
 
 		return &azure.Bucket{}, nil

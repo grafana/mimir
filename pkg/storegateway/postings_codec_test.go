@@ -41,7 +41,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		assert.NoError(t, os.RemoveAll(chunksDir))
 	})
 
-	appendTestSeries(1e4)(t, h.Appender(context.Background()))
+	appendTestSeries(1e4)(t, func() storage.Appender { return h.Appender(context.Background()) })
 
 	idx, err := h.Index()
 	assert.NoError(t, err)
@@ -146,7 +146,7 @@ func TestDiffVarintMatchersCodec(t *testing.T) {
 		assert.NoError(t, os.RemoveAll(chunksDir))
 	})
 
-	appendTestSeries(1e4)(t, h.Appender(context.Background()))
+	appendTestSeries(1e4)(t, func() storage.Appender { return h.Appender(context.Background()) })
 
 	idx, err := h.Index()
 	assert.NoError(t, err)
@@ -253,7 +253,9 @@ func comparePostings(t *testing.T, p1, p2 index.Postings) {
 }
 
 func matchPostings(t testing.TB, ix tsdb.IndexReader, m *labels.Matcher) index.Postings {
-	vals, err := ix.LabelValues(m.Name)
+	ctx := context.Background()
+
+	vals, err := ix.LabelValues(ctx, m.Name)
 	assert.NoError(t, err)
 
 	matching := []string(nil)
@@ -263,7 +265,7 @@ func matchPostings(t testing.TB, ix tsdb.IndexReader, m *labels.Matcher) index.P
 		}
 	}
 
-	p, err := ix.Postings(m.Name, matching...)
+	p, err := ix.Postings(ctx, m.Name, matching...)
 	assert.NoError(t, err)
 	return p
 }
@@ -366,7 +368,7 @@ func BenchmarkEncodePostings(b *testing.B) {
 
 func allPostings(t testing.TB, ix tsdb.IndexReader) index.Postings {
 	k, v := index.AllPostingsKey()
-	p, err := ix.Postings(k, v)
+	p, err := ix.Postings(context.Background(), k, v)
 	assert.NoError(t, err)
 	return p
 }

@@ -27,10 +27,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
-
-	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestQuerierRemoteRead(t *testing.T) {
@@ -197,6 +196,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-distributor.ingestion-rate-limit": "1048576",
 				"-distributor.ingestion-burst-size": "1048576",
+				"-distributor.remote-timeout":       "10s",
 			})
 
 			// Start dependencies.
@@ -224,6 +224,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 			now := time.Now()
 
 			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+			c.SetTimeout(10 * time.Second)
 			require.NoError(t, err)
 
 			// Generate the series

@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/compactor/compactor-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-compactor
+  labels:
+    app: enterprise-metrics-compactor
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-compactor
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

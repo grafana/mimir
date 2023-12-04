@@ -375,5 +375,5 @@ func prepareLocalBucketClient(t *testing.T) objstore.InstrumentedBucket {
 	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
-	return objstore.BucketWithMetrics("", bucketClient, nil)
+	return objstore.WrapWithMetrics(bucketClient, nil, "")
 }

@@ -181,7 +181,13 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.panel('Consistency checks failed') +
         $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Consistency checks failed',
+          |||
+            Rate of queries that had to run with consistency checks and those checks failed. A failed consistency check means that some of at least one block which had to be queried wasn't present in any of the store-gateways.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Rejected queries') +
@@ -303,9 +309,18 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Blocks currently loaded') +
+        $.panel('Blocks currently owned') +
         $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
-        { fill: 0 }
+        { fill: 0 } +
+        $.panelDescription(
+          'Blocks currently owned',
+          |||
+            This panel shows the number of blocks owned by each store-gateway replica.
+            For each owned block, the store-gateway keeps its index-header on disk, and
+            eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
+            is enabled and the index-header was loaded).
+          |||
+        ),
       )
       .addPanel(
         $.panel('Blocks loaded / sec') +

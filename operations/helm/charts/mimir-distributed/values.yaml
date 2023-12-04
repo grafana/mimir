@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r245-f6d84db
+  tag: r265-da7527d
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -47,7 +47,7 @@ global:
   # -- Definitions to set up nginx resolver
   dnsService: kube-dns
   dnsNamespace: kube-system
-  clusterDomain: cluster.local
+  clusterDomain: cluster.local.
 
   # -- Common environment variables to add to all pods directly managed by this chart.
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, smoke-test, tokengen
@@ -75,6 +75,7 @@ serviceAccount:
   # -- Override for the generated service account name.
   name:
   annotations: {}
+  labels: {}
 
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false
@@ -191,6 +192,7 @@ mimir:
           memcached:
             addresses: {{ include "mimir.indexCacheAddress" . }}
             max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
+            timeout: 450ms
             max_idle_connections: 150
         {{- end }}
         {{- if index .Values "metadata-cache" "enabled" }}
@@ -364,7 +366,6 @@ mimir:
       file: /var/{{ include "mimir.name" . }}/runtime.yaml
 
     server:
-      grpc_server_max_concurrent_streams: 1000
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
@@ -411,7 +412,26 @@ mimir:
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 
-# runtimeConfig provides a reloadable runtime configuration file for some specific configuration.
+# -- runtimeConfig provides a reloadable runtime configuration. Changing the runtimeConfig doesn't require a restart of all components.
+# For more infromation see https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
+#
+# Example:
+#
+# runtimeConfig:
+#   ingester_limits: # limits that each ingester replica enforces
+#     max_ingestion_rate: 20000
+#     max_series: 1500000
+#     max_tenants: 1000
+#     max_inflight_push_requests: 30000
+#   distributor_limits: # limits that each distributor replica enforces
+#     max_ingestion_rate: 20000
+#     max_inflight_push_requests: 30000
+#     max_inflight_push_requests_bytes: 50000000
+#   overrides:
+#     tenant-1: # limits for tenant-1 that the whole cluster enforces
+#       ingestion_tenant_shard_size: 9
+#       max_global_series_per_user: 1500000
+#       max_fetched_series_per_query: 100000
 runtimeConfig: {}
 
 # RBAC configuration
@@ -478,7 +498,8 @@ alertmanager:
   podAnnotations: {}
 
   # -- Pod Disruption Budget for alertmanager, this will be applied across availability zones to prevent losing redundancy
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for alertmanager pods
   priorityClassName: null
@@ -534,6 +555,12 @@ alertmanager:
     #
     # A per-zone storageClass configuration in `alertmanager.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
 
   readinessProbe:
     httpGet:
@@ -677,6 +704,7 @@ alertmanager:
       storageClass: null
 
 distributor:
+  # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
   service:
@@ -698,7 +726,8 @@ distributor:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for distributor pods
   priorityClassName: null
@@ -735,6 +764,9 @@ distributor:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 60
 
@@ -824,6 +856,12 @@ ingester:
     # Subdirectory of Ingester data Persistent Volume to mount
     # Useful if the volume's root directory is not empty
     subPath: ''
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
 
 
     # Ingester data Persistent Volume Storage Class
@@ -966,11 +1004,15 @@ overrides_exporter:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   podLabels: {}
   podAnnotations: {}
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for overrides-exporter pods
   priorityClassName: null
@@ -1049,7 +1091,8 @@ ruler:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   nodeSelector: {}
   affinity: {}
@@ -1119,7 +1162,8 @@ querier:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for querier pods
   priorityClassName: null
@@ -1156,6 +1200,9 @@ querier:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 180
 
@@ -1168,6 +1215,7 @@ querier:
   extraEnvFrom: []
 
 query_frontend:
+  # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
   service:
@@ -1189,7 +1237,8 @@ query_frontend:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for query-frontend pods
   priorityClassName: null
@@ -1226,6 +1275,9 @@ query_frontend:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   terminationGracePeriodSeconds: 180
 
@@ -1260,7 +1312,8 @@ query_scheduler:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for query-scheduler pods
   priorityClassName: null
@@ -1298,8 +1351,8 @@ query_scheduler:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
+      maxUnavailable: 0
+      maxSurge: 1
 
   terminationGracePeriodSeconds: 180
 
@@ -1338,6 +1391,11 @@ store_gateway:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- Management policy for store-gateway pods
+  # New variable introduced with Helm chart version 5.1.0. For backwards compatibility it is set to `OrderedReady`
+  # On new deployments it is highly recommended to switch it to `Parallel` as this will be the new default from 6.0.0
+  podManagementPolicy: OrderedReady
 
   # -- Pod Disruption Budget for store-gateway, this will be applied across availability zones to prevent losing redundancy
   podDisruptionBudget:
@@ -1397,6 +1455,12 @@ store_gateway:
     #
     # A per-zone storageClass configuration in `store_gateway.zoneAwareReplication.zones[*].storageClass` takes precedence over this field.
     # storageClass: "-"
+
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
 
   readinessProbe:
     httpGet:
@@ -1528,7 +1592,10 @@ compactor:
   podAnnotations: {}
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
+
+  podManagementPolicy: OrderedReady
 
   # -- The name of the PriorityClass for compactor pods
   priorityClassName: null
@@ -1579,6 +1646,12 @@ compactor:
     #
     # storageClass: "-"
 
+    # -- Enable StatefulSetAutoDeletePVC feature
+    # https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#persistentvolumeclaim-retention
+    enableRetentionPolicy: false
+    whenDeleted: Retain
+    whenScaled: Retain
+
   readinessProbe:
     httpGet:
       path: /ready
@@ -1613,7 +1686,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.19-alpine
+    tag: 1.6.22-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -1636,7 +1709,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.11.2
+    tag: v0.13.0
     pullPolicy: IfNotPresent
 
   resources:
@@ -1649,6 +1722,17 @@ memcachedExporter:
     capabilities:
       drop: [ALL]
     allowPrivilegeEscalation: false
+
+  # -- Extra args to add to the exporter container.
+  # Example:
+  # extraArgs:
+  #   memcached.tls.enable: true
+  #   memcached.tls.cert-file: /certs/cert.crt
+  #   memcached.tls.key-file: /certs/cert.key
+  #   memcached.tls.ca-file: /certs/ca.crt
+  #   memcached.tls.insecure-skip-verify: false
+  #   memcached.tls.server-name: memcached
+  extraArgs: {}
 
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
@@ -1665,6 +1749,9 @@ chunks-cache:
 
   # -- Maximum item memory for chunks-cache (in MB).
   maxItemMemory: 1
+
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
 
   # -- Extra init containers for chunks-cache pods
   initContainers: []
@@ -1686,7 +1773,8 @@ chunks-cache:
   # -- Tolerations for chunks-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for chunks-cache pods
   priorityClassName: null
   # -- Labels for chunks-cache pods
@@ -1702,11 +1790,32 @@ chunks-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Add extended options for chunks-cache memcached container. The format is the same as for the memcached -o/--extend flag.
+  # Example:
+  # extraExtendedOptions: 'tls,no_hashexpand'
+  extraExtendedOptions: ''
+
   # -- Additional CLI args for chunks-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the chunks-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the chunks-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the chunks-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the chunks-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1733,6 +1842,9 @@ index-cache:
   # -- Maximum item index-cache for memcached (in MB).
   maxItemMemory: 5
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for index-cache pods
   initContainers: []
 
@@ -1753,7 +1865,8 @@ index-cache:
   # -- Tolerations for index-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for index-cache pods
   priorityClassName: null
   # -- Labels for index-cache pods
@@ -1769,11 +1882,32 @@ index-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Add extended options for index-cache memcached container. The format is the same as for the memcached -o/--extend flag.
+  # Example:
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
+
   # -- Additional CLI args for index-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the index-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the index-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the index-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the index-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1800,6 +1934,9 @@ metadata-cache:
   # -- Maximum item metadata-cache for memcached (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for metadata-cache pods
   initContainers: []
 
@@ -1820,7 +1957,8 @@ metadata-cache:
   # -- Tolerations for metadata-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for metadata-cache pods
   priorityClassName: null
   # -- Labels for metadata-cache pods
@@ -1836,11 +1974,32 @@ metadata-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Add extended options for metadata-cache memcached container. The format is the same as for the memcached -o/--extend flag.
+  # Example:
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
+
   # -- Additional CLI args for metadata-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the metadata-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the metadata-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the metadata-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the metadata-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -1867,6 +2026,9 @@ results-cache:
   # -- Maximum item results-cache for memcached (in MB).
   maxItemMemory: 5
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for results-cache pods
   initContainers: []
 
@@ -1887,7 +2049,8 @@ results-cache:
   # -- Tolerations for results-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for results-cache pods
   priorityClassName: null
   # -- Labels for results-cache pods
@@ -1903,11 +2066,32 @@ results-cache:
   statefulStrategy:
     type: RollingUpdate
 
+  # -- Add extended options for results-cache memcached container. The format is the same as for the memcached -o/--extend flag.
+  # Example:
+  # extraExtendedOptions: 'tls,modern,track_sizes'
+  extraExtendedOptions: ''
+
   # -- Additional CLI args for results-cache
   extraArgs: {}
 
   # -- Additional containers to be added to the results-cache pod.
   extraContainers: []
+
+  # -- Additional volumes to be added to the results-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumes:
+  # - name: extra-volume
+  #   secret:
+  #    secretName: extra-volume-secret
+  extraVolumes: []
+
+  # -- Additional volume mounts to be added to the results-cache pod (applies to both memcached and exporter containers).
+  # Example:
+  # extraVolumeMounts:
+  # - name: extra-volume
+  #   mountPath: /etc/extra-volume
+  #   readOnly: true
+  extraVolumeMounts: []
 
   # -- Resource requests and limits for the results-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
@@ -2002,13 +2186,16 @@ nginx:
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   deploymentStrategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
   image:
     # -- The Docker registry for nginx image
     registry: docker.io
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.24-alpine
+    tag: 1.25-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods
@@ -2018,7 +2205,8 @@ nginx:
   # -- Annotations for nginx pods
   podAnnotations: {}
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- Additional CLI args for nginx
   extraArgs: {}
   # -- Environment variables to add to the nginx pods
@@ -2214,6 +2402,7 @@ nginx:
         proxy_read_timeout 300;
         server {
           listen 8080;
+          listen [::]:8080;
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
@@ -2321,9 +2510,9 @@ gateway:
   # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   strategy:
     type: RollingUpdate
-    # rollingUpdate:
-    #   maxSurge: 25%
-    #   maxUnavailable: 25%
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   # -- The name of the PriorityClass
   priorityClassName: null
@@ -2332,7 +2521,8 @@ gateway:
   # -- Annotations Deployment Pods
   podAnnotations: {}
   # -- PodDisruptionBudget https://kubernetes.io/docs/tasks/run-application/configure-pdb/
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- Additional CLI args for the container
   extraArgs: {}
   # -- Environment variables to add to the Pods. https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/
@@ -2470,7 +2660,7 @@ gateway:
       # -- The nginx image repository
       repository: nginxinc/nginx-unprivileged
       # -- The nginx image tag
-      tag: 1.24-alpine
+      tag: 1.25-alpine
 
     # -- Basic auth configuration
     basicAuth:
@@ -2558,6 +2748,7 @@ gateway:
           proxy_read_timeout 300;
           server {
             listen {{ include "mimir.serverHttpListenPort" . }};
+            listen [::]:{{ include "mimir.serverHttpListenPort" . }};
 
             {{- if .Values.gateway.nginx.basicAuth.enabled }}
             auth_basic           "Mimir";
@@ -2909,7 +3100,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r245-e4f5c214
+    tag: r265-cbfd94c9
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -2958,6 +3149,9 @@ admin_api:
 
   strategy:
     type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 15%
 
   podLabels: {}
   podAnnotations: {}
@@ -2973,7 +3167,8 @@ admin_api:
     whenUnsatisfiable: ScheduleAnyway
 
   # Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
 
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
@@ -3053,7 +3248,8 @@ admin-cache:
   # -- Tolerations for admin-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for admin-cache pods
   priorityClassName: null
   # -- Labels for admin-cache pods
@@ -3090,6 +3286,7 @@ graphite:
   enabled: false
 
   querier:
+    # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
     replicas: 2
 
     schemasConfiguration:
@@ -3163,13 +3360,17 @@ graphite:
 
     strategy:
       type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 15%
 
     terminationGracePeriodSeconds: 180
 
     env: []
     extraEnvFrom: []
     tolerations: []
-    podDisruptionBudget: {}
+    podDisruptionBudget:
+      maxUnavailable: 1
     initContainers: []
     extraContainers: []
     extraVolumes: []
@@ -3238,13 +3439,17 @@ graphite:
 
     strategy:
       type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 0
+        maxSurge: 15%
 
     # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
     tolerations: []
-    podDisruptionBudget: {}
+    podDisruptionBudget:
+      maxUnavailable: 1
     initContainers: []
     extraContainers: []
     extraVolumes: []
@@ -3268,6 +3473,9 @@ gr-aggr-cache:
   # -- Maximum item memory for graphite-aggregation-cache (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for graphite-aggregation-cache pods
   initContainers: []
 
@@ -3280,7 +3488,8 @@ gr-aggr-cache:
   # -- Tolerations for graphite-aggregation-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for graphite-aggregation-cache pods
   priorityClassName: null
   # -- Labels for graphite-aggregation-cache pods
@@ -3329,6 +3538,9 @@ gr-metricname-cache:
   # -- Maximum item memory for graphite-metric-name-cache (in MB).
   maxItemMemory: 1
 
+  # -- Maximum number of connections allowed
+  connectionLimit: 16384
+
   # -- Extra init containers for graphite-metric-name-cache pods
   initContainers: []
 
@@ -3341,7 +3553,8 @@ gr-metricname-cache:
   # -- Tolerations for graphite-metric-name-cache pods
   tolerations: []
   # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+  podDisruptionBudget:
+    maxUnavailable: 1
   # -- The name of the PriorityClass for graphite-metric-name-cache pods
   priorityClassName: null
   # -- Labels for graphite-metric-name-cache pods
@@ -3379,7 +3592,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r245-f6d84db
+    tag: r265-da7527d
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3399,7 +3612,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r245-f6d84db
+    tag: r265-da7527d
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

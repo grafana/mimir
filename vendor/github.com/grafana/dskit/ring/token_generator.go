@@ -3,6 +3,7 @@ package ring
 import (
 	"math/rand"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -11,12 +12,27 @@ type TokenGenerator interface {
 	// the given allTakenTokens, representing the set of all tokens currently present in the ring.
 	// Generated tokens are sorted.
 	GenerateTokens(requestedTokensCount int, allTakenTokens []uint32) Tokens
+
+	// CanJoin checks whether the instance owning this TokenGenerator can join the set of the given instances satisfies,
+	// and fails if it is not possible.
+	CanJoin(instances map[string]InstanceDesc) error
+
+	// CanJoinEnabled returns true if the instance owning this TokenGenerator should perform the CanJoin check before
+	// it tries to join the ring.
+	CanJoinEnabled() bool
 }
 
-type RandomTokenGenerator struct{}
+type RandomTokenGenerator struct {
+	m sync.Mutex
+	r *rand.Rand
+}
 
 func NewRandomTokenGenerator() *RandomTokenGenerator {
-	return &RandomTokenGenerator{}
+	return &RandomTokenGenerator{r: rand.New(rand.NewSource(time.Now().UnixNano()))}
+}
+
+func NewRandomTokenGeneratorWithSeed(seed int64) *RandomTokenGenerator {
+	return &RandomTokenGenerator{r: rand.New(rand.NewSource(seed))}
 }
 
 // GenerateTokens generates at most requestedTokensCount unique random tokens, none of which clashes with
@@ -27,8 +43,6 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 		return []uint32{}
 	}
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	used := make(map[uint32]bool, len(allTakenTokens))
 	for _, v := range allTakenTokens {
 		used[v] = true
@@ -36,7 +50,10 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 
 	tokens := make([]uint32, 0, requestedTokensCount)
 	for i := 0; i < requestedTokensCount; {
-		candidate := r.Uint32()
+		t.m.Lock()
+		candidate := t.r.Uint32()
+		t.m.Unlock()
+
 		if used[candidate] {
 			continue
 		}
@@ -51,4 +68,12 @@ func (t *RandomTokenGenerator) GenerateTokens(requestedTokensCount int, allTaken
 	})
 
 	return tokens
+}
+
+func (t *RandomTokenGenerator) CanJoin(_ map[string]InstanceDesc) error {
+	return nil
+}
+
+func (t *RandomTokenGenerator) CanJoinEnabled() bool {
+	return false
 }

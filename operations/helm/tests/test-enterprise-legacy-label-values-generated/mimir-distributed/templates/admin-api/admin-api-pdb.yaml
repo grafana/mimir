@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/admin-api/admin-api-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-admin-api
+  labels:
+    app: enterprise-metrics-admin-api
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-admin-api
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1

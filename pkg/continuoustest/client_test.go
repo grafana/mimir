@@ -3,6 +3,7 @@
 package continuoustest
 
 import (
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -19,9 +20,97 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 )
 
-func TestClient_WriteSeries(t *testing.T) {
+func TestOTLPHttpClient_WriteSeries(t *testing.T) {
+	var (
+		nextStatusCode   = http.StatusOK
+		receivedRequests []pmetricotlp.ExportRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		// Handle compression
+		reader, err := gzip.NewReader(request.Body)
+		require.NoError(t, err)
+
+		// Then Unmarshal
+		body, err := io.ReadAll(reader)
+		require.NoError(t, err)
+		require.NoError(t, request.Body.Close())
+
+		req := pmetricotlp.NewExportRequest()
+		require.NoError(t, req.UnmarshalProto(body))
+
+		receivedRequests = append(receivedRequests, req)
+		writer.WriteHeader(nextStatusCode)
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := ClientConfig{}
+	flagext.DefaultValues(&cfg)
+	cfg.WriteBatchSize = 10
+	cfg.WriteProtocol = "otlp-http"
+
+	require.NoError(t, cfg.WriteBaseEndpoint.Set(server.URL))
+	require.NoError(t, cfg.ReadBaseEndpoint.Set(server.URL))
+
+	c, err := NewClient(cfg, log.NewNopLogger())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	now := time.Now()
+
+	t.Run("write series in a single batch", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusOK
+
+		series := generateSineWaveSeries("test", now, 10)
+		statusCode, err := c.WriteSeries(ctx, series)
+		require.NoError(t, err)
+		assert.Equal(t, 200, statusCode)
+
+		require.Len(t, receivedRequests, 1)
+		assert.Equal(t, len(series), receivedRequests[0].Metrics().MetricCount())
+	})
+
+	t.Run("write series in multiple batches", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusOK
+
+		series := generateSineWaveSeries("test", now, 22)
+		statusCode, err := c.WriteSeries(ctx, series)
+		require.NoError(t, err)
+		assert.Equal(t, 200, statusCode)
+
+		require.Len(t, receivedRequests, 3)
+		assert.Equal(t, 10, receivedRequests[0].Metrics().MetricCount())
+		assert.Equal(t, 10, receivedRequests[1].Metrics().MetricCount())
+		assert.Equal(t, 2, receivedRequests[2].Metrics().MetricCount())
+	})
+
+	t.Run("request failed with 4xx error", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusBadRequest
+
+		series := generateSineWaveSeries("test", now, 1)
+		statusCode, err := c.WriteSeries(ctx, series)
+		require.Error(t, err)
+		assert.Equal(t, 400, statusCode)
+	})
+
+	t.Run("request failed with 5xx error", func(t *testing.T) {
+		receivedRequests = nil
+		nextStatusCode = http.StatusInternalServerError
+
+		series := generateSineWaveSeries("test", now, 1)
+		statusCode, err := c.WriteSeries(ctx, series)
+		require.Error(t, err)
+		assert.Equal(t, 500, statusCode)
+	})
+}
+
+func TestPromWriterClient_WriteSeries(t *testing.T) {
 	var (
 		nextStatusCode   = http.StatusOK
 		receivedRequests []prompb.WriteRequest

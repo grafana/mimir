@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/netutil"
@@ -127,9 +128,11 @@ func getZones(tokens map[string][]uint32) []string {
 
 // searchToken returns the offset of the tokens entry holding the range for the provided key.
 func searchToken(tokens []uint32, key uint32) int {
-	i := sort.Search(len(tokens), func(x int) bool {
-		return tokens[x] > key
-	})
+	i, found := slices.BinarySearch(tokens, key)
+	if found {
+		// we want the first token > key, not >= key
+		i = i + 1
+	}
 	if i >= len(tokens) {
 		i = 0
 	}
@@ -138,10 +141,10 @@ func searchToken(tokens []uint32, key uint32) int {
 
 // tokenDistance returns the distance between the given tokens from and to.
 // The distance between a token and itself is the whole ring, i.e., math.MaxUint32 + 1.
-func tokenDistance(from, to uint32) int {
+func tokenDistance(from, to uint32) int64 {
 	if from < to {
-		return int(to - from)
+		return int64(to - from)
 	}
 	// the trailing +1 is needed to ensure that token 0 is counted
-	return math.MaxUint32 - int(from) + int(to) + 1
+	return math.MaxUint32 - int64(from) + int64(to) + 1
 }

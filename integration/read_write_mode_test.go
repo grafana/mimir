@@ -16,12 +16,12 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestReadWriteModeQueryingIngester(t *testing.T) {
@@ -56,11 +56,11 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", util.PrometheusMinTime, util.PrometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(util.PrometheusMinTime, util.PrometheusMaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -109,11 +109,11 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := client.LabelValues("foo", util.PrometheusMinTime, util.PrometheusMaxTime, nil)
+	labelValues, err := client.LabelValues("foo", v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(util.PrometheusMinTime, util.PrometheusMaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -308,7 +308,6 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		// Frequently cleanup old blocks.
 		// While this doesn't test the compaction functionality of the compactor, it does verify that the compactor
 		// is correctly configured and able to interact with storage, which is the intention of this test.
-		"-compactor.cleanup-interval":        "2s",
 		"-compactor.blocks-retention-period": "5s",
 	})
 
@@ -341,6 +340,7 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets := []map[string]string{
 		CommonStorageBackendFlags(),
+		BlocksStorageFlags(),
 		{
 			"-memberlist.join": "mimir-backend-1",
 		},

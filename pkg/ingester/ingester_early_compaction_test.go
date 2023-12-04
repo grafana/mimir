@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -134,7 +134,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())
-	require.Equal(t, 0, ingester.getTSDB(userID).activeSeries.Active())
+	totalActiveSeries, _, _ := ingester.getTSDB(userID).activeSeries.Active()
+	require.Equal(t, 0, totalActiveSeries)
 
 	// Push 20 more series.
 	for seriesID := 10; seriesID < 30; seriesID++ {
@@ -148,7 +149,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	require.Equal(t, uint64(30), ingester.getTSDB(userID).Head().NumSeries())
-	require.Equal(t, 20, ingester.getTSDB(userID).activeSeries.Active())
+	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	require.Equal(t, 20, totalActiveSeries)
 
 	// Advance time until the last series are inactive too. Now we expect the early compaction to trigger.
 	now = now.Add(30 * time.Minute)
@@ -157,7 +159,8 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	require.Equal(t, uint64(0), ingester.getTSDB(userID).Head().NumSeries())
-	require.Equal(t, 0, ingester.getTSDB(userID).activeSeries.Active())
+	totalActiveSeries, _, _ = ingester.getTSDB(userID).activeSeries.Active()
+	require.Equal(t, 0, totalActiveSeries)
 }
 
 func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNowMinusActiveSeriesMetricsIdleTimeout(t *testing.T) {
@@ -171,14 +174,17 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 		sampleTimes  []time.Time
 	)
 
-	cfg := defaultIngesterTestConfig(t)
-	cfg.ActiveSeriesMetrics.Enabled = true
-	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
-	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
+	ingesterCfg := defaultIngesterTestConfig(t)
+	ingesterCfg.ActiveSeriesMetrics.Enabled = true
+	ingesterCfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour // Do not trigger it during the test, so that we trigger it manually.
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
+	ingesterCfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
+
+	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -628,8 +634,14 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			res, err := client.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 			require.NoError(t, err)
 
-			slices.SortFunc(res, func(a, b *model.SampleStream) bool {
-				return a.Metric.Before(b.Metric)
+			slices.SortFunc(res, func(a, b *model.SampleStream) int {
+				if a.Metric.Before(b.Metric) {
+					return -1
+				}
+				if a.Metric.Equal(b.Metric) {
+					return 0
+				}
+				return 1
 			})
 
 			require.Len(t, res, numSeries)
@@ -669,8 +681,8 @@ func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
 	}
 
 	// Ensure the block IDs are sorted.
-	slices.SortFunc(ids, func(a, b ulid.ULID) bool {
-		return a.Compare(b) < 0
+	slices.SortFunc(ids, func(a, b ulid.ULID) int {
+		return a.Compare(b)
 	})
 
 	return ids
@@ -699,7 +711,9 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 		require.NoError(t, chunksReader.Close())
 	}()
 
-	postings, err := indexReader.Postings(labels.MetricName, metricName)
+	ctx := context.Background()
+
+	postings, err := indexReader.Postings(ctx, labels.MetricName, metricName)
 	require.NoError(t, err)
 
 	for postings.Next() {
@@ -715,8 +729,10 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 		// Read samples from chunks.
 		for idx, chk := range chks {
-			chks[idx].Chunk, err = chunksReader.Chunk(chk)
+			chunk, iter, err := chunksReader.ChunkOrIterable(chk)
 			require.NoError(t, err)
+			require.Nil(t, iter)
+			chks[idx].Chunk = chunk
 
 			it := chks[idx].Chunk.Iterator(nil)
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {

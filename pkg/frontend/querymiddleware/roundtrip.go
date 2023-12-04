@@ -28,16 +28,21 @@ import (
 )
 
 const (
-	day                              = 24 * time.Hour
-	queryRangePathSuffix             = "/api/v1/query_range"
-	instantQueryPathSuffix           = "/api/v1/query"
-	cardinalityLabelNamesPathSuffix  = "/api/v1/cardinality/label_names"
-	cardinalityLabelValuesPathSuffix = "/api/v1/cardinality/label_values"
-	labelNamesPathSuffix             = "/api/v1/labels"
+	day                               = 24 * time.Hour
+	queryRangePathSuffix              = "/api/v1/query_range"
+	instantQueryPathSuffix            = "/api/v1/query"
+	cardinalityLabelNamesPathSuffix   = "/api/v1/cardinality/label_names"
+	cardinalityLabelValuesPathSuffix  = "/api/v1/cardinality/label_values"
+	cardinalityActiveSeriesPathSuffix = "/api/v1/cardinality/active_series"
+	labelNamesPathSuffix              = "/api/v1/labels"
 
 	// DefaultDeprecatedCacheUnalignedRequests is the default value for the deprecated querier frontend config DeprecatedCacheUnalignedRequests
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.12
 	DefaultDeprecatedCacheUnalignedRequests = false
+
+	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
+	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
+	DefaultDeprecatedAlignQueriesWithStep = false
 )
 
 var (
@@ -47,13 +52,14 @@ var (
 // Config for query_range middleware chain.
 type Config struct {
 	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	AlignQueriesWithStep             bool          `yaml:"align_queries_with_step"`
+	DeprecatedAlignQueriesWithStep   bool          `yaml:"align_queries_with_step" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.12, remove in Mimir 2.14 (https://github.com/grafana/mimir/issues/6712)
 	ResultsCacheConfig               `yaml:"results_cache"`
-	CacheResults                     bool   `yaml:"cache_results"`
-	MaxRetries                       int    `yaml:"max_retries" category:"advanced"`
-	ShardedQueries                   bool   `yaml:"parallelize_shardable_queries"`
-	DeprecatedCacheUnalignedRequests bool   `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
-	TargetSeriesPerShard             uint64 `yaml:"query_sharding_target_series_per_shard"`
+	CacheResults                     bool          `yaml:"cache_results"`
+	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"experimental"`
+	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
+	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
+	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -65,8 +71,8 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
+	f.DurationVar(&cfg.NotRunningTimeout, "query-frontend.not-running-timeout", 0, "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
-	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-queries-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
@@ -78,6 +84,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// and consistency with the process for migrating limits to per-tenant config
 	// TODO: Remove in Mimir 2.12.0
 	cfg.DeprecatedCacheUnalignedRequests = DefaultDeprecatedCacheUnalignedRequests
+
+	// The query-frontend.align-queries-with-step flag has been moved to the limits.go file
+	// cfg.DeprecatedAlignQueriesWithStep is set to the default here for clarity
+	// and consistency with the process for migrating limits to per-tenant config
+	// TODO: Remove in Mimir 2.14
+	cfg.DeprecatedAlignQueriesWithStep = DefaultDeprecatedAlignQueriesWithStep
 }
 
 // Validate validates the config.
@@ -199,14 +211,16 @@ func newQueryTripperware(
 
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
+	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
+	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
-		newQueryStatsMiddleware(registerer),
+		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
-	}
-	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics), newStepAlignMiddleware())
+		queryBlockerMiddleware,
+		newInstrumentMiddleware("step_align", metrics),
+		newStepAlignMiddleware(limits, tenant.NewMultiResolver(), log, registerer),
 	}
 
 	var c cache.Cache
@@ -246,12 +260,13 @@ func newQueryTripperware(
 		))
 	}
 
-	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
-
-	queryInstantMiddleware = append(
-		queryInstantMiddleware,
+	queryInstantMiddleware := []Middleware{
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		queryStatsMiddleware,
+		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
-	)
+		queryBlockerMiddleware,
+	}
 
 	if cfg.ShardedQueries {
 		// Inject the cardinality estimation middleware after time-based splitting and
@@ -279,7 +294,8 @@ func newQueryTripperware(
 			registerer,
 		)
 
-		queryRangeMiddleware = append(queryRangeMiddleware,
+		queryRangeMiddleware = append(
+			queryRangeMiddleware,
 			newInstrumentMiddleware("querysharding", metrics),
 			queryshardingMiddleware,
 		)
@@ -302,13 +318,17 @@ func newQueryTripperware(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 		)
 
-		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
+		// Wrap next for cardinality, labels queries and all other queries.
+		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
+		// range and instant queries have more accurate logic for query details.
+		next = newQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
 		labels := next
 
+		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, next, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, limits, next, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -326,6 +346,25 @@ func newQueryTripperware(
 			}
 		})
 	}, nil
+}
+
+// newQueryDetailsStartEndRoundTripper parses "start" and "end" parameters from the query and sets same fields in the QueryDetails in the context.
+func newQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripper {
+	return RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		params, _ := util.ParseRequestFormWithoutConsumingBody(req)
+		if details := QueryDetailsFromContext(req.Context()); details != nil {
+			if startMs, _ := util.ParseTime(params.Get("start")); startMs != 0 {
+				details.Start = time.UnixMilli(startMs)
+				details.MinT = details.Start
+			}
+
+			if endMs, _ := util.ParseTime(params.Get("end")); endMs != 0 {
+				details.End = time.UnixMilli(endMs)
+				details.MaxT = details.End
+			}
+		}
+		return next.RoundTrip(req)
+	})
 }
 
 func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
@@ -371,7 +410,9 @@ func isInstantQuery(path string) bool {
 }
 
 func isCardinalityQuery(path string) bool {
-	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) || strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
+	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) ||
+		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix) ||
+		strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
 }
 
 func isLabelsQuery(path string) bool {

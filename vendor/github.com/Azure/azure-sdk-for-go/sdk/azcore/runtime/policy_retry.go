@@ -125,7 +125,8 @@ func (p *retryPolicy) Do(req *policy.Request) (resp *http.Response, err error) {
 		}
 
 		if options.TryTimeout == 0 {
-			resp, err = req.Next()
+			clone := req.Clone(req.Raw().Context())
+			resp, err = clone.Next()
 		} else {
 			// Set the per-try time for this particular retry operation and then Do the operation.
 			tryCtx, tryCancel := context.WithTimeout(req.Raw().Context(), options.TryTimeout)
@@ -208,8 +209,9 @@ func (p *retryPolicy) Do(req *policy.Request) (resp *http.Response, err error) {
 
 // WithRetryOptions adds the specified RetryOptions to the parent context.
 // Use this to specify custom RetryOptions at the API-call level.
+// Deprecated: use [policy.WithRetryOptions] instead.
 func WithRetryOptions(parent context.Context, options policy.RetryOptions) context.Context {
-	return context.WithValue(parent, shared.CtxWithRetryOptionsKey{}, options)
+	return policy.WithRetryOptions(parent, options)
 }
 
 // ********** The following type/methods implement the retryableRequestBody (a ReadSeekCloser)

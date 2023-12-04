@@ -13,7 +13,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/alecthomas/chroma/quick"
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/mitchellh/colorstring"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"

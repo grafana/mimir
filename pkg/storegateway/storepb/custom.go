@@ -35,6 +35,43 @@ func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	}
 }
 
+func NewStreamingSeriesResponse(series *StreamingSeriesBatch) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingSeries{
+			StreamingSeries: series,
+		},
+	}
+}
+
+func NewStreamingChunksResponse(series *StreamingChunksBatch) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingChunks{
+			StreamingChunks: series,
+		},
+	}
+}
+
+func NewStreamingChunksEstimate(estimatedChunks uint64) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_StreamingChunksEstimate{
+			StreamingChunksEstimate: &StreamingChunksEstimate{
+				EstimatedChunkCount: estimatedChunks,
+			},
+		},
+	}
+}
+
+type emptySeriesSet struct{}
+
+func (emptySeriesSet) Next() bool                       { return false }
+func (emptySeriesSet) At() (labels.Labels, []AggrChunk) { return labels.EmptyLabels(), nil }
+func (emptySeriesSet) Err() error                       { return nil }
+
+// EmptySeriesSet returns a new series set that contains no series.
+func EmptySeriesSet() SeriesSet {
+	return emptySeriesSet{}
+}
+
 // SeriesSet is a set of series and their corresponding chunks.
 // The set is sorted by the label sets. Chunks may be overlapping or expected of order.
 type SeriesSet interface {

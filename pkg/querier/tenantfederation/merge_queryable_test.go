@@ -12,20 +12,21 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 	"golang.org/x/exp/slices"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -50,69 +51,41 @@ type mockTenantQueryableWithFilter struct {
 	// extraLabels are labels added to all series for all tenants.
 	extraLabels []string
 	// warningsByTenant are warnings that will be returned for queries of that tenant.
-	warningsByTenant map[string]storage.Warnings
+	warningsByTenant map[string]annotations.Annotations
 	// queryErrByTenant is an error that will be returne for queries of that tenant.
 	queryErrByTenant map[string]error
 }
 
 // Querier implements the storage.Queryable interface.
-func (m *mockTenantQueryableWithFilter) Querier(ctx context.Context, _, _ int64) (storage.Querier, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
+func (m *mockTenantQueryableWithFilter) Querier(_, _ int64) (storage.Querier, error) {
 	q := mockTenantQuerier{
-		logger:      m.logger,
-		tenant:      tenantIDs[0],
-		extraLabels: m.extraLabels,
-		ctx:         ctx,
+		logger:           m.logger,
+		extraLabels:      m.extraLabels,
+		warningsByTenant: m.warningsByTenant,
+		queryErrByTenant: m.queryErrByTenant,
 	}
-
-	// set warning if exists
-	if m.warningsByTenant != nil {
-		if w, ok := m.warningsByTenant[q.tenant]; ok {
-			q.warnings = append([]error(nil), w...)
-		}
-	}
-
-	// set queryErr if exists
-	if m.queryErrByTenant != nil {
-		if err, ok := m.queryErrByTenant[q.tenant]; ok {
-			q.queryErr = err
-		}
-	}
-
 	return q, nil
 }
 
-// UseQueryable implements the querier.QueryableWithFilter interface.
-// It ensures the mockTenantQueryableWithFilter storage.Queryable is always used.
-func (m *mockTenantQueryableWithFilter) UseQueryable(_ time.Time, _, _ int64) bool {
-	return true
-}
-
 type mockTenantQuerier struct {
-	tenant      string
 	extraLabels []string
 
-	warnings storage.Warnings
-	queryErr error
-	ctx      context.Context
-	logger   log.Logger
+	warningsByTenant map[string]annotations.Annotations
+	queryErrByTenant map[string]error
+	logger           log.Logger
 }
 
-func (m mockTenantQuerier) matrix() model.Matrix {
+func (m mockTenantQuerier) matrix(tenantID string) model.Matrix {
 	matrix := model.Matrix{
 		&model.SampleStream{
 			Metric: model.Metric{
 				"instance":                            "host1",
-				"tenant-" + model.LabelName(m.tenant): "static",
+				"tenant-" + model.LabelName(tenantID): "static",
 			},
 		},
 		&model.SampleStream{
 			Metric: model.Metric{
-				"instance": "host2." + model.LabelValue(m.tenant),
+				"instance": "host2." + model.LabelValue(tenantID),
 			},
 		},
 	}
@@ -144,7 +117,7 @@ func metricMatches(m model.Metric, selector labels.Selector) bool {
 
 type mockSeriesSet struct {
 	upstream storage.SeriesSet
-	warnings storage.Warnings
+	warnings annotations.Annotations
 	queryErr error
 }
 
@@ -165,17 +138,22 @@ func (m *mockSeriesSet) Err() error {
 
 // Warnings implements the storage.SeriesSet interface. It returns a collection of warnings for the whole set.
 // Warnings could be returned even if iteration has not failed with error.
-func (m *mockSeriesSet) Warnings() storage.Warnings {
+func (m *mockSeriesSet) Warnings() annotations.Annotations {
 	return m.warnings
 }
 
 // Select implements the storage.Querier interface.
-func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mockTenantQuerier.select")
-	defer log.Span.Finish()
+func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	logger, _ := spanlogger.NewWithLogger(ctx, m.logger, "mockTenantQuerier.select")
+	defer logger.Span.Finish()
 	var matrix model.Matrix
 
-	for _, s := range m.matrix() {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	for _, s := range m.matrix(tenantID) {
 		if metricMatches(s.Metric, matchers) {
 			matrix = append(matrix, s)
 		}
@@ -183,24 +161,31 @@ func (m mockTenantQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*l
 
 	return &mockSeriesSet{
 		upstream: series.MatrixToSeriesSet(matrix),
-		warnings: m.warnings,
-		queryErr: m.queryErr,
+		warnings: m.warningsByTenant[tenantID],
+		queryErr: m.queryErrByTenant[tenantID],
 	}
 }
 
 // LabelValues implements the storage.LabelQuerier interface.
 // The mockTenantQuerier returns all a sorted slice of all label values and does not support reducing the result set with matchers.
-func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(matchers) > 0 {
-		m.warnings = append(m.warnings, errors.New(mockMatchersNotImplemented))
+func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if m.queryErr != nil {
-		return nil, nil, m.queryErr
+	warnings := m.warningsByTenant[tenantID]
+	if len(matchers) > 0 {
+		warnings.Add(errors.New(mockMatchersNotImplemented))
+	}
+
+	queryErr := m.queryErrByTenant[tenantID]
+	if queryErr != nil {
+		return nil, nil, queryErr
 	}
 
 	labelValues := make(map[string]struct{})
-	for _, s := range m.matrix() {
+	for _, s := range m.matrix(tenantID) {
 		for k, v := range s.Metric {
 			if k == model.LabelName(name) {
 				labelValues[string(v)] = struct{}{}
@@ -212,31 +197,37 @@ func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 		results = append(results, k)
 	}
 	slices.Sort(results)
-	return results, m.warnings, nil
+	return results, warnings, nil
 }
 
 // LabelNames implements the storage.LabelQuerier interface.
 // It returns a sorted slice of all label names in the querier.
 // If only one matcher is provided with label Name=seriesWithLabelNames then the resulting set will have the values of that matchers pipe-split appended.
 // I.e. querying for {seriesWithLabelNames="foo|bar|baz"} will have as result [bar, baz, foo, <rest of label names from querier matrix> ]
-func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	var results []string
+func (m mockTenantQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
+	var results []string
+	warnings := m.warningsByTenant[tenantID]
 	if len(matchers) == 1 && matchers[0].Name == seriesWithLabelNames {
 		if matchers[0].Value == "" {
-			return nil, m.warnings, nil
+			return nil, warnings, nil
 		}
 		results = strings.Split(matchers[0].Value, "|")
 	} else if len(matchers) > 1 {
-		m.warnings = append(m.warnings, errors.New(mockMatchersNotImplemented))
+		warnings.Add(errors.New(mockMatchersNotImplemented))
 	}
 
-	if m.queryErr != nil {
-		return nil, nil, m.queryErr
+	queryErr := m.queryErrByTenant[tenantID]
+	if queryErr != nil {
+		return nil, nil, queryErr
 	}
 
 	labelValues := make(map[string]struct{})
-	for _, s := range m.matrix() {
+	for _, s := range m.matrix(tenantID) {
 		for k := range s.Metric {
 			labelValues[string(k)] = struct{}{}
 		}
@@ -246,7 +237,7 @@ func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, st
 		results = append(results, k)
 	}
 	slices.Sort(results)
-	return results, m.warnings, nil
+	return results, warnings, nil
 }
 
 // Close implements the storage.LabelQuerier interface.
@@ -265,9 +256,10 @@ type mergeQueryableScenario struct {
 	doNotByPassSingleQuerier bool
 }
 
-func (s *mergeQueryableScenario) init() (storage.Querier, error) {
+func (s *mergeQueryableScenario) init(t *testing.T) (context.Context, prometheus.Gatherer, storage.Querier) {
 	// initialize with default tenant label
-	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, log.NewNopLogger())
+	reg := prometheus.NewPedanticRegistry()
+	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, defaultConcurrency, reg, log.NewNopLogger())
 
 	// inject tenants into context
 	ctx := context.Background()
@@ -276,7 +268,9 @@ func (s *mergeQueryableScenario) init() (storage.Querier, error) {
 	}
 
 	// retrieve querier
-	return q.Querier(ctx, mint, maxt)
+	querier, err := q.Querier(mint, maxt)
+	require.NoError(t, err)
+	return ctx, reg, querier
 }
 
 // selectTestCase is the inputs and expected outputs of a call to Select.
@@ -289,10 +283,12 @@ type selectTestCase struct {
 	expectedSeriesCount int
 	// expectedLabels is the expected label sets returned by a Select filtered by the Matchers in selector.
 	expectedLabels []labels.Labels
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
+	// expectedMetrics is the expected metrics emitted by the merge queryable
+	expectedMetrics string
 }
 
 // selectScenario tests a call to Select over a range of test cases in a specific scenario.
@@ -309,10 +305,12 @@ type labelNamesTestCase struct {
 	matchers []*labels.Matcher
 	// expectedLabelNames are the expected label names returned from the queryable.
 	expectedLabelNames []string
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
+	// expectedMetrics is the expected metrics emitted by the merge queryable
+	expectedMetrics string
 }
 
 // labelNamesScenario tests a call to LabelNames in a specific scenario.
@@ -331,10 +329,12 @@ type labelValuesTestCase struct {
 	matchers []*labels.Matcher
 	// expectedLabelValues are the expected label values returned from the queryable.
 	expectedLabelValues []string
-	// expectedWarnings is a slice of storage.Warnings messages expected when querying.
+	// expectedWarnings is a slice of annotations.Annotations messages expected when querying.
 	expectedWarnings []string
 	// expectedQueryErr is the error expected when querying.
 	expectedQueryErr error
+	// expectedMetrics is the expected metrics emitted by the merge queryable
+	expectedMetrics string
 }
 
 // labelValuesScenario tests a call to LabelValues over a range of test cases in a specific scenario.
@@ -345,13 +345,20 @@ type labelValuesScenario struct {
 
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
-		queryable := &mockTenantQueryableWithFilter{logger: log.NewNopLogger()}
-		q := NewQueryable(queryable, false /* bypassWithSingleQuerier */, log.NewNopLogger())
-		// Create a context with no tenant specified.
-		ctx := context.Background()
+		reg := prometheus.NewPedanticRegistry()
+		queryable := &mockTenantQueryableWithFilter{
+			logger: log.NewNopLogger(),
+		}
+		qable := NewQueryable(queryable, false /* bypassWithSingleID */, defaultConcurrency, reg, log.NewNopLogger())
+		q, err := qable.Querier(mint, maxt)
+		require.NoError(t, err)
 
-		_, err := q.Querier(ctx, mint, maxt)
-		require.EqualError(t, err, user.ErrNoOrgID.Error())
+		// No tenants specified
+		ctx := context.Background()
+		t.Run("select", func(t *testing.T) {
+			set := q.Select(ctx, true, nil)
+			require.EqualError(t, set.Err(), user.ErrNoOrgID.Error())
+		})
 	})
 }
 
@@ -384,9 +391,9 @@ var (
 		name:    "three tenants, two with warnings",
 		tenants: []string{"team-a", "team-b", "team-c"},
 		queryable: mockTenantQueryableWithFilter{
-			warningsByTenant: map[string]storage.Warnings{
-				"team-b": storage.Warnings([]error{errors.New("don't like them")}),
-				"team-c": storage.Warnings([]error{errors.New("out of office")}),
+			warningsByTenant: map[string]annotations.Annotations{
+				"team-b": annotations.Annotations(map[string]error{"don't like them": errors.New("don't like them")}),
+				"team-c": annotations.Annotations(map[string]error{"out of office": errors.New("out of office")}),
 			},
 		},
 	}
@@ -400,12 +407,37 @@ var (
 			},
 		},
 	}
+
+	expectSingleTenantsMetrics = `
+# HELP cortex_querier_federation_tenants_queried Number of tenants queried for a single standard query.
+# TYPE cortex_querier_federation_tenants_queried histogram
+cortex_querier_federation_tenants_queried_bucket{le="1"} 1
+cortex_querier_federation_tenants_queried_bucket{le="2"} 1
+cortex_querier_federation_tenants_queried_bucket{le="4"} 1
+cortex_querier_federation_tenants_queried_bucket{le="8"} 1
+cortex_querier_federation_tenants_queried_bucket{le="16"} 1
+cortex_querier_federation_tenants_queried_bucket{le="32"} 1
+cortex_querier_federation_tenants_queried_bucket{le="+Inf"} 1
+cortex_querier_federation_tenants_queried_sum 1
+cortex_querier_federation_tenants_queried_count 1
+`
+
+	expectThreeTenantsMetrics = `
+# HELP cortex_querier_federation_tenants_queried Number of tenants queried for a single standard query.
+# TYPE cortex_querier_federation_tenants_queried histogram
+cortex_querier_federation_tenants_queried_bucket{le="1"} 0
+cortex_querier_federation_tenants_queried_bucket{le="2"} 0
+cortex_querier_federation_tenants_queried_bucket{le="4"} 1
+cortex_querier_federation_tenants_queried_bucket{le="8"} 1
+cortex_querier_federation_tenants_queried_bucket{le="16"} 1
+cortex_querier_federation_tenants_queried_bucket{le="32"} 1
+cortex_querier_federation_tenants_queried_bucket{le="+Inf"} 1
+cortex_querier_federation_tenants_queried_sum 3
+cortex_querier_federation_tenants_queried_count 1
+`
 )
 
 func TestMergeQueryable_Select(t *testing.T) {
-	// Set a multi tenant resolver.
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
 	for _, scenario := range []selectScenario{
 		{
 			mergeQueryableScenario: threeTenantsScenario,
@@ -413,21 +445,25 @@ func TestMergeQueryable_Select(t *testing.T) {
 				{
 					name:                "should return all series when no matchers are provided",
 					expectedSeriesCount: 6,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only series for team-a and team-c tenants when there is a not-equals matcher for the team-b tenant",
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchNotEqual}},
 					expectedSeriesCount: 4,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only series for team-b when there is an equals matcher for the team-b tenant",
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchEqual}},
 					expectedSeriesCount: 2,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return one series for each tenant when there is an equals matcher for the host1 instance",
 					matchers:            []*labels.Matcher{{Name: "instance", Value: "host1", Type: labels.MatchEqual}},
 					expectedSeriesCount: 3,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 			},
 		},
@@ -445,37 +481,44 @@ func TestMergeQueryable_Select(t *testing.T) {
 						labels.FromStrings("__tenant_id__", "team-c", "instance", "host1", "original___tenant_id__", "original-value", "tenant-team-c", "static"),
 						labels.FromStrings("__tenant_id__", "team-c", "instance", "host2.team-c", "original___tenant_id__", "original-value"),
 					},
+					expectedMetrics: expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only series for team-a and team-c tenants when there is with not-equals matcher for the team-b tenant",
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchNotEqual}},
 					expectedSeriesCount: 4,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name: "should return no series where there are conflicting tenant matchers",
 					matchers: []*labels.Matcher{
 						{Name: defaultTenantLabel, Value: "team-a", Type: labels.MatchEqual}, {Name: defaultTenantLabel, Value: "team-c", Type: labels.MatchEqual}},
 					expectedSeriesCount: 0,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only series for team-b when there is an equals matcher for team-b tenant",
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchEqual}},
 					expectedSeriesCount: 2,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return all series when there is an equals matcher for the original value of __tenant_id__ using the revised tenant label",
 					matchers:            []*labels.Matcher{{Name: originalDefaultTenantLabel, Value: "original-value", Type: labels.MatchEqual}},
 					expectedSeriesCount: 6,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return all series when there is a regexp matcher for the original value of __tenant_id__ using the revised tenant label",
 					matchers:            []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, originalDefaultTenantLabel, "original-value")},
 					expectedSeriesCount: 6,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return no series when there is a not-equals matcher for the original value of __tenant_id__ using the revised tenant label",
 					matchers:            []*labels.Matcher{{Name: originalDefaultTenantLabel, Value: "original-value", Type: labels.MatchNotEqual}},
 					expectedSeriesCount: 0,
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 			},
 		},
@@ -488,6 +531,7 @@ func TestMergeQueryable_Select(t *testing.T) {
 					`warning querying tenant_id team-c: out of office`,
 				},
 				expectedSeriesCount: 6,
+				expectedMetrics:     expectThreeTenantsMetrics,
 			},
 			}},
 		{
@@ -495,21 +539,21 @@ func TestMergeQueryable_Select(t *testing.T) {
 			selectTestCases: []selectTestCase{{
 				name:             "should return any error encountered with any tenant",
 				expectedQueryErr: errors.New("error querying tenant_id team-b: failure xyz"),
+				expectedMetrics:  expectThreeTenantsMetrics,
 			}},
 		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			for _, tc := range scenario.selectTestCases {
 				t.Run(tc.name, func(t *testing.T) {
-					seriesSet := querier.Select(true, &storage.SelectHints{Start: mint, End: maxt}, tc.matchers...)
+					ctx, reg, querier := scenario.init(t)
+					seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, tc.matchers...)
 
 					if tc.expectedQueryErr != nil {
 						require.EqualError(t, seriesSet.Err(), tc.expectedQueryErr.Error())
 					} else {
 						require.NoError(t, seriesSet.Err())
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 						assertEqualWarnings(t, tc.expectedWarnings, seriesSet.Warnings())
 					}
 
@@ -532,15 +576,13 @@ func TestMergeQueryable_Select(t *testing.T) {
 }
 
 func TestMergeQueryable_LabelNames(t *testing.T) {
-	// set a multi tenant resolver
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
 	for _, scenario := range []labelNamesScenario{
 		{
 			mergeQueryableScenario: singleTenantScenario,
 			labelNamesTestCase: labelNamesTestCase{
 				name:               "should not return the __tenant_id__ label as the MergeQueryable has been bypassed",
 				expectedLabelNames: []string{"instance", "tenant-team-a"},
+				expectedMetrics:    expectSingleTenantsMetrics,
 			},
 		},
 		{
@@ -549,6 +591,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 				name:               "should not return the __tenant_id__ label as the MergeQueryable has been bypassed with matchers",
 				matchers:           []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, seriesWithLabelNames, "bar|foo")},
 				expectedLabelNames: []string{"bar", "foo", "instance", "tenant-team-a"},
+				expectedMetrics:    expectSingleTenantsMetrics,
 			},
 		},
 		{
@@ -556,6 +599,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 			labelNamesTestCase: labelNamesTestCase{
 				name:               "should return the __tenant_id__ label as the MergeQueryable has not been bypassed",
 				expectedLabelNames: []string{defaultTenantLabel, "instance", "tenant-team-a"},
+				expectedMetrics:    expectSingleTenantsMetrics,
 			},
 		},
 		{
@@ -563,6 +607,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 			labelNamesTestCase: labelNamesTestCase{
 				name:               "should return the __tenant_id__ label and all tenant team labels",
 				expectedLabelNames: []string{defaultTenantLabel, "instance", "tenant-team-a", "tenant-team-b", "tenant-team-c"},
+				expectedMetrics:    expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -570,6 +615,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 			labelNamesTestCase: labelNamesTestCase{
 				name:               "should return  the __tenant_id__ label and all tenant team labels, and the __original_tenant_id__ label",
 				expectedLabelNames: []string{defaultTenantLabel, "instance", originalDefaultTenantLabel, "tenant-team-a", "tenant-team-b", "tenant-team-c"},
+				expectedMetrics:    expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -581,6 +627,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 					`warning querying tenant_id team-b: don't like them`,
 					`warning querying tenant_id team-c: out of office`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -588,6 +635,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 			labelNamesTestCase: labelNamesTestCase{
 				name:             "should return any error encountered with any tenant",
 				expectedQueryErr: errors.New("error querying tenant_id team-b: failure xyz"),
+				expectedMetrics:  expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -600,6 +648,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 					`warning querying tenant_id team-b: don't like them`,
 					`warning querying tenant_id team-c: out of office`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -615,6 +664,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 				expectedWarnings: []string{
 					`warning querying tenant_id team-b: don't like them`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -630,6 +680,7 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 					`warning querying tenant_id team-b: don't like them`,
 					`warning querying tenant_id team-c: out of office`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			},
 		},
 		{
@@ -644,20 +695,20 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 				expectedWarnings: []string{
 					`warning querying tenant_id team-b: don't like them`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			},
 		},
 	} {
 		t.Run(scenario.mergeQueryableScenario.name, func(t *testing.T) {
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			t.Run(scenario.labelNamesTestCase.name, func(t *testing.T) {
-				labelNames, warnings, err := querier.LabelNames(scenario.labelNamesTestCase.matchers...)
+				ctx, reg, querier := scenario.init(t)
+				labelNames, warnings, err := querier.LabelNames(ctx, scenario.labelNamesTestCase.matchers...)
 				if scenario.labelNamesTestCase.expectedQueryErr != nil {
 					require.EqualError(t, err, scenario.labelNamesTestCase.expectedQueryErr.Error())
 				} else {
 					require.NoError(t, err)
 					assert.Equal(t, scenario.labelNamesTestCase.expectedLabelNames, labelNames)
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(scenario.labelNamesTestCase.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 					assertEqualWarnings(t, scenario.labelNamesTestCase.expectedWarnings, warnings)
 				}
 			})
@@ -666,9 +717,6 @@ func TestMergeQueryable_LabelNames(t *testing.T) {
 }
 
 func TestMergeQueryable_LabelValues(t *testing.T) {
-	// set a multi tenant resolver
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
 	for _, scenario := range []labelValuesScenario{
 		{
 			mergeQueryableScenario: singleTenantScenario,
@@ -677,11 +725,13 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					name:                "should return all label values for instance when no matchers are provided",
 					labelName:           "instance",
 					expectedLabelValues: []string{"host1", "host2.team-a"},
+					expectedMetrics:     expectSingleTenantsMetrics,
 				},
 				{
 					name:                "should return no tenant values for the __tenant_id__ label as the MergeQueryable has been bypassed",
 					labelName:           defaultTenantLabel,
 					expectedLabelValues: nil,
+					expectedMetrics:     expectSingleTenantsMetrics,
 				},
 			},
 		},
@@ -692,11 +742,13 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					name:                "should return all label values for instance when no matchers are provided",
 					labelName:           "instance",
 					expectedLabelValues: []string{"host1", "host2.team-a"},
+					expectedMetrics:     expectSingleTenantsMetrics,
 				},
 				{
 					name:                "should return a tenant team value for the __tenant_id__ label as the MergeQueryable has not been bypassed",
 					labelName:           defaultTenantLabel,
 					expectedLabelValues: []string{"team-a"},
+					expectedMetrics:     expectSingleTenantsMetrics,
 				},
 			},
 		},
@@ -707,6 +759,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					name:                "should return all label values for instance when no matchers are provided",
 					labelName:           "instance",
 					expectedLabelValues: []string{"host1", "host2.team-a", "host2.team-b", "host2.team-c"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:      "should propagate non-tenant matchers to downstream queriers",
@@ -719,6 +772,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 						"warning querying tenant_id team-b: " + mockMatchersNotImplemented,
 						"warning querying tenant_id team-c: " + mockMatchersNotImplemented,
 					},
+					expectedMetrics: expectThreeTenantsMetrics,
 				},
 				{
 					name: "should return no values for the instance label when there are conflicting tenant matchers",
@@ -728,29 +782,34 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					},
 					labelName:           "instance",
 					expectedLabelValues: []string{},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should only query tenant-b when there is an equals matcher for team-b tenant",
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchEqual}},
 					labelName:           "instance",
 					expectedLabelValues: []string{"host1", "host2.team-b"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return all tenant team values for the __tenant_id__ label when no matchers are provided",
 					labelName:           defaultTenantLabel,
 					expectedLabelValues: []string{"team-a", "team-b", "team-c"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only label values for team-a and team-c tenants when there is a not-equals matcher for team-b tenant",
 					labelName:           defaultTenantLabel,
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchNotEqual}},
 					expectedLabelValues: []string{"team-a", "team-c"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return only label values for team-b tenant when there is an equals matcher for team-b tenant",
 					labelName:           defaultTenantLabel,
 					matchers:            []*labels.Matcher{{Name: defaultTenantLabel, Value: "team-b", Type: labels.MatchEqual}},
 					expectedLabelValues: []string{"team-b"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 			},
 		},
@@ -761,16 +820,19 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					name:                "should return all label values for instance when no matchers are provided",
 					labelName:           "instance",
 					expectedLabelValues: []string{"host1", "host2.team-a", "host2.team-b", "host2.team-c"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return all tenant values for __tenant_id__ label name",
 					labelName:           defaultTenantLabel,
 					expectedLabelValues: []string{"team-a", "team-b", "team-c"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return the original value for the revised tenant label name when no matchers are provided",
 					labelName:           originalDefaultTenantLabel,
 					expectedLabelValues: []string{"original-value"},
+					expectedMetrics:     expectThreeTenantsMetrics,
 				},
 				{
 					name:                "should return the original value for the revised tenant label name with matchers",
@@ -782,6 +844,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 						"warning querying tenant_id team-b: " + mockMatchersNotImplemented,
 						"warning querying tenant_id team-c: " + mockMatchersNotImplemented,
 					},
+					expectedMetrics: expectThreeTenantsMetrics,
 				},
 			},
 		},
@@ -795,6 +858,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 					`warning querying tenant_id team-b: don't like them`,
 					`warning querying tenant_id team-c: out of office`,
 				},
+				expectedMetrics: expectThreeTenantsMetrics,
 			}},
 		},
 		{
@@ -803,6 +867,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 				name:                "should not return warnings as the underlying queryables are not queried in requests for the __tenant_id__ label",
 				labelName:           defaultTenantLabel,
 				expectedLabelValues: []string{"team-a", "team-b", "team-c"},
+				expectedMetrics:     expectThreeTenantsMetrics,
 			}},
 		},
 		{
@@ -811,6 +876,7 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 				name:             "should return any error encountered with any tenant",
 				labelName:        "instance",
 				expectedQueryErr: errors.New("error querying tenant_id team-b: failure xyz"),
+				expectedMetrics:  expectThreeTenantsMetrics,
 			}},
 		},
 		{
@@ -819,21 +885,21 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 				name:                "should not return errors as the underlying queryables are not queried in requests for the __tenant_id__ label",
 				labelName:           defaultTenantLabel,
 				expectedLabelValues: []string{"team-a", "team-b", "team-c"},
+				expectedMetrics:     expectThreeTenantsMetrics,
 			}},
 		},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			querier, err := scenario.init()
-			require.NoError(t, err)
-
 			for _, tc := range scenario.labelValuesTestCases {
 				t.Run(tc.name, func(t *testing.T) {
-					actLabelValues, warnings, err := querier.LabelValues(tc.labelName, tc.matchers...)
+					ctx, reg, querier := scenario.init(t)
+					actLabelValues, warnings, err := querier.LabelValues(ctx, tc.labelName, tc.matchers...)
 					if tc.expectedQueryErr != nil {
 						require.EqualError(t, err, tc.expectedQueryErr.Error())
 					} else {
 						require.NoError(t, err)
 						assert.Equal(t, tc.expectedLabelValues, actLabelValues, fmt.Sprintf("unexpected values for label '%s'", tc.labelName))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(tc.expectedMetrics), "cortex_querier_federation_sample_tenants_queried"))
 						assertEqualWarnings(t, tc.expectedWarnings, warnings)
 					}
 				})
@@ -843,13 +909,13 @@ func TestMergeQueryable_LabelValues(t *testing.T) {
 }
 
 // assertEqualWarnings asserts that all the expected warning messages are present.
-func assertEqualWarnings(t *testing.T, exp []string, act storage.Warnings) {
+func assertEqualWarnings(t *testing.T, exp []string, act annotations.Annotations) {
 	if len(exp) == 0 && len(act) == 0 {
 		return
 	}
-	var actStrings = make([]string, len(act))
-	for pos := range act {
-		actStrings[pos] = act[pos].Error()
+	var actStrings = make([]string, 0, len(act))
+	for s := range act {
+		actStrings = append(actStrings, s)
 	}
 	assert.ElementsMatch(t, exp, actStrings)
 }
@@ -895,17 +961,16 @@ func TestSetLabelsRetainExisting(t *testing.T) {
 func TestTracingMergeQueryable(t *testing.T) {
 	mockTracer := mocktracer.New()
 	opentracing.SetGlobalTracer(mockTracer)
+	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "team-a|team-b")
 
-	// set a multi tenant resolver
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q := NewQueryable(&filter, false, log.NewNopLogger())
+	q := NewQueryable(&filter, false, defaultConcurrency, reg, log.NewNopLogger())
 	// retrieve querier if set
-	querier, err := q.Querier(ctx, mint, maxt)
+	querier, err := q.Querier(mint, maxt)
 	require.NoError(t, err)
 
-	seriesSet := querier.Select(true, &storage.SelectHints{Start: mint,
+	seriesSet := querier.Select(ctx, true, &storage.SelectHints{Start: mint,
 		End: maxt})
 
 	require.NoError(t, seriesSet.Err())

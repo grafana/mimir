@@ -5,6 +5,7 @@ package querymiddleware
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,8 +17,9 @@ import (
 )
 
 const (
-	cardinalityLabelNamesQueryCachePrefix  = "cn:"
-	cardinalityLabelValuesQueryCachePrefix = "cv:"
+	cardinalityLabelNamesQueryCachePrefix   = "cn:"
+	cardinalityLabelValuesQueryCachePrefix  = "cv:"
+	cardinalityActiveSeriesQueryCachePrefix = "ca:"
 )
 
 func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
@@ -36,10 +38,10 @@ func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRequest, error) {
+func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
 	switch {
-	case strings.HasSuffix(req.URL.Path, cardinalityLabelNamesPathSuffix):
-		parsed, err := cardinality.DecodeLabelNamesRequest(req)
+	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
+		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
 		if err != nil {
 			return nil, err
 		}
@@ -48,8 +50,8 @@ func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRe
 			cacheKey:       parsed.String(),
 			cacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
 		}, nil
-	case strings.HasSuffix(req.URL.Path, cardinalityLabelValuesPathSuffix):
-		parsed, err := cardinality.DecodeLabelValuesRequest(req)
+	case strings.HasSuffix(path, cardinalityLabelValuesPathSuffix):
+		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(values)
 		if err != nil {
 			return nil, err
 		}
@@ -57,6 +59,16 @@ func (c *cardinalityQueryCache) parseRequest(req *http.Request) (*genericQueryRe
 		return &genericQueryRequest{
 			cacheKey:       parsed.String(),
 			cacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
+		}, nil
+	case strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix):
+		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(values)
+		if err != nil {
+			return nil, err
+		}
+
+		return &genericQueryRequest{
+			cacheKey:       parsed.String(),
+			cacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
 		}, nil
 	default:
 		return nil, errors.New("unknown cardinality API endpoint")

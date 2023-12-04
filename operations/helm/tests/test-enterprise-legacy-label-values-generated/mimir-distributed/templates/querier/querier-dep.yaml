@@ -12,12 +12,16 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   replicas: 2
   selector:
     matchLabels:
       app: enterprise-metrics-querier
       release: test-enterprise-legacy-label-values
   strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
     type: RollingUpdate
   template:
     metadata:
@@ -86,6 +90,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "GOMAXPROCS"
+              value: "5"
           envFrom:
       nodeSelector:
         {}
