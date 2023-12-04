@@ -9,10 +9,10 @@ import (
 	"math"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -46,7 +46,7 @@ const (
 )
 
 type bucketBoundsData struct {
-	sig   string
+	sig   uint64
 	bound float64
 }
 
@@ -67,15 +67,14 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // addSample finds a TimeSeries in tsMap that corresponds to the label set labels, and add sample to the TimeSeries; it
 // creates a new TimeSeries in the map if not found and returns the time series signature.
 // tsMap will be unmodified if either labels or sample is nil, but can still be modified if the exemplar is nil.
-func addSample(tsMap map[string]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
-	datatype string) string {
+func addSample(tsMap map[uint64]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
+	datatype string) uint64 {
 	if sample == nil || labels == nil || tsMap == nil {
-		return ""
+		return 0
 	}
 
 	sig := timeSeriesSignature(datatype, labels)
 	ts, ok := tsMap[sig]
-
 	if ok {
 		ts.Samples = append(ts.Samples, *sample)
 	} else {
@@ -91,7 +90,7 @@ func addSample(tsMap map[string]*mimirpb.TimeSeries, sample *mimirpb.Sample, lab
 // addExemplars finds a bucket bound that corresponds to the exemplars value and add the exemplar to the specific sig;
 // we only add exemplars if samples are presents
 // tsMap is unmodified if either of its parameters is nil and samples are nil.
-func addExemplars(tsMap map[string]*mimirpb.TimeSeries, exemplars []mimirpb.Exemplar, bucketBoundsData []bucketBoundsData) {
+func addExemplars(tsMap map[uint64]*mimirpb.TimeSeries, exemplars []mimirpb.Exemplar, bucketBoundsData []bucketBoundsData) {
 	if len(tsMap) == 0 || len(bucketBoundsData) == 0 || len(exemplars) == 0 {
 		return
 	}
@@ -103,7 +102,7 @@ func addExemplars(tsMap map[string]*mimirpb.TimeSeries, exemplars []mimirpb.Exem
 	}
 }
 
-func addExemplar(tsMap map[string]*mimirpb.TimeSeries, bucketBounds []bucketBoundsData, exemplar mimirpb.Exemplar) {
+func addExemplar(tsMap map[uint64]*mimirpb.TimeSeries, bucketBounds []bucketBoundsData, exemplar mimirpb.Exemplar) {
 	for _, bucketBound := range bucketBounds {
 		sig := bucketBound.sig
 		bound := bucketBound.bound
@@ -122,28 +121,23 @@ func addExemplar(tsMap map[string]*mimirpb.TimeSeries, bucketBounds []bucketBoun
 //
 // the label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
-func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) string {
-	length := len(datatype)
-
-	for _, lb := range labels {
-		length += 2 + len(lb.Name) + len(lb.Value)
-	}
-
-	b := strings.Builder{}
-	b.Grow(length)
-	b.WriteString(datatype)
-
+func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) uint64 {
 	sort.Sort(ByLabelName(labels))
 
+	h := xxhash.New()
+	h.WriteString(datatype)
+	h.Write(seps)
 	for _, lb := range labels {
-		b.WriteString("-")
-		b.WriteString(lb.Name)
-		b.WriteString("-")
-		b.WriteString(lb.Value)
+		h.WriteString(lb.Name)
+		h.Write(seps)
+		h.WriteString(lb.Value)
+		h.Write(seps)
 	}
 
-	return b.String()
+	return h.Sum64()
 }
+
+var seps = []byte{'\xff'}
 
 // createAttributes creates a slice of Mimir labels with OTLP attributes and pairs of string values.
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collision happens, and the overwrite is
@@ -152,9 +146,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
 
-	// TODO: Make a hash of all the attribute pairs + serviceName + instance,
-	//       and try to return corresponding entry. Otherwise make new, and enter in map.
-
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
 	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
@@ -162,7 +153,6 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
 		return true
 	})
-	sort.Stable(ByLabelName(labels))
 
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
 	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
@@ -251,7 +241,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 
 // addSingleHistogramDataPoint converts pt to 2 + min(len(ExplicitBounds), len(BucketCount)) + 1 samples. It
 // ignore extra buckets if len(ExplicitBounds) > len(BucketCounts)
-func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[string]*mimirpb.TimeSeries) {
+func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries) {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum, count, and buckets of the histogram should append suffix to baseName
 	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
@@ -452,7 +442,7 @@ func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
 func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings,
-	tsMap map[string]*mimirpb.TimeSeries) {
+	tsMap map[uint64]*mimirpb.TimeSeries) {
 	timestamp := convertTimeStamp(pt.Timestamp())
 	// sum and count of the summary should append suffix to baseName
 	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
@@ -520,7 +510,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 // addCreatedTimeSeriesIfNeeded adds {name}_created time series with a single
 // sample. If the series exists, then new samples won't be added.
 func addCreatedTimeSeriesIfNeeded(
-	series map[string]*mimirpb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 	labels []mimirpb.LabelAdapter,
 	startTimestamp pcommon.Timestamp,
 	metricType string,
@@ -539,7 +529,7 @@ func addCreatedTimeSeriesIfNeeded(
 }
 
 // addResourceTargetInfo converts the resource to the target info metric
-func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[string]*mimirpb.TimeSeries) {
+func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timestamp pcommon.Timestamp, tsMap map[uint64]*mimirpb.TimeSeries) {
 	if settings.DisableTargetInfo {
 		return
 	}

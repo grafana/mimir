@@ -18,11 +18,19 @@ import (
 // series map.
 func addSingleGaugeNumberDataPoint(
 	pt pmetric.NumberDataPoint,
+	resource pcommon.Resource,
 	metric pmetric.Metric,
-	series map[string]*mimirpb.TimeSeries,
-	labels []mimirpb.LabelAdapter,
+	settings Settings,
+	series map[uint64]*mimirpb.TimeSeries,
 	name string,
 ) {
+	labels := createAttributes(
+		resource,
+		pt.Attributes(),
+		settings.ExternalLabels,
+		model.MetricNameLabel,
+		name,
+	)
 	sample := &mimirpb.Sample{
 		// convert ns to ms
 		TimestampMs: convertTimeStamp(pt.Timestamp()),
@@ -47,7 +55,7 @@ func addSingleSumNumberDataPoint(
 	resource pcommon.Resource,
 	metric pmetric.Metric,
 	settings Settings,
-	series map[string]*mimirpb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 	name string,
 ) {
 	labels := createAttributes(
@@ -71,7 +79,7 @@ func addSingleSumNumberDataPoint(
 	}
 	sig := addSample(series, sample, labels, metric.Type().String())
 
-	if ts, ok := series[sig]; sig != "" && ok {
+	if ts, ok := series[sig]; sig != 0 && ok {
 		exemplars := getMimirExemplars[pmetric.NumberDataPoint](pt)
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}

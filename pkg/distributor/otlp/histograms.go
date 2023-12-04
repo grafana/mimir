@@ -21,13 +21,14 @@ func addSingleExponentialHistogramDataPoint(
 	pt pmetric.ExponentialHistogramDataPoint,
 	resource pcommon.Resource,
 	settings Settings,
-	series map[string]*mimirpb.TimeSeries,
+	series map[uint64]*mimirpb.TimeSeries,
 ) error {
 	labels := createAttributes(
 		resource,
 		pt.Attributes(),
 		settings.ExternalLabels,
-		model.MetricNameLabel, metric,
+		model.MetricNameLabel,
+		metric,
 	)
 
 	sig := timeSeriesSignature(

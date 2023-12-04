@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/common/model"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -25,7 +24,7 @@ type Settings struct {
 
 // FromMetrics converts pmetric.Metrics to Mimir time series.
 func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimeseries, error) {
-	tsMap := map[string]*mimirpb.TimeSeries{}
+	tsMap := map[uint64]*mimirpb.TimeSeries{}
 	var errs error
 	resourceMetricsSlice := md.ResourceMetrics()
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
@@ -50,7 +49,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 
 				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 
-				// handle individual metric based on type
+				// handle individual metrics based on type
 				//exhaustive:enforce
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
@@ -60,15 +59,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
 						// For each data point, createAttributes is called for its attributes
-						pt := dataPoints.At(x)
-						labels := createAttributes(
-							resource,
-							pt.Attributes(),
-							settings.ExternalLabels,
-							model.MetricNameLabel,
-							promName,
-						)
-						addSingleGaugeNumberDataPoint(pt, metric, tsMap, labels, promName)
+						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeSum:
 					dataPoints := metric.Sum().DataPoints()
