@@ -231,22 +231,21 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	return stat.Err()
 }
 
-func translateIngesterPushError(err error, ingesterID string) error {
+func wrapIngesterPushError(err error, ingesterID string) error {
 	if err == nil {
 		return nil
 	}
 
-	wrapErrorMessage := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		return errors.Wrap(err, wrapErrorMessage)
+		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
 		// This code is needed for backwards compatibility, since ingesters may still return errors
 		// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(statusCode), "%s: %s", wrapErrorMessage, stat.Message())
+		return httpgrpc.Errorf(int(statusCode), "%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	}
 
 	return newIngesterPushError(stat, ingesterID)

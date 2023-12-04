@@ -348,13 +348,13 @@ func TestToGRPCError(t *testing.T) {
 	}
 }
 
-func TestHandleIngesterPushError(t *testing.T) {
+func TestWrapIngesterPushError(t *testing.T) {
 	testErrorMsg := "this is a test error message"
 	outputErrorMsgPrefix := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 
 	// Ensure that no error gets translated into no error.
 	t.Run("no error gives no error", func(t *testing.T) {
-		err := translateIngesterPushError(nil, ingesterID)
+		err := wrapIngesterPushError(nil, ingesterID)
 		require.NoError(t, err)
 	})
 
@@ -379,7 +379,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	}
 	for testName, testData := range httpgrpcTests {
 		t.Run(testName, func(t *testing.T) {
-			err := translateIngesterPushError(testData.ingesterPushError, ingesterID)
+			err := wrapIngesterPushError(testData.ingesterPushError, ingesterID)
 			res, ok := httpgrpc.HTTPResponseFromError(err)
 			require.True(t, ok)
 			require.NotNil(t, res)
@@ -418,7 +418,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	}
 	for testName, testData := range statusTests {
 		t.Run(testName, func(t *testing.T) {
-			err := translateIngesterPushError(testData.ingesterPushError, ingesterID)
+			err := wrapIngesterPushError(testData.ingesterPushError, ingesterID)
 			ingesterPushErr, ok := err.(ingesterPushError)
 			require.True(t, ok)
 

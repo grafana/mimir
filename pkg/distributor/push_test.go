@@ -1078,57 +1078,57 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 		"an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into an HTTP 400": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, originalMsg, mimirpb.BAD_DATA), ingesterID)},
 			expectedHTTPStatus: http.StatusBadRequest,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into an HTTP 503": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusServiceUnavailable,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into an HTTP 500": {
 			err:                middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 		},
 		"an ingesterPushError obtained from a DeadlineExceeded coming from the ingester gets translated into an HTTP 500": {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
-			expectedErrorMsg:   fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, context.DeadlineExceeded),
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
 		},
 	}
 	for name, tc := range testCases {
