@@ -342,7 +342,9 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 	flagSets := []map[string]string{
 		CommonStorageBackendFlags(),
 		{
-			"-memberlist.join": "mimir-backend-1",
+			"-memberlist.join":                           "mimir-backend-1",
+			"-compactor.cleanup-interval":                "1s",
+			"-blocks-storage.bucket-store.sync-interval": "1s",
 		},
 	}
 
