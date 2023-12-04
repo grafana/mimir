@@ -62,19 +62,22 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" $args | nindent 8 }}
+        {{- if (eq $rolloutZone.noDownscale true )}}
         grafana.com/no-downscale: {{$rolloutZone.noDownscale}}
+        {{- else }}
         grafana.com/prepare-downscale: {{$rolloutZone.prepareDownscale}}
+        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
         {{- if .Values.alertmanager.fallbackConfig }}
         checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
         {{- end }}
         {{- if $rolloutZone.prepareDownscale }}
-        grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-        grafana.com/prepare-downscale-http-port: 80
+        grafana.com/prepare-downscale-http-path: alertmanager/prepare-shutdown
+        grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
         {{- end-}}
         {{- if $rolloutZone.downscaleLeader }}
-        grafana.com/rollout-downscale-leader: downscaleLeader
+        grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
