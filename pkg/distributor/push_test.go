@@ -975,8 +975,11 @@ func TestHandler_HandleRetryAfterHeader(t *testing.T) {
 }
 
 func TestHandler_ToHTTPStatus(t *testing.T) {
-	const userID = "user"
-	const originalMsg = "this is an error"
+	const (
+		ingesterID  = "ingester-25"
+		userID      = "user"
+		originalMsg = "this is an error"
+	)
 	originalErr := errors.New(originalMsg)
 	replicasNotMatchErr := newReplicasDidNotMatchError("a", "b")
 	tooManyClustersErr := newTooManyClustersError(10)

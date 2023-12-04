@@ -20,10 +20,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var (
-	ingesterID = "ingester-25"
-)
-
 func TestNewReplicasNotMatchError(t *testing.T) {
 	replica := "a"
 	elected := "b"
@@ -129,8 +125,11 @@ func TestNewRequestRateError(t *testing.T) {
 }
 
 func TestNewIngesterPushError(t *testing.T) {
-	testMsg := "this is an error"
-	anotherTestMsg := "this is another error"
+	const (
+		ingesterID     = "ingester-25"
+		testMsg        = "this is an error"
+		anotherTestMsg = "this is another error"
+	)
 	tests := map[string]struct {
 		originalStatus *status.Status
 		expectedCause  mimirpb.ErrorCause
@@ -168,7 +167,10 @@ func TestNewIngesterPushError(t *testing.T) {
 }
 
 func TestToGRPCError(t *testing.T) {
-	originalMsg := "this is an error"
+	const (
+		ingesterID  = "ingester-25"
+		originalMsg = "this is an error"
+	)
 	originalErr := errors.New(originalMsg)
 	replicasDidNotMatchErr := newReplicasDidNotMatchError("a", "b")
 	tooManyClustersErr := newTooManyClustersError(10)
@@ -349,7 +351,10 @@ func TestToGRPCError(t *testing.T) {
 }
 
 func TestWrapIngesterPushError(t *testing.T) {
-	testErrorMsg := "this is a test error message"
+	const (
+		ingesterID   = "ingester-25"
+		testErrorMsg = "this is a test error message"
+	)
 	outputErrorMsgPrefix := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 
 	// Ensure that no error gets translated into no error.
