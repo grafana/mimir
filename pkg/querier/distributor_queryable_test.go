@@ -180,7 +180,7 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(testCase.response, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+			queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
@@ -289,7 +289,7 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
+	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), stats.NewQueryMetrics(prometheus.NewPedanticRegistry()), log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -378,7 +378,7 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 
@@ -472,7 +472,7 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, newMockConfigProvider(0), nil, log.NewNopLogger())
+	queryable := newDistributorQueryable(d, batch.NewChunkMergeIterator, newMockConfigProvider(0), nil, log.NewNopLogger())
 	querier, err := queryable.Querier(mint, maxt)
 	require.NoError(t, err)
 

@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -132,9 +133,9 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, storeQueryable storage.Queryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
-	distributorQueryable := newDistributorQueryable(distributor, mergeChunks, limits, queryMetrics, logger)
+	distributorQueryable := newDistributorQueryable(distributor, batch.NewChunkMergeIterator, limits, queryMetrics, logger)
 
-	queryable := newQueryable(distributorQueryable, storeQueryable, mergeChunks, cfg, limits, queryMetrics, logger)
+	queryable := newQueryable(distributorQueryable, storeQueryable, batch.NewChunkMergeIterator, cfg, limits, queryMetrics, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(minT int64, maxT int64) (storage.Querier, error) {
