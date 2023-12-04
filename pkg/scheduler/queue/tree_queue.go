@@ -4,7 +4,6 @@ package queue
 
 import (
 	"container/list"
-	"errors"
 )
 
 type QueuePath []string //nolint:revive // disallows types beginning with package name
@@ -26,19 +25,16 @@ const localQueueIndex = -1
 // at the same level of the tree are empty down to the leaf node.
 type TreeQueue struct {
 	// name of the tree node will be set to its segment of the queue path
-	name string
-	// max queue items in the TreeQueue node and in all its children, recursively
-	maxItemCount           int
+	name                   string
 	localQueue             *list.List
 	currentChildQueueIndex int
 	childQueueOrder        []string
 	childQueueMap          map[string]*TreeQueue
 }
 
-func NewTreeQueue(name string, maxItemCount int) *TreeQueue {
+func NewTreeQueue(name string) *TreeQueue {
 	return &TreeQueue{
 		name:                   name,
-		maxItemCount:           maxItemCount,
 		localQueue:             nil,
 		currentChildQueueIndex: localQueueIndex,
 		childQueueMap:          nil,
@@ -95,9 +91,6 @@ func (q *TreeQueue) EnqueueBackByPath(childPath QueuePath, v any) error {
 	if err != nil {
 		return err
 	}
-	if childQueue.ItemCount()+1 > childQueue.maxItemCount {
-		return ErrMaxQueueItemCountExceeded
-	}
 
 	if childQueue.localQueue == nil {
 		childQueue.localQueue = list.New()
@@ -148,7 +141,7 @@ func (q *TreeQueue) getOrAddNode(childPath QueuePath) (*TreeQueue, error) {
 	if childQueue, ok = q.childQueueMap[childPath[0]]; !ok {
 		// no child node matches next path segment
 		// create next child before recurring
-		childQueue = NewTreeQueue(childPath[0], q.maxItemCount)
+		childQueue = NewTreeQueue(childPath[0])
 
 		// add new child queue to ordered list for round-robining;
 		// in order to maintain round-robin order as nodes are created and deleted,
@@ -297,5 +290,3 @@ func (q *TreeQueue) wrapIndex(increment bool) {
 		q.currentChildQueueIndex = localQueueIndex
 	}
 }
-
-var ErrMaxQueueItemCountExceeded = errors.New("max queue item count exceeded for tree")

@@ -6,7 +6,6 @@
 package queue
 
 import (
-	"errors"
 	"math/rand"
 	"sort"
 	"time"
@@ -110,7 +109,7 @@ type queueBroker struct {
 
 func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueuesTree: NewTreeQueue("root", maxTenantQueueSize),
+		tenantQueuesTree: NewTreeQueue("root"),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
@@ -140,12 +139,32 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	if err != nil {
 		return err
 	}
+	if tenantQueueNode := qb.tenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
+		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+			return ErrTooManyRequests
+		}
+	}
 
 	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
-	if errors.Is(err, ErrMaxQueueItemCountExceeded) {
-		return errors.Join(err, ErrTooManyRequests)
-	}
 	return err
+}
+
+// enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
+// to the front of the queue when there was a failure in dispatching to a querier.
+//
+// max tenant queue size checks are skipped even though queue size violations
+// are not expected to occur when re-enqueuing a previously dequeued request.
+func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
+	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
+	if err != nil {
+		return err
+	}
+
+	queuePath, err := makeQueuePath(request)
+	if err != nil {
+		return err
+	}
+	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func makeQueuePath(request *tenantRequest) (QueuePath, error) {
@@ -160,21 +179,6 @@ func makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	// else request.req is a frontend/v1.request,
 	// or a SchedulerRequest with no AdditionalQueueDimensions
 	return QueuePath{string(request.tenantID)}, nil
-}
-
-// enqueueRequestFront should only be used for re-enqueueing previously dequeued requests
-// to the front of the queue when there was a failure in dispatching to a querier.
-//
-// max tenant queue size checks are skipped even though queue size violations
-// are not expected to occur when re-enqueuing a previously dequeued request.
-func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQueriers int) error {
-	err := qb.tenantQuerierAssignments.createOrUpdateTenant(request.tenantID, tenantMaxQueriers)
-	if err != nil {
-		return err
-	}
-
-	queuePath := QueuePath{string(request.tenantID)}
-	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {

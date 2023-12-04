@@ -58,7 +58,7 @@ type UserIndex struct {
 	last int
 }
 
-// Modify index to start iteration on the same user, for which last queue was returned.
+// ReuseLastUser modifies index to start iteration on the same user, for which last queue was returned.
 func (ui UserIndex) ReuseLastUser() UserIndex {
 	if ui.last >= 0 {
 		return UserIndex{last: ui.last - 1}
