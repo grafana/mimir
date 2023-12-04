@@ -17,8 +17,6 @@ import (
 	seriesset "github.com/grafana/mimir/pkg/storage/series"
 )
 
-type chunkIteratorFunc func(reuse chunkenc.Iterator, chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator
-
 // Series in the returned set are sorted alphabetically by labels.
 func partitionChunks(chunks []chunk.Chunk, mint, maxt int64) storage.SeriesSet {
 	chunksBySeries := map[string][]chunk.Chunk{}
