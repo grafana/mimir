@@ -184,12 +184,10 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ClientMock{}
+	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(operation bucket.Operation, s string) error { return assert.AnError }}
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 	require.NoError(t, err)
-
-	bucketClient.MockIter("", []string{}, errors.New("network error"))
 
 	require.NoError(t, g.StartAsync(ctx))
 	err = g.AwaitRunning(ctx)
