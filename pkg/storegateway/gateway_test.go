@@ -1439,6 +1439,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 
 	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucketClient, userID)
 
 	// Prepare the request to query back all series (1 chunk per series in this test).
 	req := &storepb.SeriesRequest{
