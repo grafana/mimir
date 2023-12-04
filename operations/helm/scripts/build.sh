@@ -66,6 +66,7 @@ function generate_manifests() {
 
   # Get the pid of the subshell calling this function in a portable way.
   # Do not use BASHPID come some shells don't support it.
+  # shellcheck disable=SC2016
   PID=$(exec sh -c 'echo "$PPID"')
 
   echo ""
