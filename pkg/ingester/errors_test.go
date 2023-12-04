@@ -107,16 +107,14 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
-	labels := mimirpb.FromLabelAdaptersToLabels(
-		[]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}},
-	)
+	labels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	err := newPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
 		globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-metric series limit of %d exceeded", limit),
 			validation.MaxSeriesPerMetricFlag,
 		),
-		labels.String(),
+		mimirpb.FromLabelAdaptersToString(labels),
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
@@ -157,23 +155,23 @@ func TestNewSampleError(t *testing.T) {
 	}{
 		"newSampleTimestampTooOldError": {
 			err:         newSampleTimestampTooOldError(timestamp, seriesLabels),
-			expectedMsg: `the sample has been rejected because its timestamp is too old (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			expectedMsg: `the sample has been rejected because its timestamp is too old (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleTimestampTooOldOOOEnabledError": {
 			err:         newSampleTimestampTooOldOOOEnabledError(timestamp, seriesLabels, 2*time.Hour),
-			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of 2h (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of 2h (err-mimir-sample-timestamp-too-old). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleTimestampTooFarInFutureError": {
 			err:         newSampleTimestampTooFarInFutureError(timestamp, seriesLabels),
-			expectedMsg: `received a sample whose timestamp is too far in the future (err-mimir-too-far-in-future). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			expectedMsg: `received a sample whose timestamp is too far in the future (err-mimir-too-far-in-future). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleOutOfOrderError": {
 			err:         newSampleOutOfOrderError(timestamp, seriesLabels),
-			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			expectedMsg: `the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed (err-mimir-sample-out-of-order). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 		"newSampleDuplicateTimestampError": {
 			err:         newSampleDuplicateTimestampError(timestamp, seriesLabels),
-			expectedMsg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series {__name__="test"}`,
+			expectedMsg: `the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested (err-mimir-sample-duplicate-timestamp). The affected sample has timestamp 1970-01-19T05:30:43.969Z and is from series test`,
 		},
 	}
 
@@ -200,11 +198,11 @@ func TestNewExemplarError(t *testing.T) {
 	}{
 		"newExemplarMissingSeriesError": {
 			err:         newExemplarMissingSeriesError(timestamp, seriesLabels, exemplarsLabels),
-			expectedMsg: `the exemplar has been rejected because the related series has not been ingested yet (err-mimir-exemplar-series-missing). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series {__name__="test"}`,
+			expectedMsg: `the exemplar has been rejected because the related series has not been ingested yet (err-mimir-exemplar-series-missing). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series test`,
 		},
 		"newExemplarTimestampTooFarInFutureError": {
 			err:         newExemplarTimestampTooFarInFutureError(timestamp, seriesLabels, exemplarsLabels),
-			expectedMsg: `received an exemplar whose timestamp is too far in the future (err-mimir-exemplar-too-far-in-future). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series {__name__="test"}`,
+			expectedMsg: `received an exemplar whose timestamp is too far in the future (err-mimir-exemplar-too-far-in-future). The affected exemplar is {traceID="123"} with timestamp 1970-01-19T05:30:43.969Z for series test`,
 		},
 	}
 
@@ -485,15 +483,15 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
-			err:             newPerMetricSeriesLimitReachedError(10, labels),
+			err:             newPerMetricSeriesLimitReachedError(10, labelAdapters),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerMetricSeriesLimitReachedError(10, labels).Error(),
+			expectedMessage: newPerMetricSeriesLimitReachedError(10, labelAdapters).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+			err:             fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricSeriesLimitReachedError(10, labels).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricSeriesLimitReachedError(10, labelAdapters).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
@@ -632,16 +630,16 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			),
 		},
 		"a perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerMetricSeriesLimitReachedError(10, labels),
+			err: newPerMetricSeriesLimitReachedError(10, labelAdapters),
 			expectedTranslation: newErrorWithHTTPStatus(
-				newPerMetricSeriesLimitReachedError(10, labels),
+				newPerMetricSeriesLimitReachedError(10, labelAdapters),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perMetricSeriesLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+			err: fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
 			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labels)),
+				fmt.Errorf("wrapped: %w", newPerMetricSeriesLimitReachedError(10, labelAdapters)),
 				http.StatusBadRequest,
 			),
 		},
