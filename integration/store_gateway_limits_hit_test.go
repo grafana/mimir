@@ -42,6 +42,7 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			"-blocks-storage.tsdb.retention-period":             blockRangePeriod.String(), // We want blocks to be immediately deleted from ingesters.
 			"-blocks-storage.tsdb.ship-interval":                "1s",
 			"-blocks-storage.tsdb.head-compaction-interval":     "500ms",
+			"-log.level": "debug",
 		},
 	)
 
@@ -102,12 +103,15 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Start Mimir read components and wait until ready. The querier and store-gateway will be ready after
-			// they discovered the blocks in the storage.
+			// Start Mimir read components and wait until ready.
+			// Compactor needs to start before store-gateway so that the bucket index is updated.
+			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, scenario.StartAndWaitReady(compactor))
+
+			// The querier and store-gateway will be ready after they discovered the blocks in the storage.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
 			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
-			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway, compactor))
+			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway))
 			t.Cleanup(func() {
 				require.NoError(t, scenario.Stop(querier, storeGateway, compactor))
 			})
