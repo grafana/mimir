@@ -135,16 +135,17 @@ func TestBucketStores_InitialSync(t *testing.T) {
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	test.VerifyNoLeak(t)
 
+	const tenantID = "user-1"
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
 	storageDir := t.TempDir()
 
 	// Generate a block for the user in the storage.
-	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
-
+	generateStorageBlock(t, storageDir, tenantID, "series_1", 10, 100, 15)
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, tenantID)
 
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
@@ -157,7 +158,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
-	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_1", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, tenantID, "series_1", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
