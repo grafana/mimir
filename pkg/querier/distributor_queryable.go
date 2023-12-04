@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
@@ -158,11 +157,10 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	if len(results.StreamingSeries) > 0 {
 		streamingSeries := make([]storage.Series, 0, len(results.StreamingSeries))
 		streamingChunkSeriesConfig := &streamingChunkSeriesContext{
-			chunkIteratorFunc: batch.NewChunkMergeIterator,
-			mint:              minT,
-			maxt:              maxT,
-			queryMetrics:      q.queryMetrics,
-			queryStats:        stats.FromContext(ctx),
+			mint:         minT,
+			maxt:         maxT,
+			queryMetrics: q.queryMetrics,
+			queryStats:   stats.FromContext(ctx),
 		}
 
 		for _, s := range results.StreamingSeries {
