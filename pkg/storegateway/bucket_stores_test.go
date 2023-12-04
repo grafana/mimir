@@ -81,7 +81,9 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		assert.Empty(t, warnings)
 		assert.Empty(t, seriesSet)
 	}
-
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
@@ -135,16 +137,17 @@ func TestBucketStores_InitialSync(t *testing.T) {
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	test.VerifyNoLeak(t)
 
+	const tenantID = "user-1"
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
 	storageDir := t.TempDir()
 
 	// Generate a block for the user in the storage.
-	generateStorageBlock(t, storageDir, "user-1", "series_1", 10, 100, 15)
-
+	generateStorageBlock(t, storageDir, tenantID, "series_1", 10, 100, 15)
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, tenantID)
 
 	// Wrap the bucket to fail the 1st Get() request.
 	bucket = &failFirstGetBucket{Bucket: bucket}
@@ -157,7 +160,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
-	seriesSet, warnings, err := querySeries(t, stores, "user-1", "series_1", 20, 40)
+	seriesSet, warnings, err := querySeries(t, stores, tenantID, "series_1", 20, 40)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
@@ -216,6 +219,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	// Run an initial sync to discover 1 block.
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query a range for which we have no samples.
@@ -226,6 +230,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	// Generate another block and sync blocks again.
 	generateStorageBlock(t, storageDir, userID, metricName, 100, 200, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
 	seriesSet, warnings, err = querySeries(t, stores, userID, metricName, 150, 180)
@@ -423,6 +428,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
@@ -501,6 +507,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
@@ -653,6 +660,9 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 
 	sharding := userShardingStrategy{}
 

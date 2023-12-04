@@ -102,12 +102,15 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Start Mimir read components and wait until ready. The querier and store-gateway will be ready after
-			// they discovered the blocks in the storage.
+			// Start Mimir read components and wait until ready.
+			// Compactor needs to start before store-gateway so that the bucket index is updated.
+			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+			require.NoError(t, scenario.StartAndWaitReady(compactor))
+
+			// The querier and store-gateway will be ready after they discovered the blocks in the storage.
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalQuerierFlags))
 			storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, testData.additionalStoreGatewayFlags))
-			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway, compactor))
+			require.NoError(t, scenario.StartAndWaitReady(querier, storeGateway))
 			t.Cleanup(func() {
 				require.NoError(t, scenario.Stop(querier, storeGateway, compactor))
 			})
@@ -116,15 +119,15 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify we can successfully query timeseries between timeStamp1 and timeStamp2 (excluded)
-			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
+			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode)
+			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode, string(rangeResultBody))
 
 			// Verify we cannot successfully query timeseries between timeSeries1 and timeSeries2 (included) because the limit is hit, and the status code 422 is returned
-			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
+			rangeResultResponse, rangeResultBody, err = client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode)
-			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey))
+			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode, string(rangeResultBody))
+			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey), string(rangeResultBody))
 		})
 	}
 }
