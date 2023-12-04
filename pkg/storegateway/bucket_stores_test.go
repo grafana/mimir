@@ -81,7 +81,9 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		assert.Empty(t, warnings)
 		assert.Empty(t, seriesSet)
 	}
-
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query series after the initial sync.
