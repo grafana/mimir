@@ -804,6 +804,10 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
 
+	// Start the compactor to have the bucket index created before querying.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
 	// Start the querier and store-gateway, and configure them to frequently sync blocks fast enough to trigger consistency check
 	// We will induce an error in the store gateway by deleting blocks and the querier ignores the direct error
 	// and relies on checking that all blocks were queried. However this consistency check will skip most recent
@@ -820,10 +824,6 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	// Wait until the querier and store-gateway have updated the ring
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512*2), "cortex_ring_tokens_total"))
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-
-	// Start the compactor to have the bucket index created before querying.
-	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
-	require.NoError(t, s.StartAndWaitReady(compactor))
 
 	// Wait until the blocks are old enough for consistency check
 	// 1 sync on startup, 3 to go over the consistency check limit explained above
