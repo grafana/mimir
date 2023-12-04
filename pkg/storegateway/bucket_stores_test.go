@@ -216,6 +216,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	// Run an initial sync to discover 1 block.
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	// Query a range for which we have no samples.
@@ -226,6 +227,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 
 	// Generate another block and sync blocks again.
 	generateStorageBlock(t, storageDir, userID, metricName, 100, 200, 15)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.SyncBlocks(ctx))
 
 	seriesSet, warnings, err = querySeries(t, stores, userID, metricName, 150, 180)
