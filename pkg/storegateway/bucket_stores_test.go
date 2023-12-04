@@ -507,6 +507,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
+	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
