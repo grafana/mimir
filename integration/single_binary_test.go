@@ -54,7 +54,6 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 		// Compactor.
 		"-compactor.ring.store":           "consul",
 		"-compactor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
-		"-compactor.cleanup-interval":     "2s", // Update bucket index often.
 	})
 
 	// Ensure Mimir successfully starts.
