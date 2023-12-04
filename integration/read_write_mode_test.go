@@ -308,7 +308,6 @@ func TestReadWriteModeCompaction(t *testing.T) {
 		// Frequently cleanup old blocks.
 		// While this doesn't test the compaction functionality of the compactor, it does verify that the compactor
 		// is correctly configured and able to interact with storage, which is the intention of this test.
-		"-compactor.cleanup-interval":        "2s",
 		"-compactor.blocks-retention-period": "5s",
 	})
 
@@ -341,10 +340,9 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 
 	flagSets := []map[string]string{
 		CommonStorageBackendFlags(),
+		BlocksStorageFlags(),
 		{
-			"-memberlist.join":                           "mimir-backend-1",
-			"-compactor.cleanup-interval":                "1s",
-			"-blocks-storage.bucket-store.sync-interval": "1s",
+			"-memberlist.join": "mimir-backend-1",
 		},
 	}
 

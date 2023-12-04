@@ -116,15 +116,15 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify we can successfully query timeseries between timeStamp1 and timeStamp2 (excluded)
-			rangeResultResponse, _, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
+			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp1.Add(time.Second), time.Second)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode)
+			require.Equal(t, http.StatusOK, rangeResultResponse.StatusCode, string(rangeResultBody))
 
 			// Verify we cannot successfully query timeseries between timeSeries1 and timeSeries2 (included) because the limit is hit, and the status code 422 is returned
-			rangeResultResponse, rangeResultBody, err := client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
+			rangeResultResponse, rangeResultBody, err = client.QueryRangeRaw("{__name__=~\"series_.+\"}", timeStamp1, timeStamp2.Add(time.Second), time.Second)
 			require.NoError(t, err)
-			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode)
-			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey))
+			require.Equal(t, http.StatusUnprocessableEntity, rangeResultResponse.StatusCode, string(rangeResultBody))
+			require.True(t, strings.Contains(string(rangeResultBody), testData.expectedErrorKey), string(rangeResultBody))
 		})
 	}
 }
