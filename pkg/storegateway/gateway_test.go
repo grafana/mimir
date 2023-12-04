@@ -133,7 +133,14 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-			bucketClient := &bucket.ClientMock{}
+			onBucketIndexGet := func() {}
+
+			bucketClient := &bucket.ErrorInjectedBucketClient{Bucket: objstore.NewInMemBucket(), Injector: func(op bucket.Operation, name string) error {
+				if op == bucket.OpGet && strings.HasSuffix(name, bucketindex.IndexCompressedFilename) {
+					onBucketIndexGet()
+				}
+				return nil
+			}}
 
 			// Setup the initial instance state in the ring.
 			if testData.initialExists {
@@ -149,16 +156,18 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 			assert.False(t, g.ringLifecycler.IsRegistered())
 
-			bucketClient.MockIterWithCallback("", []string{"user-1", "user-2"}, nil, func() {
+			for _, userID := range []string{"user-1", "user-2"} {
+				createBucketIndex(t, bucketClient, userID)
+			}
+
+			onBucketIndexGet = func() {
 				// During the initial sync, we expect the instance to always be in the JOINING
 				// state within the ring.
 				assert.True(t, g.ringLifecycler.IsRegistered())
 				assert.Equal(t, ring.JOINING, g.ringLifecycler.GetState())
 				assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 				assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
-			})
-			bucketClient.MockIter("user-1/", []string{}, nil)
-			bucketClient.MockIter("user-2/", []string{}, nil)
+			}
 
 			// Once successfully started, the instance should be ACTIVE in the ring.
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
