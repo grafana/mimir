@@ -42,7 +42,6 @@ func Test_MaxSeriesAndChunksPerQueryLimitHit(t *testing.T) {
 			"-blocks-storage.tsdb.retention-period":             blockRangePeriod.String(), // We want blocks to be immediately deleted from ingesters.
 			"-blocks-storage.tsdb.ship-interval":                "1s",
 			"-blocks-storage.tsdb.head-compaction-interval":     "500ms",
-			"-log.level": "debug",
 		},
 	)
 
