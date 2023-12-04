@@ -660,6 +660,9 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	for userID := range userToMetric {
+		createBucketIndex(t, bucket, userID)
+	}
 
 	sharding := userShardingStrategy{}
 
