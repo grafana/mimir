@@ -105,7 +105,7 @@ github.com/alecthomas/chroma/v2/styles
 # github.com/alecthomas/kingpin/v2 v2.4.0
 ## explicit; go 1.17
 github.com/alecthomas/kingpin/v2
-# github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
+# github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 ## explicit; go 1.15
 github.com/alecthomas/units
 # github.com/armon/go-metrics v0.4.1
