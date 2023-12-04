@@ -22,7 +22,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] The following deprecated configurations have been removed: #6673
+* [CHANGE] The following deprecated configurations have been removed: #6673 #6779 #6808
   * `-querier.iterators`
   * `-querier.batch-iterators`
   * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
