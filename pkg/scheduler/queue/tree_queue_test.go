@@ -10,8 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const maxTestQueueLen = 8
-
 // TestDequeueBalancedTree checks dequeuing behavior from a balanced tree.
 //
 // Dequeuing from a balanced tree allows the test to have a simple looped structures
