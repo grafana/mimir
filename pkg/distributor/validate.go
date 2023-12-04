@@ -6,10 +6,8 @@
 package distributor
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -339,16 +337,16 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Name) > maxLabelNameLength {
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, formatLabelSet(ls))
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		}
 
 		lastLabelName = l.Name
@@ -415,50 +413,8 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 	return err
 }
 
-// formatLabelSet formats label adapters as a metric name with labels, while preserving
-// label order, and keeping duplicates. If there are multiple "__name__" labels, only
-// first one is used as metric name, other ones will be included as regular labels.
-func formatLabelSet(ls []mimirpb.LabelAdapter) string {
-	var space [1024]byte
-	var quoteSpace [256]byte
-	b := bytes.NewBuffer(space[:0])
-	metricNameIndex := -1
-
-	for i, l := range ls {
-		if l.Name == model.MetricNameLabel {
-			b.WriteString(l.Value)
-			metricNameIndex = i
-			break
-		}
-	}
-
-	count := 0
-	for i, l := range ls {
-		if i == metricNameIndex {
-			continue
-		}
-		if count == 0 {
-			b.WriteByte('{')
-		} else {
-			b.WriteByte(',')
-			b.WriteByte(' ')
-		}
-		b.WriteString(l.Name)
-		b.WriteByte('=')
-		b.Write(strconv.AppendQuote(quoteSpace[:0], l.Value))
-		count++
-	}
-	if count > 0 {
-		b.WriteByte('}')
-	}
-	if b.Len() == 0 {
-		return "{}"
-	}
-	return b.String()
-}
-
 func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
-	metric := formatLabelSet(ls)
+	metric := mimirpb.FromLabelAdaptersToString(ls)
 	ellipsis := ""
 
 	if utf8.RuneCountInString(metric) > 200 {
