@@ -45,10 +45,6 @@ func randAdditionalQueueDimension() []string {
 }
 
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	req := &SchedulerRequest{
-		Ctx:     context.Background(),
-		Request: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
-	}
 	maxQueriers := 0
 
 	for _, numTenants := range []int{1, 10, 1000} {
@@ -90,11 +86,34 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							runProducer := func(producerIdx int) error {
 								requestCount := requestCount(b.N, numProducers, producerIdx)
 								tenantID := producerIdx % numTenants
+								tenantIDStr := strconv.Itoa(tenantID)
 								<-start
 
 								for i := 0; i < requestCount; i++ {
 									for {
-										req.AdditionalQueueDimensions = randAdditionalQueueDimension()
+										// when running this benchmark for memory usage comparison,
+										// we want to have a relatively representative size of request
+										// in order not to skew the % delta between queue implementations.
+										// Unless the request starts to get copied, the size of the requests in the queue
+										// should significantly outweigh the memory used to implement the queue mechanics.
+										url := "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60"
+										req := &SchedulerRequest{
+											Ctx:             context.Background(),
+											FrontendAddress: "http://query-frontend:8007",
+											UserID:          tenantIDStr,
+											Request: &httpgrpc.HTTPRequest{
+												Method: "GET",
+												Headers: []*httpgrpc.Header{
+													{Key: "QueryId", Values: []string{"12345678901234567890"}},
+													{Key: "Accept", Values: []string{"application/vnd.mimir.queryresponse+protobuf", "application/json"}},
+													{Key: "X-Scope-OrgId", Values: []string{tenantIDStr}},
+													{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
+												},
+												Url: url,
+											},
+											AdditionalQueueDimensions: randAdditionalQueueDimension(),
+										}
+										//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
 										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriers, func() {})
 										if err == nil {
 											break

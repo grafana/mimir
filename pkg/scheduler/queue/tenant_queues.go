@@ -142,7 +142,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 	}
 
 	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
-	if errors.Is(err, ErrMaxQueueLengthExceeded) {
+	if errors.Is(err, ErrMaxQueueItemCountExceeded) {
 		return errors.Join(err, ErrTooManyRequests)
 	}
 	return err
