@@ -125,8 +125,11 @@ func TestNewRequestRateError(t *testing.T) {
 }
 
 func TestNewIngesterPushError(t *testing.T) {
-	testMsg := "this is an error"
-	anotherTestMsg := "this is another error"
+	const (
+		ingesterID     = "ingester-25"
+		testMsg        = "this is an error"
+		anotherTestMsg = "this is another error"
+	)
 	tests := map[string]struct {
 		originalStatus *status.Status
 		expectedCause  mimirpb.ErrorCause
@@ -143,13 +146,13 @@ func TestNewIngesterPushError(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := newIngesterPushError(testData.originalStatus)
-			expectedErrorMsg := fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, testMsg)
+			err := newIngesterPushError(testData.originalStatus, ingesterID)
+			expectedErrorMsg := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, testMsg)
 			assert.Error(t, err)
 			assert.EqualError(t, err, expectedErrorMsg)
 			checkDistributorError(t, err, testData.expectedCause)
 
-			anotherErr := newIngesterPushError(createStatusWithDetails(t, codes.Internal, anotherTestMsg, testData.expectedCause))
+			anotherErr := newIngesterPushError(createStatusWithDetails(t, codes.Internal, anotherTestMsg, testData.expectedCause), ingesterID)
 			assert.NotErrorIs(t, err, anotherErr)
 
 			assert.True(t, errors.As(err, &ingesterPushError{}))
@@ -164,7 +167,10 @@ func TestNewIngesterPushError(t *testing.T) {
 }
 
 func TestToGRPCError(t *testing.T) {
-	originalMsg := "this is an error"
+	const (
+		ingesterID  = "ingester-25"
+		originalMsg = "this is an error"
+	)
 	originalErr := errors.New(originalMsg)
 	replicasDidNotMatchErr := newReplicasDidNotMatchError("a", "b")
 	tooManyClustersErr := newTooManyClustersError(10)
@@ -263,63 +269,63 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.REQUEST_RATE_LIMITED},
 		},
 		"an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA)),
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID),
 			expectedGRPCCode:     codes.FailedPrecondition,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a DoNotLogError of an ingesterPushError with BAD_DATA cause gets translated into a FailedPrecondition error with BAD_DATA cause": {
-			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA))},
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.BAD_DATA), ingesterID)},
 			expectedGRPCCode:     codes.FailedPrecondition,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT)),
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID),
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 		},
 		"a DoNotLogError of an ingesterPushError with INSTANCE_LIMIT cause gets translated into a Internal error with INSTANCE_LIMIT cause": {
-			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT))},
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.INSTANCE_LIMIT), ingesterID)},
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT},
 		},
 		"an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into a Internal error with SERVICE_UNAVAILABLE cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE)),
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID),
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"a DoNotLogError of an ingesterPushError with SERVICE_UNAVAILABLE cause gets translated into a Internal error with SERVICE_UNAVAILABLE cause": {
-			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE))},
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.SERVICE_UNAVAILABLE), ingesterID)},
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE},
 		},
 		"an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into a Internal error with TSDB_UNAVAILABLE cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE)),
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID),
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"a DoNotLogError of an ingesterPushError with TSDB_UNAVAILABLE cause gets translated into a Internal error with TSDB_UNAVAILABLE cause": {
-			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE))},
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Internal, originalMsg, mimirpb.TSDB_UNAVAILABLE), ingesterID)},
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.TSDB_UNAVAILABLE},
 		},
 		"an ingesterPushError with UNKNOWN_CAUSE cause gets translated into a Internal error with UNKNOWN_CAUSE cause": {
-			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE)),
+			err:                  newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
 		"a DoNotLogError of an ingesterPushError with UNKNOWN_CAUSE cause gets translated into a Internal error with UNKNOWN_CAUSE cause": {
-			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE))},
+			err:                  middleware.DoNotLogError{Err: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, originalMsg, mimirpb.UNKNOWN_CAUSE), ingesterID)},
 			expectedGRPCCode:     codes.Internal,
-			expectedErrorMsg:     fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, originalMsg),
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
 	}
@@ -344,13 +350,16 @@ func TestToGRPCError(t *testing.T) {
 	}
 }
 
-func TestHandleIngesterPushError(t *testing.T) {
-	testErrorMsg := "this is a test error message"
-	outputErrorMsgPrefix := "failed pushing to ingester"
+func TestWrapIngesterPushError(t *testing.T) {
+	const (
+		ingesterID   = "ingester-25"
+		testErrorMsg = "this is a test error message"
+	)
+	outputErrorMsgPrefix := fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)
 
 	// Ensure that no error gets translated into no error.
 	t.Run("no error gives no error", func(t *testing.T) {
-		err := handleIngesterPushError(nil)
+		err := wrapIngesterPushError(nil, ingesterID)
 		require.NoError(t, err)
 	})
 
@@ -375,7 +384,7 @@ func TestHandleIngesterPushError(t *testing.T) {
 	}
 	for testName, testData := range httpgrpcTests {
 		t.Run(testName, func(t *testing.T) {
-			err := handleIngesterPushError(testData.ingesterPushError)
+			err := wrapIngesterPushError(testData.ingesterPushError, ingesterID)
 			res, ok := httpgrpc.HTTPResponseFromError(err)
 			require.True(t, ok)
 			require.NotNil(t, res)
@@ -392,29 +401,29 @@ func TestHandleIngesterPushError(t *testing.T) {
 	}{
 		"a gRPC error with details gives an ingesterPushError with the same details": {
 			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
 		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			// This is how context.DeadlineExceeded error is translated into a gRPC error.
 			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
 		"an Unavailable gRPC error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unavailable, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
 		"an Internal gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Internal, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
 		"an Unknown gRPC ingester error without details gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			ingesterPushError:         status.Error(codes.Unknown, testErrorMsg),
-			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE)),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
 	}
 	for testName, testData := range statusTests {
 		t.Run(testName, func(t *testing.T) {
-			err := handleIngesterPushError(testData.ingesterPushError)
+			err := wrapIngesterPushError(testData.ingesterPushError, ingesterID)
 			ingesterPushErr, ok := err.(ingesterPushError)
 			require.True(t, ok)
 

@@ -65,7 +65,7 @@ import (
 )
 
 var (
-	errFail                    = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
+	errFail                    = status.Error(codes.Internal, "Fail")
 	emptyResponse              = &mimirpb.WriteResponse{}
 	generateTestHistogram      = util_test.GenerateTestHistogram
 	generateTestFloatHistogram = util_test.GenerateTestFloatHistogram
@@ -119,24 +119,22 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
-	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: Fail")
-
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
 	}
 	for name, tc := range map[string]struct {
-		metricNames          []string
-		numIngesters         int
-		happyIngesters       int
-		samples              samplesIn
-		metadata             int
-		expectedError        error
-		expectedGRPCError    *status.Status
-		expectedErrorDetails *mimirpb.ErrorDetails
-		expectedMetrics      string
-		timeOut              bool
-		configure            func(*Config)
+		metricNames           []string
+		numIngesters          int
+		happyIngesters        int
+		samples               samplesIn
+		metadata              int
+		expectedErrorContains []string
+		expectedGRPCError     *status.Status
+		expectedErrorDetails  *mimirpb.ErrorDetails
+		expectedMetrics       string
+		timeOut               bool
+		configure             func(*Config)
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -167,11 +165,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 1 happy ingesters should fail": {
-			numIngesters:   3,
-			happyIngesters: 1,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:          3,
+			happyIngesters:        1,
+			samples:               samplesIn{num: 10, startTimestampMs: 123456789000},
+			expectedErrorContains: []string{"Internal", "failed pushing to ingester"},
+			metricNames:           []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -179,11 +177,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 0 happy ingesters should fail": {
-			numIngesters:   3,
-			happyIngesters: 0,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:          3,
+			happyIngesters:        0,
+			samples:               samplesIn{num: 10, startTimestampMs: 123456789000},
+			expectedErrorContains: []string{"Internal", "failed pushing to ingester"},
+			metricNames:           []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -283,12 +281,12 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A timed out push should fail": {
-			numIngesters:   3,
-			happyIngesters: 3,
-			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			timeOut:        true,
-			expectedError:  errors.New("exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
-			metricNames:    []string{lastSeenTimestamp},
+			numIngesters:          3,
+			happyIngesters:        3,
+			samples:               samplesIn{num: 10, startTimestampMs: 123456789000},
+			timeOut:               true,
+			expectedErrorContains: []string{"exceeded configured distributor remote timeout", "failed pushing to ingester", "context deadline exceeded"},
+			metricNames:           []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -330,14 +328,16 @@ func TestDistributor_Push(t *testing.T) {
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
 			response, err := ds[0].Push(ctx, request)
 
-			if tc.expectedError == nil && tc.expectedGRPCError == nil {
+			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
 				require.NoError(t, err)
 				assert.Equal(t, emptyResponse, response)
 			} else {
 				assert.Nil(t, response)
 
 				if tc.expectedGRPCError == nil {
-					assert.EqualError(t, err, tc.expectedError.Error())
+					for _, msg := range tc.expectedErrorContains {
+						assert.ErrorContains(t, err, msg)
+					}
 				} else {
 					checkGRPCError(t, tc.expectedGRPCError, tc.expectedErrorDetails, err)
 				}
@@ -1139,8 +1139,8 @@ func TestDistributor_PushQuery(t *testing.T) {
 				assert.EqualError(t, err, tc.expectedError.Error())
 
 				// Assert that downstream gRPC statuses are passed back upstream
-				_, ok := httpgrpc.HTTPResponseFromError(err)
-				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
+				_, ok := grpcutil.ErrorToStatus(err)
+				assert.True(t, ok, fmt.Sprintf("expected error to be a status error, but got: %T", err))
 			}
 
 			var m model.Matrix
