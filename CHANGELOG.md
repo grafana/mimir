@@ -39,7 +39,7 @@
 ### Grafana Mimir
 
 * [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets. #6106
-* [CHANGE] The following deprecated configurations have been removed: #6673 #6779 #6808
+* [CHANGE] The following deprecated configurations have been removed: #6673 #6779 #6808 #6814
   * `-querier.iterators`
   * `-querier.batch-iterators`
   * `-blocks-storage.bucket-store.max-chunk-pool-bytes`
