@@ -2260,9 +2260,11 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
 	}
+
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
+		expectError                 error
 		expectedSeries              []labels.Labels
 		expectedNumQueriedIngesters int
 	}{
@@ -2287,6 +2289,10 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedSeries:              []labels.Labels{collision1, collision2},
 			expectedNumQueriedIngesters: numIngesters,
 		},
+		"aborts if response is too large": {
+			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, bigMetricMagicName)},
+			expectError:     ErrResponseTooLarge,
+		},
 	}
 
 	for testName, test := range tests {
@@ -2298,13 +2304,13 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 				numDistributors:  1,
 				shuffleShardSize: test.shuffleShardSize,
 			})
-			distributor := distributors[0]
+			d := distributors[0]
 
 			// Push test data.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			for _, series := range pushedData {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := distributor.Push(ctx, req)
+				_, err := d.Push(ctx, req)
 				require.NoError(t, err)
 			}
 
@@ -2312,7 +2318,12 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
 			// Query active series.
-			series, err := distributor.ActiveSeries(ctx, test.requestMatchers)
+			series, err := d.ActiveSeries(ctx, test.requestMatchers)
+			if test.expectError != nil {
+				require.ErrorIs(t, err, test.expectError)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.ElementsMatch(t, test.expectedSeries, series)
 
@@ -4385,6 +4396,8 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	return result, nil
 }
 
+const bigMetricMagicName = "big_metric"
+
 func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
 	i.Lock()
 	defer i.Unlock()
@@ -4400,7 +4413,15 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 		return nil, err
 	}
 
-	results := []*client.ActiveSeriesResponse{}
+	// Return a large response for the big_metric metric.
+	for _, m := range matchers {
+		if m.Name == labels.MetricName && m.Matches(bigMetricMagicName) {
+			return &activeSeriesStream{results: []*client.ActiveSeriesResponse{{Metric: largeMetric()}}}, nil
+		}
+	}
+
+	var results []*client.ActiveSeriesResponse
+
 	resp := &client.ActiveSeriesResponse{}
 
 	for _, series := range i.timeseries {
@@ -4417,6 +4438,18 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 	}
 
 	return &activeSeriesStream{results: results}, nil
+}
+
+func largeMetric() []*mimirpb.Metric {
+	const lblSize = 1024
+	const numSeries = activeSeriesResponseMaxSize / lblSize
+
+	tpl := fmt.Sprintf("%%0%dd", lblSize)
+	var m []*mimirpb.Metric
+	for ix := 0; ix < numSeries; ix++ {
+		m = append(m, &mimirpb.Metric{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: bigMetricMagicName}, {Name: "foo", Value: fmt.Sprintf(tpl, ix)}}})
+	}
+	return m
 }
 
 type activeSeriesStream struct {

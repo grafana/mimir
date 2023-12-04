@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	pkg_distributor "github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -793,6 +794,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 		name                 string
 		requestParams        map[string][]string
 		expectMatcherSetSize int
+		returnedError        error
 		expectError          bool
 	}{
 		{
@@ -813,6 +815,11 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			name:          "valid selector",
 			requestParams: map[string][]string{"selector": {`{job="prometheus"}`}},
 		},
+		{
+			name:          "upstream error: response too large",
+			returnedError: pkg_distributor.ErrResponseTooLarge,
+			expectError:   true,
+		},
 	}
 
 	for _, test := range tests {
@@ -823,7 +830,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 				labels.FromStrings("__name__", "up", "job", "prometheus"),
 				labels.FromStrings("__name__", "process_start_time_seconds", "job", "prometheus"),
 			}
-			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, nil)
+			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, test.returnedError)
 
 			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
 			ctx := user.InjectOrgID(context.Background(), "test")

@@ -22,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
@@ -82,6 +83,9 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 
 	resp, err := doShardedRequests(ctx, reqs, s.upstream)
 	if err != nil {
+		if errors.Is(err, distributor.ErrResponseTooLarge) {
+			return nil, apierror.New(apierror.TypeBadData, err.Error())
+		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
