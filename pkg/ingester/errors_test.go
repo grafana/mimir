@@ -225,7 +225,7 @@ func TestNewTSDBIngestExemplarErr(t *testing.T) {
 	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
-	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series={__name__=\"test\"}, exemplar={traceID=\"123\"}", anotherErr)
+	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test, exemplar={traceID=\"123\"}", anotherErr)
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
 

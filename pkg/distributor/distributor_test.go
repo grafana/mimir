@@ -1383,17 +1383,17 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 		},
 		"rejects exemplar with no labels": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{}),
-			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: {__name__="test"} labels: {}`,
+			errMsg: `received an exemplar with no valid labels, timestamp: 1000 series: test labels: {}`,
 			errID:  globalerror.ExemplarLabelsMissing,
 		},
 		"rejects exemplar with no timestamp": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 0, []string{"foo", "bar"}),
-			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: {__name__="test"} labels: {foo="bar"}`,
+			errMsg: `received an exemplar with no timestamp, timestamp: 0 series: test labels: {foo="bar"}`,
 			errID:  globalerror.ExemplarTimestampInvalid,
 		},
 		"rejects exemplar with too long labelset": {
 			req:    makeWriteRequestExemplar([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", strings.Repeat("0", 126)}),
-			errMsg: fmt.Sprintf(`received an exemplar where the size of its combined labels exceeds the limit of 128 characters, timestamp: 1000 series: {__name__="test"} labels: {foo="%s"}`, strings.Repeat("0", 126)),
+			errMsg: fmt.Sprintf(`received an exemplar where the size of its combined labels exceeds the limit of 128 characters, timestamp: 1000 series: test labels: {foo="%s"}`, strings.Repeat("0", 126)),
 			errID:  globalerror.ExemplarLabelsTooLong,
 		},
 		"rejects exemplar with too many series labels": {
@@ -1474,7 +1474,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			bucketLimit: 7,
 			errMsg:      "received a native histogram sample with too many buckets, timestamp",
 			errID:       globalerror.MaxNativeHistogramBuckets,
-			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(maxNativeHistogramBucketsMsgFormat, 1000, "{__name__=\"test\"}", 8, 7)),
+			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(maxNativeHistogramBucketsMsgFormat, 1000, "test", 8, 7)),
 		},
 	}
 
@@ -1779,7 +1779,7 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 				limits.MaxNativeHistogramBuckets = 1
 			},
 			req:                makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, hugeH),
-			expectedError:      fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce, timestamp: 1000 series: {__name__=\"test\"}, buckets: 2, limit: 1 (not-reducible-native-histogram)"),
+			expectedError:      fmt.Errorf("received a native histogram sample with too many buckets and cannot reduce, timestamp: 1000 series: test, buckets: 2, limit: 1 (not-reducible-native-histogram)"),
 			expectedTimeSeries: []mimirpb.PreallocTimeseries{},
 		},
 	}
@@ -4579,7 +4579,7 @@ func TestDistributorValidation(t *testing.T) {
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
-			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(exemplarEmptyLabelsMsgFormat, now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar"), "{}")),
+			expectedErr: status.New(codes.FailedPrecondition, fmt.Sprintf(exemplarEmptyLabelsMsgFormat, now, `testmetric{foo="bar"}`, "{}")),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
