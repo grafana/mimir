@@ -6,6 +6,7 @@
 package mimirpb
 
 import (
+	"bytes"
 	stdjson "encoding/json"
 	"fmt"
 	"math"
@@ -92,6 +93,48 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []
 // Don't do this on any performance sensitive paths.
 func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 	return util.LabelsToMetric(FromLabelAdaptersToLabels(ls))
+}
+
+// formatLabelSet formats label adapters as a metric name with labels, while preserving
+// label order, and keeping duplicates. If there are multiple "__name__" labels, only
+// first one is used as metric name, other ones will be included as regular labels.
+func FromLabelAdaptersToString(ls []LabelAdapter) string {
+	var space [1024]byte
+	var quoteSpace [256]byte
+	b := bytes.NewBuffer(space[:0])
+	metricNameIndex := -1
+
+	for i, l := range ls {
+		if l.Name == model.MetricNameLabel {
+			b.WriteString(l.Value)
+			metricNameIndex = i
+			break
+		}
+	}
+
+	count := 0
+	for i, l := range ls {
+		if i == metricNameIndex {
+			continue
+		}
+		if count == 0 {
+			b.WriteByte('{')
+		} else {
+			b.WriteByte(',')
+			b.WriteByte(' ')
+		}
+		b.WriteString(l.Name)
+		b.WriteByte('=')
+		b.Write(strconv.AppendQuote(quoteSpace[:0], l.Value))
+		count++
+	}
+	if count > 0 {
+		b.WriteByte('}')
+	}
+	if b.Len() == 0 {
+		return "{}"
+	}
+	return b.String()
 }
 
 // FromMetricsToLabelAdapters converts model.Metric to []LabelAdapter.

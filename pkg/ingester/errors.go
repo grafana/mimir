@@ -208,7 +208,7 @@ func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, l
 		errID:     errID,
 		errMsg:    errMsg,
 		timestamp: timestamp,
-		series:    mimirpb.FromLabelAdaptersToLabels(labels).String(),
+		series:    mimirpb.FromLabelAdaptersToString(labels),
 	}
 }
 
@@ -268,8 +268,8 @@ func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time,
 		errID:          errID,
 		errMsg:         errMsg,
 		timestamp:      timestamp,
-		seriesLabels:   mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
-		exemplarLabels: mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+		seriesLabels:   mimirpb.FromLabelAdaptersToString(seriesLabels),
+		exemplarLabels: mimirpb.FromLabelAdaptersToString(exemplarLabels),
 	}
 }
 
@@ -314,8 +314,8 @@ func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabel
 	return tsdbIngestExemplarErr{
 		originalErr:    ingestErr,
 		timestamp:      timestamp,
-		seriesLabels:   mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
-		exemplarLabels: mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+		seriesLabels:   mimirpb.FromLabelAdaptersToString(seriesLabels),
+		exemplarLabels: mimirpb.FromLabelAdaptersToString(exemplarLabels),
 	}
 }
 
@@ -388,10 +388,10 @@ type perMetricSeriesLimitReachedError struct {
 }
 
 // newPerMetricSeriesLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric series limit has been reached.
-func newPerMetricSeriesLimitReachedError(limit int, labels labels.Labels) perMetricSeriesLimitReachedError {
+func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) perMetricSeriesLimitReachedError {
 	return perMetricSeriesLimitReachedError{
 		limit:  limit,
-		series: labels.String(),
+		series: mimirpb.FromLabelAdaptersToString(labels),
 	}
 }
 
