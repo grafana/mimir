@@ -7,15 +7,18 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -36,7 +39,7 @@ type ownedSeriesTestContext struct {
 	ownedSeries *ownedSeriesService
 	ing         *Ingester
 	db          *userTSDB
-	kvStore     *consul.Client
+	kvStore     *watchingKV
 
 	buf          *concurrency.SyncBuffer
 	tenantShards map[string]int
@@ -69,7 +72,7 @@ func (c *ownedSeriesTestContext) registerTestedIngesterIntoRing(t *testing.T, in
 	c.ingesterZone = instanceZone
 
 	// Insert our ingester into the ring. When lifecycler starts, it will find this entry, and keep the tokens.
-	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+	updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 		var tokens []uint32
 		for i := 0; i < ownedServiceSeriesCount/2; i++ {
 			tokens = append(tokens, c.seriesTokens[i]+1)
@@ -85,7 +88,7 @@ func (c *ownedSeriesTestContext) registerTestedIngesterIntoRing(t *testing.T, in
 // Insert second ingester to the ring, with tokens that will make it second half of the series.
 // This ingester will also be first ingester in the user's shuffle shard (skip: 0).
 func (c *ownedSeriesTestContext) registerSecondIngesterOwningHalfOfTheTokens(t *testing.T) {
-	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+	updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 		var tokens []uint32
 		for i := ownedServiceSeriesCount / 2; i < ownedServiceSeriesCount; i++ {
 			tokens = append(tokens, c.seriesTokens[i]+1)
@@ -99,7 +102,7 @@ func (c *ownedSeriesTestContext) registerSecondIngesterOwningHalfOfTheTokens(t *
 }
 
 func (c *ownedSeriesTestContext) removeSecondIngester(t *testing.T) {
-	updateRing(t, c.kvStore, func(desc *ring.Desc) {
+	updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
 		desc.RemoveIngester("second-ingester")
 	})
 }
@@ -254,31 +257,33 @@ func TestOwnedSeriesService(t *testing.T) {
 			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
+			wkv := &watchingKV{Client: kvStore}
+
 			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.KVStore.Mock = kvStore
+			cfg.IngesterRing.KVStore.Mock = wkv // Use "watchingKV" so that we know when update was processed.
 			cfg.IngesterRing.InstanceID = "first-ingester"
 			cfg.IngesterRing.NumTokens = ownedServiceSeriesCount/2 + 1 // We will use token for half of the series + one token for user.
 			cfg.IngesterRing.ZoneAwarenessEnabled = true
 			cfg.IngesterRing.InstanceZone = "zone"
 			cfg.IngesterRing.ReplicationFactor = 1 // Currently we require RF=number of zones, and we will only work with single zone.
 
-			c := ownedSeriesTestContext{
-				seriesToWrite: seriesToWrite,
-				seriesTokens:  seriesTokens,
-				kvStore:       kvStore,
-			}
-
-			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
-
-			c.ing = setupIngester(t, cfg)
-
-			// Start the ring watching.
+			// Start the ring watching. We need watcher to be running when we're doing ring updates, otherwise our update-and-watch function will fail.
 			rng, err := ring.New(cfg.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), rng))
 			})
+
+			c := ownedSeriesTestContext{
+				seriesToWrite: seriesToWrite,
+				seriesTokens:  seriesTokens,
+				kvStore:       wkv,
+			}
+
+			c.registerTestedIngesterIntoRing(t, cfg.IngesterRing.InstanceID, cfg.IngesterRing.InstanceAddr, cfg.IngesterRing.InstanceZone)
+
+			c.ing = setupIngester(t, cfg)
 
 			c.tenantShards = map[string]int{}
 			c.buf = &concurrency.SyncBuffer{}
@@ -294,11 +299,13 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
+	wkv := &watchingKV{Client: kvStore}
+
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
 
 	// Configure ring
-	rc.KVStore.Mock = kvStore
+	rc.KVStore.Mock = wkv
 	rc.HeartbeatTimeout = 1 * time.Minute
 	rc.ReplicationFactor = 3
 	rc.ZoneAwarenessEnabled = true
@@ -318,7 +325,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 
 	ownedSeries := newOwnedSeriesService(10*time.Minute, instanceID1, rng, log.NewLogfmtLogger(&buf), nil, nil, nil, nil)
 
-	updateRing(t, kvStore, func(desc *ring.Desc) {
+	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now())
 	})
 
@@ -336,7 +343,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	})
 
 	t.Run("new instance added", func(t *testing.T) {
-		updateRing(t, kvStore, func(desc *ring.Desc) {
+		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now())
 		})
 
@@ -346,7 +353,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	})
 
 	t.Run("change of state is not interesting", func(t *testing.T) {
-		updateRing(t, kvStore, func(desc *ring.Desc) {
+		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.LEAVING, time.Now())
 		})
 
@@ -357,7 +364,7 @@ func TestOwnedSeriesRingChanged(t *testing.T) {
 	})
 
 	t.Run("removal of instance", func(t *testing.T) {
-		updateRing(t, kvStore, func(desc *ring.Desc) {
+		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
 			desc.RemoveIngester(instanceID2)
 		})
 
@@ -386,7 +393,10 @@ func setupIngester(t *testing.T, cfg Config) *Ingester {
 	return ing
 }
 
-func updateRing(t *testing.T, kvStore *consul.Client, updateFn func(*ring.Desc)) {
+func updateRingAndWaitForWatcherToReadUpdate(t *testing.T, kvStore *watchingKV, updateFn func(*ring.Desc)) {
+	// Clear existing updates, so that we can test if next update was processed.
+	kvStore.getAndResetUpdatedKeys()
+
 	err := kvStore.CAS(context.Background(), IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		d, _ := in.(*ring.Desc)
 		if d == nil {
@@ -399,6 +409,36 @@ func updateRing(t *testing.T, kvStore *consul.Client, updateFn func(*ring.Desc))
 	})
 	require.NoError(t, err)
 
-	// Wait a bit to make sure that ring has received the update.
-	time.Sleep(100 * time.Millisecond)
+	test.Poll(t, 1*time.Second, true, func() interface{} {
+		v := kvStore.getAndResetUpdatedKeys()
+		return slices.Contains(v, IngesterRingKey)
+	})
+}
+
+type watchingKV struct {
+	kv.Client
+
+	updatedKeysMu sync.Mutex
+	updatedKeys   []string
+}
+
+func (w *watchingKV) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
+	w.Client.WatchKey(ctx, key, func(i interface{}) bool {
+		v := f(i)
+
+		w.updatedKeysMu.Lock()
+		defer w.updatedKeysMu.Unlock()
+		w.updatedKeys = append(w.updatedKeys, key)
+
+		return v
+	})
+}
+
+func (w *watchingKV) getAndResetUpdatedKeys() []string {
+	w.updatedKeysMu.Lock()
+	defer w.updatedKeysMu.Unlock()
+
+	r := w.updatedKeys
+	w.updatedKeys = nil
+	return r
 }
