@@ -54,17 +54,17 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		StringVar(&c.clientConfig.Address)
 
 	cmd.Flag("user",
-		fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).
+		fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).
 		Default("").
 		Envar(envVars.APIUser).
 		StringVar(&c.clientConfig.User)
 
-	cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").
+	cmd.Flag("id", "Grafana Mimir tenant ID. Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided. Alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Required().
 		StringVar(&c.clientConfig.ID)
 
-	cmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+	cmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
 		Default("").
 		Envar(envVars.APIKey).
 		StringVar(&c.clientConfig.Key)
