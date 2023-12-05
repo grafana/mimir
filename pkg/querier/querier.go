@@ -52,6 +52,8 @@ type Config struct {
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"experimental"`
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"experimental"` // Enabled by default as of Mimir 2.11, remove altogether in 2.12.
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	LogReceivedSeriesForTenant                     string        `yaml:"log_received_series_for_tenant" category:"experimental"`
+	LogReceivedSeriesForMatchersContaining         string        `yaml:"log_received_series_for_matchers_containing" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -87,6 +89,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	// Based on our testing, 256 series / ingester was a good balance between memory consumption and the CPU overhead of managing a batch of series.
 	f.Uint64Var(&cfg.StreamingChunksPerIngesterSeriesBufferSize, "querier.streaming-chunks-per-ingester-buffer-size", 256, "Number of series to buffer per ingester when streaming chunks from ingesters.")
 	f.Uint64Var(&cfg.StreamingChunksPerStoreGatewaySeriesBufferSize, "querier.streaming-chunks-per-store-gateway-buffer-size", 256, "Number of series to buffer per store-gateway when streaming chunks from store-gateways.")
+
+	f.StringVar(&cfg.LogReceivedSeriesForTenant, "querier.log-received-series.tenant", "", "If set, selectors for this tenant that have matchers containing the value of -querier.log-received-series.matchers will be logged.")
+	f.StringVar(&cfg.LogReceivedSeriesForMatchersContaining, "querier.log-received-series.matchers", "", "If set, selectors that have matchers containing this value for the tenant set in -querier.log-received-series.tenant will be logged.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

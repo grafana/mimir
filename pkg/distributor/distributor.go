@@ -185,6 +185,8 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
+	LogReceivedSeriesForTenant                 string        `yaml:"-"`
+	LogReceivedSeriesForMatchersContaining     string        `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`

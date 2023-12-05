@@ -10,6 +10,7 @@ package distributor
 import (
 	"context"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -86,7 +87,22 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics)
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		logSeries := false
+		if userID == d.cfg.LogReceivedSeriesForTenant {
+			for _, m := range matchers {
+				if strings.Contains(m.String(), d.cfg.LogReceivedSeriesForMatchersContaining) {
+					logSeries = true
+					break
+				}
+			}
+		}
+
+		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics, logSeries)
 		if err != nil {
 			return err
 		}
@@ -200,7 +216,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics, logSeries bool) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -303,6 +319,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 
 					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+				}
+
+				if logSeries {
+					level.Info(log).Log("msg", "received batch of series names", "series", labelsBatch)
 				}
 
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
