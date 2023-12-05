@@ -1179,6 +1179,11 @@ instance_limits:
 # tenant set in -ingester.log-sent-series.tenant will be logged.
 # CLI flag: -ingester.log-sent-series.matchers
 [log_sent_series_for_matchers_containing: <string> | default = ""]
+
+# (experimental) If set, series that contain this value for the tenant set in
+# -ingester.log-sent-series.tenant will be logged.
+# CLI flag: -ingester.log-sent-series.containing
+[log_sent_series_containing: <string> | default = ""]
 ```
 
 ### querier

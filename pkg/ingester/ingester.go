@@ -178,6 +178,7 @@ type Config struct {
 
 	LogSentSeriesForTenant             string `yaml:"log_sent_series_for_tenant" category:"experimental"`
 	LogSentSeriesForMatchersContaining string `yaml:"log_sent_series_for_matchers_containing" category:"experimental"`
+	LogSentSeriesContaining            string `yaml:"log_sent_series_containing" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -200,6 +201,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.StringVar(&cfg.LogSentSeriesForTenant, "ingester.log-sent-series.tenant", "", "If set, series for this tenant that have matchers containing the value of -ingester.log-sent-series.matchers will be logged.")
 	f.StringVar(&cfg.LogSentSeriesForMatchersContaining, "ingester.log-sent-series.matchers", "", "If set, series that have matchers containing this value for the tenant set in -ingester.log-sent-series.tenant will be logged.")
+	f.StringVar(&cfg.LogSentSeriesContaining, "ingester.log-sent-series.containing", "", "If set, series that contain this value for the tenant set in -ingester.log-sent-series.tenant will be logged.")
 }
 
 func (cfg *Config) Validate() error {
@@ -2018,6 +2020,10 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	lastSeriesNode := allSeriesList
 	seriesCount := 0
 
+	var (
+		matchingSeries, notMatchingSeries               int
+		exampleMatchingSeries, exampleNotMatchingSeries labels.Labels
+	)
 	for ss.Next() {
 		series := ss.At()
 
@@ -2040,13 +2046,29 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		})
 
 		if logSeries {
-			spanlog.DebugLog(
-				"msg", "added series to the batch",
-				"series", series.Labels().String(),
-			)
+			if strings.Contains(series.Labels().String(), i.cfg.LogSentSeriesContaining) {
+				matchingSeries++
+				exampleMatchingSeries = series.Labels()
+			} else {
+				notMatchingSeries++
+				exampleNotMatchingSeries = series.Labels()
+			}
 		}
 
 		if len(seriesInBatch) >= queryStreamBatchSize {
+			if logSeries {
+				spanlog.DebugLog(
+					"msg", "sending batch of series",
+					"matching", matchingSeries,
+					"not_matching", notMatchingSeries,
+					"example_matching", exampleMatchingSeries.String(),
+					"example_not_matching", exampleNotMatchingSeries.String(),
+					"needle", i.cfg.LogSentSeriesContaining,
+					"err", err,
+				)
+				matchingSeries, notMatchingSeries = 0, 0
+				exampleMatchingSeries, exampleNotMatchingSeries = labels.New(), labels.New()
+			}
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				StreamingSeries: seriesInBatch,
 			})
@@ -2063,6 +2085,19 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		StreamingSeries:     seriesInBatch,
 		IsEndOfSeriesStream: true,
 	})
+	if logSeries {
+		spanlog.DebugLog(
+			"msg", "sending batch of series",
+			"matching", matchingSeries,
+			"not_matching", notMatchingSeries,
+			"example_matching", exampleMatchingSeries.String(),
+			"example_not_matching", exampleNotMatchingSeries.String(),
+			"needle", i.cfg.LogSentSeriesContaining,
+			"err", err,
+		)
+		matchingSeries, notMatchingSeries = 0, 0
+		exampleMatchingSeries, exampleNotMatchingSeries = labels.New(), labels.New()
+	}
 	if err != nil {
 		return nil, 0, err
 	}
@@ -2087,6 +2122,10 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 		batchSizeBytes = 0
 	)
 
+	var (
+		matchingSeries, notMatchingSeries               int
+		exampleMatchingSeries, exampleNotMatchingSeries labels.Labels
+	)
 	for currNode != nil {
 		for _, series := range currNode.series {
 			seriesIdx++
@@ -2118,12 +2157,13 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			msgSize := seriesChunks.Size()
 
 			if logSeries {
-				spanlog.DebugLog(
-					"msg", "added chunks to the batch",
-					"series", series.Labels().String(),
-					"num_chunks", len(seriesChunks.Chunks),
-					"total_batch_samples", numSamples,
-				)
+				if strings.Contains(series.Labels().String(), i.cfg.LogSentSeriesContaining) {
+					matchingSeries++
+					exampleMatchingSeries = series.Labels()
+				} else {
+					notMatchingSeries++
+					exampleNotMatchingSeries = series.Labels()
+				}
 			}
 
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
@@ -2131,17 +2171,23 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 				err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 					StreamingSeriesChunks: seriesInBatch,
 				})
-				if err != nil {
-					return 0, 0, 0, err
-				}
 
 				if logSeries {
 					spanlog.DebugLog(
-						"msg", "sent batch of chunks",
-						"series_in_batch", len(seriesInBatch),
+						"msg", "sending batch of chunks",
+						"matching", matchingSeries,
+						"not_matching", notMatchingSeries,
+						"example_matching", exampleMatchingSeries.String(),
+						"example_not_matching", exampleNotMatchingSeries.String(),
+						"needle", i.cfg.LogSentSeriesContaining,
+						"err", err,
 					)
+					matchingSeries, notMatchingSeries = 0, 0
+					exampleMatchingSeries, exampleNotMatchingSeries = labels.New(), labels.New()
 				}
-
+				if err != nil {
+					return 0, 0, 0, err
+				}
 				seriesInBatch = seriesInBatch[:0]
 				batchSizeBytes = 0
 				numBatches++
@@ -2161,6 +2207,17 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 		err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 			StreamingSeriesChunks: seriesInBatch,
 		})
+		if logSeries {
+			spanlog.DebugLog(
+				"msg", "sending batch of chunks",
+				"matching", matchingSeries,
+				"not_matching", notMatchingSeries,
+				"example_matching", exampleMatchingSeries.String(),
+				"example_not_matching", exampleNotMatchingSeries.String(),
+				"needle", i.cfg.LogSentSeriesContaining,
+				"err", err,
+			)
+		}
 		if err != nil {
 			return 0, 0, 0, err
 		}

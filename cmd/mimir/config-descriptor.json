@@ -3075,6 +3075,17 @@
           "fieldFlag": "ingester.log-sent-series.matchers",
           "fieldType": "string",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_sent_series_containing",
+          "required": false,
+          "desc": "If set, series that contain this value for the tenant set in -ingester.log-sent-series.tenant will be logged.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ingester.log-sent-series.containing",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

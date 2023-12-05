@@ -1323,6 +1323,8 @@ Usage of ./cmd/mimir/mimir:
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.limit-inflight-requests-using-grpc-method-limiter
     	[experimental] Use experimental method of limiting push requests.
+  -ingester.log-sent-series.containing string
+    	[experimental] If set, series that contain this value for the tenant set in -ingester.log-sent-series.tenant will be logged.
   -ingester.log-sent-series.matchers string
     	[experimental] If set, series that have matchers containing this value for the tenant set in -ingester.log-sent-series.tenant will be logged.
   -ingester.log-sent-series.tenant string
