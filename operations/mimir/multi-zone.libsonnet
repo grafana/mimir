@@ -99,7 +99,7 @@
   newIngesterZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'ingester-zone-%s' % zone;
 
-    self.newIngesterStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    self.newIngesterStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'ingester' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
@@ -231,7 +231,7 @@
   newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'store-gateway-zone-%s' % zone;
 
-    self.newStoreGatewayStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
+    self.newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'store-gateway' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_store_gateway_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'store-gateway' }) +

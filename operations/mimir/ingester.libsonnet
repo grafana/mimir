@@ -73,7 +73,7 @@
     pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
-  newIngesterStatefulSet(name, container, with_anti_affinity=true, nodeAffinityMatchers=[])::
+  newIngesterStatefulSet(name, container, withAntiAffinity=true, nodeAffinityMatchers=[])::
     local ingesterContainer = container + $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('ingester-data', '/data'),
     ]);
@@ -85,7 +85,7 @@
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     $.mimirVolumeMounts +
     $.util.podPriority('high') +
-    (if with_anti_affinity then $.util.antiAffinity else {}),
+    (if withAntiAffinity then $.util.antiAffinity else {}),
 
   ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
     self.newIngesterStatefulSet(
