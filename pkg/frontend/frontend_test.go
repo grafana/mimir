@@ -232,7 +232,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	require.NoError(t, err)
 
 	prometheusCodec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), "json")
-	rt, v1, v2, err := InitFrontend(config, limits{}, prometheusCodec, 0, logger, nil)
+	rt, v1, v2, err := InitFrontend(config, limits{}, limits{}, prometheusCodec, 0, logger, nil)
 	require.NoError(t, err)
 	require.NotNil(t, rt)
 	// v1 will be nil if DownstreamURL is defined.

@@ -705,7 +705,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.QueryFrontendCodec, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.QueryFrontendCodec, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}

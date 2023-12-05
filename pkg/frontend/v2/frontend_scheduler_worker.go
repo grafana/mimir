@@ -404,8 +404,14 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	durationTimer := prometheus.NewTimer(w.enqueueDuration)
 	defer durationTimer.ObserveDuration()
 
-	frontendToSchedulerRequest := w.toSchedulerAdapter.frontendToSchedulerEnqueueRequest(req, w.frontendAddr)
-	err := loop.Send(frontendToSchedulerRequest)
+	frontendToSchedulerRequest, err := w.toSchedulerAdapter.frontendToSchedulerEnqueueRequest(req, w.frontendAddr)
+	if err != nil {
+		level.Warn(spanLogger).Log("msg", "received error while converting frontend request to scheduler request", "err", err)
+		req.enqueue <- enqueueResult{status: failed}
+		return err
+	}
+
+	err = loop.Send(frontendToSchedulerRequest)
 	if err != nil {
 		level.Warn(spanLogger).Log("msg", "received error while sending request to scheduler", "err", err)
 		req.enqueue <- enqueueResult{status: failed}

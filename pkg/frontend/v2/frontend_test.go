@@ -131,7 +131,10 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
@@ -164,7 +167,10 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	assert.Equal(t, makeLabels("scheduler_address", f.cfg.SchedulerAddress), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetLabel())
 	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(200), resp.Code)
 	require.Equal(t, []byte(body), resp.Body)
@@ -206,7 +212,10 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
-	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 }
 
@@ -215,7 +224,10 @@ func TestFrontendTooManyRequests(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
 }
@@ -225,7 +237,10 @@ func TestFrontendEnqueueFailure(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 	})
 
-	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.Error(t, err)
 	require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
 }
@@ -236,7 +251,10 @@ func TestFrontendCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.DeadlineExceeded.Error())
 	require.Nil(t, resp)
 
@@ -266,13 +284,16 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 	defer cancel()
 
 	// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
 	reqCount := testFrontendWorkerConcurrency + 5
 	var wg sync.WaitGroup
 	for i := 0; i < reqCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), &httpgrpc.HTTPRequest{})
+			resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 			require.EqualError(t, err, context.DeadlineExceeded.Error())
 			require.Nil(t, resp)
 		}()
@@ -334,7 +355,10 @@ func TestFrontendFailedCancellation(t *testing.T) {
 	}()
 
 	// send request
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.Canceled.Error())
 	require.Nil(t, resp)
 
@@ -456,7 +480,10 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	}))
 
 	// Connection will be established on the first roundtrip.
-	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	req := &httpgrpc.HTTPRequest{
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+	}
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 
@@ -470,7 +497,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	require.Equal(t, 1, checkStreamGoroutines())
 
 	// Another request will work as before, because worker will recreate connection.
-	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
 
@@ -503,12 +530,7 @@ func makeLabels(namesAndValues ...string) []*dto.LabelPair {
 }
 
 type limits struct {
-	queriers             int
 	queryIngestersWithin time.Duration
-}
-
-func (l limits) MaxQueriersPerUser(_ string) int {
-	return l.queriers
 }
 
 func (l limits) QueryIngestersWithin(string) time.Duration {

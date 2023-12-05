@@ -367,14 +367,9 @@ func defaultFrontendConfig() Config {
 }
 
 type limits struct {
-	queriers             int
-	queryIngestersWithin time.Duration
+	queriers int
 }
 
 func (l limits) MaxQueriersPerUser(_ string) int {
 	return l.queriers
-}
-
-func (l limits) QueryIngestersWithin(string) time.Duration {
-	return l.queryIngestersWithin
 }

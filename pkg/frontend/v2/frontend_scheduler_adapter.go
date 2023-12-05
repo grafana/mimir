@@ -10,7 +10,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -18,13 +17,17 @@ import (
 
 type frontendToSchedulerAdapter struct {
 	cfg             Config
-	limits          v1.Limits
+	limits          Limits
 	prometheusCodec querymiddleware.Codec
 }
 
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 	req *frontendRequest, frontendAddr string,
-) *schedulerpb.FrontendToScheduler {
+) (*schedulerpb.FrontendToScheduler, error) {
+	addlQueueDims, err := a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
+	if err != nil {
+		return nil, err
+	}
 	return &schedulerpb.FrontendToScheduler{
 		Type:                      schedulerpb.ENQUEUE,
 		QueryID:                   req.queryID,
@@ -32,35 +35,67 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 		HttpRequest:               req.request,
 		FrontendAddress:           frontendAddr,
 		StatsEnabled:              req.statsEnabled,
-		AdditionalQueueDimensions: a.extractAdditionalQueueDimensions(req.ctx, req.request),
-	}
+		AdditionalQueueDimensions: addlQueueDims,
+	}, nil
 }
 
 const ShouldQueryIngestersQueueDimension = "ingester"
 const ShouldQueryStoreGatewayQueueDimension = "store-gateway"
-const ShouldQueryIngestersAndStoreGatewayQueueDimension = "ingester|store-gateway"
+const ShouldQueryIngestersAndStoreGatewayQueueDimension = "ingester-and-store-gateway"
 
 func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
-	ctx context.Context, request *httpgrpc.HTTPRequest,
-) []string {
+	ctx context.Context, request *httpgrpc.HTTPRequest, now time.Time,
+) ([]string, error) {
+	var err error
+
 	httpRequest, err := httpgrpc.ToHTTPRequest(ctx, request)
 	if err != nil {
-		return nil
-	}
-	promRequest, err := a.prometheusCodec.DecodeRequest(ctx, httpRequest)
-	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	now := time.Now()
-	tenantIDs, err := tenant.TenantIDs(ctx)
+	tenantIDs, err := tenant.TenantIDs(httpRequest.Context())
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	latestQueryIngestersWithinWindow := validation.MinDurationPerTenant(tenantIDs, a.limits.QueryIngestersWithin)
-	shouldQueryIngesters := querier.ShouldQueryIngesters(latestQueryIngestersWithinWindow, now, promRequest.GetEnd())
-	shouldQueryBlockStore := querier.ShouldQueryBlockStore(a.cfg.QueryStoreAfter, now, promRequest.GetStart())
+	switch {
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path):
+		start, end, _, err := querymiddleware.DecodeRangeQueryTimeParams(httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
+	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, time, time, now), nil
+	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
+		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest)
+		if err != nil {
+			return nil, err
+		}
+		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path):
+		// cardinality only hits ingesters
+		return []string{ShouldQueryIngestersQueueDimension}, nil
+	default:
+		// no query time params to parse; cannot infer query component
+		return nil, nil
+	}
+}
+
+func (a *frontendToSchedulerAdapter) queryComponentQueueDimensionFromTimeParams(
+	tenantIDs []string, queryStartUnixSeconds, queryEndUnixSeconds int64, now time.Time,
+) []string {
+	longestQueryIngestersWithinWindow := validation.MaxDurationPerTenant(tenantIDs, a.limits.QueryIngestersWithin)
+	shouldQueryIngesters := querier.ShouldQueryIngesters(
+		longestQueryIngestersWithinWindow, now, unixSecondsToMilliseconds(queryEndUnixSeconds),
+	)
+	shouldQueryBlockStore := querier.ShouldQueryBlockStore(
+		a.cfg.QueryStoreAfter, now, unixSecondsToMilliseconds(queryStartUnixSeconds),
+	)
 
 	if shouldQueryIngesters && !shouldQueryBlockStore {
 		return []string{ShouldQueryIngestersQueueDimension}
@@ -68,4 +103,8 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		return []string{ShouldQueryStoreGatewayQueueDimension}
 	}
 	return []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}
+}
+
+func unixSecondsToMilliseconds(unixSeconds int64) int64 {
+	return unixSeconds * int64(time.Second/time.Millisecond)
 }

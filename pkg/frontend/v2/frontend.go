@@ -31,7 +31,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -82,6 +81,11 @@ func (cfg *Config) Validate() error {
 	return cfg.GRPCClientConfig.Validate()
 }
 
+type Limits interface {
+	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
+	QueryIngestersWithin(user string) time.Duration
+}
+
 // Frontend implements GrpcRoundTripper. It queues HTTP requests,
 // dispatches them to backends via gRPC, and handles retries for requests which failed.
 type Frontend struct {
@@ -130,7 +134,7 @@ type enqueueResult struct {
 }
 
 // NewFrontend creates a new frontend.
-func NewFrontend(cfg Config, limits v1.Limits, prometheusCodec querymiddleware.Codec, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
+func NewFrontend(cfg Config, limits Limits, prometheusCodec querymiddleware.Codec, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{
 		cfg:             cfg,

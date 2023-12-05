@@ -40,7 +40,11 @@ var secondQueueDimensionOptions = []string{
 }
 
 func randAdditionalQueueDimension() []string {
-	idx := rand.Intn(len(secondQueueDimensionOptions))
+	idx := rand.Intn(len(secondQueueDimensionOptions) + 1)
+	if idx == len(secondQueueDimensionOptions) {
+		// randomly don't add a second queue dimension at all to ensure the items still get dequeued
+		return nil
+	}
 	return secondQueueDimensionOptions[idx : idx+1]
 }
 
@@ -96,7 +100,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 										// in order not to skew the % delta between queue implementations.
 										// Unless the request starts to get copied, the size of the requests in the queue
 										// should significantly outweigh the memory used to implement the queue mechanics.
-										url := "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60"
 										req := &SchedulerRequest{
 											Ctx:             context.Background(),
 											FrontendAddress: "http://query-frontend:8007",
@@ -109,7 +112,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 													{Key: "X-Scope-OrgId", Values: []string{tenantIDStr}},
 													{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
 												},
-												Url: url,
+												Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
 											},
 											AdditionalQueueDimensions: randAdditionalQueueDimension(),
 										}
