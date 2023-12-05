@@ -1323,6 +1323,10 @@ Usage of ./cmd/mimir/mimir:
     	Max tenants that this ingester can hold. Requests from additional tenants will be rejected. 0 = unlimited.
   -ingester.limit-inflight-requests-using-grpc-method-limiter
     	[experimental] Use experimental method of limiting push requests.
+  -ingester.log-sent-series.matchers string
+    	[experimental] If set, series that have matchers containing this value for the tenant set in -ingester.log-sent-series.tenant will be logged.
+  -ingester.log-sent-series.tenant string
+    	[experimental] If set, series for this tenant that have matchers containing the value of -ingester.log-sent-series.matchers will be logged.
   -ingester.log-utilization-based-limiter-cpu-samples
     	[experimental] Enable logging of utilization based limiter CPU samples.
   -ingester.max-global-exemplars-per-user int
@@ -1671,6 +1675,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
+  -querier.log-received-series.matchers string
+    	[experimental] If set, selectors that have matchers containing this value for the tenant set in -querier.log-received-series.tenant will be logged.
+  -querier.log-received-series.tenant string
+    	[experimental] If set, selectors for this tenant that have matchers containing the value of -querier.log-received-series.matchers will be logged.
   -querier.lookback-delta duration
     	Time since the last sample after which a time series is considered stale and ignored by expression evaluations. This config option should be set on query-frontend too when query sharding is enabled. (default 5m0s)
   -querier.max-concurrent int

@@ -175,6 +175,9 @@ type Config struct {
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
 	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
+
+	LogSentSeriesForTenant             string `yaml:"log_sent_series_for_tenant" category:"experimental"`
+	LogSentSeriesForMatchersContaining string `yaml:"log_sent_series_for_matchers_containing" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -194,6 +197,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
 	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
+
+	f.StringVar(&cfg.LogSentSeriesForTenant, "ingester.log-sent-series.tenant", "", "If set, series for this tenant that have matchers containing the value of -ingester.log-sent-series.matchers will be logged.")
+	f.StringVar(&cfg.LogSentSeriesForMatchersContaining, "ingester.log-sent-series.matchers", "", "If set, series that have matchers containing this value for the tenant set in -ingester.log-sent-series.tenant will be logged.")
 }
 
 func (cfg *Config) Validate() error {
@@ -1920,14 +1926,30 @@ func (i *Ingester) executeStreamingQuery(ctx context.Context, db *userTSDB, from
 	// The querier must remain open until we've finished streaming chunks.
 	defer q.Close()
 
-	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream)
+	logSeries := false
+	if db.userID == i.cfg.LogSentSeriesForTenant {
+		for _, m := range matchers {
+			if strings.Contains(m.String(), i.cfg.LogSentSeriesForMatchersContaining) {
+				logSeries = true
+				break
+			}
+		}
+	}
+
+	if logSeries {
+		for _, m := range matchers {
+			spanlog.DebugLog("matcher", m.String())
+		}
+	}
+
+	allSeries, numSeries, err := i.sendStreamingQuerySeries(ctx, q, from, through, matchers, shard, stream, logSeries, spanlog)
 	if err != nil {
 		return 0, 0, err
 	}
 
 	spanlog.DebugLog("msg", "finished sending series", "series", numSeries)
 
-	numSamples, numChunks, numBatches, err := i.sendStreamingQueryChunks(allSeries, stream, batchSize)
+	numSamples, numChunks, numBatches, err := i.sendStreamingQueryChunks(allSeries, stream, batchSize, logSeries, spanlog)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1970,7 +1992,7 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
-func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, logSeries bool, spanlog *spanlogger.SpanLogger) (*chunkSeriesNode, int, error) {
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -2017,6 +2039,13 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			ChunkCount: int64(chunkCount),
 		})
 
+		if logSeries {
+			spanlog.DebugLog(
+				"msg", "added series to the batch",
+				"series", series.Labels().String(),
+			)
+		}
+
 		if len(seriesInBatch) >= queryStreamBatchSize {
 			err := client.SendQueryStream(stream, &client.QueryStreamResponse{
 				StreamingSeries: seriesInBatch,
@@ -2046,7 +2075,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 	return allSeriesList, seriesCount, nil
 }
 
-func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64) (int, int, int, error) {
+func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream client.Ingester_QueryStreamServer, batchSize uint64, logSeries bool, spanlog *spanlogger.SpanLogger) (int, int, int, error) {
 	var (
 		it             chunks.Iterator
 		seriesIdx      = -1
@@ -2088,6 +2117,15 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 			numChunks += len(seriesChunks.Chunks)
 			msgSize := seriesChunks.Size()
 
+			if logSeries {
+				spanlog.DebugLog(
+					"msg", "added chunks to the batch",
+					"series", series.Labels().String(),
+					"num_chunks", len(seriesChunks.Chunks),
+					"total_batch_samples", numSamples,
+				)
+			}
+
 			if (batchSizeBytes > 0 && batchSizeBytes+msgSize > queryStreamBatchMessageSize) || len(seriesInBatch) >= int(batchSize) {
 				// Adding this series to the batch would make it too big, flush the data and add it to new batch instead.
 				err := client.SendQueryStream(stream, &client.QueryStreamResponse{
@@ -2095,6 +2133,13 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 				})
 				if err != nil {
 					return 0, 0, 0, err
+				}
+
+				if logSeries {
+					spanlog.DebugLog(
+						"msg", "sent batch of chunks",
+						"series_in_batch", len(seriesInBatch),
+					)
 				}
 
 				seriesInBatch = seriesInBatch[:0]

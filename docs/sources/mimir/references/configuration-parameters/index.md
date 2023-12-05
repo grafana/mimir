@@ -1169,6 +1169,16 @@ instance_limits:
 # (experimental) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
 [return_only_grpc_errors: <boolean> | default = false]
+
+# (experimental) If set, series for this tenant that have matchers containing
+# the value of -ingester.log-sent-series.matchers will be logged.
+# CLI flag: -ingester.log-sent-series.tenant
+[log_sent_series_for_tenant: <string> | default = ""]
+
+# (experimental) If set, series that have matchers containing this value for the
+# tenant set in -ingester.log-sent-series.tenant will be logged.
+# CLI flag: -ingester.log-sent-series.matchers
+[log_sent_series_for_matchers_containing: <string> | default = ""]
 ```
 
 ### querier
@@ -1298,6 +1308,16 @@ store_gateway_client:
 # all responded. Ignored if -querier.minimize-ingester-requests is not enabled.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
+
+# (experimental) If set, selectors for this tenant that have matchers containing
+# the value of -querier.log-received-series.matchers will be logged.
+# CLI flag: -querier.log-received-series.tenant
+[log_received_series_for_tenant: <string> | default = ""]
+
+# (experimental) If set, selectors that have matchers containing this value for
+# the tenant set in -querier.log-received-series.tenant will be logged.
+# CLI flag: -querier.log-received-series.matchers
+[log_received_series_for_matchers_containing: <string> | default = ""]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.

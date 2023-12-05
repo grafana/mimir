@@ -157,6 +157,10 @@ query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
 
+querier:
+  log_received_series_for_tenant: "anonymous"
+  log_received_series_for_matchers_containing: __name__="up"
+
 limits:
   # Limit max query time range to 31d
   max_partial_query_length: 744h
