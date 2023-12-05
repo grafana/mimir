@@ -30,6 +30,15 @@
   * `ingester_zone_a_node_affinity_matchers`
   * `ingester_zone_b_node_affinity_matchers`
   * `ingester_zone_c_node_affinity_matchers`
+  * `mimir_backend_node_affinity_matchers`
+  * `mimir_backend_zone_a_node_affinity_matchers`
+  * `mimir_backend_zone_b_node_affinity_matchers`
+  * `mimir_backend_zone_c_node_affinity_matchers`
+  * `mimir_read_node_affinity_matchers`
+  * `mimir_write_node_affinity_matchers`
+  * `mimir_write_zone_a_node_affinity_matchers`
+  * `mimir_write_zone_b_node_affinity_matchers`
+  * `mimir_write_zone_c_node_affinity_matchers`
   * `overrides_exporter_node_affinity_matchers`
   * `querier_node_affinity_matchers`
   * `query_frontend_node_affinity_matchers`
