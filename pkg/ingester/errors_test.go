@@ -360,7 +360,6 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
-	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
 	timestamp := model.Time(1)
 
 	testCases := map[string]struct {
@@ -529,7 +528,6 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
 	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
-	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
 	timestamp := model.Time(1)
 
 	testCases := map[string]struct {
