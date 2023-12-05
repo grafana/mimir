@@ -1868,6 +1868,28 @@
         },
         {
           "kind": "field",
+          "name": "log_received_series_for_tenant",
+          "required": false,
+          "desc": "If set, selectors for this tenant that have matchers containing the value of -querier.log-received-series.matchers will be logged.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.log-received-series.tenant",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_received_series_for_matchers_containing",
+          "required": false,
+          "desc": "If set, selectors that have matchers containing this value for the tenant set in -querier.log-received-series.tenant will be logged.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.log-received-series.matchers",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
@@ -3030,6 +3052,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_sent_series_for_tenant",
+          "required": false,
+          "desc": "If set, series for this tenant that have matchers containing the value of -ingester.log-sent-series.matchers will be logged.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ingester.log-sent-series.tenant",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "log_sent_series_for_matchers_containing",
+          "required": false,
+          "desc": "If set, series that have matchers containing this value for the tenant set in -ingester.log-sent-series.tenant will be logged.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "ingester.log-sent-series.matchers",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         }
       ],
