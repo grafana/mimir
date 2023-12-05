@@ -82,6 +82,10 @@
   ingester_zone_b_env_map:: $.ingester_env_map,
   ingester_zone_c_env_map:: $.ingester_env_map,
 
+  ingester_zone_a_node_affinity_matchers:: $.ingester_node_affinity_matchers,
+  ingester_zone_b_node_affinity_matchers:: $.ingester_node_affinity_matchers,
+  ingester_zone_c_node_affinity_matchers:: $.ingester_node_affinity_matchers,
+
   newIngesterZoneContainer(zone, zone_args, envmap={})::
     $.ingester_container +
     container.withArgs($.util.mapToFlags(
@@ -92,10 +96,10 @@
     )) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
-  newIngesterZoneStatefulSet(zone, container)::
+  newIngesterZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'ingester-zone-%s' % zone;
 
-    self.newIngesterStatefulSet(name, container, with_anti_affinity=false) +
+    self.newIngesterStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'ingester' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_ingester_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
@@ -131,7 +135,7 @@
     self.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
   ingester_zone_a_statefulset: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container),
+    self.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers),
 
   ingester_zone_a_service: if !multi_zone_ingesters_deployed then null else
     $.newIngesterZoneService($.ingester_zone_a_statefulset),
@@ -140,7 +144,7 @@
     self.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
   ingester_zone_b_statefulset: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container),
+    self.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers),
 
   ingester_zone_b_service: if !multi_zone_ingesters_deployed then null else
     $.newIngesterZoneService($.ingester_zone_b_statefulset),
@@ -149,7 +153,7 @@
     self.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
   ingester_zone_c_statefulset: if !multi_zone_ingesters_deployed then null else
-    self.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container),
+    self.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers),
 
   ingester_zone_c_service: if !multi_zone_ingesters_deployed then null else
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
@@ -203,6 +207,10 @@
   store_gateway_zone_b_env_map:: $.store_gateway_env_map,
   store_gateway_zone_c_env_map:: $.store_gateway_env_map,
 
+  store_gateway_zone_a_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
+  store_gateway_zone_b_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
+  store_gateway_zone_c_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
+
   newStoreGatewayZoneContainer(zone, zone_args, envmap={})::
     $.store_gateway_container +
     container.withArgs($.util.mapToFlags(
@@ -220,10 +228,10 @@
     )) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
-  newStoreGatewayZoneStatefulSet(zone, container)::
+  newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
     local name = 'store-gateway-zone-%s' % zone;
 
-    self.newStoreGatewayStatefulSet(name, container) +
+    self.newStoreGatewayStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
     statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'store-gateway' }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_store_gateway_max_unavailable) }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'store-gateway' }) +
@@ -265,7 +273,7 @@
     self.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
   store_gateway_zone_a_statefulset: if !multi_zone_store_gateways_deployed then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container),
+    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers),
 
   store_gateway_zone_a_service: if !multi_zone_store_gateways_deployed then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
@@ -274,7 +282,7 @@
     self.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
   store_gateway_zone_b_statefulset: if !multi_zone_store_gateways_deployed then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container),
+    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers),
 
   store_gateway_zone_b_service: if !multi_zone_store_gateways_deployed then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
@@ -283,7 +291,7 @@
     self.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
 
   store_gateway_zone_c_statefulset: if !multi_zone_store_gateways_deployed then null else
-    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container),
+    (self + nonRetainablePVCs).newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers),
 
   store_gateway_zone_c_service: if !multi_zone_store_gateways_deployed then null else
     self.newStoreGatewayZoneService($.store_gateway_zone_c_statefulset),
@@ -339,6 +347,8 @@
     'kubernetes.namespace': $._config.namespace,
   },
 
+  rollout_operator_node_affinity_matchers:: [],
+
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
     container.withArgsMixin($.util.mapToFlags($.rollout_operator_args)) +
@@ -358,7 +368,8 @@
     deployment.mixin.spec.template.spec.withServiceAccountName('rollout-operator') +
     // Ensure Kubernetes doesn't run 2 operators at the same time.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+    $.newMimirNodeAffinityMatchers($.rollout_operator_node_affinity_matchers),
 
   rollout_operator_role: if !rollout_operator_enabled then null else
     role.new('rollout-operator-role') +

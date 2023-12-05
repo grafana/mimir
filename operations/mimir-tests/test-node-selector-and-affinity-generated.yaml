@@ -538,6 +538,20 @@ spec:
         gossip_ring_member: "true"
         name: querier
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
       containers:
       - args:
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
@@ -634,6 +648,20 @@ spec:
       labels:
         name: query-frontend
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
       containers:
       - args:
         - -query-frontend.cache-results=true
@@ -710,6 +738,19 @@ spec:
         name: query-scheduler
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -774,6 +815,20 @@ spec:
         gossip_ring_member: "true"
         name: compactor
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
       containers:
       - args:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
@@ -875,6 +930,19 @@ spec:
         name: ingester
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
@@ -1206,6 +1274,19 @@ spec:
         name: store-gateway
     spec:
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                - us-east-1
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - us-east-1a
+                - us-east-1b
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:

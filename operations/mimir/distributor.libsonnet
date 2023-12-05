@@ -67,14 +67,7 @@
     $.newMimirSpreadTopology(name, $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    (
-      if std.length(nodeAffinityMatchers) == 0 then {} else (
-        deployment.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.withNodeSelectorTerms(
-          local sorted = std.sort(nodeAffinityMatchers, function(x) x.key);
-          $.core.v1.nodeSelectorTerm.withMatchExpressions(sorted)
-        )
-      )
-    ) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
