@@ -441,7 +441,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.LogReceivedSeriesForTenant = t.Cfg.Querier.LogReceivedSeriesForTenant
 	t.Cfg.Distributor.LogReceivedSeriesForMatchersContaining = t.Cfg.Querier.LogReceivedSeriesForMatchersContaining
-	t.Cfg.Distributor.LogReceivedSeriesContaining = t.Cfg.Querier.LogReceivedSeriesForMatchersContaining
+	t.Cfg.Distributor.LogReceivedSeriesContaining = t.Cfg.Querier.LogReceivedSeriesContaining
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
