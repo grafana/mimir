@@ -44,6 +44,7 @@
   * `querier_node_affinity_matchers`
   * `query_frontend_node_affinity_matchers`
   * `query_scheduler_node_affinity_matchers`
+  * `rollout_operator_node_affinity_matchers`
   * `ruler_node_affinity_matchers`
   * `ruler_node_affinity_matchers`
   * `ruler_querier_node_affinity_matchers`

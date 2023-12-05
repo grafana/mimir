@@ -347,6 +347,8 @@
     'kubernetes.namespace': $._config.namespace,
   },
 
+  rollout_operator_node_affinity_matchers:: [],
+
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
     container.withArgsMixin($.util.mapToFlags($.rollout_operator_args)) +
@@ -366,7 +368,8 @@
     deployment.mixin.spec.template.spec.withServiceAccountName('rollout-operator') +
     // Ensure Kubernetes doesn't run 2 operators at the same time.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+    $.newMimirNodeAffinityMatchers($.rollout_operator_node_affinity_matchers),
 
   rollout_operator_role: if !rollout_operator_enabled then null else
     role.new('rollout-operator-role') +
