@@ -25,6 +25,7 @@
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`
+  * `continuous_test_node_affinity_matchers`
   * `distributor_node_affinity_matchers`
   * `ingester_node_affinity_matchers`
   * `ingester_zone_a_node_affinity_matchers`
