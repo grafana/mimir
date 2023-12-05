@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -145,15 +146,15 @@ const (
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
-// You can pass in and receive back the decompression buffer for pooling, or pass in nil and ignore the return.
-func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
+// You can pass in an optional bufferProvider.
+func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, bufferProvider *BufferProvider, req proto.Message, compression CompressionType) error {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[start reading]"))
 	}
-	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
+	body, err := decompressRequest(bufferProvider, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if sp != nil {
@@ -173,14 +174,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 			sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"), otlog.Error(err))
 		}
 
-		return nil, err
+		return err
 	}
 
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[unmarshal done]"))
 	}
 
-	return body, nil
+	return nil
 }
 
 type MsgSizeTooLargeErr struct {
@@ -198,7 +199,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressRequest(bufferProvider *BufferProvider, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: expectedSize, Limit: maxSize}
 	}
@@ -216,7 +217,7 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 				return buf.Bytes(), nil
 			}
 
-			return decompressSnappyFromBuffer(dst, buf, maxSize, sp)
+			return decompressSnappyFromBuffer(bufferProvider, buf, maxSize, sp)
 		}
 	}
 
@@ -234,7 +235,14 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 
 	// Limit at maxSize+1 so we can tell when the size is exceeded
 	reader = io.LimitReader(reader, int64(maxSize)+1)
-	var buf bytes.Buffer
+
+	var buf *bytes.Buffer
+	if bufferProvider != nil {
+		buf = bufferProvider.BodyBuffer()
+	} else {
+		buf = bytes.NewBuffer(nil)
+	}
+
 	if expectedSize > 0 {
 		buf.Grow(expectedSize + bytes.MinRead) // extra space guarantees no reallocation
 	}
@@ -246,7 +254,7 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 	}
 
 	if compression == RawSnappy {
-		return decompressSnappyFromBuffer(dst, &buf, maxSize, sp)
+		return decompressSnappyFromBuffer(bufferProvider, buf, maxSize, sp)
 	}
 
 	if buf.Len() > maxSize {
@@ -255,7 +263,7 @@ func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, 
 	return buf.Bytes(), nil
 }
 
-func decompressSnappyFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, sp opentracing.Span) ([]byte, error) {
+func decompressSnappyFromBuffer(bufferProvider *BufferProvider, buffer *bytes.Buffer, maxSize int, sp opentracing.Span) ([]byte, error) {
 	if sp != nil {
 		sp.LogFields(otlog.Event("util.ParseProtoReader[decompressSnappy]"), otlog.Int("size", buffer.Len()))
 	}
@@ -267,11 +275,21 @@ func decompressSnappyFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, s
 	if size > maxSize {
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
-	body, err := snappy.Decode(dst, buffer.Bytes())
+
+	var buf []byte
+	if bufferProvider != nil {
+		b := bufferProvider.DecodingBuffer()
+		b.Grow(size)
+		// Snappy bases itself on the target buffer's length, not capacity
+		buf = b.Bytes()[0:size]
+	}
+
+	decoded, err := snappy.Decode(buf, buffer.Bytes())
 	if err != nil {
 		return nil, errors.Wrap(err, "decompress snappy")
 	}
-	return body, nil
+
+	return decoded, nil
 }
 
 // tryBufferFromReader attempts to cast the reader to a `*bytes.Buffer` this is possible when using httpgrpc.
@@ -373,4 +391,50 @@ func copyValues(src url.Values) url.Values {
 // IsHTTPStatusCode returns true if the given code is a valid HTTP status code, or false otherwise.
 func IsHTTPStatusCode(code codes.Code) bool {
 	return int(code) >= 100 && int(code) < 600
+}
+
+// BufferProvider provides request body and decoding buffers.
+type BufferProvider struct {
+	size     int
+	body     *bytes.Buffer
+	decoding *bytes.Buffer
+}
+
+// NewBufferProvider returns a new BufferProvider given an initial buffer size.
+func NewBufferProvider(size int) BufferProvider {
+	return BufferProvider{
+		size: size,
+	}
+}
+
+// BodyBuffer gets the buffer for reading the request body.
+func (p *BufferProvider) BodyBuffer() *bytes.Buffer {
+	if p.body == nil {
+		p.body = bytes.NewBuffer(make([]byte, 0, p.size))
+	}
+	return p.body
+}
+
+// DecodingBuffer gets the buffer for decoding the request body.
+func (p *BufferProvider) DecodingBuffer() *bytes.Buffer {
+	if p.decoding == nil {
+		p.decoding = bytes.NewBuffer(make([]byte, 0, p.size))
+	}
+	return p.decoding
+}
+
+// ReplaceDecodingBuffer replaces the decoding buffer with a new one backed by buf.
+func (p *BufferProvider) ReplaceDecodingBuffer(buf []byte) {
+	p.decoding = bytes.NewBuffer(buf)
+}
+
+// CleanUp releases p to the pool.
+func (p *BufferProvider) CleanUp(pool *sync.Pool) {
+	if p.body != nil {
+		p.body.Reset()
+	}
+	if p.decoding != nil {
+		p.decoding.Reset()
+	}
+	pool.Put(p)
 }
