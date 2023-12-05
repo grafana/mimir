@@ -621,6 +621,58 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
+      $.row('Alertmanager')
+      .addPanel(
+        $.panel('Alerts') +
+        $.queryPanel(
+          [
+            'sum by (user) (cortex_alertmanager_alerts{%(job)s, user="$user"})' % { job: $.jobMatcher($._config.job_names.alertmanager) },
+            'sum by (user) (cortex_alertmanager_silences{%(job)s, user="$user"})' % { job: $.jobMatcher($._config.job_names.alertmanager) },
+          ],
+          ['alerts', 'silences']
+        )
+      )
+      .addPanel(
+        $.panel('NPS') +
+        $.successFailurePanel(
+          |||
+            (
+            sum(rate(cortex_alertmanager_notifications_total{%(job)s, user="$user"}[$__rate_interval]))
+            -
+            on() (sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval])) or on () vector(0))
+            ) > 0
+          ||| % {
+            job: $.jobMatcher($._config.job_names.alertmanager),
+          },
+          'sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval]))' % {
+            job: $.jobMatcher($._config.job_names.alertmanager),
+          },
+        )
+      )
+      .addPanel(
+        $.panel('NPS by integration') +
+        $.queryPanel(
+          [
+            |||
+              (
+              sum(rate(cortex_alertmanager_notifications_total{%(job)s, user="$user"}[$__rate_interval])) by(integration)
+              -
+              (sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval])) by(integration) or
+               (sum(rate(cortex_alertmanager_notifications_total{%(job)s, user="$user"}[$__rate_interval])) by(integration) * 0)
+              )) > 0
+            ||| % {
+              job: $.jobMatcher($._config.job_names.alertmanager),
+            },
+            'sum(rate(cortex_alertmanager_notifications_failed_total{%(job)s, user="$user"}[$__rate_interval])) by(integration)' % {
+              job: $.jobMatcher($._config.job_names.alertmanager),
+            },
+          ],
+          ['success - {{ integration }}', 'failed - {{ integration }}']
+        )
+      )
+    )
+
+    .addRow(
       $.row('Read Path - Queries (User)')
       .addPanel(
         local title = 'Rate of Read Requests - query-frontend';
