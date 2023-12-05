@@ -84,6 +84,8 @@
 
   compactor_env_map:: {},
 
+  compactor_node_affinity_matchers:: [],
+
   compactor_container::
     container.new('compactor', $._images.compactor) +
     container.withPorts($.compactor_ports) +
@@ -96,13 +98,14 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newCompactorStatefulSet(name, container)::
+  newCompactorStatefulSet(name, container, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts,
 
   compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    $.newCompactorStatefulSet('compactor', $.compactor_container),
+    $.newCompactorStatefulSet('compactor', $.compactor_container, $.compactor_node_affinity_matchers),
 
   compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;

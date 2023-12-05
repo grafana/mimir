@@ -34,6 +34,8 @@
 
   ruler_env_map:: {},
 
+  ruler_node_affinity_matchers:: [],
+
   ruler_container::
     if $._config.ruler_enabled then
       container.new('ruler', $._images.ruler) +
@@ -52,6 +54,7 @@
     local name = 'ruler';
 
     deployment.new(name, 2, [$.ruler_container]) +
+    $.newMimirNodeAffinityMatchers($.ruler_node_affinity_matchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +

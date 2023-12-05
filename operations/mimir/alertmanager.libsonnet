@@ -53,6 +53,8 @@
 
   alertmanager_env_map:: {},
 
+  alertmanager_node_affinity_matchers:: [],
+
   alertmanager_container::
     if $._config.alertmanager_enabled then
       container.new('alertmanager', $._images.alertmanager) +
@@ -77,6 +79,7 @@
   alertmanager_statefulset:
     if $._config.is_microservices_deployment_mode && $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
+      $.newMimirNodeAffinityMatchers($.alertmanager_node_affinity_matchers) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
       $.mimirVolumeMounts +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(

@@ -53,6 +53,8 @@
 
   ingester_env_map:: {},
 
+  ingester_node_affinity_matchers:: [],
+
   ingester_container::
     container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
@@ -71,12 +73,13 @@
     pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
-  newIngesterStatefulSet(name, container, with_anti_affinity=true)::
+  newIngesterStatefulSet(name, container, with_anti_affinity=true, nodeAffinityMatchers=[])::
     local ingesterContainer = container + $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('ingester-data', '/data'),
     ]);
 
     $.newMimirStatefulSet(name, 3, ingesterContainer, ingester_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
@@ -85,7 +88,12 @@
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    self.newIngesterStatefulSet('ingester', $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap(std.prune($.ingester_env_map)) else {}), !$._config.ingester_allow_multiple_replicas_on_same_node),
+    self.newIngesterStatefulSet(
+      'ingester',
+      $.ingester_container + (if std.length($.ingester_env_map) > 0 then container.withEnvMap(std.prune($.ingester_env_map)) else {}),
+      !$._config.ingester_allow_multiple_replicas_on_same_node,
+      $.ingester_node_affinity_matchers,
+    ),
 
   ingester_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),

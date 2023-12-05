@@ -63,6 +63,8 @@
     GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory))),
   },
 
+  store_gateway_node_affinity_matchers:: [],
+
   store_gateway_container::
     container.new('store-gateway', $._images.store_gateway) +
     container.withPorts($.store_gateway_ports) +
@@ -73,16 +75,20 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
+  newStoreGatewayStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
     $.mimirVolumeMounts +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
-    self.newStoreGatewayStatefulSet('store-gateway',
-                                    $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
-                                    !$._config.store_gateway_allow_multiple_replicas_on_same_node),
+    self.newStoreGatewayStatefulSet(
+      'store-gateway',
+      $.store_gateway_container + (if std.length($.store_gateway_env_map) > 0 then container.withEnvMap(std.prune($.store_gateway_env_map)) else {}),
+      !$._config.store_gateway_allow_multiple_replicas_on_same_node,
+      $.store_gateway_node_affinity_matchers,
+    ),
 
   store_gateway_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),

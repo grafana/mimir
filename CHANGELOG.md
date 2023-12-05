@@ -22,7 +22,28 @@
 ### Jsonnet
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
-* [FEATURE] Distributor: added `distributor_node_affinity_matchers` setting support. #6782
+* [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
+  * `alertmanager_node_affinity_matchers`
+  * `compactor_node_affinity_matchers`
+  * `distributor_node_affinity_matchers`
+  * `ingester_node_affinity_matchers`
+  * `ingester_zone_a_node_affinity_matchers`
+  * `ingester_zone_b_node_affinity_matchers`
+  * `ingester_zone_c_node_affinity_matchers`
+  * `overrides_exporter_node_affinity_matchers`
+  * `querier_node_affinity_matchers`
+  * `query_frontend_node_affinity_matchers`
+  * `query_scheduler_node_affinity_matchers`
+  * `ruler_node_affinity_matchers`
+  * `ruler_node_affinity_matchers`
+  * `ruler_querier_node_affinity_matchers`
+  * `ruler_query_frontend_node_affinity_matchers`
+  * `ruler_query_scheduler_node_affinity_matchers`
+  * `store_gateway_node_affinity_matchers`
+  * `store_gateway_node_affinity_matchers`
+  * `store_gateway_zone_a_node_affinity_matchers`
+  * `store_gateway_zone_b_node_affinity_matchers`
+  * `store_gateway_zone_c_node_affinity_matchers`
 
 ### Mimirtool
 
