@@ -304,7 +304,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 				streamingSeriesCount += len(resp.StreamingSeries)
 
-				for _, s := range resp.StreamingSeries {
+				for i, s := range resp.StreamingSeries {
 					if err := queryLimiter.AddSeries(s.Labels); err != nil {
 						return ingesterQueryResult{}, err
 					}
@@ -318,11 +318,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 						return ingesterQueryResult{}, err
 					}
 
-					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
-				}
+					ls := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+					labelsBatch = append(labelsBatch, ls)
 
-				if logSeries {
-					level.Info(log).Log("msg", "received batch of series names", "series", labelsBatch)
+					if logSeries {
+						level.Info(log).Log("msg", "received batch of series", "idx", i, "total", len(resp.StreamingSeries), "series", ls.String())
+					}
 				}
 
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
