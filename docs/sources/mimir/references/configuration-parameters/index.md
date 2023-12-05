@@ -1324,6 +1324,13 @@ store_gateway_client:
 # CLI flag: -querier.log-received-series.matchers
 [log_received_series_for_matchers_containing: <string> | default = ""]
 
+# (experimental) If set, selectors that have matchers containing the value from
+# -querier.log-received-series.matchers for the tenant set in
+# -querier.log-received-series.tenant will be logged classifying the series
+# depending on whether they contain this value.
+# CLI flag: -querier.log-received-series.containing
+[log_received_series_containing: <string> | default = ""]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent

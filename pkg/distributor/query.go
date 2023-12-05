@@ -262,6 +262,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		var streamingSeriesBatches [][]labels.Labels
 		streamingSeriesCount := 0
 
+		var (
+			matchingSeries, notMatchingSeries               int
+			exampleMatchingSeries, exampleNotMatchingSeries labels.Labels
+		)
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
@@ -304,7 +308,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
 				streamingSeriesCount += len(resp.StreamingSeries)
 
-				for i, s := range resp.StreamingSeries {
+				for _, s := range resp.StreamingSeries {
 					if err := queryLimiter.AddSeries(s.Labels); err != nil {
 						return ingesterQueryResult{}, err
 					}
@@ -322,8 +326,28 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					labelsBatch = append(labelsBatch, ls)
 
 					if logSeries {
-						level.Info(log).Log("msg", "received batch of series", "idx", i, "total", len(resp.StreamingSeries), "series", ls.String())
+						if strings.Contains(ls.String(), d.cfg.LogReceivedSeriesContaining) {
+							matchingSeries++
+							exampleMatchingSeries = ls.Copy()
+						} else {
+							notMatchingSeries++
+							exampleNotMatchingSeries = ls.Copy()
+						}
 					}
+				}
+
+				if logSeries {
+					log.DebugLog(
+						"msg", "received batch of series",
+						"matching", matchingSeries,
+						"not_matching", notMatchingSeries,
+						"example_matching", exampleMatchingSeries.String(),
+						"example_not_matching", exampleNotMatchingSeries.String(),
+						"needle", d.cfg.LogReceivedSeriesContaining,
+						"err", err,
+					)
+					matchingSeries, notMatchingSeries = 0, 0
+					exampleMatchingSeries, exampleNotMatchingSeries = labels.New(), labels.New()
 				}
 
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)

@@ -187,6 +187,7 @@ type Config struct {
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
 	LogReceivedSeriesForTenant                 string        `yaml:"-"`
 	LogReceivedSeriesForMatchersContaining     string        `yaml:"-"`
+	LogReceivedSeriesContaining                string        `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`

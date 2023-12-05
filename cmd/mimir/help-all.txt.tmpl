@@ -1677,6 +1677,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
+  -querier.log-received-series.containing string
+    	[experimental] If set, selectors that have matchers containing the value from -querier.log-received-series.matchers for the tenant set in -querier.log-received-series.tenant will be logged classifying the series depending on whether they contain this value.
   -querier.log-received-series.matchers string
     	[experimental] If set, selectors that have matchers containing this value for the tenant set in -querier.log-received-series.tenant will be logged.
   -querier.log-received-series.tenant string

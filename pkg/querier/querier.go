@@ -54,6 +54,7 @@ type Config struct {
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 	LogReceivedSeriesForTenant                     string        `yaml:"log_received_series_for_tenant" category:"experimental"`
 	LogReceivedSeriesForMatchersContaining         string        `yaml:"log_received_series_for_matchers_containing" category:"experimental"`
+	LogReceivedSeriesContaining                    string        `yaml:"log_received_series_containing" category:"experimental"`
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
@@ -92,6 +93,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.LogReceivedSeriesForTenant, "querier.log-received-series.tenant", "", "If set, selectors for this tenant that have matchers containing the value of -querier.log-received-series.matchers will be logged.")
 	f.StringVar(&cfg.LogReceivedSeriesForMatchersContaining, "querier.log-received-series.matchers", "", "If set, selectors that have matchers containing this value for the tenant set in -querier.log-received-series.tenant will be logged.")
+	f.StringVar(&cfg.LogReceivedSeriesContaining, "querier.log-received-series.containing", "", "If set, selectors that have matchers containing the value from -querier.log-received-series.matchers for the tenant set in -querier.log-received-series.tenant will be logged classifying the series depending on whether they contain this value.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }

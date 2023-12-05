@@ -1890,6 +1890,17 @@
         },
         {
           "kind": "field",
+          "name": "log_received_series_containing",
+          "required": false,
+          "desc": "If set, selectors that have matchers containing the value from -querier.log-received-series.matchers for the tenant set in -querier.log-received-series.tenant will be logged classifying the series depending on whether they contain this value.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "querier.log-received-series.containing",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
