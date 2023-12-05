@@ -97,9 +97,9 @@ func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResul
 	}
 	var attributes []string
 	if options.Versioned {
-		attributes = []string{"Name", "Updated", "Generation", "Deleted"}
+		attributes = []string{"Name", "Size", "Updated", "Generation", "Deleted"}
 	} else {
-		attributes = []string{"Name", "Updated"}
+		attributes = []string{"Name", "Size", "Updated"}
 	}
 	err := q.SetAttrSelection(attributes) // only fields we care about
 	if err != nil {
@@ -130,13 +130,14 @@ func (bkt *gcsBucket) List(ctx context.Context, options ListOptions) (*ListResul
 		} else if options.Versioned {
 			objects = append(objects, ObjectAttributes{
 				Name:         obj.Name,
+				Size:         obj.Size,
 				LastModified: obj.Updated,
 				VersionInfo: VersionInfo{
 					VersionID: generationToString(obj.Generation),
 					IsCurrent: obj.Deleted.IsZero(),
 				}})
 		} else {
-			objects = append(objects, ObjectAttributes{Name: obj.Name, LastModified: obj.Updated})
+			objects = append(objects, ObjectAttributes{Name: obj.Name, Size: obj.Size, LastModified: obj.Updated})
 		}
 	}
 

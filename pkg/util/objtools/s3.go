@@ -134,6 +134,7 @@ func (bkt *s3Bucket) List(ctx context.Context, options ListOptions) (*ListResult
 		} else {
 			objects = append(objects, ObjectAttributes{
 				Name:         obj.Key,
+				Size:         obj.Size,
 				LastModified: obj.LastModified,
 				VersionInfo: VersionInfo{
 					VersionID:      obj.VersionID,

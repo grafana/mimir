@@ -203,6 +203,7 @@ func (bkt *azureBucket) ClientSideCopy(ctx context.Context, objectName string, d
 func unpackBlobItem(blobItem *container.BlobItem, isVersioned bool) ObjectAttributes {
 	attributes := ObjectAttributes{
 		Name:         *blobItem.Name,
+		Size:         *blobItem.Properties.ContentLength,
 		LastModified: *blobItem.Properties.LastModified,
 	}
 

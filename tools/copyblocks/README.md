@@ -36,8 +36,8 @@ Running `go build` in this directory builds the program. Then use an example bel
 
 ```bash
 ./copyblocks \
-  --source.backend abs \
-  --destination.backend abs \
+  --source.backend azure \
+  --destination.backend azure \
   --azure.source.container-name <source container name> \
   --azure.source.account-name <source account name> \
   --azure.source.account-key <source account key> \
@@ -47,7 +47,6 @@ Running `go build` in this directory builds the program. Then use an example bel
   --copy-period 24h \
   --min-block-duration 13h \
   --dry-run
-
 ```
 
 ### Example for Amazon Simple Storage Service
@@ -80,7 +79,7 @@ For instance, to copy from S3 to ABS:
 ```bash
 ./copyblocks \
   --source.backend s3 \
-  --destination.backend abs \
+  --destination.backend azure \
   --s3.source.bucket-name <source bucket name> \
   --s3.source.access-key-id <source access key> \
   --s3.source.secret-access-key <source secret access key> \

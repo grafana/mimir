@@ -91,6 +91,7 @@ func (result *ListResult) ToNamesWithoutPrefix(prefix string) ([]string, error) 
 
 type ObjectAttributes struct {
 	Name         string
+	Size         int64
 	LastModified time.Time
 	VersionInfo  VersionInfo
 }

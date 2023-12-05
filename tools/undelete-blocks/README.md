@@ -39,11 +39,6 @@ tenant1/01GE0SV77NX8ASC7JN0ZQMN0WM
 tenant2/01GZDNKM6SQ9S7W5YQBDF0DK49
 ```
 
-For convenience `jq` can be used to translate between the `json` and `lines` formats:
-
-- To translate from `json` to `lines`: `jq --raw-output 'to_entries[] | .key as $tenant | .value[] | $tenant + "/" + .'`
-- To translate from `lines` to `json`: `jq --slurp --raw-input 'split("\n") | map(select(length > 0) | split("/") | {"tenant": .[0], "block": .[1]}) | group_by(.tenant) | map({(.[0].tenant): map(.block)}) | add'`
-
 No input is supplied with `listing` since the block information is derived from the object storage itself.
 
 Tenants specified in any format can be refined further by the `--include-tenants` and `--exclude-tenants` options if they are provided.
@@ -54,23 +49,22 @@ Let's start with some background.
 
 The order of writes within a Mimir block is:
 
-1. Nothing
-2. Files except `meta.json` (chunks/index)
-3. `meta.json` (block now complete)
+1. Files except `meta.json` (chunks/index)
+2. `meta.json` (block now complete)
 
 When a block needs to be deleted, the following actions are performed:
 
-1. A local delete marker is added to the block "directory". This is a "soft delete".
-2. A global delete marker for the block is added to the tenant's marker "directory" for easier indexing.
-3. Some time passes to provide time for the delete markers to be noticed.
-4. Files besides delete markers are deleted within the block "directory" (meta first, then chunks/index).
+1. A local delete marker is added in the block prefix. This is a "soft delete".
+2. A global delete marker for the block is added in the tenant's marker prefix for easier indexing.
+3. Some time passes to provide time for the delete markers to be picked up and added to the bucket index.
+4. Files besides delete markers are deleted within the block's prefix (meta first, then chunks/index).
 5. The delete markers are deleted, local then global.
 
-An undelete tries to get a block back to being a complete block by restoring noncurrent object versions (as needed) in the order of a block write and then deleting the delete markers (local then global). If required data for a complete block is missing then that block will remain untouched.
+An undelete tries to get a block back to being a complete block by restoring noncurrent object versions (as needed) in the order of a block write, then deleting the delete markers (local then global), then restoring no-compact markers (local then global) as needed. If required data for a complete block (according to `meta.json`) is missing then that block will remain untouched.
 
 ## Known limitations
 
-Files not listed within the `meta.json` of a block are not restored if they were deleted. For instance, if a `no-compact-mark.json` was present it will not be restored by this tool.
+Files not listed within the `meta.json` of a block are not restored if they were deleted. No-compact markers are an exception to this and will be restored if possible.
 
 ## Running
 
@@ -91,7 +85,7 @@ Running `go build .` in this directory builds the program. Then use an example b
 
 ```bash
 ./undelete-blocks \
-  --backend abs \
+  --backend azure \
   --azure.container-name <container name> \
   --azure.account-name <account name> \
   --azure.account-key <account key> \
