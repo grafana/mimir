@@ -127,16 +127,14 @@ func TestNewPerMetricSeriesLimitError(t *testing.T) {
 
 func TestNewPerMetricMetadataLimitError(t *testing.T) {
 	limit := 100
-	labels := mimirpb.FromLabelAdaptersToLabels(
-		[]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}},
-	)
-	err := newPerMetricMetadataLimitReachedError(limit, labels)
-	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
+	family := "testmetric"
+	err := newPerMetricMetadataLimitReachedError(limit, family)
+	expectedErrMsg := fmt.Sprintf("%s This is for metric %s",
 		globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-metric metadata limit of %d exceeded", limit),
 			validation.MaxMetadataPerMetricFlag,
 		),
-		labels.String(),
+		family,
 	)
 	require.Equal(t, expectedErrMsg, err.Error())
 	checkIngesterError(t, err, mimirpb.BAD_DATA, true)
@@ -360,7 +358,8 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
-	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	family := "testmetric"
+	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
 	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
 	timestamp := model.Time(1)
 
@@ -495,15 +494,15 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
-			err:             newPerMetricMetadataLimitReachedError(10, labels),
+			err:             newPerMetricMetadataLimitReachedError(10, family),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: newPerMetricMetadataLimitReachedError(10, labels).Error(),
+			expectedMessage: newPerMetricMetadataLimitReachedError(10, family).Error(),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithStatus FailedPrecondition error with details": {
-			err:             fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
+			err:             fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 			expectedCode:    codes.FailedPrecondition,
-			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, labels).Error()),
+			expectedMessage: fmt.Sprintf("wrapped: %s", newPerMetricMetadataLimitReachedError(10, family).Error()),
 			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.BAD_DATA},
 		},
 	}
@@ -528,7 +527,8 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
-	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	family := "testmetric"
+	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
 	labels := mimirpb.FromLabelAdaptersToLabels(labelAdapters)
 	timestamp := model.Time(1)
 
@@ -658,16 +658,16 @@ func TestMapPushErrorToErrorWithHTTPOrGRPCStatus(t *testing.T) {
 			),
 		},
 		"a perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: newPerMetricMetadataLimitReachedError(10, labels),
+			err: newPerMetricMetadataLimitReachedError(10, family),
 			expectedTranslation: newErrorWithHTTPStatus(
-				newPerMetricMetadataLimitReachedError(10, labels),
+				newPerMetricMetadataLimitReachedError(10, family),
 				http.StatusBadRequest,
 			),
 		},
 		"a wrapped perMetricMetadataLimitReachedError gets translated into an errorWithHTTPStatus 400 error": {
-			err: fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
+			err: fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 			expectedTranslation: newErrorWithHTTPStatus(
-				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, labels)),
+				fmt.Errorf("wrapped: %w", newPerMetricMetadataLimitReachedError(10, family)),
 				http.StatusBadRequest,
 			),
 		},

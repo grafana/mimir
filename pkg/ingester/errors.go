@@ -420,24 +420,24 @@ var _ softError = perMetricSeriesLimitReachedError{}
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
 	limit  int
-	series string
+	family string
 }
 
 // newPerMetricMetadataLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric metadata limit has been reached.
-func newPerMetricMetadataLimitReachedError(limit int, labels labels.Labels) perMetricMetadataLimitReachedError {
+func newPerMetricMetadataLimitReachedError(limit int, family string) perMetricMetadataLimitReachedError {
 	return perMetricMetadataLimitReachedError{
 		limit:  limit,
-		series: labels.String(),
+		family: family,
 	}
 }
 
 func (e perMetricMetadataLimitReachedError) Error() string {
-	return fmt.Sprintf("%s This is for series %s",
+	return fmt.Sprintf("%s This is for metric %s",
 		globalerror.MaxMetadataPerMetric.MessageWithPerTenantLimitConfig(
 			fmt.Sprintf("per-metric metadata limit of %d exceeded", e.limit),
 			validation.MaxMetadataPerMetricFlag,
 		),
-		e.series,
+		e.family,
 	)
 }
 
