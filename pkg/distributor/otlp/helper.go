@@ -241,10 +241,8 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 
 // addSingleHistogramDataPoint converts pt to 2 + min(len(ExplicitBounds), len(BucketCount)) + 1 samples. It
 // ignore extra buckets if len(ExplicitBounds) > len(BucketCounts)
-func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries) {
+func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings, tsMap map[uint64]*mimirpb.TimeSeries, baseName string) {
 	timestamp := convertTimeStamp(pt.Timestamp())
-	// sum, count, and buckets of the histogram should append suffix to baseName
-	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
 	createLabels := func(nameSuffix string, extras ...string) []mimirpb.LabelAdapter {
@@ -256,6 +254,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 			labels = append(labels, mimirpb.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 		}
 
+		// sum, count, and buckets of the histogram should append suffix to baseName
 		labels = append(labels, mimirpb.LabelAdapter{Name: nameStr, Value: baseName + nameSuffix})
 
 		return labels
@@ -442,10 +441,8 @@ func maxTimestamp(a, b pcommon.Timestamp) pcommon.Timestamp {
 
 // addSingleSummaryDataPoint converts pt to len(QuantileValues) + 2 samples.
 func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Resource, metric pmetric.Metric, settings Settings,
-	tsMap map[uint64]*mimirpb.TimeSeries) {
+	tsMap map[uint64]*mimirpb.TimeSeries, baseName string) {
 	timestamp := convertTimeStamp(pt.Timestamp())
-	// sum and count of the summary should append suffix to baseName
-	baseName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 	baseLabels := createAttributes(resource, pt.Attributes(), settings.ExternalLabels)
 
 	createLabels := func(name string, extras ...string) []mimirpb.LabelAdapter {
@@ -470,6 +467,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	if pt.Flags().NoRecordedValue() {
 		sum.Value = math.Float64frombits(value.StaleNaN)
 	}
+	// sum and count of the summary should append suffix to baseName
 	sumlabels := createLabels(baseName + sumStr)
 	addSample(tsMap, sum, sumlabels, metric.Type().String())
 

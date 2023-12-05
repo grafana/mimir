@@ -75,19 +75,18 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleHistogramDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeExponentialHistogram:
 					dataPoints := metric.ExponentialHistogram().DataPoints()
 					if dataPoints.Len() == 0 {
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
-					name := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
 					for x := 0; x < dataPoints.Len(); x++ {
 						errs = multierr.Append(
 							errs,
 							addSingleExponentialHistogramDataPoint(
-								name,
+								promName,
 								dataPoints.At(x),
 								resource,
 								settings,
@@ -101,7 +100,7 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap)
+						addSingleSummaryDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				default:
 					errs = multierr.Append(errs, errors.New("unsupported metric type"))
