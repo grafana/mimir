@@ -312,6 +312,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has ingested samples with timestamps more than 1h in the future.' % $._config,
           },
         },
+        {
+          alert: $.alertName('StoreGatewayTooManyFailedOperations'),
+          'for': '5m',
+          expr: |||
+            sum by(%(alert_aggregation_labels)s, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
