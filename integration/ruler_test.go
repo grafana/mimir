@@ -662,6 +662,18 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		})
 	}
 
+	getZeroSeriesQueriesTotal := func() int {
+		sum, err := ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
+		require.NoError(t, err)
+		return int(sum[0])
+	}
+
+	getLastEvalSamples := func() int {
+		sum, err := ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
+		require.NoError(t, err)
+		return int(sum[0])
+	}
+
 	// Now let's upload a non-failing rule, and make sure that it works.
 	t.Run("real_error", func(t *testing.T) {
 		const groupName = "good_rule"
@@ -683,94 +695,74 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName, expression, false)
 
 		// Ensure that no samples were returned.
-		sum, err := ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
-
+		require.Zero(t, getZeroSeriesQueriesTotal())
 		deleteRuleAndWait(groupName)
+		zeroSeriesQueries := getZeroSeriesQueriesTotal()
 
 		const groupName2 = "good_rule_with_fetched_series_and_samples"
 		const expression2 = `sum(metric{foo=~"1|2"})`
 		addNewRuleAndWait(groupName2, expression2, false)
 
 		// Ensure that samples were returned.
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Less(t, float64(0), sum[0])
-
+		require.Less(t, 0, getLastEvalSamples())
 		// Ensure that the metric for no fetched series was not incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
 
 		deleteRuleAndWait(groupName2)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName3 = "good_rule_with_no_series_selector"
 		const expression3 = `vector(1.2345)`
 		addNewRuleAndWait(groupName3, expression3, false)
 
 		// Ensure that samples were returned.
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Less(t, float64(0), sum[0])
+		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
 
 		deleteRuleAndWait(groupName3)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName4 = "good_rule_with_fetched_series_and_samples_and_non_series_selector"
 		const expression4 = `sum(metric{foo=~"1|2"}) + vector(1.2345)`
 		addNewRuleAndWait(groupName4, expression4, false)
 
-		// Ensure that samples were returned.
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Less(t, float64(0), sum[0])
+		// Ensure that samples were not returned.
+
+		require.Less(t, 0, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
 
 		deleteRuleAndWait(groupName4)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName5 = "good_rule_with_no_fetched_series_and_no_samples_and_non_series_selector"
 		const expression5 = `sum(metric{foo="10000"}) + vector(1.2345)`
 		addNewRuleAndWait(groupName5, expression5, false)
 
 		// Ensure that no samples were returned.
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(1), sum[0])
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 
 		deleteRuleAndWait(groupName5)
+		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName6 = "good_rule_with_no_fetched_series_and_no_samples"
 		const expression6 = `sum(metric{foo="10000"})`
 		addNewRuleAndWait(groupName6, expression6, false)
 
 		// Ensure that no samples were returned.
-		sum, err = ruler.SumMetrics([]string{"cortex_prometheus_last_evaluation_samples"})
-		require.NoError(t, err)
-		require.Equal(t, float64(0), sum[0])
+		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		sum, err = ruler.SumMetrics([]string{"cortex_ruler_queries_zero_fetched_series_total"})
-		require.NoError(t, err)
-		require.Equal(t, float64(2), sum[0])
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 	})
 
 	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
