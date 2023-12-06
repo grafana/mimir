@@ -211,6 +211,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
@@ -237,6 +240,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
@@ -263,6 +269,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
