@@ -75,12 +75,12 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  newStoreGatewayStatefulSet(name, container, with_anti_affinity=false, nodeAffinityMatchers=[])::
+  newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
     $.mimirVolumeMounts +
-    (if with_anti_affinity then $.util.antiAffinity else {}),
+    (if withAntiAffinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
     self.newStoreGatewayStatefulSet(
