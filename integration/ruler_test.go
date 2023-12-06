@@ -732,7 +732,6 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName4, expression4, false)
 
 		// Ensure that samples were not returned.
-
 		require.Less(t, 0, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
