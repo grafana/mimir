@@ -14,6 +14,8 @@
 package labels
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -36,9 +38,13 @@ const (
 	fastRegexMatcherCacheTTL          = 5 * time.Minute
 )
 
+var enableRegexMatcherCache bool = os.Getenv("MIMIR_ENABLE_REGEX_MATCHER_CACHE") != "false"
+
 var fastRegexMatcherCache *ristretto.Cache
 
 func init() {
+	fmt.Printf("Regex matcher cache enabled: %v\n", enableRegexMatcherCache)
+
 	// Ignore error because it can only return error if config is invalid,
 	// but we're using an hardcoded static config here.
 	fastRegexMatcherCache, _ = ristretto.NewCache(&ristretto.Config{
@@ -66,9 +72,11 @@ type FastRegexMatcher struct {
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
-	// Check the cache.
-	if matcher, ok := fastRegexMatcherCache.Get(v); ok {
-		return matcher.(*FastRegexMatcher), nil
+	if enableRegexMatcherCache {
+		// Check the cache.
+		if matcher, ok := fastRegexMatcherCache.Get(v); ok {
+			return matcher.(*FastRegexMatcher), nil
+		}
 	}
 
 	// Create a new matcher.
@@ -77,8 +85,10 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		return nil, err
 	}
 
-	// Cache it.
-	fastRegexMatcherCache.SetWithTTL(v, matcher, int64(size.Of(matcher)), fastRegexMatcherCacheTTL)
+	if enableRegexMatcherCache {
+		// Cache it.
+		fastRegexMatcherCache.SetWithTTL(v, matcher, int64(size.Of(matcher)), fastRegexMatcherCacheTTL)
+	}
 
 	return matcher, nil
 }
