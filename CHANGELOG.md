@@ -57,7 +57,6 @@
   * `store_gateway_zone_a_node_affinity_matchers`
   * `store_gateway_zone_b_node_affinity_matchers`
   * `store_gateway_zone_c_node_affinity_matchers`
-* [FEATURE] Distributor: added `distributor_node_affinity_matchers` setting support. #6782
 
 ### Mimirtool
 
