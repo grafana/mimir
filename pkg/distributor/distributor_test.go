@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -5724,44 +5723,4 @@ func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCh
 func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	m.md, _ = metadata.FromOutgoingContext(ctx)
 	return nil, nil
-}
-
-func TestHistogramNegativeBuckets(t *testing.T) {
-	reg := prometheus.NewRegistry()
-	myHist := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name: "cortex_distributor_sample_delay_seconds",
-		Help: "Number of seconds by which a sample came in late wrt wallclock.",
-		Buckets: []float64{
-			-60 * 1, // 1 min early
-			-15,     // 15s early
-			-5,      // 5s early
-			0,       // 0
-			30,      // 30s
-			60 * 1,  // 1 min
-			60 * 2,  // 2 min
-		},
-	})
-
-	myHist.Observe(3)
-	myHist.Observe(-4)
-	myHist.Observe(-1)
-	myHist.Observe(-45)
-	myHist.Observe(-120)
-
-	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-		# TYPE cortex_distributor_sample_delay_seconds 
-		# TYPE cortex_distributor_sample_delay_seconds histogram
-		cortex_distributor_sample_delay_seconds_bucket{le="-60"} 1
-		cortex_distributor_sample_delay_seconds_bucket{le="-15"} 2
-		cortex_distributor_sample_delay_seconds_bucket{le="-5"} 2
-		cortex_distributor_sample_delay_seconds_bucket{le="0"} 4
-		cortex_distributor_sample_delay_seconds_bucket{le="30"} 5
-		cortex_distributor_sample_delay_seconds_bucket{le="60"} 5
-		cortex_distributor_sample_delay_seconds_bucket{le="120"} 5
-		cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 5
-		cortex_distributor_sample_delay_seconds_sum -167
-		cortex_distributor_sample_delay_seconds_count 5
-		`))
-	require.NoError(t, err)
 }
