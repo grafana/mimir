@@ -27,11 +27,10 @@ const (
 )
 
 var (
-	ErrInvalidTenantID        = errors.New("invalid tenant id")
-	ErrTooManyRequests        = errors.New("too many outstanding requests")
-	ErrStopped                = errors.New("queue is stopped")
-	ErrQuerierShuttingDown    = errors.New("querier has informed the scheduler it is shutting down")
-	ErrTooManyQueueDimensions = errors.New("too many additional queue dimensions provided")
+	ErrInvalidTenantID     = errors.New("invalid tenant id")
+	ErrTooManyRequests     = errors.New("too many outstanding requests")
+	ErrStopped             = errors.New("queue is stopped")
+	ErrQuerierShuttingDown = errors.New("querier has informed the scheduler it is shutting down")
 )
 
 type SchedulerRequest struct {

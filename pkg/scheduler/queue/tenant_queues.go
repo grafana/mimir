@@ -169,12 +169,7 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 
 func makeQueuePath(request *tenantRequest) (QueuePath, error) {
 	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-		if len(schedulerRequest.AdditionalQueueDimensions) > 1 {
-			return nil, ErrTooManyQueueDimensions
-		}
-		if len(schedulerRequest.AdditionalQueueDimensions) == 1 {
-			return QueuePath{string(request.tenantID), schedulerRequest.AdditionalQueueDimensions[0]}, nil
-		}
+		return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
 	}
 	// else request.req is a frontend/v1.request,
 	// or a SchedulerRequest with no AdditionalQueueDimensions
