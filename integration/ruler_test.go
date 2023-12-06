@@ -699,6 +699,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Zero(t, getZeroSeriesQueriesTotal())
+
 		deleteRuleAndWait(groupName)
 		zeroSeriesQueries := getZeroSeriesQueriesTotal()
 
