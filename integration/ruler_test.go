@@ -762,7 +762,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
+		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
 	})
 
 	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
