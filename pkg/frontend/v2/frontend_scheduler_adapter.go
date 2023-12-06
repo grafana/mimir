@@ -16,9 +16,8 @@ import (
 )
 
 type frontendToSchedulerAdapter struct {
-	cfg             Config
-	limits          Limits
-	prometheusCodec querymiddleware.Codec
+	cfg    Config
+	limits Limits
 }
 
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(

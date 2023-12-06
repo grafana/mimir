@@ -12,10 +12,7 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 )
 
 const rangeURLFormat = "/api/v1/query_range?end=%d&query=&start=%d&step=%d"
@@ -46,11 +43,9 @@ func makeLabelValuesHTTPRequest(ctx context.Context, start, end time.Time) *http
 }
 
 func TestExtractAdditionalQueueDimensions(t *testing.T) {
-	prometheusCodec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), "json")
 	adapter := &frontendToSchedulerAdapter{
-		cfg:             Config{QueryStoreAfter: 12 * time.Hour},
-		limits:          limits{queryIngestersWithin: 13 * time.Hour},
-		prometheusCodec: prometheusCodec,
+		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
+		limits: limits{queryIngestersWithin: 13 * time.Hour},
 	}
 
 	now := time.Now()

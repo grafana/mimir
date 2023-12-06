@@ -61,7 +61,6 @@ func InitFrontend(
 	cfg CombinedFrontendConfig,
 	v1Limits v1.Limits,
 	v2Limits v2.Limits,
-	prometheusCodec querymiddleware.Codec,
 	grpcListenPort int,
 	log log.Logger,
 	reg prometheus.Registerer,
@@ -87,7 +86,7 @@ func InitFrontend(
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, prometheusCodec, log, reg)
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg)
 		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
 
 	default:
