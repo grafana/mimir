@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -287,6 +288,35 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 0
 				cortex_distributor_sample_delay_seconds_sum 0
 				cortex_distributor_sample_delay_seconds_count 0
+			`,
+		},
+		"A push to ingesters with samples that have timestamps which are in the future relative to wall clock time should be tracked correctly": {
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() + 17*1000},
+			metadata:       1,
+			metricNames:    []string{distributorSampleDelay},
+			expectedMetrics: `
+				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
+				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum -34
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A timed out push should fail": {
@@ -5694,4 +5724,44 @@ func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCh
 func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	m.md, _ = metadata.FromOutgoingContext(ctx)
 	return nil, nil
+}
+
+func TestHistogramNegativeBuckets(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	myHist := promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_distributor_sample_delay_seconds",
+		Help: "Number of seconds by which a sample came in late wrt wallclock.",
+		Buckets: []float64{
+			-60 * 1, // 1 min early
+			-15,     // 15s early
+			-5,      // 5s early
+			0,       // 0
+			30,      // 30s
+			60 * 1,  // 1 min
+			60 * 2,  // 2 min
+		},
+	})
+
+	myHist.Observe(3)
+	myHist.Observe(-4)
+	myHist.Observe(-1)
+	myHist.Observe(-45)
+	myHist.Observe(-120)
+
+	err := testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
+		# TYPE cortex_distributor_sample_delay_seconds 
+		# TYPE cortex_distributor_sample_delay_seconds histogram
+		cortex_distributor_sample_delay_seconds_bucket{le="-60"} 1
+		cortex_distributor_sample_delay_seconds_bucket{le="-15"} 2
+		cortex_distributor_sample_delay_seconds_bucket{le="-5"} 2
+		cortex_distributor_sample_delay_seconds_bucket{le="0"} 4
+		cortex_distributor_sample_delay_seconds_bucket{le="30"} 5
+		cortex_distributor_sample_delay_seconds_bucket{le="60"} 5
+		cortex_distributor_sample_delay_seconds_bucket{le="120"} 5
+		cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 5
+		cortex_distributor_sample_delay_seconds_sum -167
+		cortex_distributor_sample_delay_seconds_count 5
+		`))
+	require.NoError(t, err)
 }
