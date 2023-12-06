@@ -87,14 +87,14 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 }
 
 func (a *frontendToSchedulerAdapter) queryComponentQueueDimensionFromTimeParams(
-	tenantIDs []string, queryStartUnixSeconds, queryEndUnixSeconds int64, now time.Time,
+	tenantIDs []string, queryStartUnixMs, queryEndUnixMs int64, now time.Time,
 ) []string {
 	longestQueryIngestersWithinWindow := validation.MaxDurationPerTenant(tenantIDs, a.limits.QueryIngestersWithin)
 	shouldQueryIngesters := querier.ShouldQueryIngesters(
-		longestQueryIngestersWithinWindow, now, unixSecondsToMilliseconds(queryEndUnixSeconds),
+		longestQueryIngestersWithinWindow, now, queryEndUnixMs,
 	)
 	shouldQueryBlockStore := querier.ShouldQueryBlockStore(
-		a.cfg.QueryStoreAfter, now, unixSecondsToMilliseconds(queryStartUnixSeconds),
+		a.cfg.QueryStoreAfter, now, queryStartUnixMs,
 	)
 
 	if shouldQueryIngesters && !shouldQueryBlockStore {
@@ -103,8 +103,4 @@ func (a *frontendToSchedulerAdapter) queryComponentQueueDimensionFromTimeParams(
 		return []string{ShouldQueryStoreGatewayQueueDimension}
 	}
 	return []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}
-}
-
-func unixSecondsToMilliseconds(unixSeconds int64) int64 {
-	return unixSeconds * int64(time.Second/time.Millisecond)
 }
