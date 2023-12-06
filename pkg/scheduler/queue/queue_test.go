@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 var secondQueueDimensionOptions = []string{
 	"ingester",
 	"store-gateway",
-	"ingester|store-gateway",
+	"ingester-and-store-gateway",
 }
 
 func randAdditionalQueueDimension() []string {

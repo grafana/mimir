@@ -7,6 +7,7 @@ package queue
 
 import (
 	"container/list"
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,6 +77,65 @@ func TestQueues(t *testing.T) {
 	req, _, _, err = qb.dequeueRequestForQuerier(lastTenantIndex, "querier-1")
 	assert.Nil(t, req)
 	assert.NoError(t, err)
+}
+
+func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
+	maxTenantQueueSize := 100
+	qb := newQueueBroker(maxTenantQueueSize, 0)
+	additionalQueueDimensions := map[int][]string{
+		0: nil,
+		1: {"ingester"},
+		2: {"store-gateway"},
+		3: {"ingester-and-store-gateway"},
+	}
+	req := &SchedulerRequest{
+		Ctx:             context.Background(),
+		FrontendAddress: "http://query-frontend:8007",
+		UserID:          "tenant-1",
+		Request:         &httpgrpc.HTTPRequest{},
+	}
+
+	// build queue evenly with either no additional queue dimension or one of 3 additional dimensions
+	for i := 0; i < len(additionalQueueDimensions); i++ {
+		for j := 0; j < maxTenantQueueSize/len(additionalQueueDimensions); j++ {
+			req.AdditionalQueueDimensions = additionalQueueDimensions[i]
+			tenantReq := &tenantRequest{
+				tenantID: "tenant-1",
+				req:      req,
+			}
+			err := qb.enqueueRequestBack(tenantReq, 0)
+			assert.NoError(t, err)
+		}
+	}
+	// assert item count of tenant node and its subnodes
+	queuePath := QueuePath{"tenant-1"}
+	assert.Equal(t, maxTenantQueueSize, qb.tenantQueuesTree.getNode(queuePath).ItemCount())
+
+	// assert equal distribution of queue items between tenant node and 3 subnodes
+	for _, v := range additionalQueueDimensions {
+		queuePath := append(QueuePath{"tenant-1"}, v...)
+		assert.Equal(t, maxTenantQueueSize/len(additionalQueueDimensions), qb.tenantQueuesTree.getNode(queuePath).LocalQueueLen())
+	}
+
+	// assert error received when hitting a tenant's enqueue limit,
+	// even though most of the requests are in the subqueues
+	tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
+	err := qb.enqueueRequestBack(tenantReq, 0)
+	assert.ErrorIs(t, err, ErrTooManyRequests)
+
+	// dequeue a request
+	qb.addQuerierConnection("querier-1")
+	dequeuedTenantReq, _, _, err := qb.dequeueRequestForQuerier(-1, "querier-1")
+	assert.NoError(t, err)
+	assert.NotNil(t, dequeuedTenantReq)
+
+	// assert not hitting an error when enqueueing after dequeuing to below the limit
+	err = qb.enqueueRequestBack(tenantReq, 0)
+	assert.NoError(t, err)
+
+	// we then hit an error again, as we are back at the limit
+	err = qb.enqueueRequestBack(tenantReq, 0)
+	assert.ErrorIs(t, err, ErrTooManyRequests)
 }
 
 func TestQueuesOnTerminatingQuerier(t *testing.T) {
