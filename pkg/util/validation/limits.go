@@ -17,13 +17,14 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/relabel"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
@@ -156,7 +157,7 @@ type Limits struct {
 	// Compactor.
 	CompactorBlocksRetentionPeriod           model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
 	CompactorPerSeriesRetentionEnabled       bool           `yaml:"compactor_blocks_extended_retention_enabled" json:"compactor_blocks_extended_retention_enabled"`
-	CompactorBlocksExtendedRetentionPolicies RetentionCfg   `yaml:"compactor_blocks_extended_retention_policies,omitempty" json:"compactor_blocks_extended_retention_policies,omitempty" doc:"nocli|description=Map of serie retention policy." category:"experimental"`
+	CompactorBlocksExtendedRetentionPolicies RetentionCfg   `yaml:"compactor_blocks_extended_retention_policies,omitempty" json:"compactor_blocks_extended_retention_policies,omitempty" doc:"description=Extended retention policies, when set by the tenant, take precedence over default policies when a series matches a provided matcher. This configuration is effective only when compactor_blocks_extended_retention_enabled is set to true." category:"advanced"`
 	CompactorSplitAndMergeShards             int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
 	CompactorSplitGroups                     int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
 	CompactorTenantShardSize                 int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
