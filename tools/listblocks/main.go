@@ -86,18 +86,18 @@ func main() {
 		loadMetasMinTime = time.Time(cfg.minTime)
 	}
 
-	metas, deletedTimes, err := listblocks.LoadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
+	metas, deleteMarkerDetails, noCompactMarkerDetails, err := listblocks.LoadMetaFilesAndMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
 	if err != nil {
 		log.Fatalln("failed to read block metadata:", err)
 	}
 
-	printMetas(metas, deletedTimes, cfg)
+	printMetas(metas, deleteMarkerDetails, noCompactMarkerDetails, cfg)
 }
 
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*block.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
+func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]listblocks.MarkerDetails, noCompactMarkerDetails map[ulid.ULID]listblocks.MarkerDetails, cfg config) {
 	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
@@ -114,6 +114,7 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deletedTimes map[ulid.ULID]time
 	fmt.Fprintf(tabber, "Min Time\t")
 	fmt.Fprintf(tabber, "Max Time\t")
 	fmt.Fprintf(tabber, "Duration\t")
+	fmt.Fprintf(tabber, "No Compact\t")
 	if cfg.showDeleted {
 		fmt.Fprintf(tabber, "Deletion Time\t")
 	}
@@ -140,7 +141,7 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deletedTimes map[ulid.ULID]time
 	fmt.Fprintln(tabber)
 
 	for _, b := range blocks {
-		if !cfg.showDeleted && !deletedTimes[b.ULID].IsZero() {
+		if !cfg.showDeleted && !deleteMarkerDetails[b.ULID].Time.IsZero() {
 			continue
 		}
 
@@ -162,11 +163,19 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deletedTimes map[ulid.ULID]time
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
 
+		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
+			fmt.Fprintf(tabber, "%v\t", []string{
+				fmt.Sprintf("Time: %s", val.Time.UTC().Format(time.RFC3339)),
+				fmt.Sprintf("Reason: %s", val.Reason)})
+		} else {
+			fmt.Fprintf(tabber, "\t")
+		}
+
 		if cfg.showDeleted {
-			if deletedTimes[b.ULID].IsZero() {
+			if deleteMarkerDetails[b.ULID].Time.IsZero() {
 				fmt.Fprintf(tabber, "\t") // no deletion time.
 			} else {
-				fmt.Fprintf(tabber, "%v\t", deletedTimes[b.ULID].UTC().Format(time.RFC3339))
+				fmt.Fprintf(tabber, "%v\t", deleteMarkerDetails[b.ULID].Time.UTC().Format(time.RFC3339))
 			}
 		}
 

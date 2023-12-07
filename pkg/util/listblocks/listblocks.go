@@ -5,6 +5,7 @@ package listblocks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path"
 	"sort"
 	"sync"
@@ -20,25 +21,43 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
+type MarkerDetails struct {
+	Reason string
+	Time   time.Time
+}
+
+// MarkerType represents the type of marker
+type MarkerType int
+
+const (
+	DeletionMarker MarkerType = iota
+	NoCompactMarker
+)
+
+// LoadMetaFilesAndMarkers reads the bucket and loads the meta files for the provided user.
 // If showDeleted is true, then deletion marker files are also read and returned.
 // If ulidMinTime is non-zero, then only blocks with ULID time higher than that are read,
+// No-compact marker files are also read and returned all the time,
 // this is useful to filter the results for users with high amount of blocks without reading the metas
 // (but it can be inexact since ULID time can differ from block min/max times range).
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
+func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionDetails map[ulid.ULID]MarkerDetails, noCompactBlocks map[ulid.ULID]MarkerDetails, _ error) {
 	deletedBlocks := map[ulid.ULID]bool{}
+	noCompactMarkerFiles := []string(nil)
 	deletionMarkerFiles := []string(nil)
 
-	// Find blocks marked for deletion
+	// Find blocks marked for deletion and no-compact.
 	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
 		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
 		}
+		if _, ok := block.IsNoCompactMarkFilename(path.Base(s)); ok {
+			noCompactMarkerFiles = append(noCompactMarkerFiles, s)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	metaPaths := []string(nil)
@@ -60,28 +79,31 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if showDeleted {
-		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
+		deletionDetails, err = fetchMarkerDetails(ctx, bkt, DeletionMarker, deletionMarkerFiles)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-
+	noCompactBlocks, err = fetchMarkerDetails(ctx, bkt, NoCompactMarker, noCompactMarkerFiles)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	metas, err = fetchMetas(ctx, bkt, metaPaths)
-	return metas, deletionTimes, err
+	return metas, deletionDetails, noCompactBlocks, err
 }
 
 const concurrencyLimit = 32
 
-func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletionMarkers []string) (map[ulid.ULID]time.Time, error) {
+func fetchMarkerDetails(ctx context.Context, bkt objstore.BucketReader, markerType MarkerType, markers []string) (map[ulid.ULID]MarkerDetails, error) {
 	mu := sync.Mutex{}
-	times := map[ulid.ULID]time.Time{}
+	details := map[ulid.ULID]MarkerDetails{}
 
-	return times, concurrency.ForEachJob(ctx, len(deletionMarkers), concurrencyLimit, func(ctx context.Context, idx int) error {
-		r, err := bkt.Get(ctx, deletionMarkers[idx])
+	return details, concurrency.ForEachJob(ctx, len(markers), concurrencyLimit, func(ctx context.Context, idx int) error {
+		r, err := bkt.Get(ctx, markers[idx])
 		if err != nil {
 			if bkt.IsObjNotFoundErr(err) {
 				return nil
@@ -92,16 +114,29 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletion
 		defer r.Close()
 
 		dec := json.NewDecoder(r)
+		var m interface{}
+		switch markerType {
+		case DeletionMarker:
+			m = &block.DeletionMark{}
+		case NoCompactMarker:
+			m = &block.NoCompactMark{}
+		default:
+			return fmt.Errorf("unsupported marker type: %v", markerType)
+		}
 
-		m := block.DeletionMark{}
 		if err := dec.Decode(&m); err != nil {
 			return err
 		}
 
 		mu.Lock()
-		times[m.ID] = time.Unix(m.DeletionTime, 0)
-		mu.Unlock()
+		switch marker := m.(type) {
+		case *block.DeletionMark:
+			details[marker.ID] = MarkerDetails{Time: time.Unix(marker.DeletionTime, 0)}
+		case *block.NoCompactMark:
+			details[marker.ID] = MarkerDetails{Reason: string(marker.Reason), Time: time.Unix(marker.NoCompactTime, 0)}
+		}
 
+		mu.Unlock()
 		return nil
 	})
 }
