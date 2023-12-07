@@ -34,8 +34,7 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	})
 }
 
-// TODO dimitarvdimitrov rename
-func TestLabelsQueryCache_parseRequest(t *testing.T) {
+func TestDefaultCacheSplitter_LabelValuesCacheKey(t *testing.T) {
 	const labelName = "test"
 
 	tests := map[string]struct {
