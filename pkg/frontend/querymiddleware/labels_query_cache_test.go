@@ -34,7 +34,7 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	})
 }
 
-func TestDefaultCacheSplitter_LabelValuesCacheKey(t *testing.T) {
+func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 	const labelName = "test"
 
 	tests := map[string]struct {

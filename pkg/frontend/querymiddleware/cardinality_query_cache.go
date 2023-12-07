@@ -23,12 +23,12 @@ const (
 	cardinalityActiveSeriesQueryCachePrefix = "ca:"
 )
 
-func newCardinalityQueryCacheRoundTripper(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+func newCardinalityQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
 	ttl := &cardinalityQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, splitter.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
 }
 
 type cardinalityQueryTTL struct {
