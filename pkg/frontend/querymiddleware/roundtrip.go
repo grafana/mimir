@@ -62,7 +62,7 @@ type Config struct {
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
-	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
+	// If nil, the querymiddleware package uses a DefaultCacheSplitter with SplitQueriesByInterval.
 	CacheSplitter CacheSplitter `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
@@ -234,15 +234,15 @@ func newQueryTripperware(
 		c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
 	}
 
+	cacheSplitter := cfg.CacheSplitter
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
 		}
 
-		splitter := cfg.CacheSplitter
-		if splitter == nil {
-			splitter = ConstSplitter(cfg.SplitQueriesByInterval)
+		if cacheSplitter == nil {
+			cacheSplitter = DefaultCacheSplitter(cfg.SplitQueriesByInterval)
 		}
 
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
@@ -252,7 +252,7 @@ func newQueryTripperware(
 			limits,
 			codec,
 			c,
-			splitter,
+			cacheSplitter,
 			cacheExtractor,
 			shouldCache,
 			log,
@@ -327,8 +327,8 @@ func newQueryTripperware(
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheSplitter, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, cacheSplitter, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

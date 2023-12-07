@@ -72,7 +72,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 			cacheBackend := cache.NewInstrumentedMockCache()
 			limits := multiTenantMockLimits{byTenant: testData.limits}
 
-			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), nil)
+			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, DefaultCacheSplitter(0), limits, downstream, testutil.NewLogger(t), nil)
 			res, err := rt.RoundTrip(req)
 			require.NoError(t, err)
 

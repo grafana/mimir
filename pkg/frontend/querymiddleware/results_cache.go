@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -183,13 +184,15 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 // consumers who wish to implement their own strategies.
 type CacheSplitter interface {
 	GenerateCacheKey(ctx context.Context, userID string, r Request) string
+	LabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
+	LabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
-// ConstSplitter is a utility for using a constant split interval when determining cache keys
-type ConstSplitter time.Duration
+// DefaultCacheSplitter is a utility for using a constant split interval when determining cache keys
+type DefaultCacheSplitter time.Duration
 
 // GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
+func (t DefaultCacheSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
 	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 

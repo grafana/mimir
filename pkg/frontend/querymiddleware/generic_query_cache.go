@@ -20,39 +20,40 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type genericQueryRequest struct {
-	// cacheKey is a full non-hashed representation of the request, used to uniquely identify
+type GenericQueryCacheKey struct {
+	// CacheKey is a full non-hashed representation of the request, used to uniquely identify
 	// a request in the cache.
-	cacheKey string
+	CacheKey string
 
-	// cacheKeyPrefix returns the cache key prefix to use for this request.
-	cacheKeyPrefix string
+	// CacheKeyPrefix is a cache key prefix to use for this request.
+	CacheKeyPrefix string
 }
 
-type genericQueryDelegate interface {
-	// parseRequest parses the input request and returns a genericQueryRequest, or an error if parsing fails.
-	parseRequest(path string, values url.Values) (*genericQueryRequest, error)
-
-	// getTTL returns the cache TTL for the input userID.
-	getTTL(userID string) time.Duration
+type tenantCacheTTL interface {
+	// ttl returns the cache TTL for the input userID.
+	ttl(userID string) time.Duration
 }
+
+type splittingFunc func(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
 
 // genericQueryCache is a http.RoundTripped wrapping the downstream with a generic HTTP response cache.
 type genericQueryCache struct {
-	cache    cache.Cache
-	delegate genericQueryDelegate
-	metrics  *resultsCacheMetrics
-	next     http.RoundTripper
-	logger   log.Logger
+	cache     cache.Cache
+	tenantTTL tenantCacheTTL
+	splitter  splittingFunc
+	metrics   *resultsCacheMetrics
+	next      http.RoundTripper
+	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, delegate genericQueryDelegate, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, splitter splittingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
-		cache:    cache,
-		delegate: delegate,
-		metrics:  metrics,
-		next:     next,
-		logger:   logger,
+		cache:     cache,
+		tenantTTL: tenantTTL,
+		metrics:   metrics,
+		splitter:  splitter,
+		next:      next,
+		logger:    logger,
 	}
 }
 
@@ -75,7 +76,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	// Skip the cache if disabled for the tenant. We look at the minimum TTL so that we skip the cache
 	// if it's disabled for any of tenants.
-	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.delegate.getTTL)
+	cacheTTL := validation.MinDurationPerTenant(tenantIDs, c.tenantTTL.ttl)
 	if cacheTTL <= 0 {
 		spanLog.DebugLog("msg", "cache disabled for the tenant")
 		return c.next.RoundTrip(req)
@@ -89,7 +90,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	queryReq, err := c.delegate.parseRequest(req.URL.Path, reqValues)
+	queryReq, err := c.splitter(ctx, tenant.JoinTenantIDs(tenantIDs), req.URL.Path, reqValues)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.
@@ -186,9 +187,9 @@ func (c *genericQueryCache) recordCacheStoreQueryDetails(ctx context.Context, to
 	}
 }
 
-func generateGenericQueryRequestCacheKey(tenantIDs []string, req *genericQueryRequest) (cacheKey, hashedCacheKey string) {
-	cacheKey = fmt.Sprintf("%s:%s", tenant.JoinTenantIDs(tenantIDs), req.cacheKey)
-	hashedCacheKey = fmt.Sprintf("%s%s", req.cacheKeyPrefix, cacheHashKey(cacheKey))
+func generateGenericQueryRequestCacheKey(tenantIDs []string, req *GenericQueryCacheKey) (cacheKey, hashedCacheKey string) {
+	cacheKey = fmt.Sprintf("%s:%s", tenant.JoinTenantIDs(tenantIDs), req.CacheKey)
+	hashedCacheKey = fmt.Sprintf("%s%s", req.CacheKeyPrefix, cacheHashKey(cacheKey))
 	return
 }
 

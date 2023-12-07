@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -22,23 +23,23 @@ const (
 	cardinalityActiveSeriesQueryCachePrefix = "ca:"
 )
 
-func newCardinalityQueryCacheRoundTripper(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
-	delegate := &cardinalityQueryCache{
+func newCardinalityQueryCacheRoundTripper(cache cache.Cache, splitter CacheSplitter, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+	ttl := &cardinalityQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, delegate, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, splitter.LabelValuesCardinalityCacheKey, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
 }
 
-type cardinalityQueryCache struct {
+type cardinalityQueryTTL struct {
 	limits Limits
 }
 
-func (c *cardinalityQueryCache) getTTL(userID string) time.Duration {
+func (c *cardinalityQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*genericQueryRequest, error) {
+func (DefaultCacheSplitter) LabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	switch {
 	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
 		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)
@@ -46,9 +47,9 @@ func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*g
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityLabelNamesQueryCachePrefix,
 		}, nil
 	case strings.HasSuffix(path, cardinalityLabelValuesPathSuffix):
 		parsed, err := cardinality.DecodeLabelValuesRequestFromValues(values)
@@ -56,9 +57,9 @@ func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*g
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityLabelValuesQueryCachePrefix,
 		}, nil
 	case strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix):
 		parsed, err := cardinality.DecodeActiveSeriesRequestFromValues(values)
@@ -66,9 +67,9 @@ func (c *cardinalityQueryCache) parseRequest(path string, values url.Values) (*g
 			return nil, err
 		}
 
-		return &genericQueryRequest{
-			cacheKey:       parsed.String(),
-			cacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
+		return &GenericQueryCacheKey{
+			CacheKey:       parsed.String(),
+			CacheKeyPrefix: cardinalityActiveSeriesQueryCachePrefix,
 		}, nil
 	default:
 		return nil, errors.New("unknown cardinality API endpoint")

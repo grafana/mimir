@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type newGenericQueryCacheFunc func(cache cache.Cache, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
+type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheSplitter, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
 
 type testGenericQueryCacheRequestType struct {
 	reqPath        string
@@ -226,7 +226,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 						reg := prometheus.NewPedanticRegistry()
-						rt := newRoundTripper(cacheBackend, limits, downstream, testutil.NewLogger(t), reg)
+						rt := newRoundTripper(cacheBackend, DefaultCacheSplitter(0), limits, downstream, testutil.NewLogger(t), reg)
 						res, err := rt.RoundTrip(req)
 						require.NoError(t, err)
 
