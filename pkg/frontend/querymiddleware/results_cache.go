@@ -184,8 +184,8 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 // consumers who wish to implement their own strategies.
 type CacheSplitter interface {
 	GenerateCacheKey(ctx context.Context, userID string, r Request) string
-	LabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
-	LabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
+	GenerateLabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
+	GenerateLabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
 // DefaultCacheSplitter is a utility for using a constant split interval when determining cache keys

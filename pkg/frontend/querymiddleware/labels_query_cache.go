@@ -34,7 +34,7 @@ func newLabelsQueryCacheRoundTripper(cache cache.Cache, cacheSplitter CacheSplit
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, cacheSplitter.LabelValuesCacheKey, ttl, next, logger, newResultsCacheMetrics("label_names_and_values", reg))
+	return newGenericQueryCacheRoundTripper(cache, cacheSplitter.GenerateLabelValuesCacheKey, ttl, next, logger, newResultsCacheMetrics("label_names_and_values", reg))
 }
 
 type labelsQueryTTL struct {
@@ -45,7 +45,7 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (DefaultCacheSplitter) LabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheSplitter) GenerateLabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string
