@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -258,7 +259,7 @@ func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
 }
 
 // LabelNamesAndValues returns distinct label values per label name.
-func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response, error) {
+func (c *Client) LabelNamesAndValues(selector string, limit int) (*api.LabelNamesCardinalityResponse, error) {
 	body := make(url.Values)
 	if len(selector) > 0 {
 		body.Set("selector", selector)
@@ -278,12 +279,23 @@ func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// Execute HTTP request
-	return c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+	var lvalsResp api.LabelNamesCardinalityResponse
+	err = json.NewDecoder(resp.Body).Decode(&lvalsResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding label values response: %w", err)
+	}
+	return &lvalsResp, nil
 }
 
 // LabelValuesCardinality returns all values and series total count for each label name.
-func (c *Client) LabelValuesCardinality(labelNames []string, selector string, limit int) (*http.Response, error) {
+func (c *Client) LabelValuesCardinality(labelNames []string, selector string, limit int) (*api.LabelValuesCardinalityResponse, error) {
 	body := make(url.Values)
 	if len(selector) > 0 {
 		body.Set("selector", selector)
@@ -306,8 +318,20 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	// Execute HTTP request
-	return c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	var lvalsResp api.LabelValuesCardinalityResponse
+	err = json.NewDecoder(resp.Body).Decode(&lvalsResp)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding label values response: %w", err)
+	}
+	return &lvalsResp, nil
 }
 
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
