@@ -36,7 +36,7 @@ type config struct {
 func (c *config) registerFlags(f *flag.FlagSet) {
 	c.bucketConfig.RegisterFlags(f)
 	f.StringVar(&c.blocksFrom, "blocks-from", "", "Accepted values are json, lines, or listing. When listing is provided --input-file is ignored and object storage listings are used to discover tenants and blocks.")
-	f.StringVar(&c.inputFile, "input-file", "", "The file path to read when --blocks-from is json or lines, otherwise ignored. The default (\"\") assumes reading from standard input.")
+	f.StringVar(&c.inputFile, "input-file", "-", "The file path to read when --blocks-from is json or lines, otherwise ignored. The default (\"-\") assumes reading from standard input.")
 	f.Var(&c.includeTenants, "include-tenants", "A comma separated list of what tenants to target.")
 	f.Var(&c.excludeTenants, "exclude-tenants", "A comma separated list of what tenants to ignore. Has precedence over included tenants.")
 	f.BoolVar(&c.dryRun, "dry-run", false, "When set the changes that would be made to object storage are only logged rather than performed.")
@@ -133,7 +133,7 @@ func getBlocks(ctx context.Context, cfg config, bucket objtools.Bucket) (map[str
 }
 
 func getInputFile(filePath string) (*os.File, error) {
-	if filePath == "" {
+	if filePath == "-" {
 		return os.Stdin, nil
 	}
 	return os.Open(filePath)
