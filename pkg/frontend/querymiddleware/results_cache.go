@@ -188,12 +188,14 @@ type CacheSplitter interface {
 	GenerateLabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
-// DefaultCacheSplitter is a utility for using a constant split interval when determining cache keys
-type DefaultCacheSplitter time.Duration
+type DefaultCacheSplitter struct {
+	// Interval is a constant split interval when determining cache keys
+	Interval time.Duration
+}
 
 // GenerateCacheKey generates a cache key based on the userID, Request and interval.
 func (t DefaultCacheSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
-	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
+	startInterval := r.GetStart() / t.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.

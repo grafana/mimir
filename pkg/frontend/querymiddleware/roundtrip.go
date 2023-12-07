@@ -236,7 +236,7 @@ func newQueryTripperware(
 
 	cacheSplitter := cfg.CacheSplitter
 	if cacheSplitter == nil {
-		cacheSplitter = DefaultCacheSplitter(cfg.SplitQueriesByInterval)
+		cacheSplitter = DefaultCacheSplitter{Interval: cfg.SplitQueriesByInterval}
 	}
 
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
