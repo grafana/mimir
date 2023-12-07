@@ -39,7 +39,7 @@ func (c *cardinalityQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (DefaultCacheSplitter) LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheKeyGenerator) LabelValuesCardinality(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	switch {
 	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
 		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)

@@ -193,13 +193,13 @@ type CacheKeyGenerator interface {
 	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
-type DefaultCacheSplitter struct {
-	// Interval is a constant split interval when determining cache keys
+type DefaultCacheKeyGenerator struct {
+	// Interval is a constant split interval when determining cache keys for QueryRequest.
 	Interval time.Duration
 }
 
 // QueryRequest generates a cache key based on the userID, Request and interval.
-func (t DefaultCacheSplitter) QueryRequest(_ context.Context, userID string, r Request) string {
+func (t DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
 	startInterval := r.GetStart() / t.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 

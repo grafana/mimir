@@ -45,7 +45,7 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (DefaultCacheSplitter) LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheKeyGenerator) LabelValues(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string

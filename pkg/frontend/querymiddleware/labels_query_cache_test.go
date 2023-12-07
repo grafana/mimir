@@ -144,7 +144,7 @@ func TestDefaultCacheSplitter_LabelValuesCacheKey(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
-					c := DefaultCacheSplitter{}
+					c := DefaultCacheKeyGenerator{}
 					actual, err := c.LabelValues(context.Background(), requestTypeData.requestPath, testData.params)
 					require.NoError(t, err)
 
