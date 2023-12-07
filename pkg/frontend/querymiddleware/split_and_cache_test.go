@@ -696,7 +696,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			require.Equal(t, testData.downstreamResponse, resp)
 
 			// Check if the response was cached.
-			cacheKey := cacheHashKey(cacheSplitter.GenerateCacheKey(ctx, userID, req))
+			cacheKey := cacheHashKey(cacheSplitter.QueryRequest(ctx, userID, req))
 			found := cacheBackend.Fetch(ctx, []string{cacheKey})
 
 			if len(testData.expectedCachedResponses) == 0 {
@@ -1154,7 +1154,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
 
 			// Store all extents fixtures in the cache.
-			cacheKey := cacheSplitter.GenerateCacheKey(ctx, userID, testData.req)
+			cacheKey := cacheSplitter.QueryRequest(ctx, userID, testData.req)
 			mw.storeCacheExtents(cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.

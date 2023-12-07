@@ -23,12 +23,12 @@ const (
 	cardinalityActiveSeriesQueryCachePrefix = "ca:"
 )
 
-func newCardinalityQueryCacheRoundTripper(cache cache.Cache, splitter CacheSplitter, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+func newCardinalityQueryCacheRoundTripper(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
 	ttl := &cardinalityQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, splitter.GenerateLabelValuesCardinalityCacheKey, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, splitter.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
 }
 
 type cardinalityQueryTTL struct {
@@ -39,7 +39,7 @@ func (c *cardinalityQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForCardinalityQuery(userID)
 }
 
-func (DefaultCacheSplitter) GenerateLabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheSplitter) LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	switch {
 	case strings.HasSuffix(path, cardinalityLabelNamesPathSuffix):
 		parsed, err := cardinality.DecodeLabelNamesRequestFromValues(values)

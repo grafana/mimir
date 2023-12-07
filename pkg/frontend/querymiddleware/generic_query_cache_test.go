@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheSplitter, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
+type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
 
 type testGenericQueryCacheRequestType struct {
 	reqPath        string

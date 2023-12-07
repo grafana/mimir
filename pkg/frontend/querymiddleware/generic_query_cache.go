@@ -34,24 +34,24 @@ type tenantCacheTTL interface {
 	ttl(userID string) time.Duration
 }
 
-type splittingFunc func(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
+type keyingFunc func(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 
 // genericQueryCache is a http.RoundTripped wrapping the downstream with a generic HTTP response cache.
 type genericQueryCache struct {
 	cache     cache.Cache
 	tenantTTL tenantCacheTTL
-	splitter  splittingFunc
+	cacheKey  keyingFunc
 	metrics   *resultsCacheMetrics
 	next      http.RoundTripper
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, splitter splittingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, splitter keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,
 		metrics:   metrics,
-		splitter:  splitter,
+		cacheKey:  splitter,
 		next:      next,
 		logger:    logger,
 	}
@@ -90,7 +90,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	queryReq, err := c.splitter(ctx, tenant.JoinTenantIDs(tenantIDs), req.URL.Path, reqValues)
+	queryReq, err := c.cacheKey(ctx, req.URL.Path, reqValues)
 	if err != nil {
 		// Logging as info because it's not an actionable error here.
 		// We defer it to the downstream.

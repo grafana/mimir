@@ -29,12 +29,12 @@ const (
 	stringParamSeparator = rune(0)
 )
 
-func newLabelsQueryCacheRoundTripper(cache cache.Cache, cacheSplitter CacheSplitter, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+func newLabelsQueryCacheRoundTripper(cache cache.Cache, cacheSplitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
 	ttl := &labelsQueryTTL{
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, cacheSplitter.GenerateLabelValuesCacheKey, ttl, next, logger, newResultsCacheMetrics("label_names_and_values", reg))
+	return newGenericQueryCacheRoundTripper(cache, cacheSplitter.LabelValues, ttl, next, logger, newResultsCacheMetrics("label_names_and_values", reg))
 }
 
 type labelsQueryTTL struct {
@@ -45,7 +45,7 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (DefaultCacheSplitter) GenerateLabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error) {
+func (DefaultCacheSplitter) LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
 	var (
 		cacheKeyPrefix string
 		labelName      string

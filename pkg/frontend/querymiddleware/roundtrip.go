@@ -63,7 +63,7 @@ type Config struct {
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheSplitter with SplitQueriesByInterval.
-	CacheSplitter CacheSplitter `yaml:"-"`
+	CacheSplitter CacheKeyGenerator `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }

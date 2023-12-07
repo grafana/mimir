@@ -92,7 +92,7 @@ type splitAndCacheMiddleware struct {
 	// Results caching.
 	cacheEnabled   bool
 	cache          cache.Cache
-	splitter       CacheSplitter
+	splitter       CacheKeyGenerator
 	extractor      Extractor
 	shouldCacheReq shouldCacheFn
 
@@ -108,7 +108,7 @@ func newSplitAndCacheMiddleware(
 	limits Limits,
 	merger Merger,
 	cache cache.Cache,
-	splitter CacheSplitter,
+	splitter CacheKeyGenerator,
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
@@ -170,7 +170,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 				continue
 			}
 
-			splitReq.cacheKey = s.splitter.GenerateCacheKey(ctx, tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
+			splitReq.cacheKey = s.splitter.QueryRequest(ctx, tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
 			lookupKeys = append(lookupKeys, splitReq.cacheKey)
 			lookupReqs = append(lookupReqs, splitReq)
 		}

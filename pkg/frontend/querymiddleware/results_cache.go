@@ -180,12 +180,17 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 	}
 }
 
-// CacheSplitter generates cache keys. This is a useful interface for downstream
+// CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
-type CacheSplitter interface {
-	GenerateCacheKey(ctx context.Context, userID string, r Request) string
-	GenerateLabelValuesCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
-	GenerateLabelValuesCardinalityCacheKey(ctx context.Context, userID, path string, values url.Values) (*GenericQueryCacheKey, error)
+type CacheKeyGenerator interface {
+	// QueryRequest should generate a cache key based on the tenant ID and Request.
+	QueryRequest(ctx context.Context, tenantID string, r Request) string
+
+	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
+	LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+
+	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
+	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
 type DefaultCacheSplitter struct {
@@ -193,8 +198,8 @@ type DefaultCacheSplitter struct {
 	Interval time.Duration
 }
 
-// GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t DefaultCacheSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
+// QueryRequest generates a cache key based on the userID, Request and interval.
+func (t DefaultCacheSplitter) QueryRequest(_ context.Context, userID string, r Request) string {
 	startInterval := r.GetStart() / t.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
