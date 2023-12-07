@@ -62,7 +62,8 @@ func addSingleSumNumberDataPoint(
 		resource,
 		pt.Attributes(),
 		settings.ExternalLabels,
-		model.MetricNameLabel, name,
+		model.MetricNameLabel,
+		name,
 	)
 	sample := &mimirpb.Sample{
 		// convert ns to ms
@@ -79,7 +80,7 @@ func addSingleSumNumberDataPoint(
 	}
 	sig := addSample(series, sample, labels, metric.Type().String())
 
-	if ts, ok := series[sig]; sig != 0 && ok {
+	if ts := series[sig]; sig != 0 && ts != nil {
 		exemplars := getMimirExemplars[pmetric.NumberDataPoint](pt)
 		ts.Exemplars = append(ts.Exemplars, exemplars...)
 	}
@@ -87,15 +88,18 @@ func addSingleSumNumberDataPoint(
 	// add _created time series if needed
 	if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
 		startTimestamp := pt.StartTimestamp()
-		if startTimestamp != 0 {
-			createdLabels := createAttributes(
-				resource,
-				pt.Attributes(),
-				settings.ExternalLabels,
-				nameStr,
-				name+createdSuffix,
-			)
-			addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, metric.Type().String())
+		if startTimestamp == 0 {
+			return
 		}
+
+		createdLabels := make([]mimirpb.LabelAdapter, len(labels))
+		copy(createdLabels, labels)
+		for i, l := range createdLabels {
+			if l.Name == model.MetricNameLabel {
+				createdLabels[i].Value = name + createdSuffix
+				break
+			}
+		}
+		addCreatedTimeSeriesIfNeeded(series, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
 	}
 }

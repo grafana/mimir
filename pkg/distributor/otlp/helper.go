@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	nameStr       = "__name__"
 	sumStr        = "_sum"
 	countStr      = "_count"
 	bucketStr     = "_bucket"
@@ -70,12 +69,13 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func addSample(tsMap map[uint64]*mimirpb.TimeSeries, sample *mimirpb.Sample, labels []mimirpb.LabelAdapter,
 	datatype string) uint64 {
 	if sample == nil || labels == nil || tsMap == nil {
+		// This shouldn't happen
 		return 0
 	}
 
 	sig := timeSeriesSignature(datatype, labels)
-	ts, ok := tsMap[sig]
-	if ok {
+	ts := tsMap[sig]
+	if ts != nil {
 		ts.Samples = append(ts.Samples, *sample)
 	} else {
 		newTs := mimirpb.TimeseriesFromPool()
@@ -140,19 +140,11 @@ func timeSeriesSignature(datatype string, labels []mimirpb.LabelAdapter) uint64 
 var seps = []byte{'\xff'}
 
 // createAttributes creates a slice of Mimir labels with OTLP attributes and pairs of string values.
-// Unpaired string values are ignored. String pairs overwrite OTLP labels if collision happens, and the overwrite is
+// Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen, and overwrites are
 // logged. Resulting label names are sanitized.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externalLabels map[string]string, extras ...string) []mimirpb.LabelAdapter {
 	serviceName, haveServiceName := resource.Attributes().Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resource.Attributes().Get(conventions.AttributeServiceInstanceID)
-
-	// Ensure attributes are sorted by key for consistent merging of keys which
-	// collide when sanitized.
-	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
-	attributes.Range(func(key string, value pcommon.Value) bool {
-		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
-		return true
-	})
 
 	// Calculate the maximum possible number of labels we could return so we can preallocate l
 	maxLabelCount := attributes.Len() + len(externalLabels) + len(extras)/2
@@ -167,6 +159,15 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, externa
 
 	// map ensures no duplicate label name
 	l := make(map[string]string, maxLabelCount)
+
+	// Ensure attributes are sorted by key for consistent merging of keys which
+	// collide when sanitized.
+	labels := make([]mimirpb.LabelAdapter, 0, attributes.Len())
+	attributes.Range(func(key string, value pcommon.Value) bool {
+		labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
+		return true
+	})
+	sort.Stable(ByLabelName(labels))
 
 	for _, label := range labels {
 		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
@@ -255,7 +256,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 		}
 
 		// sum, count, and buckets of the histogram should append suffix to baseName
-		labels = append(labels, mimirpb.LabelAdapter{Name: nameStr, Value: baseName + nameSuffix})
+		labels = append(labels, mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: baseName + nameSuffix})
 
 		return labels
 	}
@@ -332,7 +333,7 @@ func addSingleHistogramDataPoint(pt pmetric.HistogramDataPoint, resource pcommon
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		labels := createLabels(createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, metric.Type().String())
+		addCreatedTimeSeriesIfNeeded(tsMap, labels, startTimestamp, pt.Timestamp(), metric.Type().String())
 	}
 }
 
@@ -342,8 +343,7 @@ type exemplarType interface {
 }
 
 func getMimirExemplars[T exemplarType](pt T) []mimirpb.Exemplar {
-	var mimirExemplars []mimirpb.Exemplar
-
+	mimirExemplars := make([]mimirpb.Exemplar, 0, pt.Exemplars().Len())
 	for i := 0; i < pt.Exemplars().Len(); i++ {
 		exemplar := pt.Exemplars().At(i)
 		exemplarRunes := 0
@@ -454,7 +454,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 			labels = append(labels, mimirpb.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 		}
 
-		labels = append(labels, mimirpb.LabelAdapter{Name: nameStr, Value: name})
+		labels = append(labels, mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: name})
 
 		return labels
 	}
@@ -501,7 +501,7 @@ func addSingleSummaryDataPoint(pt pmetric.SummaryDataPoint, resource pcommon.Res
 	startTimestamp := pt.StartTimestamp()
 	if settings.ExportCreatedMetric && startTimestamp != 0 {
 		createdLabels := createLabels(baseName + createdSuffix)
-		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, metric.Type().String())
+		addCreatedTimeSeriesIfNeeded(tsMap, createdLabels, startTimestamp, pt.Timestamp(), metric.Type().String())
 	}
 }
 
@@ -511,6 +511,7 @@ func addCreatedTimeSeriesIfNeeded(
 	series map[uint64]*mimirpb.TimeSeries,
 	labels []mimirpb.LabelAdapter,
 	startTimestamp pcommon.Timestamp,
+	timestamp pcommon.Timestamp,
 	metricType string,
 ) {
 	sig := timeSeriesSignature(metricType, labels)
@@ -519,7 +520,8 @@ func addCreatedTimeSeriesIfNeeded(
 			Labels: labels,
 			Samples: []mimirpb.Sample{
 				{ // convert ns to ms
-					Value: float64(convertTimeStamp(startTimestamp)),
+					Value:       float64(convertTimeStamp(startTimestamp)),
+					TimestampMs: convertTimeStamp(timestamp),
 				},
 			},
 		}
@@ -553,7 +555,7 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	if len(settings.Namespace) > 0 {
 		name = settings.Namespace + "_" + name
 	}
-	labels := createAttributes(resource, attributes, settings.ExternalLabels, nameStr, name)
+	labels := createAttributes(resource, attributes, settings.ExternalLabels, model.MetricNameLabel, name)
 	sample := &mimirpb.Sample{
 		Value: float64(1),
 		// convert ns to ms

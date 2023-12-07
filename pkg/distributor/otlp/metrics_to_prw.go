@@ -20,6 +20,7 @@ type Settings struct {
 	DisableTargetInfo   bool
 	ExportCreatedMetric bool
 	AddMetricSuffixes   bool
+	SendMetadata        bool
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir time series.
@@ -58,7 +59,6 @@ func FromMetrics(md pmetric.Metrics, settings Settings) ([]mimirpb.PreallocTimes
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 					}
 					for x := 0; x < dataPoints.Len(); x++ {
-						// For each data point, createAttributes is called for its attributes
 						addSingleGaugeNumberDataPoint(dataPoints.At(x), resource, metric, settings, tsMap, promName)
 					}
 				case pmetric.MetricTypeSum:
