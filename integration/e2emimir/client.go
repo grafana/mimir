@@ -57,7 +57,7 @@ func WithAddHeader(key, value string) ClientOption {
 			req.Header.Add(key, value)
 			return tripper.RoundTrip(req)
 		})
-	}))
+	})
 }
 
 func WithTripperware(wrap querymiddleware.Tripperware) ClientOption {
