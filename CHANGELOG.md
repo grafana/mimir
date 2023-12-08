@@ -19,6 +19,7 @@
 
 * [CHANGE] The `job` label matcher for distributor and gateway have been extended to include any deployment matching `distributor.*` and `cortex-gw.*` respectively. This change allows to match custom and multi-zone distributor and gateway deployments too. #6817
 * [ENHANCEMENT] Dashboards: Add panels for alertmanager activity of a tenant #6826
+* [ENHANCEMENT] Dashboards: remove legacy `graph` panel from Rollout Progress dashboard. #6864
 
 ### Jsonnet
 
