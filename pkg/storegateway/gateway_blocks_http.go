@@ -113,14 +113,9 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		noCompactDetails := []string{}
 		if val, ok := noCompactMarkerDetails[m.ULID]; ok {
 			noCompactDetails = []string{
-				fmt.Sprintf("Time: %s", formatTimeIfNotZero(time.Unix(val.NoCompactTime, 0), time.RFC3339)),
+				fmt.Sprintf("Time: %s", formatTimeIfNotZero(val.NoCompactTime, time.RFC3339)),
 				fmt.Sprintf("Reason: %s", val.Reason),
 			}
-		}
-
-		deletedTime := ""
-		if dt, ok := deleteMarkerDetails[m.ULID]; ok {
-			deletedTime = formatTimeIfNotZero(time.Unix(dt.DeletionTime, 0).UTC(), time.RFC3339)
 		}
 
 		formattedBlocks = append(formattedBlocks, formattedBlockData{
@@ -130,7 +125,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			MinTime:          util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
 			MaxTime:          util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
 			Duration:         util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
-			DeletedTime:      deletedTime,
+			DeletedTime:      formatTimeIfNotZero(deleteMarkerDetails[m.ULID].DeletionTime, time.RFC3339),
 			NoCompactDetails: noCompactDetails,
 			CompactionLevel:  m.Compaction.Level,
 			BlockSize:        listblocks.GetFormattedBlockSize(m),
@@ -141,7 +136,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		})
 		var deletedAt *int64
 		if dt, ok := deleteMarkerDetails[m.ULID]; ok {
-			deletedAtTime := dt.DeletionTime * int64(time.Millisecond)
+			deletedAtTime := dt.DeletionTime * int64(time.Second/time.Millisecond)
 			deletedAt = &deletedAtTime
 		}
 		richMetas = append(richMetas, richMeta{
@@ -164,10 +159,9 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}, blocksPageTemplate, req)
 }
 
-func formatTimeIfNotZero(t time.Time, format string) string {
-	if t.IsZero() {
+func formatTimeIfNotZero(t int64, format string) string {
+	if t == 0 {
 		return ""
 	}
-
-	return t.Format(format)
+	return time.Unix(t, 0).UTC().Format(format)
 }

@@ -172,11 +172,10 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 		}
 
 		if cfg.showDeleted {
-			val, ok := deleteMarkerDetails[b.ULID]
-			if deleteMarkerDetails[b.ULID].DeletionTime == 0 || !ok {
+			if deleteMarkerDetails[b.ULID].DeletionTime == 0 {
 				fmt.Fprintf(tabber, "\t") // no deletion time.
 			} else {
-				fmt.Fprintf(tabber, "%v\t", time.Unix(val.DeletionTime, 0).UTC().Format(time.RFC3339))
+				fmt.Fprintf(tabber, "%v\t", time.Unix(deleteMarkerDetails[b.ULID].DeletionTime, 0).UTC().Format(time.RFC3339))
 			}
 		}
 

@@ -107,7 +107,7 @@ func fetchMarkerDetails[MARKER_TYPE block.Marker](ctx context.Context, bkt objst
 		}
 
 		mu.Lock()
-		details[m.GetID()] = m
+		details[m.BlockULID()] = m
 		mu.Unlock()
 		return nil
 	})
