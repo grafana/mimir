@@ -58,6 +58,7 @@
   * `store_gateway_zone_a_node_affinity_matchers`
   * `store_gateway_zone_b_node_affinity_matchers`
   * `store_gateway_zone_c_node_affinity_matchers`
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mimirtool
 
