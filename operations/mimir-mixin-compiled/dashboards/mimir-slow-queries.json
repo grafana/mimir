@@ -37,6 +37,45 @@
                {
                   "datasource": "${lokidatasource}",
                   "fieldConfig": {
+                     "defaults": {
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "gridPos": {
+                     "h": 7,
+                     "w": 6,
+                     "x": 0,
+                     "y": 1
+                  },
+                  "id": 1,
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "topk(100, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))",
+                        "legendFormat": "{{user}}",
+                        "queryType": "range",
+                        "refId": "A"
+                     }
+                  ],
+                  "title": "P99 fetched series per query ",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By tenant",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "${lokidatasource}",
+                  "fieldConfig": {
                      "overrides": [
                         {
                            "matcher": {
@@ -77,7 +116,7 @@
                         }
                      ]
                   },
-                  "id": 1,
+                  "id": 2,
                   "span": 12,
                   "targets": [
                      {
@@ -167,7 +206,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "",
+            "title": "By tenant",
             "titleSize": "h6"
          }
       ],
