@@ -38,7 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Make Memcached connection limit configurable. #6715
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
-* [BUGFIX] Update memcached-exporter due to CVE-2023-39325. #6861
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ## 5.1.3
 
