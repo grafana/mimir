@@ -93,7 +93,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	richMetas := make([]richMeta, 0, len(metas))
 
 	for _, m := range metas {
-		if !showDeleted && !deleteMarkerDetails[m.ULID].Time.IsZero() {
+		if !showDeleted && deleteMarkerDetails[m.ULID].DeletionTime != 0 {
 			continue
 		}
 		var parents []string
@@ -113,10 +113,16 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		noCompactDetails := []string{}
 		if val, ok := noCompactMarkerDetails[m.ULID]; ok {
 			noCompactDetails = []string{
-				fmt.Sprintf("Time: %s", formatTimeIfNotZero(val.Time.UTC(), time.RFC3339)),
+				fmt.Sprintf("Time: %s", formatTimeIfNotZero(time.Unix(val.NoCompactTime, 0), time.RFC3339)),
 				fmt.Sprintf("Reason: %s", val.Reason),
 			}
 		}
+
+		deletedTime := ""
+		if dt, ok := deleteMarkerDetails[m.ULID]; ok {
+			deletedTime = formatTimeIfNotZero(time.Unix(dt.DeletionTime, 0).UTC(), time.RFC3339)
+		}
+
 		formattedBlocks = append(formattedBlocks, formattedBlockData{
 			ULID:             m.ULID.String(),
 			ULIDTime:         util.TimeFromMillis(int64(m.ULID.Time())).UTC().Format(time.RFC3339),
@@ -124,7 +130,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			MinTime:          util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
 			MaxTime:          util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
 			Duration:         util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
-			DeletedTime:      formatTimeIfNotZero(deleteMarkerDetails[m.ULID].Time.UTC(), time.RFC3339),
+			DeletedTime:      deletedTime,
 			NoCompactDetails: noCompactDetails,
 			CompactionLevel:  m.Compaction.Level,
 			BlockSize:        listblocks.GetFormattedBlockSize(m),
@@ -135,7 +141,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		})
 		var deletedAt *int64
 		if dt, ok := deleteMarkerDetails[m.ULID]; ok {
-			deletedAtTime := dt.Time.UnixMilli()
+			deletedAtTime := dt.DeletionTime * int64(time.Millisecond)
 			deletedAt = &deletedAtTime
 		}
 		richMetas = append(richMetas, richMeta{

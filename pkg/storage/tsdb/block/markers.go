@@ -44,6 +44,7 @@ var (
 
 type Marker interface {
 	markerFilename() string
+	GetID() ulid.ULID
 }
 
 // DeletionMark stores block id and when block was marked for deletion.
@@ -59,7 +60,8 @@ type DeletionMark struct {
 	DeletionTime int64 `json:"deletion_time"`
 }
 
-func (m *DeletionMark) markerFilename() string { return DeletionMarkFilename }
+func (d DeletionMark) GetID() ulid.ULID       { return d.ID }
+func (d DeletionMark) markerFilename() string { return DeletionMarkFilename }
 
 // NoCompactReason is a reason for a block to be excluded from compaction.
 type NoCompactReason string
@@ -90,7 +92,8 @@ type NoCompactMark struct {
 	Reason        NoCompactReason `json:"reason"`
 }
 
-func (n *NoCompactMark) markerFilename() string { return NoCompactMarkFilename }
+func (n NoCompactMark) GetID() ulid.ULID       { return n.ID }
+func (n NoCompactMark) markerFilename() string { return NoCompactMarkFilename }
 
 // ReadMarker reads the given mark file from <dir>/<marker filename>.json in bucket.
 // ReadMarker has a one-minute timeout for completing the read against the bucket.

@@ -97,7 +97,7 @@ func main() {
 // nolint:errcheck
 //
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]listblocks.MarkerDetails, noCompactMarkerDetails map[ulid.ULID]listblocks.MarkerDetails, cfg config) {
+func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.ULID]block.DeletionMark, noCompactMarkerDetails map[ulid.ULID]block.NoCompactMark, cfg config) {
 	blocks := listblocks.SortBlocks(metas)
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
@@ -141,7 +141,7 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 	fmt.Fprintln(tabber)
 
 	for _, b := range blocks {
-		if !cfg.showDeleted && !deleteMarkerDetails[b.ULID].Time.IsZero() {
+		if !cfg.showDeleted && deleteMarkerDetails[b.ULID].DeletionTime != 0 {
 			continue
 		}
 
@@ -165,17 +165,18 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 
 		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
 			fmt.Fprintf(tabber, "%v\t", []string{
-				fmt.Sprintf("Time: %s", val.Time.UTC().Format(time.RFC3339)),
+				fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
 				fmt.Sprintf("Reason: %s", val.Reason)})
 		} else {
 			fmt.Fprintf(tabber, "\t")
 		}
 
 		if cfg.showDeleted {
-			if deleteMarkerDetails[b.ULID].Time.IsZero() {
+			val, ok := deleteMarkerDetails[b.ULID]
+			if deleteMarkerDetails[b.ULID].DeletionTime == 0 || !ok {
 				fmt.Fprintf(tabber, "\t") // no deletion time.
 			} else {
-				fmt.Fprintf(tabber, "%v\t", deleteMarkerDetails[b.ULID].Time.UTC().Format(time.RFC3339))
+				fmt.Fprintf(tabber, "%v\t", time.Unix(val.DeletionTime, 0).UTC().Format(time.RFC3339))
 			}
 		}
 
