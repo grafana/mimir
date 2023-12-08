@@ -67,8 +67,14 @@ data:
       max_closing_blocks_concurrency: 2
       max_opening_blocks_concurrency: 4
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
+    distributor:
+      sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
     frontend:
       parallelize_shardable_queries: true
       scheduler_address: test-enterprise-k8s-1.25-values-mimir-query-scheduler-headless.citestns.svc:9095
@@ -99,6 +105,8 @@ data:
     ingester:
       ring:
         final_sleep: 0s
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
@@ -147,6 +155,8 @@ data:
     store_gateway:
       sharding_ring:
         kvstore:
+          heartbeat_period: 1m
+          heartbeat_timeout: 4m
           prefix: multi-zone/
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
