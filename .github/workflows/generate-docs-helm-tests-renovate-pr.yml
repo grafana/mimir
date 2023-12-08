@@ -13,7 +13,7 @@ concurrency:
 
 jobs: 
   prepare:
-    if: github.event.pull_request.user.login == 'renovate[bot]'
+    if: github.event.pull_request.user.login == 'renovate[bot]' || github.event.pull_request.author_association == 'MEMBER' 
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
