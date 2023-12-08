@@ -382,7 +382,7 @@ local filename = 'mimir-rollout-progress.json';
         //
         // Performance comparison with 24h ago
         //
-        $.panel('Latency vs 24h ago') +
+        $.timeseriesPanel('Latency vs 24h ago') +
         $.queryPanel([|||
           1 - (
             avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"} offset 24h))[1h:])
@@ -395,12 +395,18 @@ local filename = 'mimir-rollout-progress.json';
             /
             avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))[1h:])
           )
-        ||| % config], ['writes', 'reads']) + {
-          yaxes: $.yaxes({
-            format: 'percentunit',
-            min: null,  // Can be negative.
-          }),
-
+        ||| % config], ['writes', 'reads']) +
+        {
+          fieldConfig: {
+            defaults: {
+              unit: 'percentunit',
+              custom: {
+                fillOpacity: 10,
+              },
+            },
+          },
+        } +
+        {
           id: 12,
           gridPos: { h: 8, w: 8, x: 16, y: 8 },
         },
