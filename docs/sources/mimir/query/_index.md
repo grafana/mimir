@@ -17,18 +17,18 @@ To understand how you can query Prometheus data from within Mimir, refer to [Que
 
 ## Understand how range queries are cached
 
-By default, Mimir caches a [range query](https://grafana.com/docs/mimir/latest/references/http-api/#range-query) if the query is aligned. A query is aligned when both the `start` and `end` parameters are multiples of its `step`.
+By default, Mimir [caches](https://grafana.com/docs/mimir/latest/references/architecture/components/query-frontend/#caching) a [range query](https://grafana.com/docs/mimir/latest/references/http-api/#range-query) only if the query is aligned. A query is aligned when both the `start` and `end` parameters are multiples of its `step`.
 
 Mathematically, it looks as follows:
 
 ```
-start % step = 0
+start modulo step = 0
 ```
 
 AND
 
 ```
-end % step = 0
+end modulo step = 0
 ```
 
 Otherwise, a query is unaligned and it is not cached.
