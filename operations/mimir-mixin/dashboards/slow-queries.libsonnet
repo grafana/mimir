@@ -6,9 +6,53 @@ local filename = 'mimir-slow-queries.json';
     ($.dashboard('Slow queries') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
     .addRow(
+      $.row('By tenant') { collapse: true }
+      .addPanel(
+        $.panel('P99 response time') +
+        $.lokiMetricsQueryPanel(
+          'topk(100, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+          unit='s',
+        )
+      )
+      .addPanel(
+        $.panel('P99 fetched series') +
+        $.lokiMetricsQueryPanel(
+          'topk(100, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+        )
+      )
+      .addPanel(
+        $.panel('P99 fetched chunks') +
+        $.lokiMetricsQueryPanel(
+          'topk(100, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+          unit='bytes',
+        )
+      )
+      .addPanel(
+        $.panel('P99 response size') +
+        $.lokiMetricsQueryPanel(
+          'topk(100, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+          unit='bytes',
+        )
+      )
+      .addPanel(
+        $.panel('P99 time span') +
+        $.lokiMetricsQueryPanel(
+          'topk(100, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+          unit='s',
+        )
+
+      )
+    )
+    .addRow(
       $.row('')
       .addPanel(
         {
+          height: '500px',
           title: 'Slow queries',
           type: 'table',
           datasource: '${lokidatasource}',

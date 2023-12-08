@@ -1206,4 +1206,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       replaceFields: replaceFields,
     }),
 
+  lokiMetricsQueryPanel(queries, legends='', unit='short')::
+    super.queryPanel(queries, legends) +
+    {
+      datasource: '${lokidatasource}',
+      yaxes: $.yaxes(unit),
+    },
 }
