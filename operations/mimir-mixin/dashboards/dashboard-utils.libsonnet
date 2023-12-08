@@ -664,6 +664,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     ),
 
+  heatmapPanel():: { type: 'heatmap' },
+
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {
       type: 'stat',

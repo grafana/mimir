@@ -673,12 +673,12 @@
                         "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
                   "title": "Per instance p99 latency",
-                  "type": "timeseries"
+                  "type": "heatmap"
                }
             ],
             "repeat": null,
@@ -913,12 +913,12 @@
                         "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=\"/cortex.Ingester/Push\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
                   ],
                   "title": "Per instance p99 latency",
-                  "type": "timeseries"
+                  "type": "heatmap"
                }
             ],
             "repeat": null,
