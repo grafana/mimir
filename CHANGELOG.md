@@ -15,7 +15,6 @@
 * [BUGFIX] Fix panic during tsdb Commit #6766
 * [BUGFIX] tsdb/head: wlog exemplars after samples #6766
 * [BUGFIX] Ruler: fix issue where "failed to remotely evaluate query expression, will retry" messages are logged without context such as the trace ID and do not appear in trace events. #6789
-* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mixin
 
@@ -59,6 +58,7 @@
   * `store_gateway_zone_a_node_affinity_matchers`
   * `store_gateway_zone_b_node_affinity_matchers`
   * `store_gateway_zone_c_node_affinity_matchers`
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mimirtool
 
