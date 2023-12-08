@@ -407,8 +407,7 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 			continue
 		}
 		if err := bkt.RestoreVersion(ctx, target.objectName, target.info); err != nil {
-			logger.Error("failed to restore an object version", "object", target.objectName, "version", target.info.VersionID)
-			return false, err
+			return false, errors.Wrapf(err, "failed to restore object %s with version %s", target.objectName, target.info.VersionID)
 		}
 		logger.Info("restored an object version", "object", target.objectName, "version", target.info.VersionID)
 	}
