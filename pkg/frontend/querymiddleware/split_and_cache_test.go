@@ -244,7 +244,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		mockLimits{maxCacheFreshness: 10 * time.Minute, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 		newTestPrometheusCodec(),
 		cacheBackend,
-		ConstSplitter(day),
+		DefaultCacheKeyGenerator{Interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
@@ -376,7 +376,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		newTestPrometheusCodec(),
 		cacheBackend,
-		ConstSplitter(day),
+		DefaultCacheKeyGenerator{Interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
@@ -492,7 +492,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		limits,
 		newTestPrometheusCodec(),
 		cacheBackend,
-		ConstSplitter(day),
+		DefaultCacheKeyGenerator{Interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
@@ -643,7 +643,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cacheBackend := cache.NewMockCache()
-			cacheSplitter := ConstSplitter(day)
+			keyGenerator := DefaultCacheKeyGenerator{Interval: day}
 			reg := prometheus.NewPedanticRegistry()
 
 			mw := newSplitAndCacheMiddleware(
@@ -653,7 +653,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				mockLimits{maxCacheFreshness: maxCacheFreshness, resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
-				cacheSplitter,
+				keyGenerator,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
@@ -696,7 +696,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			require.Equal(t, testData.downstreamResponse, resp)
 
 			// Check if the response was cached.
-			cacheKey := cacheHashKey(cacheSplitter.GenerateCacheKey(ctx, userID, req))
+			cacheKey := cacheHashKey(keyGenerator.QueryRequest(ctx, userID, req))
 			found := cacheBackend.Fetch(ctx, []string{cacheKey})
 
 			if len(testData.expectedCachedResponses) == 0 {
@@ -864,7 +864,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					},
 					newTestPrometheusCodec(),
 					cache.NewMockCache(),
-					ConstSplitter(day),
+					DefaultCacheKeyGenerator{Interval: day},
 					PrometheusResponseExtractor{},
 					resultsCacheAlwaysEnabled,
 					log.NewNopLogger(),
@@ -1134,7 +1134,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), userID)
 			cacheBackend := cache.NewInstrumentedMockCache()
-			cacheSplitter := ConstSplitter(day)
+			keyGenerator := DefaultCacheKeyGenerator{Interval: day}
 
 			mw := newSplitAndCacheMiddleware(
 				false, // No splitting.
@@ -1143,7 +1143,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				mockLimits{resultsCacheTTL: resultsCacheTTL, resultsCacheOutOfOrderWindowTTL: resultsCacheLowerTTL},
 				newTestPrometheusCodec(),
 				cacheBackend,
-				cacheSplitter,
+				keyGenerator,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
@@ -1154,7 +1154,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			mw.currentTime = func() time.Time { return time.UnixMilli(now) }
 
 			// Store all extents fixtures in the cache.
-			cacheKey := cacheSplitter.GenerateCacheKey(ctx, userID, testData.req)
+			cacheKey := keyGenerator.QueryRequest(ctx, userID, testData.req)
 			mw.storeCacheExtents(cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.
@@ -1192,7 +1192,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		},
 		newTestPrometheusCodec(),
 		cacheBackend,
-		ConstSplitter(day),
+		DefaultCacheKeyGenerator{Interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
@@ -1273,7 +1273,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		mockLimits{},
 		newTestPrometheusCodec(),
 		cache.NewMockCache(),
-		ConstSplitter(day),
+		DefaultCacheKeyGenerator{Interval: day},
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
