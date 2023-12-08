@@ -28,6 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.1.4
+
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325.
+
 ## 5.1.3
 
 * [BUGFIX] Updated Mimir image to 2.10.4 and GEM images to v2.10.4. #6654
