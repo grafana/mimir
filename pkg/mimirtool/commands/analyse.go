@@ -26,7 +26,7 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	prometheusAnalyzeCmd.Flag("prometheus-http-prefix", "HTTP URL path under which the Prometheus api will be served.").
 		Default("").
 		StringVar(&paCmd.prometheusHTTPPrefix)
-	prometheusAnalyzeCmd.Flag("id", "Basic auth username to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.TenantID+".").
+	prometheusAnalyzeCmd.Flag("id", "Basic auth username to use when contacting Prometheus or Grafana Mimir, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Default("").
 		StringVar(&paCmd.username)
