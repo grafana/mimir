@@ -30,7 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // In order to reimplement the prometheus rules API, a large amount of code was copied over
@@ -154,8 +154,10 @@ func NewAPI(r *Ruler, s rulestore.RuleStore, logger log.Logger) *API {
 }
 
 func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
-	userID, err := tenant.TenantID(req.Context())
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusRules")
+	defer logger.Finish()
+
+	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
 		respondServerError(logger, w, "no valid org id found")
@@ -183,7 +185,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context(), rulesReq)
+	rgs, err := a.ruler.GetRules(ctx, rulesReq)
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())
@@ -262,8 +264,10 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
-	userID, err := tenant.TenantID(req.Context())
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.PrometheusAlerts")
+	defer logger.Finish()
+
+	userID, err := tenant.TenantID(ctx)
 	if err != nil || userID == "" {
 		level.Error(logger).Log("msg", "error extracting org id from context", "err", err)
 		respondServerError(logger, w, "no valid org id found")
@@ -271,7 +275,7 @@ func (a *API) PrometheusAlerts(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	rgs, err := a.ruler.GetRules(req.Context(), RulesRequest{Filter: AlertingRule})
+	rgs, err := a.ruler.GetRules(ctx, RulesRequest{Filter: AlertingRule})
 
 	if err != nil {
 		respondServerError(logger, w, err.Error())
@@ -411,7 +415,8 @@ func parseRequest(req *http.Request, requireNamespace, requireGroup bool) (strin
 }
 
 func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.ListRules")
+	defer logger.Finish()
 
 	userID, namespace, _, err := parseRequest(req, false, false)
 	if err != nil {
@@ -420,7 +425,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 	}
 
 	level.Debug(logger).Log("msg", "retrieving rule groups with namespace", "userID", userID, "namespace", namespace)
-	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, namespace)
+	rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -433,7 +438,8 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	missing, err := a.store.LoadRuleGroups(req.Context(), map[string]rulespb.RuleGroupList{userID: rgs})
+	level.Debug(logger).Log("msg", "retrieved rule groups from rule store", "userID", userID, "num_groups", len(rgs))
+	missing, err := a.store.LoadRuleGroups(ctx, map[string]rulespb.RuleGroupList{userID: rgs})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -444,21 +450,28 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	level.Debug(logger).Log("msg", "retrieved rule groups from rule store", "userID", userID, "num_namespaces", len(rgs))
+	numRules := 0
+	for _, rg := range rgs {
+		numRules += len(rg.Rules)
+	}
+
+	level.Debug(logger).Log("msg", "retrieved rules for rule groups from rule store", "userID", userID, "num_groups", len(rgs), "num_rules", numRules)
 
 	formatted := rgs.Formatted()
 	marshalAndSend(formatted, w, logger)
 }
 
 func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.GetRuleGroup")
+	defer logger.Finish()
+
 	userID, namespace, groupName, err := parseRequest(req, true, true)
 	if err != nil {
 		respondServerError(logger, w, err.Error())
 		return
 	}
 
-	rg, err := a.store.GetRuleGroup(req.Context(), userID, namespace, groupName)
+	rg, err := a.store.GetRuleGroup(ctx, userID, namespace, groupName)
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -473,7 +486,9 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.CreateRuleGroup")
+	defer logger.Finish()
+
 	userID, namespace, _, err := parseRequest(req, true, false)
 	if err != nil {
 		respondServerError(logger, w, err.Error())
@@ -517,7 +532,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	// Only list rule groups when enforcing a max number of groups for this tenant.
 	if a.ruler.IsMaxRuleGroupsLimited(userID) {
-		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, "")
+		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -534,7 +549,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	rgProto := rulespb.ToProto(userID, namespace, rg)
 
 	level.Debug(logger).Log("msg", "attempting to store rulegroup", "userID", userID, "group", rgProto.String())
-	err = a.store.SetRuleGroup(req.Context(), userID, namespace, rgProto)
+	err = a.store.SetRuleGroup(ctx, userID, namespace, rgProto)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to store rule group", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -547,7 +562,8 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteNamespace")
+	defer logger.Finish()
 
 	userID, namespace, _, err := parseRequest(req, true, false)
 	if err != nil {
@@ -555,7 +571,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = a.store.DeleteNamespace(req.Context(), userID, namespace)
+	err = a.store.DeleteNamespace(ctx, userID, namespace)
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
@@ -571,7 +587,8 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 }
 
 func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
-	logger := util_log.WithContext(req.Context(), a.logger)
+	logger, ctx := spanlogger.NewWithLogger(req.Context(), a.logger, "API.DeleteRuleGroup")
+	defer logger.Finish()
 
 	userID, namespace, groupName, err := parseRequest(req, true, true)
 	if err != nil {
@@ -579,7 +596,7 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err = a.store.DeleteRuleGroup(req.Context(), userID, namespace, groupName)
+	err = a.store.DeleteRuleGroup(ctx, userID, namespace, groupName)
 	if err != nil {
 		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)

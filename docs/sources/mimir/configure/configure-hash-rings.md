@@ -26,7 +26,7 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Overrides-exporters: `-overrides-exporter.ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
-You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../references/configuration-parameters" >}}).
+You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "./configuration-parameters" >}}).
 
 ## Configuring the key-value store
 
@@ -68,7 +68,7 @@ The default port is `7946`.
 Grafana Mimir supports TLS for memberlist connections between its components.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../manage/secure/securing-communications-with-tls" >}}).
 
-To see all supported configuration parameters, refer to [memberlist]({{< relref "../references/configuration-parameters#memberlist" >}}).
+To see all supported configuration parameters, refer to [memberlist]({{< relref "./configuration-parameters#memberlist" >}}).
 
 #### Configuring the memberlist address and port
 
@@ -128,7 +128,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul]({{< relref "../references/configuration-parameters#consul" >}}).
+To see all supported configuration parameters, refer [consul]({{< relref "./configuration-parameters#consul" >}}).
 
 ### Etcd
 
@@ -141,7 +141,7 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 Grafana Mimir supports TLS between its components and etcd.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../manage/secure/securing-communications-with-tls" >}}).
 
-To see all supported configuration parameters, refer to [etcd]({{< relref "../references/configuration-parameters#etcd" >}}).
+To see all supported configuration parameters, refer to [etcd]({{< relref "./configuration-parameters#etcd" >}}).
 
 ### Multi
 

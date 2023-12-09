@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
@@ -475,10 +477,11 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	select {
 	case <-req.ctx.Done():
 		// If the upstream request is cancelled (eg. frontend issued CANCEL or closed connection),
-		// we need to cancel the downstream req. Only way we can do that is to close the stream (by returning error here).
+		// we need to cancel the downstream req. Only way we can do that is to return a gRPC error
+		// here with code Canceled and close the stream.
 		// Querier is expecting this semantics.
 		s.cancelledRequests.WithLabelValues(req.userID).Inc()
-		return req.ctx.Err()
+		return status.Error(codes.Canceled, context.Cause(req.ctx).Error())
 
 	case err := <-errCh:
 		// Is there was an error handling this request due to network IO,

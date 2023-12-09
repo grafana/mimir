@@ -148,6 +148,7 @@ var (
 			"-blocks-storage.tsdb.ship-interval":                "1m",
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
 			"-querier.query-store-after":                        "0",
+			"-compactor.cleanup-interval":                       "2s",
 		}
 	}
 

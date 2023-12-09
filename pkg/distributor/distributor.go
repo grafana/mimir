@@ -132,6 +132,7 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
@@ -357,6 +358,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   newSampleValidationMetrics(reg),
 		exemplarValidationMetrics: newExemplarValidationMetrics(reg),
 		metadataValidationMetrics: newMetadataValidationMetrics(reg),
+
+		hashCollisionCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_distributor_hash_collisions_total",
+			Help: "Number of times a hash collision was detected when de-duplicating samples.",
+		}),
 	}
 
 	// Initialize expected rejected request labels
@@ -426,7 +432,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		subservices = append(subservices, distributorsLifecycler, distributorsRing)
 		requestRateStrategy = newGlobalRateStrategy(newRequestRateStrategy(limits), d)
-		ingestionRateStrategy = newGlobalRateStrategy(newIngestionRateStrategy(limits), d)
+		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
 	}
 
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
@@ -573,35 +579,11 @@ func (d *Distributor) stopping(_ error) error {
 }
 
 func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return shardByAllLabels(userID, labels)
+	return mimirpb.ShardByAllLabelAdapters(userID, labels)
 }
 
 func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	return shardByMetricName(userID, metricName)
-}
-
-// shardByMetricName returns the token for the given metric. The provided metricName
-// is guaranteed to not be retained.
-func shardByMetricName(userID string, metricName string) uint32 {
-	h := shardByUser(userID)
-	h = ingester_client.HashAdd32(h, metricName)
-	return h
-}
-
-func shardByUser(userID string) uint32 {
-	h := ingester_client.HashNew32()
-	h = ingester_client.HashAdd32(h, userID)
-	return h
-}
-
-// This function generates different values for different order of same labels.
-func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	h := shardByUser(userID)
-	for _, label := range labels {
-		h = ingester_client.HashAdd32(h, label.Name)
-		h = ingester_client.HashAdd32(h, label.Value)
-	}
-	return h
+	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
@@ -971,7 +953,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedSamplesRateLimited.WithLabelValues(userID, group).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
-			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID))
+
+			burstSize := d.limits.IngestionBurstSize(userID)
+			if d.limits.IngestionBurstFactor(userID) > 0 {
+				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
+			}
+			return newIngestionRateLimitedError(d.limits.IngestionRate(userID), burstSize)
 		}
 
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
@@ -1245,9 +1232,8 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-	// it. This code should be removed in mimir 2.12.0.
+	// This code is needed for backwards compatibility, since ingesters may still return errors
+	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
 	if ok {
 		return pushErr
@@ -1418,7 +1404,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
-	return handleIngesterPushError(err)
+	return wrapIngesterPushError(err, ingester.Id)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
@@ -1437,15 +1423,32 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 		// Nothing to do.
 	}
 
-	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx), wrappedF, cleanup)
+	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
 }
 
-func (d *Distributor) queryQuorumConfig(ctx context.Context) ring.DoUntilQuorumConfig {
+func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
 	logger := spanlogger.FromContext(ctx, d.log)
+
+	zoneSorter := func(zones []string) []string {
+		inactiveCount := make(map[string]int, len(zones))
+
+		for _, i := range replicationSet.Instances {
+			if i.State != ring.ACTIVE {
+				inactiveCount[i.Zone]++
+			}
+		}
+
+		slices.SortFunc(zones, func(a, b string) int {
+			return inactiveCount[a] - inactiveCount[b]
+		})
+
+		return zones
+	}
 
 	return ring.DoUntilQuorumConfig{
 		MinimizeRequests: d.cfg.MinimizeIngesterRequests,
 		HedgingDelay:     d.cfg.MinimiseIngesterRequestsHedgingDelay,
+		ZoneSorter:       zoneSorter,
 		Logger:           logger,
 	}
 }
@@ -1654,7 +1657,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
+	_, err = ring.DoUntilQuorum[struct{}](ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), func(ctx context.Context, desc *ring.InstanceDesc) (struct{}, error) {
 		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return struct{}{}, err
@@ -1799,7 +1802,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	res := newActiveSeriesResponse()
+	res := newActiveSeriesResponse(d.hashCollisionCount)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
@@ -1844,6 +1847,70 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
 
 	return deduplicatedSeries, nil
+}
+
+type entry struct {
+	first      labels.Labels
+	collisions []labels.Labels
+}
+
+// activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
+type activeSeriesResponse struct {
+	m                  sync.Mutex
+	series             map[uint64]entry
+	builder            labels.ScratchBuilder
+	lbls               labels.Labels
+	hashCollisionCount prometheus.Counter
+}
+
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
+	return &activeSeriesResponse{
+		series:             map[uint64]entry{},
+		builder:            labels.NewScratchBuilder(40),
+		hashCollisionCount: hashCollisionCount,
+	}
+}
+
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	for _, metric := range series {
+		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
+		lblHash := r.lbls.Hash()
+		if e, ok := r.series[lblHash]; !ok {
+			r.series[lblHash] = entry{first: r.lbls.Copy()}
+		} else {
+			// A series with this hash is already present in the result set, we need to
+			// detect potential hash collisions by comparing the labels of the candidate to
+			// the labels in the result set and add the candidate if it's not present.
+			present := labels.Equal(e.first, r.lbls)
+			for _, lbls := range e.collisions {
+				if present {
+					break
+				}
+				present = labels.Equal(lbls, r.lbls)
+			}
+
+			if !present {
+				e.collisions = append(e.collisions, r.lbls.Copy())
+				r.series[lblHash] = e
+				r.hashCollisionCount.Inc()
+			}
+		}
+	}
+}
+
+func (r *activeSeriesResponse) result() []labels.Labels {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	result := make([]labels.Labels, 0, len(r.series))
+	for _, series := range r.series {
+		result = append(result, series.first)
+		result = append(result, series.collisions...)
+	}
+	return result
 }
 
 // approximateFromZones computes a zonal value while factoring in replication.
@@ -2007,7 +2074,7 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 	req := &ingester_client.UserStatsRequest{
 		CountMethod: ingesterCountMethod,
 	}
-	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
+	resps, err := ring.DoUntilQuorum[zonedUserStatsResponse](ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), func(ctx context.Context, desc *ring.InstanceDesc) (zonedUserStatsResponse, error) {
 		poolClient, err := d.ingesterPool.GetClientForInstance(*desc)
 		if err != nil {
 			return zonedUserStatsResponse{}, err

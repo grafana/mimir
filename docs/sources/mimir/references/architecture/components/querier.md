@@ -16,27 +16,9 @@ The querier uses the [store-gateway]({{< relref "./store-gateway" >}}) component
 
 ## How it works
 
-To find the correct blocks to look up at query time, the querier requires an almost up-to-date view of the bucket in long-term storage. The querier performs one of the following actions to ensure that the bucket view is updated:
-
-1. Periodically download the [bucket index]({{< relref "../bucket-index" >}}) (default)
-2. Periodically scan the bucket
-
-Queriers do not need any content from blocks except their metadata, which includes the minimum and maximum timestamp of samples within the block.
-
-### Bucket index enabled (default)
-
-Queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
+To find the correct blocks to look up at query time, queriers lazily download the bucket index when they receive the first query for a given tenant. The querier caches the bucket index in memory and periodically keeps it up-to-date.
 
 The bucket index contains a list of blocks and block deletion marks of a tenant. The querier later uses the list of blocks and block deletion marks to locate the set of blocks that need to be queried for the given query.
-
-When the querier runs with the bucket index enabled, the querier startup time and the volume of API calls to object storage are reduced.
-We recommend that you keep the bucket index enabled.
-
-### Bucket index disabled
-
-When [bucket index]({{< relref "../bucket-index" >}}) is disabled, queriers iterate over the storage bucket to discover blocks for all tenants and download the `meta.json` of each block. During this initial bucket scanning phase, a querier cannot process incoming queries and its `/ready` readiness probe endpoint will not return the HTTP status code `200`.
-
-When running, queriers periodically iterate over the storage bucket to discover new tenants and recently uploaded blocks.
 
 ### Anatomy of a query request
 
@@ -108,4 +90,4 @@ Additional flags for configuring the metadata cache begin with the prefix `-bloc
 
 ## Querier configuration
 
-For details about querier configuration, refer to [querier]({{< relref "../../configuration-parameters#querier" >}}).
+For details about querier configuration, refer to [querier]({{< relref "../../../configure/configuration-parameters#querier" >}}).

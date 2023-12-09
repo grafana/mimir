@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 )
 
 type streamingChunkSeriesContext struct {
-	chunkIteratorFunc chunkIteratorFunc
-	mint, maxt        int64
-	queryMetrics      *stats.QueryMetrics
-	queryStats        *stats.Stats
+	mint, maxt   int64
+	queryMetrics *stats.QueryMetrics
+	queryStats   *stats.Stats
 }
 
 // streamingChunkSeries is a storage.Series that reads chunks from sources in a streaming way. The chunks are read from
@@ -76,5 +76,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return s.context.chunkIteratorFunc(it, chunks, model.Time(s.context.mint), model.Time(s.context.maxt))
+	return batch.NewChunkMergeIterator(it, chunks, model.Time(s.context.mint), model.Time(s.context.maxt))
 }

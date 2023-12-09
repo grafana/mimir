@@ -188,8 +188,8 @@ func (c *circuitBreakerConfig[R]) WithDelay(delay time.Duration) CircuitBreakerB
 	return c
 }
 
-func (c *circuitBreakerConfig[R]) WithDelayFunc(delayFn failsafe.DelayFunc[R]) CircuitBreakerBuilder[R] {
-	c.BaseDelayablePolicy.WithDelayFunc(delayFn)
+func (c *circuitBreakerConfig[R]) WithDelayFunc(delayFunc failsafe.DelayFunc[R]) CircuitBreakerBuilder[R] {
+	c.BaseDelayablePolicy.WithDelayFunc(delayFunc)
 	return c
 }
 

@@ -161,11 +161,15 @@ The following features are currently experimental:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
+- Ingester: track "owned series" and use owned series instead of in-memory series for tenant limits.
+  - `-ingester.use-ingester-owned-series-for-limits`
+  - `-ingester.track-ingester-owned-series`
+  - `-ingester.owned-series-update-interval`
 
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "../references/configuration-parameters#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
 

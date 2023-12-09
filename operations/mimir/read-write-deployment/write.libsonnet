@@ -30,6 +30,11 @@
   mimir_write_zone_b_args:: $.ingester_zone_b_args {},
   mimir_write_zone_c_args:: $.ingester_zone_c_args {},
 
+  mimir_write_node_affinity_matchers:: [],
+  mimir_write_zone_a_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+  mimir_write_zone_b_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+  mimir_write_zone_c_node_affinity_matchers:: $.mimir_write_node_affinity_matchers,
+
   mimir_write_ports::
     std.uniq(
       std.sort(
@@ -66,7 +71,7 @@
       },
     )),
 
-  newMimirWriteZoneStatefulset(zone, container)::
+  newMimirWriteZoneStatefulset(zone, container, nodeAffinityMatchers=[])::
     local name = 'mimir-write-zone-%s' % zone;
     local replicas = std.ceil($._config.mimir_write_replicas / 3);
 
@@ -113,13 +118,13 @@
     $.newMimirWriteZoneContainer('c', $.mimir_write_zone_c_args),
 
   mimir_write_zone_a_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('a', $.mimir_write_zone_a_container),
+    $.newMimirWriteZoneStatefulset('a', $.mimir_write_zone_a_container, $.mimir_write_zone_a_node_affinity_matchers),
 
   mimir_write_zone_b_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('b', $.mimir_write_zone_b_container),
+    $.newMimirWriteZoneStatefulset('b', $.mimir_write_zone_b_container, $.mimir_write_zone_b_node_affinity_matchers),
 
   mimir_write_zone_c_statefulset: if !$._config.is_read_write_deployment_mode then null else
-    $.newMimirWriteZoneStatefulset('c', $.mimir_write_zone_c_container),
+    $.newMimirWriteZoneStatefulset('c', $.mimir_write_zone_c_container, $.mimir_write_zone_c_node_affinity_matchers),
 
   mimir_write_zone_a_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneService($.mimir_write_zone_a_statefulset),

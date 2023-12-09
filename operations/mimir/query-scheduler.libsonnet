@@ -33,11 +33,14 @@
 
   query_scheduler_env_map:: {},
 
+  query_scheduler_node_affinity_matchers:: [],
+
   query_scheduler_container::
     self.newQuerySchedulerContainer('query-scheduler', $.query_scheduler_args, $.query_scheduler_env_map),
 
-  newQuerySchedulerDeployment(name, container)::
+  newQuerySchedulerDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
@@ -46,7 +49,7 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   query_scheduler_deployment: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
-    self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),
+    self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container, $.query_scheduler_node_affinity_matchers),
 
   query_scheduler_service: if !$._config.is_microservices_deployment_mode || !$._config.query_scheduler_enabled then {} else
     $.util.serviceFor($.query_scheduler_deployment, $._config.service_ignored_labels),

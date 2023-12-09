@@ -41,11 +41,13 @@
     GOMAXPROCS: null,
   },
 
+  ruler_querier_node_affinity_matchers:: $.querier_node_affinity_matchers,
+
   ruler_querier_container::
     $.newQuerierContainer('ruler-querier', $.ruler_querier_args, $.ruler_querier_env_map),
 
   ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQuerierDeployment('ruler-querier', $.ruler_querier_container),
+    $.newQuerierDeployment('ruler-querier', $.ruler_querier_container, $.ruler_querier_node_affinity_matchers),
 
   ruler_querier_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_querier_deployment, $._config.service_ignored_labels),
@@ -72,11 +74,13 @@
 
   ruler_query_frontend_env_map:: $.query_frontend_env_map,
 
+  ruler_query_frontend_node_affinity_matchers:: $.query_frontend_node_affinity_matchers,
+
   ruler_query_frontend_container::
     $.newQueryFrontendContainer('ruler-query-frontend', $.ruler_query_frontend_args, $.ruler_query_frontend_env_map),
 
   ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container),
+    $.newQueryFrontendDeployment('ruler-query-frontend', $.ruler_query_frontend_container, $.ruler_query_frontend_node_affinity_matchers),
 
   ruler_query_frontend_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_query_frontend_deployment, $._config.service_ignored_labels) +
@@ -102,11 +106,13 @@
 
   ruler_query_scheduler_env_map:: $.query_scheduler_env_map,
 
+  ruler_query_scheduler_node_affinity_matchers:: $.query_scheduler_node_affinity_matchers,
+
   ruler_query_scheduler_container::
     $.newQuerySchedulerContainer(rulerQuerySchedulerName, $.ruler_query_scheduler_args, $.ruler_query_scheduler_env_map),
 
   ruler_query_scheduler_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQuerySchedulerDeployment(rulerQuerySchedulerName, $.ruler_query_scheduler_container),
+    $.newQuerySchedulerDeployment(rulerQuerySchedulerName, $.ruler_query_scheduler_container, $.ruler_query_scheduler_node_affinity_matchers),
 
   ruler_query_scheduler_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_query_scheduler_deployment, $._config.service_ignored_labels),

@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ballast"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
@@ -24,7 +25,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -179,7 +179,7 @@ func main() {
 		Registry:      reg,
 	})
 
-	var ballast = util.AllocateBallast(mainFlags.ballastBytes)
+	var ballast = ballast.Allocate(mainFlags.ballastBytes)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"

@@ -37,6 +37,8 @@
     GOMAXPROCS: null,
   },
 
+  mimir_read_node_affinity_matchers:: [],
+
   mimir_read_container:: if !$._config.is_read_write_deployment_mode then null else
     container.new('mimir-read', $._images.mimir_read) +
     container.withPorts($.mimir_read_ports) +
@@ -49,6 +51,7 @@
 
   mimir_read_deployment: if !$._config.is_read_write_deployment_mode then null else
     deployment.new('mimir-read', $._config.mimir_read_replicas, [$.mimir_read_container]) +
+    $.newMimirNodeAffinityMatchers($.mimir_read_node_affinity_matchers) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology('mimir-read', $._config.mimir_read_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +

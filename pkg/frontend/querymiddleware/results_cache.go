@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -179,18 +180,27 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 	}
 }
 
-// CacheSplitter generates cache keys. This is a useful interface for downstream
+// CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
-type CacheSplitter interface {
-	GenerateCacheKey(ctx context.Context, userID string, r Request) string
+type CacheKeyGenerator interface {
+	// QueryRequest should generate a cache key based on the tenant ID and Request.
+	QueryRequest(ctx context.Context, tenantID string, r Request) string
+
+	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
+	LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
+
+	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
+	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 
-// ConstSplitter is a utility for using a constant split interval when determining cache keys
-type ConstSplitter time.Duration
+type DefaultCacheKeyGenerator struct {
+	// Interval is a constant split interval when determining cache keys for QueryRequest.
+	Interval time.Duration
+}
 
-// GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
-	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
+// QueryRequest generates a cache key based on the userID, Request and interval.
+func (t DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r Request) string {
+	startInterval := r.GetStart() / t.Interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.

@@ -623,7 +623,7 @@ spec:
         - name: GOMAXPROCS
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-          value: "1024"
+          value: "5000"
         image: grafana/mimir:2.10.4
         imagePullPolicy: IfNotPresent
         name: querier
@@ -684,7 +684,6 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.max-total-query-length=12000h
@@ -1236,7 +1235,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1290,7 +1289,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1344,7 +1343,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1398,7 +1397,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.13.0
+        image: prom/memcached-exporter:v0.14.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1449,6 +1448,7 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
         - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
         - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached

@@ -11,7 +11,6 @@
       target: 'query-frontend',
 
       'server.http-listen-port': $._config.server_http_port,
-      'query-frontend.align-queries-with-step': false,
       'query-frontend.query-sharding-target-series-per-shard': if $.query_frontend_enable_cardinality_estimation then '2500' else '0',
 
       // Limit queries to 500 days; allow this to be overridden on a per-user basis.
@@ -32,21 +31,24 @@
 
   query_frontend_env_map:: {},
 
+  query_frontend_node_affinity_matchers:: [],
+
   query_frontend_container::
     self.newQueryFrontendContainer('query-frontend', $.query_frontend_args, $.query_frontend_env_map),
 
   local deployment = $.apps.v1.deployment,
 
-  newQueryFrontendDeployment(name, container)::
+  newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
 
   query_frontend_deployment: if !$._config.is_microservices_deployment_mode then null else
-    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
+    self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),
 
   query_frontend_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.query_frontend_deployment, $._config.service_ignored_labels),

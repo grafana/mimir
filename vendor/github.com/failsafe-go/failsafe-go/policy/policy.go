@@ -62,22 +62,22 @@ func (p *BaseFailurePolicy[R]) IsFailure(result R, err error) bool {
 
 // BaseDelayablePolicy provides a base for implementing DelayablePolicyBuilder.
 type BaseDelayablePolicy[R any] struct {
-	Delay   time.Duration
-	DelayFn failsafe.DelayFunc[R]
+	Delay     time.Duration
+	DelayFunc failsafe.DelayFunc[R]
 }
 
 func (d *BaseDelayablePolicy[R]) WithDelay(delay time.Duration) {
 	d.Delay = delay
 }
 
-func (d *BaseDelayablePolicy[R]) WithDelayFunc(delayFn failsafe.DelayFunc[R]) {
-	d.DelayFn = delayFn
+func (d *BaseDelayablePolicy[R]) WithDelayFunc(delayFunc failsafe.DelayFunc[R]) {
+	d.DelayFunc = delayFunc
 }
 
 // ComputeDelay returns a computed delay else -1 if no delay could be computed.
 func (d *BaseDelayablePolicy[R]) ComputeDelay(exec failsafe.ExecutionAttempt[R]) time.Duration {
-	if exec != nil && d.DelayFn != nil {
-		return d.DelayFn(exec)
+	if exec != nil && d.DelayFunc != nil {
+		return d.DelayFunc(exec)
 	}
 	return -1
 }

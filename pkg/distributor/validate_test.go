@@ -86,7 +86,7 @@ func TestValidateLabels(t *testing.T) {
 			fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "valid"},
 						{Name: "foo ", Value: "bar"},
@@ -105,7 +105,7 @@ func TestValidateLabels(t *testing.T) {
 			fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelName"},
 						{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
@@ -119,7 +119,7 @@ func TestValidateLabels(t *testing.T) {
 			fmt.Errorf(
 				labelValueTooLongMsgFormat,
 				"test_value_please_ignore_no_really_nothing_to_see_here",
-				formatLabelSet(
+				mimirpb.FromLabelAdaptersToString(
 					[]mimirpb.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelValue"},
 						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
@@ -355,7 +355,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
-		formatLabelSet(
+		mimirpb.FromLabelAdaptersToString(
 			[]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: model.MetricNameLabel, Value: "b"},
@@ -372,7 +372,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
-		formatLabelSet(
+		mimirpb.FromLabelAdaptersToString(
 			[]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: "a", Value: "a"},

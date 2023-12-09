@@ -1826,7 +1826,7 @@ func TestIngester_Push(t *testing.T) {
 					if testData.expectedErr == nil {
 						assert.NoError(t, err)
 					} else {
-						handledErr := i.handlePushError(err)
+						handledErr := i.mapPushErrorToErrorWithStatus(err)
 						errWithStatus, ok := handledErr.(errorWithStatus)
 						assert.True(t, ok)
 						assert.True(t, errWithStatus.equals(testData.expectedErr))
@@ -4629,7 +4629,7 @@ func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Confi
 	// Disable TSDB head compaction jitter to have predictable tests.
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
-	ingester, err := New(ingesterCfg, overrides, nil, registerer, noDebugNoopLogger{})
+	ingester, err := New(ingesterCfg, overrides, nil, nil, registerer, noDebugNoopLogger{})
 	if err != nil {
 		return nil, err
 	}
@@ -4823,7 +4823,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, nil, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, nil, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -5963,7 +5963,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, nil, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -7454,7 +7454,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
 		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
-		expectedErr := newErrorWithStatus(wrapOrAnnotateWithUser(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabels(labels3)), userID), codes.FailedPrecondition)
+		expectedErr := newErrorWithStatus(wrapOrAnnotateWithUser(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels3), userID), codes.FailedPrecondition)
 		checkErrorWithStatus(t, err, expectedErr)
 
 		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
@@ -9627,7 +9627,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
-	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters2))), userID)
+	expectedError := wrapOrAnnotateWithUser(ing.errorSamplers.maxSeriesPerUserLimitExceeded.WrapError(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), metricLabelAdapters2)), userID)
 	require.Error(t, expectedError)
 
 	// We push 2 times more than errorSampleRate series hitting the max-series-per-metric, i.e., 10 series in total.

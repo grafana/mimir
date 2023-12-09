@@ -49,9 +49,11 @@ const (
 	RequestBurstSizeFlag                     = "distributor.request-burst-size"
 	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
 	IngestionBurstSizeFlag                   = "distributor.ingestion-burst-size"
+	IngestionBurstFactorFlag                 = "distributor.ingestion-burst-factor"
 	HATrackerMaxClustersFlag                 = "distributor.ha-tracker.max-clusters"
 	resultsCacheTTLFlag                      = "query-frontend.results-cache-ttl"
 	resultsCacheTTLForOutOfOrderWindowFlag   = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	alignQueriesWithStepFlag                 = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                 = "querier.query-ingesters-within"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
@@ -73,6 +75,7 @@ type Limits struct {
 	RequestBurstSize                            int                 `yaml:"request_burst_size" json:"request_burst_size"`
 	IngestionRate                               float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
 	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
@@ -135,6 +138,7 @@ type Limits struct {
 	ResultsCacheForUnalignedQueryEnabled   bool            `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int             `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
 	BlockedQueries                         []*BlockedQuery `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	AlignQueriesWithStep                   bool            `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -197,6 +201,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RequestBurstSize, RequestBurstSizeFlag, 0, "Per-tenant allowed push request burst size. 0 to disable.")
 	f.Float64Var(&l.IngestionRate, IngestionRateFlag, 10000, "Per-tenant ingestion rate limit in samples per second.")
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
+	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
@@ -279,6 +284,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
+	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -445,6 +451,14 @@ func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string)
 // IngestionBurstSize returns the burst size for ingestion rate.
 func (o *Overrides) IngestionBurstSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionBurstSize
+}
+
+func (o *Overrides) IngestionBurstFactor(userID string) float64 {
+	burstFactor := o.getOverridesForUser(userID).IngestionBurstFactor
+	if burstFactor < 1 {
+		return 0
+	}
+	return burstFactor
 }
 
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
@@ -895,6 +909,10 @@ func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
 	return o.getOverridesForUser(tenantID).OTelMetricSuffixesEnabled
+}
+
+func (o *Overrides) AlignQueriesWithStep(userID string) bool {
+	return o.getOverridesForUser(userID).AlignQueriesWithStep
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

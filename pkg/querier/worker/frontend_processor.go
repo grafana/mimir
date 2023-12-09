@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -84,9 +85,11 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 		}
 
 		if err := fp.process(c, inflightQuery); err != nil {
-			level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
-			backoff.Wait()
-			continue
+			if !grpcutil.IsCanceled(err) {
+				level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
+				backoff.Wait()
+				continue
+			}
 		}
 
 		backoff.Reset()

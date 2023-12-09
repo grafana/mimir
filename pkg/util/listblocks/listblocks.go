@@ -20,25 +20,30 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
-// LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
+// LoadMetaFilesAndMarkers reads the bucket and loads the meta files for the provided user.
+// No-compact marker files are also read and returned all the time.
 // If showDeleted is true, then deletion marker files are also read and returned.
 // If ulidMinTime is non-zero, then only blocks with ULID time higher than that are read,
 // this is useful to filter the results for users with high amount of blocks without reading the metas
 // (but it can be inexact since ULID time can differ from block min/max times range).
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
+func LoadMetaFilesAndMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*block.Meta, deletionDetails map[ulid.ULID]block.DeletionMark, noCompactDetails map[ulid.ULID]block.NoCompactMark, _ error) {
 	deletedBlocks := map[ulid.ULID]bool{}
+	noCompactMarkerFiles := []string(nil)
 	deletionMarkerFiles := []string(nil)
 
-	// Find blocks marked for deletion
+	// Find blocks marked for deletion and no-compact.
 	err := bkt.Iter(ctx, path.Join(user, block.MarkersPathname), func(s string) error {
 		if id, ok := block.IsDeletionMarkFilename(path.Base(s)); ok {
 			deletedBlocks[id] = true
 			deletionMarkerFiles = append(deletionMarkerFiles, s)
 		}
+		if _, ok := block.IsNoCompactMarkFilename(path.Base(s)); ok {
+			noCompactMarkerFiles = append(noCompactMarkerFiles, s)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	metaPaths := []string(nil)
@@ -60,28 +65,31 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 	})
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if showDeleted {
-		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
+		deletionDetails, err = fetchMarkerDetails[block.DeletionMark](ctx, bkt, deletionMarkerFiles)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-
+	noCompactDetails, err = fetchMarkerDetails[block.NoCompactMark](ctx, bkt, noCompactMarkerFiles)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	metas, err = fetchMetas(ctx, bkt, metaPaths)
-	return metas, deletionTimes, err
+	return metas, deletionDetails, noCompactDetails, err
 }
 
 const concurrencyLimit = 32
 
-func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletionMarkers []string) (map[ulid.ULID]time.Time, error) {
+func fetchMarkerDetails[MARKER_TYPE block.Marker](ctx context.Context, bkt objstore.BucketReader, markers []string) (map[ulid.ULID]MARKER_TYPE, error) {
 	mu := sync.Mutex{}
-	times := map[ulid.ULID]time.Time{}
+	details := map[ulid.ULID]MARKER_TYPE{}
 
-	return times, concurrency.ForEachJob(ctx, len(deletionMarkers), concurrencyLimit, func(ctx context.Context, idx int) error {
-		r, err := bkt.Get(ctx, deletionMarkers[idx])
+	return details, concurrency.ForEachJob(ctx, len(markers), concurrencyLimit, func(ctx context.Context, idx int) error {
+		r, err := bkt.Get(ctx, markers[idx])
 		if err != nil {
 			if bkt.IsObjNotFoundErr(err) {
 				return nil
@@ -93,15 +101,14 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.BucketReader, deletion
 
 		dec := json.NewDecoder(r)
 
-		m := block.DeletionMark{}
+		var m MARKER_TYPE
 		if err := dec.Decode(&m); err != nil {
 			return err
 		}
 
 		mu.Lock()
-		times[m.ID] = time.Unix(m.DeletionTime, 0)
+		details[m.BlockULID()] = m
 		mu.Unlock()
-
 		return nil
 	})
 }

@@ -729,8 +729,10 @@ func readMetricSamplesFromBlock(t *testing.T, block *tsdb.Block, metricName stri
 
 		// Read samples from chunks.
 		for idx, chk := range chks {
-			chks[idx].Chunk, err = chunksReader.Chunk(chk)
+			chunk, iter, err := chunksReader.ChunkOrIterable(chk)
 			require.NoError(t, err)
+			require.Nil(t, iter)
+			chks[idx].Chunk = chunk
 
 			it := chks[idx].Chunk.Iterator(nil)
 			for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {

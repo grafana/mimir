@@ -677,7 +677,7 @@ type Mimir struct {
 
 	API                      *api.API
 	Server                   *server.Server
-	Ring                     *ring.Ring
+	IngesterRing             *ring.Ring
 	TenantLimits             validation.TenantLimits
 	Overrides                *validation.Overrides
 	ActiveGroupsCleanup      *util.ActiveGroupsCleanupService
@@ -819,8 +819,8 @@ func (t *Mimir) Run() error {
 	// register ingester ring handlers, if they exist prefer the full ring
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
-	if t.Ring != nil {
-		t.API.RegisterRing(t.Ring)
+	if t.IngesterRing != nil {
+		t.API.RegisterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
 		t.API.RegisterRing(t.Ingester.RingHandler())
 	}

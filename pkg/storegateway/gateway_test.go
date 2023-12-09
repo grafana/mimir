@@ -133,7 +133,14 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-			bucketClient := &bucket.ClientMock{}
+			onBucketIndexGet := func() {}
+
+			bucketClient := &bucket.ErrorInjectedBucketClient{Bucket: objstore.NewInMemBucket(), Injector: func(op bucket.Operation, name string) error {
+				if op == bucket.OpGet && strings.HasSuffix(name, bucketindex.IndexCompressedFilename) {
+					onBucketIndexGet()
+				}
+				return nil
+			}}
 
 			// Setup the initial instance state in the ring.
 			if testData.initialExists {
@@ -149,16 +156,18 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 			assert.False(t, g.ringLifecycler.IsRegistered())
 
-			bucketClient.MockIterWithCallback("", []string{"user-1", "user-2"}, nil, func() {
+			for _, userID := range []string{"user-1", "user-2"} {
+				createBucketIndex(t, bucketClient, userID)
+			}
+
+			onBucketIndexGet = func() {
 				// During the initial sync, we expect the instance to always be in the JOINING
 				// state within the ring.
 				assert.True(t, g.ringLifecycler.IsRegistered())
 				assert.Equal(t, ring.JOINING, g.ringLifecycler.GetState())
 				assert.Equal(t, ringNumTokensDefault, len(g.ringLifecycler.GetTokens()))
 				assert.Subset(t, g.ringLifecycler.GetTokens(), testData.initialTokens)
-			})
-			bucketClient.MockIter("user-1/", []string{}, nil)
-			bucketClient.MockIter("user-2/", []string{}, nil)
+			}
 
 			// Once successfully started, the instance should be ACTIVE in the ring.
 			require.NoError(t, services.StartAndAwaitRunning(ctx, g))
@@ -184,12 +193,10 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ClientMock{}
+	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(operation bucket.Operation, s string) error { return assert.AnError }}
 
-	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), nil, nil)
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 	require.NoError(t, err)
-
-	bucketClient.MockIter("", []string{}, errors.New("network error"))
 
 	require.NoError(t, g.StartAsync(ctx))
 	err = g.AwaitRunning(ctx)
@@ -768,6 +775,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
 	generateStorageBlock(t, storageDir, userID, metricName, 10, 100, 15)
+	createBucketIndex(t, bucket, userID)
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucket, ringStore, defaultLimitsOverrides(t), log.NewNopLogger(), reg, nil)
 	require.NoError(t, err)
@@ -1184,7 +1192,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 					actualMetrics := make([]string, 0, len(seriesSet))
 					for _, s := range seriesSet {
-						actualMetrics = append(actualMetrics, s.PromLabels().Get(labels.MetricName))
+						actualMetrics = append(actualMetrics, promLabels(s).Get(labels.MetricName))
 					}
 					assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 				})
@@ -1431,6 +1439,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 
 	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	createBucketIndex(t, bucketClient, userID)
 
 	// Prepare the request to query back all series (1 chunk per series in this test).
 	req := &storepb.SeriesRequest{

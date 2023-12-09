@@ -9,13 +9,15 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -51,20 +53,27 @@ func TranslateToPromqlAPIError(err error) error {
 			return err // 499
 		}
 
-		s, ok := status.FromError(err)
-		if !ok {
-			s, ok = status.FromError(errors.Cause(err))
-		}
-
-		if ok {
+		if s, ok := grpcutil.ErrorToStatus(err); ok {
 			code := s.Code()
 
-			// Treat these as HTTP status codes, even though they are supposed to be grpc codes.
-			if code >= 400 && code < 500 {
-				// Return directly, will be mapped to 422
-				return err
-			} else if code == http.StatusServiceUnavailable {
-				return promql.ErrQueryTimeout(s.Message())
+			if util.IsHTTPStatusCode(code) {
+				// Treat these as HTTP status codes, even though they are supposed to be grpc codes.
+				if code >= 400 && code < 500 {
+					// Return directly, will be mapped to 422
+					return err
+				} else if code == http.StatusServiceUnavailable {
+					return promql.ErrQueryTimeout(s.Message())
+				}
+			}
+
+			details := s.Details()
+			if len(details) == 1 {
+				if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+					switch errorDetails.GetCause() {
+					case mimirpb.TOO_BUSY:
+						return promql.ErrQueryTimeout(s.Message())
+					}
+				}
 			}
 		}
 

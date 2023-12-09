@@ -21,21 +21,20 @@ mimir:
       native_histograms_ingestion_enabled: true
 ```
 
-> **Note:** Native histograms is an experimental feature of Grafana Mimir.
+{{% admonition type="note" %}}
+Native histograms is an experimental feature of Grafana Mimir.
+{{% /admonition %}}
 
-## Configure Prometheus to write native histograms to Grafana Mimir
+To configure bucket limits for native histograms, refer to [Configure native histograms].
 
-To enable experimental support for scraping and ingesting native histograms in Prometheus, [enable the feature](https://prometheus.io/docs/prometheus/latest/feature_flags/#native-histograms) with the flag `--enable-feature=native-histograms`.
+To configure Grafana Agent or Prometheus to write native histograms to Grafana Mimir, refer to [Send native histograms to Mimir].
 
-To enable Prometheus remote write to send native histograms to Grafana Mimir, add the `send_native_histograms: true` parameter to your remote write configuration, for example:
-
-```yaml
-remote_write:
-  - url: <your-url>
-    send_native_histograms: true
-```
+To visualize native histograms in Mimir, refer to [Visualize native histograms].
 
 {{% docs/reference %}}
 [remote write API]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/http-api#remote-write"
 [Grafana Mimir query sharding]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/query-sharding"
+[Configure native histograms]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-native-histograms-ingestion"
+[Send native histograms to Mimir]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/send/native-histograms/"
+[Visualize native histograms]: "/ -> https://grafana.com/docs/mimir/<MIMIR_DOCS_VERSION>/visualize/native-histograms/"
 {{% /docs/reference %}}

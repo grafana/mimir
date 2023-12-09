@@ -440,6 +440,10 @@ func (m multiTenantMockLimits) NativeHistogramsIngestionEnabled(userID string) b
 	return m.byTenant[userID].nativeHistogramsIngestionEnabled
 }
 
+func (m multiTenantMockLimits) AlignQueriesWithStep(userID string) bool {
+	return m.byTenant[userID].alignQueriesWithStep
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -462,6 +466,7 @@ type mockLimits struct {
 	resultsCacheTTLForLabelsQuery        time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	blockedQueries                       []*validation.BlockedQuery
+	alignQueriesWithStep                 bool
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -548,6 +553,10 @@ func (m mockLimits) CreationGracePeriod(string) time.Duration {
 
 func (m mockLimits) NativeHistogramsIngestionEnabled(string) bool {
 	return m.nativeHistogramsIngestionEnabled
+}
+
+func (m mockLimits) AlignQueriesWithStep(string) bool {
+	return m.alignQueriesWithStep
 }
 
 type mockHandler struct {

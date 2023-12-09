@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -168,22 +169,23 @@ type ingesterPushError struct {
 }
 
 // newIngesterPushError creates a ingesterPushError error representing the given status object.
-func newIngesterPushError(stat *status.Status) ingesterPushError {
+func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.UNKNOWN_CAUSE
 	details := stat.Details()
 	if len(details) == 1 {
-		if errorDetails, ok := details[0].(*mimirpb.WriteErrorDetails); ok {
+		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
 		}
 	}
+	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	return ingesterPushError{
-		message: stat.Message(),
+		message: message,
 		cause:   errorCause,
 	}
 }
 
 func (e ingesterPushError) Error() string {
-	return fmt.Sprintf("%s: %s", failedPushingToIngesterMessage, e.message)
+	return e.message
 }
 
 func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
@@ -197,11 +199,11 @@ var _ distributorError = ingesterPushError{}
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
 		distributorErr distributorError
-		errDetails     *mimirpb.WriteErrorDetails
+		errDetails     *mimirpb.ErrorDetails
 		errCode        = codes.Internal
 	)
 	if errors.As(pushErr, &distributorErr) {
-		errDetails = &mimirpb.WriteErrorDetails{Cause: distributorErr.errorCause()}
+		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
 		switch distributorErr.errorCause() {
 		case mimirpb.BAD_DATA:
 			errCode = codes.FailedPrecondition
@@ -229,29 +231,24 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	return stat.Err()
 }
 
-func handleIngesterPushError(err error) error {
+func wrapIngesterPushError(err error, ingesterID string) error {
 	if err == nil {
 		return nil
 	}
 
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		return errors.Wrap(err, failedPushingToIngesterMessage)
+		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
-	if isHTTPStatusCode(statusCode) {
-		// TODO This code is needed for backwards compatibility, since ingesters may still return
-		// errors created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate
-		// it. This code should be removed in mimir 2.12.0.
+	if util.IsHTTPStatusCode(statusCode) {
+		// This code is needed for backwards compatibility, since ingesters may still return errors
+		// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
 		// Wrap HTTP gRPC error with more explanatory message.
-		return httpgrpc.Errorf(int(statusCode), "%s: %s", failedPushingToIngesterMessage, stat.Message())
+		return httpgrpc.Errorf(int(statusCode), "%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())
 	}
 
-	return newIngesterPushError(stat)
-}
-
-func isHTTPStatusCode(statusCode codes.Code) bool {
-	return int(statusCode) >= 100 && int(statusCode) < 600
+	return newIngesterPushError(stat, ingesterID)
 }
 
 func isClientError(err error) bool {
@@ -260,10 +257,8 @@ func isClientError(err error) bool {
 		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA
 	}
 
-	// TODO This code is needed for backwards compatibility, since ingesters may still return
-	// errors with HTTP status code created by httpgrpc.Errorf(). If err is one of those errors,
-	// we treat 4xx errors as client errors. This code should be removed in mimir 2.12.0.
-
+	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status
+	// code created by httpgrpc.Errorf(). If err is one of those errors, we treat 4xx errors as client errors.
 	if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
 		return true
 	}

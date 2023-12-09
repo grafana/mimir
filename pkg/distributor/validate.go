@@ -8,7 +8,6 @@ package distributor
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -229,13 +228,13 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 			}
 			for {
 				bc, err := s.ReduceResolution()
 				if err != nil {
 					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
-					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToLabels(ls).String(), bucketCount, bucketLimit)
+					return fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
 				if bc < bucketLimit {
 					break
@@ -252,12 +251,12 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
-		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{}).String())
+		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{}))
 	}
 
 	if e.TimestampMs == 0 {
 		m.timestampInvalid.WithLabelValues(userID).Inc()
-		return fmt.Errorf(exemplarMissingTimestampMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return fmt.Errorf(exemplarMissingTimestampMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString(e.Labels))
 	}
 
 	// Exemplar label length does not include chars involved in text
@@ -279,12 +278,12 @@ func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
 		m.labelsTooLong.WithLabelValues(userID).Inc()
-		return fmt.Errorf(exemplarMaxLabelLengthMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return fmt.Errorf(exemplarMaxLabelLengthMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString(e.Labels))
 	}
 
 	if !foundValidLabel {
 		m.labelsBlank.WithLabelValues(userID).Inc()
-		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToLabels(ls).String(), mimirpb.FromLabelAdaptersToLabels(e.Labels).String())
+		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString(e.Labels))
 	}
 
 	return nil
@@ -338,16 +337,16 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Name) > maxLabelNameLength {
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, formatLabelSet(ls))
+			return fmt.Errorf(labelValueTooLongMsgFormat, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, formatLabelSet(ls))
+			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		}
 
 		lastLabelName = l.Name
@@ -414,34 +413,8 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 	return err
 }
 
-// formatLabelSet formats label adapters as a metric name with labels, while preserving
-// label order, and keeping duplicates. If there are multiple "__name__" labels, only
-// first one is used as metric name, other ones will be included as regular labels.
-func formatLabelSet(ls []mimirpb.LabelAdapter) string {
-	metricName, hasMetricName := "", false
-
-	labelStrings := make([]string, 0, len(ls))
-	for _, l := range ls {
-		if l.Name == model.MetricNameLabel && !hasMetricName && l.Value != "" {
-			metricName = l.Value
-			hasMetricName = true
-		} else {
-			labelStrings = append(labelStrings, fmt.Sprintf("%s=%q", l.Name, l.Value))
-		}
-	}
-
-	if len(labelStrings) == 0 {
-		if hasMetricName {
-			return metricName
-		}
-		return "{}"
-	}
-
-	return fmt.Sprintf("%s{%s}", metricName, strings.Join(labelStrings, ", "))
-}
-
 func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
-	metric := mimirpb.FromLabelAdaptersToMetric(ls).String()
+	metric := mimirpb.FromLabelAdaptersToString(ls)
 	ellipsis := ""
 
 	if utf8.RuneCountInString(metric) > 200 {
