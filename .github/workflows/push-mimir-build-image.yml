@@ -5,13 +5,13 @@ on:
   pull_request:
     types: [opened, synchronize]
     paths:
-      - mimir-build-image/Dockerfile  
+      - mimir-build-image/Dockerfile
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-jobs: 
+jobs:
   build_and_push:
     runs-on: ubuntu-latest
     permissions:
@@ -19,7 +19,7 @@ jobs:
       contents: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
-    # We want to allow running github actions for all contributors, but don't want all contributors to be able to 
+    # We want to allow running github actions for all contributors, but don't want all contributors to be able to
     # publish new build images just by sending the PR. Hence this change.
     if: github.event.pull_request.author_association == 'MEMBER' || github.actor == 'renovate[bot]'
     steps:
@@ -95,7 +95,7 @@ jobs:
         run: |
           echo "Building and Pushing Docker Image"
           make push-multiarch-build-image IMAGE_TAG=${{ steps.compute_hash.outputs.tag }}
-      
+
       - name: Compare built tag with Makefile
         id: compare_tag
         run: |
@@ -107,7 +107,7 @@ jobs:
             echo "Built tag is different from the one in Makefile"
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
-      
+
       - name: Add commit to PR in order to update Build Image version
         if: steps.compare_tag.outputs.isDifferent == 'true'
         run: |
@@ -124,7 +124,7 @@ jobs:
             git add Makefile
             git commit -m "Update build image version to ${{ steps.compute_hash.outputs.tag }}"
             git push origin HEAD
-          fi 
+          fi
         env:
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
           TAG: ${{ steps.compute_hash.outputs.tag }}
