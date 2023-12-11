@@ -99,10 +99,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	for i := 0; i < len(additionalQueueDimensions); i++ {
 		for j := 0; j < maxTenantQueueSize/len(additionalQueueDimensions); j++ {
 			req.AdditionalQueueDimensions = additionalQueueDimensions[i]
-			tenantReq := &tenantRequest{
-				tenantID: "tenant-1",
-				req:      req,
-			}
+			tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
 			err := qb.enqueueRequestBack(tenantReq, 0)
 			assert.NoError(t, err)
 		}
@@ -119,9 +116,14 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 
 	// assert error received when hitting a tenant's enqueue limit,
 	// even though most of the requests are in the subqueues
-	tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
-	err := qb.enqueueRequestBack(tenantReq, 0)
-	assert.ErrorIs(t, err, ErrTooManyRequests)
+	for _, additionalQueueDimension := range additionalQueueDimensions {
+		// error should be received no matter if the enqueue attempt
+		// is for the tenant queue or any of its subqueues
+		req.AdditionalQueueDimensions = additionalQueueDimension
+		tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
+		err := qb.enqueueRequestBack(tenantReq, 0)
+		assert.ErrorIs(t, err, ErrTooManyRequests)
+	}
 
 	// dequeue a request
 	qb.addQuerierConnection("querier-1")
@@ -129,6 +131,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, dequeuedTenantReq)
 
+	tenantReq := &tenantRequest{tenantID: "tenant-1", req: req}
 	// assert not hitting an error when enqueueing after dequeuing to below the limit
 	err = qb.enqueueRequestBack(tenantReq, 0)
 	assert.NoError(t, err)
