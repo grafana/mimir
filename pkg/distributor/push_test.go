@@ -36,6 +36,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -134,18 +135,18 @@ func TestHandlerOTLPPush(t *testing.T) {
 		require.Len(t, series, 1)
 
 		samples := series[0].Samples
-		assert.Equal(t, 1, len(samples))
+		require.Len(t, samples, 1)
 		assert.Equal(t, float64(1), samples[0].Value)
 		assert.Equal(t, "__name__", series[0].Labels[0].Name)
 		assert.Equal(t, "foo", series[0].Labels[0].Value)
 
 		metadata := request.Metadata
+		require.Len(t, metadata, 1)
 		assert.Equal(t, mimirpb.GAUGE, metadata[0].GetType())
 		assert.Equal(t, "foo", metadata[0].GetMetricFamilyName())
 		assert.Equal(t, "metric_help", metadata[0].GetHelp())
 		assert.Equal(t, "metric_unit", metadata[0].GetUnit())
 
-		pushReq.CleanUp()
 		return nil
 	}
 
@@ -154,7 +155,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		require.NoError(t, err)
 
 		series := request.Timeseries
-		assert.Len(t, series, 1)
+		require.Len(t, series, 1)
 
 		samples := series[0].Samples
 		require.Equal(t, 1, len(samples))
@@ -165,7 +166,6 @@ func TestHandlerOTLPPush(t *testing.T) {
 		metadata := request.Metadata
 		assert.Equal(t, []*mimirpb.MetricMetadata(nil), metadata)
 
-		pushReq.CleanUp()
 		return nil
 	}
 
@@ -295,6 +295,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			require.NoError(t, err)
 			pusher := func(ctx context.Context, pushReq *Request) error {
 				t.Helper()
+				t.Cleanup(pushReq.CleanUp)
 				return tt.verifyFunc(t, pushReq)
 			}
 			handler := OTLPHandler(tt.maxMsgSize, nil, false, tt.enableOtelMetadataStorage, limits, RetryConfig{}, nil, pusher, log.NewNopLogger())
@@ -305,7 +306,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			assert.Equal(t, tt.responseCode, resp.Code)
 			if tt.errMessage != "" {
 				body, err := io.ReadAll(resp.Body)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 				assert.Contains(t, string(body), tt.errMessage)
 			}
 		})
@@ -520,13 +521,13 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
 			verifyReqHandler: func(ctx context.Context, pushReq *Request) error {
 				request, err := pushReq.WriteRequest()
-				assert.NoError(t, err)
+				require.NoError(t, err)
+				t.Cleanup(pushReq.CleanUp)
 				assert.Len(t, request.Timeseries, 1)
 				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
 				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
 				assert.Equal(t, mimirpb.RULE, request.Source)
 				assert.False(t, request.SkipLabelNameValidation)
-				pushReq.CleanUp()
 				return nil
 			},
 			includeAllowSkiplabelNameValidationHeader: true,
@@ -602,13 +603,13 @@ func verifyWritePushFunc(t *testing.T, expectSource mimirpb.WriteRequest_SourceE
 	t.Helper()
 	return func(ctx context.Context, pushReq *Request) error {
 		request, err := pushReq.WriteRequest()
-		assert.NoError(t, err)
-		assert.Len(t, request.Timeseries, 1)
-		assert.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
-		assert.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
-		assert.Equal(t, expectSource, request.Source)
-		assert.False(t, request.SkipLabelNameValidation)
-		pushReq.CleanUp()
+		require.NoError(t, err)
+		t.Cleanup(pushReq.CleanUp)
+		require.Len(t, request.Timeseries, 1)
+		require.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
+		require.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
+		require.Equal(t, expectSource, request.Source)
+		require.False(t, request.SkipLabelNameValidation)
 		return nil
 	}
 }
@@ -758,8 +759,8 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 	for _, tc := range parserTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest, log.Logger) ([]byte, error) {
-				return nil, tc.err
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
+				return tc.err
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
@@ -825,8 +826,8 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest, log.Logger) ([]byte, error) {
-				return nil, nil
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
+				return nil
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
 				_, err := req.WriteRequest() // just read the body so we can trigger the parser
@@ -841,7 +842,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 			if tc.err != nil {
-				assert.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
+				require.Equal(t, fmt.Sprintf("%s\n", tc.expectedErrorMessage), recorder.Body.String())
 			}
 			header := recorder.Header().Get(server.DoNotLogErrorHeaderKey)
 			if tc.expectedDoNotLogErrorHeader {
