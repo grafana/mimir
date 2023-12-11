@@ -1290,14 +1290,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// Use a background context to make sure all ingesters get samples even if we return early
-	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
-	localCtx = user.InjectOrgID(localCtx, userID)
-	// Get clientIP(s) from Context and add it to localCtx
-	source := util.GetSourceIPsFromOutgoingCtx(ctx)
-	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-	if sp := opentracing.SpanFromContext(ctx); sp != nil {
-		localCtx = opentracing.ContextWithSpan(localCtx, sp)
-	}
+	localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
 
 	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
