@@ -54,7 +54,7 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, bufferProvider *util.BufferProvider, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 		contentType := r.Header.Get("Content-Type")
 		contentEncoding := r.Header.Get("Content-Encoding")
 		var compression util.CompressionType
@@ -75,7 +75,7 @@ func OTLPHandler(
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
 				}
-				err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, bufferProvider, unmarshaler, compression)
+				err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
 					return exportReq, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{
@@ -89,17 +89,12 @@ func OTLPHandler(
 		case jsonContentType:
 			decoderFunc = func(reader io.ReadCloser) (pmetricotlp.ExportRequest, error) {
 				exportReq := pmetricotlp.NewExportRequest()
-				var buf *bytes.Buffer
-				if bufferProvider != nil {
-					buf = bufferProvider.BodyBuffer()
-				} else {
-					buf = bytes.NewBuffer(nil)
-				}
-
-				if r.ContentLength > 0 {
+				sz := int(r.ContentLength)
+				if sz > 0 {
 					// Extra space guarantees no reallocation
-					buf.Grow(int(r.ContentLength) + bytes.MinRead)
+					sz += bytes.MinRead
 				}
+				buf := buffers.Buffer(sz)
 				if compression == util.Gzip {
 					var err error
 					reader, err = gzip.NewReader(reader)

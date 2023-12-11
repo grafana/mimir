@@ -759,7 +759,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	}
 	for _, tc := range parserTestCases {
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.BufferProvider, *mimirpb.PreallocWriteRequest, log.Logger) error {
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return tc.err
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {
@@ -826,7 +826,7 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			parserFunc := func(context.Context, *http.Request, int, *util.BufferProvider, *mimirpb.PreallocWriteRequest, log.Logger) error {
+			parserFunc := func(context.Context, *http.Request, int, *util.RequestBuffers, *mimirpb.PreallocWriteRequest, log.Logger) error {
 				return nil
 			}
 			pushFunc := func(ctx context.Context, req *Request) error {

@@ -6,6 +6,7 @@
 package distributor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -33,14 +34,13 @@ import (
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
 type PushFunc func(ctx context.Context, req *Request) error
 
-// parserFunc defines how to read the body the request from an HTTP request. It takes an optional bufferProvider.
-type parserFunc func(ctx context.Context, r *http.Request, maxSize int, bufferProvider *util.BufferProvider, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
+// parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
+type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
 
 var (
 	bufferPool = sync.Pool{
 		New: func() any {
-			bp := util.NewBufferProvider(256 * 1024)
-			return &bp
+			return bytes.NewBuffer(make([]byte, 0, 256*1024))
 		},
 	}
 	errRetryBaseLessThanOneSecond    = errors.New("retry base duration should not be less than 1 second")
@@ -85,8 +85,8 @@ func Handler(
 	push PushFunc,
 	logger log.Logger,
 ) http.Handler {
-	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, bufferProvider *util.BufferProvider, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
-		err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, bufferProvider, req, util.RawSnappy)
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, limits, retryCfg, push, logger, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, _ log.Logger) error {
+		err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
 			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
@@ -127,16 +127,15 @@ func handler(
 			}
 		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			pb := bufferPool.Get().(*util.BufferProvider)
+			rb := util.NewRequestBuffers(&bufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, pb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 				}
 
-				pb.CleanUp()
-				bufferPool.Put(pb)
+				rb.CleanUp()
 				return nil, nil, err
 			}
 
@@ -148,8 +147,7 @@ func handler(
 
 			cleanup := func() {
 				mimirpb.ReuseSlice(req.Timeseries)
-				pb.CleanUp()
-				bufferPool.Put(pb)
+				rb.CleanUp()
 			}
 			return &req.WriteRequest, cleanup, nil
 		}
