@@ -56,7 +56,7 @@ require (
 	cloud.google.com/go/storage v1.35.1
 	github.com/alecthomas/chroma/v2 v2.11.1
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go v1.48.11
+	github.com/aws/aws-sdk-go v1.48.16
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
@@ -248,7 +248,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231128152318-e239c5eda5b4
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

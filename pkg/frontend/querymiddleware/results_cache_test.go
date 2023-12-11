@@ -552,7 +552,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 	}
 }
 
-func TestConstSplitter_generateCacheKey(t *testing.T) {
+func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -575,7 +575,7 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := ConstSplitter(tt.interval).GenerateCacheKey(ctx, "fake", tt.r); got != tt.want {
+			if got := (DefaultCacheKeyGenerator{tt.interval}).QueryRequest(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

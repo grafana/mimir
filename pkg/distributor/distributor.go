@@ -321,6 +321,9 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_sample_delay_seconds",
 			Help: "Number of seconds by which a sample came in late wrt wallclock.",
 			Buckets: []float64{
+				-60 * 1,      // 1 min early
+				-15,          // 15s early
+				-5,           // 5s early
 				30,           // 30s
 				60 * 1,       // 1 min
 				60 * 2,       // 2 min
@@ -626,9 +629,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	for _, s := range ts.Samples {
 
 		delta := now - model.Time(s.TimestampMs)
-		if delta > 0 {
-			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-		}
+		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
@@ -637,9 +638,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 	for i, h := range ts.Histograms {
 		delta := now - model.Time(h.Timestamp)
-		if delta > 0 {
-			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-		}
+		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 
 		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
 			return err

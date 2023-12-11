@@ -132,8 +132,8 @@ github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef/go.mod h1:W
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
 github.com/aws/aws-sdk-go v1.38.35/go.mod h1:hcU610XS61/+aQV88ixoOzUoG7v3b31pl2zKMmprdro=
-github.com/aws/aws-sdk-go v1.48.11 h1:9YbiSbaF/jWi+qLRl+J5dEhr2mcbDYHmKg2V7RBcD5M=
-github.com/aws/aws-sdk-go v1.48.11/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
+github.com/aws/aws-sdk-go v1.48.16 h1:mcj2/9J/MJ55Dov+ocMevhR8Jv6jW/fAxbrn4a1JFc8=
+github.com/aws/aws-sdk-go v1.48.16/go.mod h1:LF8svs817+Nz+DmiMQKTO3ubZ/6IaTpq3TjupRn3Eqk=
 github.com/aws/aws-sdk-go-v2 v1.16.0 h1:cBAYjiiexRAg9v2z9vb6IdxAa7ef4KCtjW7w7e3GxGo=
 github.com/aws/aws-sdk-go-v2 v1.16.0/go.mod h1:lJYcuZZEHWNIb6ugJjbQY1fykdoobWbOS7kJYb4APoI=
 github.com/aws/aws-sdk-go-v2/config v1.15.1 h1:hTIZFepYESYyowQUBo47lu69WSxsYqGUILY9Nu8+7pY=
@@ -551,8 +551,8 @@ github.com/grafana/gomemcache v0.0.0-20231023152154-6947259a0586 h1:/of8Z8taCPft
 github.com/grafana/gomemcache v0.0.0-20231023152154-6947259a0586/go.mod h1:PGk3RjYHpxMM8HFPhKKo+vve3DdlPUELZLSDEFehPuU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20231128152318-e239c5eda5b4 h1:QwNVTCEOKiDtwy3MLE1AU+5CzFDWZsLajlb5JaKjYlc=
-github.com/grafana/mimir-prometheus v0.0.0-20231128152318-e239c5eda5b4/go.mod h1:4QSs3BHLVYkOx71yLB4VFVALM6LrNMJBW8wm41LkPUI=
+github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8 h1:0pANYP78Dh7Op5oWR4ACbD83SUqBklhzFaonYl7gDQY=
+github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8/go.mod h1:4QSs3BHLVYkOx71yLB4VFVALM6LrNMJBW8wm41LkPUI=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6 h1:A3dhViTeFDSQcGOXuUi6ukCQSMyDtDISBp2z6OOo2YM=

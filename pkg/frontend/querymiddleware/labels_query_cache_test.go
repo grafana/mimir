@@ -3,6 +3,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -33,7 +34,7 @@ func TestLabelsQueryCache_RoundTrip(t *testing.T) {
 	})
 }
 
-func TestLabelsQueryCache_parseRequest(t *testing.T) {
+func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 	const labelName = "test"
 
 	tests := map[string]struct {
@@ -143,16 +144,16 @@ func TestLabelsQueryCache_parseRequest(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
-					c := &labelsQueryCache{}
-					actual, err := c.parseRequest(requestTypeData.requestPath, testData.params)
+					c := DefaultCacheKeyGenerator{}
+					actual, err := c.LabelValues(context.Background(), requestTypeData.requestPath, testData.params)
 					require.NoError(t, err)
 
-					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.cacheKeyPrefix)
+					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.CacheKeyPrefix)
 
 					if requestTypeData.expectedCacheKeyWithLabelName {
-						assert.Equal(t, testData.expectedCacheKeyWithLabelName, actual.cacheKey)
+						assert.Equal(t, testData.expectedCacheKeyWithLabelName, actual.CacheKey)
 					} else {
-						assert.Equal(t, testData.expectedCacheKeyWithoutLabelName, actual.cacheKey)
+						assert.Equal(t, testData.expectedCacheKeyWithoutLabelName, actual.CacheKey)
 					}
 				})
 			}

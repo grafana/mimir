@@ -1220,6 +1220,29 @@ How to **investigate**
 - Flush tenant's data to blocks storage.
 - Remove tenant's directory on disk and restart ingester.
 
+## MimirStoreGatewayTooManyFailedOperations
+
+How it **works**:
+
+This alert fires when the `store-gateways` report errors when interacting with the object storage for an extended period of time.
+This is usually because Mimir cannot read an object due to an issue with the object itself or the object storage.
+
+How to **investigate**
+
+- Check the `store-gateways` logs which should contain details about the error such as tenant or object id, e.g. with the following Grafana Loki query:
+
+```
+{cluster="<cluster>",namespace="<namespace>", name=~"store-gateway.*"} |= "level=warn"
+```
+
+You might find logs similar to the following:
+
+```
+create index header reader: write index header: new index reader: get TOC from object storage of 01H9QMTQRE2MT8XVDWP6RWAMC6/index: Multipart upload has broken segment data.
+```
+
+- Use the `Mimir / Object Store` dashboard to check for error rate and the failed object storage's operation impacted, e.g: `get_range`.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.

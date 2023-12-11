@@ -21,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func Test_cardinalityEstimateBucket_GenerateCacheKey_keyFormat(t *testing.T) {
+func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 	requestTime := parseTimeRFC3339(t, "2023-01-09T03:24:12Z")
 	hoursSinceEpoch := util.TimeToMillis(requestTime) / time.Hour.Milliseconds()
 	daysSinceEpoch := hoursSinceEpoch / 24
@@ -241,7 +241,7 @@ func Test_cardinalityEstimation_Do(t *testing.T) {
 
 }
 
-func Test_cardinalityEstimateBucket_GenerateCacheKey_requestEquality(t *testing.T) {
+func Test_cardinalityEstimateBucket_QueryRequest_requestEquality(t *testing.T) {
 	rangeQuery := &PrometheusRangeQueryRequest{
 		Start: util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T09:00:00Z")),
 		End:   util.TimeToMillis(parseTimeRFC3339(t, "2023-01-31T10:00:00Z")),

@@ -61,9 +61,9 @@ type Config struct {
 	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 
-	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
-	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
-	CacheSplitter CacheSplitter `yaml:"-"`
+	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
+	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
+	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
@@ -234,15 +234,15 @@ func newQueryTripperware(
 		c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
 	}
 
+	cacheKeyGenerator := cfg.CacheKeyGenerator
+	if cacheKeyGenerator == nil {
+		cacheKeyGenerator = DefaultCacheKeyGenerator{Interval: cfg.SplitQueriesByInterval}
+	}
+
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
-		}
-
-		splitter := cfg.CacheSplitter
-		if splitter == nil {
-			splitter = ConstSplitter(cfg.SplitQueriesByInterval)
 		}
 
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
@@ -252,7 +252,7 @@ func newQueryTripperware(
 			limits,
 			codec,
 			c,
-			splitter,
+			cacheKeyGenerator,
 			cacheExtractor,
 			shouldCache,
 			log,
@@ -327,8 +327,8 @@ func newQueryTripperware(
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
-			cardinality = newCardinalityQueryCacheRoundTripper(c, limits, cardinality, log, registerer)
-			labels = newLabelsQueryCacheRoundTripper(c, limits, labels, log, registerer)
+			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
+			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

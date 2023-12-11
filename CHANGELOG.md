@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [CHANGE] Ingester: Increase default value of `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to 100 MiB (previous default value was 10 MiB). #6764
+* [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
 * [ENHANCEMENT] Ruler: exclude vector queries from being tracked in `cortex_ruler_queries_zero_fetched_series_total`. #6544
@@ -23,6 +24,7 @@
 ### Jsonnet
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
+* [ENHANCEMENT] Alerts: Add `MimirStoreGatewayTooManyFailedOperations` warning  alert that triggers when Mimir store-gateway report error when interacting with the object storage. #6831
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`
@@ -56,6 +58,7 @@
   * `store_gateway_zone_a_node_affinity_matchers`
   * `store_gateway_zone_b_node_affinity_matchers`
   * `store_gateway_zone_c_node_affinity_matchers`
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mimirtool
 
