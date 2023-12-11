@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"flag"
 	"math"
 	"strconv"
 	"sync"
@@ -29,29 +28,11 @@ const (
 	writerRequestTimeoutOverhead = 2 * time.Second
 )
 
-type WriterConfig struct {
-	WriteTimeout time.Duration `yaml:"kafka_write_timeout"`
-
-	// The following settings can only be overridden in tests.
-	maxInflightProduceRequests int
-}
-
-func (cfg *WriterConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("", f)
-}
-
-func (cfg *WriterConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.WriteTimeout, prefix+".kafka-write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
-
-	cfg.maxInflightProduceRequests = 20
-}
-
 // Writer is responsible to write incoming data to the ingest storage.
 type Writer struct {
 	services.Service
 
 	kafkaCfg   KafkaConfig
-	writerCfg  WriterConfig
 	logger     log.Logger
 	registerer prometheus.Registerer
 
@@ -62,15 +43,18 @@ type Writer struct {
 	// Metrics.
 	writeLatency    prometheus.Summary
 	writeBytesTotal prometheus.Counter
+
+	// The following settings can only be overridden in tests.
+	maxInflightProduceRequests int
 }
 
-func NewWriter(kafkaCfg KafkaConfig, writerCfg WriterConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
+func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registerer) *Writer {
 	w := &Writer{
-		kafkaCfg:   kafkaCfg,
-		writerCfg:  writerCfg,
-		logger:     logger,
-		registerer: reg,
-		writers:    map[int32]*kgo.Client{},
+		kafkaCfg:                   kafkaCfg,
+		logger:                     logger,
+		registerer:                 reg,
+		writers:                    map[int32]*kgo.Client{},
+		maxInflightProduceRequests: 20,
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
@@ -252,7 +236,7 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		// issuing new Produce requests until some previous ones complete).
 		kgo.DisableIdempotentWrite(),
 		kgo.ProducerLinger(50*time.Millisecond),
-		kgo.MaxProduceRequestsInflightPerBroker(w.writerCfg.maxInflightProduceRequests),
+		kgo.MaxProduceRequestsInflightPerBroker(w.maxInflightProduceRequests),
 
 		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
 		// With the default config it would retry infinitely.
@@ -267,8 +251,8 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
 		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
 		kgo.RecordRetries(math.MaxInt64),
-		kgo.RecordDeliveryTimeout(w.writerCfg.WriteTimeout),
-		kgo.ProduceRequestTimeout(w.writerCfg.WriteTimeout),
+		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
+		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
 }

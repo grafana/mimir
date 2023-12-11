@@ -50,7 +50,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writer, reg := createTestWriter(t, clusterAddr, topicName, createTestWriterConfig())
+		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
 
@@ -110,7 +110,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		)
 
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, clusterAddr, topicName, createTestWriterConfig())
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			numRecords, err := getProduceRequestRecordsCount(request.(*kmsg.ProduceRequest))
@@ -169,12 +169,11 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
-		writerCfg := createTestWriterConfig()
-		writerCfg.maxInflightProduceRequests = 1
-
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, clusterAddr, topicName, writerCfg)
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
+
+		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
+		writer.maxInflightProduceRequests = 1
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			if firstRequest.CompareAndSwap(true, false) {
@@ -226,7 +225,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writer, _ := createTestWriter(t, clusterAddr, topicName, createTestWriterConfig())
+		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
 		err := writer.WriteSync(ctx, 100, tenantID, multiSeries, nil, mimirpb.API)
@@ -237,8 +236,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writerCfg := createTestWriterConfig()
-		writer, _ := createTestWriter(t, clusterAddr, topicName, writerCfg)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		writer, _ := createTestWriter(t, kafkaCfg)
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			// Keep failing every request.
@@ -250,8 +249,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, series1, nil, mimirpb.API))
 		elapsedTime := time.Since(startTime)
 
-		assert.Greater(t, elapsedTime, writerCfg.WriteTimeout/2)
-		assert.Less(t, elapsedTime, writerCfg.WriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
+		assert.Greater(t, elapsedTime, kafkaCfg.WriteTimeout/2)
+		assert.Less(t, elapsedTime, kafkaCfg.WriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
 	})
 
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
@@ -259,8 +258,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		t.Parallel()
 
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
-		writerCfg := createTestWriterConfig()
-		writer, _ := createTestWriter(t, clusterAddr, topicName, writerCfg)
+		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
+		writer, _ := createTestWriter(t, kafkaCfg)
 
 		var (
 			firstRequest         = atomic.NewBool(true)
@@ -282,7 +281,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 				// Inject a slowdown on the 1st Produce request received by Kafka.
 				// NOTE: the slowdown is 1s longer than the client timeout.
-				time.Sleep(writerCfg.WriteTimeout + writerRequestTimeoutOverhead + time.Second)
+				time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead + time.Second)
 			}
 
 			return nil, nil, false
@@ -295,7 +294,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			elapsedTime := time.Since(startTime)
 
 			// It should take nearly the client's write timeout.
-			expectedElapsedTime := writerCfg.WriteTimeout + writerRequestTimeoutOverhead
+			expectedElapsedTime := kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead
 			assert.InDelta(t, expectedElapsedTime, elapsedTime, float64(time.Second))
 		})
 
@@ -306,7 +305,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			// Wait 500ms less than the client timeout.
 			delay := 500 * time.Millisecond
-			time.Sleep(writerCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
+			time.Sleep(kafkaCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
 
 			startTime := time.Now()
 			require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, series2, nil, mimirpb.API))
@@ -362,10 +361,14 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 	}()
 }
 
-func createTestWriterConfig() WriterConfig {
-	cfg := WriterConfig{}
+func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
+	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
+
+	cfg.Address = clusterAddr
+	cfg.Topic = topicName
 	cfg.WriteTimeout = 2 * time.Second
+
 	return cfg
 }
 
@@ -380,15 +383,10 @@ func createTestCluster(t *testing.T, numPartitions int32, topicName string) (*kf
 	return cluster, addrs[0]
 }
 
-func createTestWriter(t *testing.T, clusterAddr, topicName string, writerCfg WriterConfig) (*Writer, prometheus.Gatherer) {
+func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {
 	reg := prometheus.NewPedanticRegistry()
 
-	kafkaCfg := KafkaConfig{}
-	flagext.DefaultValues(&kafkaCfg)
-	kafkaCfg.Address = clusterAddr
-	kafkaCfg.Topic = topicName
-
-	writer := NewWriter(kafkaCfg, writerCfg, test.NewTestingLogger(t), reg)
+	writer := NewWriter(cfg, test.NewTestingLogger(t), reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
 
 	t.Cleanup(func() {
