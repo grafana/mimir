@@ -5561,10 +5561,10 @@ func TestSendMessageMetadata(t *testing.T) {
 		Source: mimirpb.API,
 	}
 
-	err = d.send(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
 	require.NoError(t, err)
 
-	// Verify that d.send added message size to metadata.
+	// Verify that d.sendToIngester added message size to metadata.
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 

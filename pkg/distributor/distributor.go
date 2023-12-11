@@ -47,6 +47,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -157,6 +158,9 @@ type Distributor struct {
 	// It can be nil, in which case a simple `go f()` will be used.
 	// See Config.ReusableIngesterPushWorkers on how to configure this.
 	ingesterDoBatchPushWorkers func(func())
+
+	// ingestStorageWriter is the writer used when ingest storage is enabled.
+	ingestStorageWriter *ingest.Writer
 }
 
 // Config contains the configuration required to
@@ -186,6 +190,9 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
+
+	// This config is dynamically injected because defined outside of distributor config.
+	IngestStorageConfig ingest.Config `yaml:"-"`
 
 	// Limits for distributor
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
@@ -460,6 +467,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			func(ctx context.Context) error { <-ctx.Done(); return nil },
 			func(_ error) error { wp.Close(); return nil },
 		))
+	}
+
+	if cfg.IngestStorageConfig.Enabled {
+		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, d.cfg.IngestStorageConfig.WriterConfig, log, reg)
+		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
@@ -1336,7 +1348,13 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				}
 			}
 
-			err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+			var err error
+			if d.cfg.IngestStorageConfig.Enabled {
+				err = d.sendToStorage(localCtx, userID, ingester, timeseries, metadata, req.Source)
+			} else {
+				err = d.sendToIngester(localCtx, ingester, timeseries, metadata, req.Source)
+			}
+
 			if errors.Is(err, context.DeadlineExceeded) {
 				return errors.Wrap(err, deadlineExceededWrapMessage)
 			}
@@ -1388,7 +1406,8 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+// sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
+func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
@@ -1404,6 +1423,17 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
 	return wrapIngesterPushError(err, ingester.Id)
+}
+
+// sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
+// This function is used when ingest storage is enabled.
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+	partitionID, err := ingest.IngesterPartition(ingester.Id)
+	if err != nil {
+		return err
+	}
+
+	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, timeseries, metadata, source)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
