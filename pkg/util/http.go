@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -383,47 +382,4 @@ func copyValues(src url.Values) url.Values {
 // IsHTTPStatusCode returns true if the given code is a valid HTTP status code, or false otherwise.
 func IsHTTPStatusCode(code codes.Code) bool {
 	return int(code) >= 100 && int(code) < 600
-}
-
-// RequestBuffers provides pooled request buffers.
-type RequestBuffers struct {
-	p       *sync.Pool
-	buffers []*bytes.Buffer
-	// Allows avoiding heap allocation
-	buffersBacking [10]*bytes.Buffer
-}
-
-// NewRequestBuffers returns a new RequestBuffers given a sync.Pool.
-func NewRequestBuffers(p *sync.Pool) *RequestBuffers {
-	rb := &RequestBuffers{
-		p: p,
-	}
-	rb.buffers = rb.buffersBacking[:0]
-	return rb
-}
-
-// Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
-func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil {
-		if size < 0 {
-			size = 0
-		}
-		return bytes.NewBuffer(make([]byte, 0, size))
-	}
-
-	b := rb.p.Get().(*bytes.Buffer)
-	b.Reset()
-	if size > 0 {
-		b.Grow(size)
-	}
-	rb.buffers = append(rb.buffers, b)
-	return b
-}
-
-// CleanUp releases buffers back to the pool.
-func (rb *RequestBuffers) CleanUp() {
-	for _, b := range rb.buffers {
-		rb.p.Put(b)
-	}
-	rb.buffers = rb.buffers[:0]
 }
