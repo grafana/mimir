@@ -20,22 +20,22 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail if ingest storage is enabled and Kafka address is not configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.KafkaTopic = "test"
+				cfg.KafkaConfig.Topic = "test"
 			},
 			expectedErr: ErrMissingKafkaAddress,
 		},
 		"should fail if ingest storage is enabled and Kafka topic is not configured": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.KafkaAddress = "localhost"
+				cfg.KafkaConfig.Address = "localhost"
 			},
 			expectedErr: ErrMissingKafkaTopic,
 		},
 		"should pass if ingest storage is enabled and required config is set": {
 			setup: func(cfg *Config) {
 				cfg.Enabled = true
-				cfg.KafkaConfig.KafkaAddress = "localhost"
-				cfg.KafkaConfig.KafkaTopic = "test"
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
 			},
 		},
 	}

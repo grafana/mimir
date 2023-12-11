@@ -43,10 +43,10 @@ func (cfg *Config) Validate() error {
 
 // KafkaConfig holds the generic config for the Kafka backend.
 type KafkaConfig struct {
-	KafkaAddress     string        `yaml:"kafka_address"`
-	KafkaTopic       string        `yaml:"kafka_topic"`
-	KafkaClientID    string        `yaml:"kafka_client_id"`
-	KafkaDialTimeout time.Duration `yaml:"kafka_dial_timeout"`
+	Address     string        `yaml:"kafka_address"`
+	Topic       string        `yaml:"kafka_topic"`
+	ClientID    string        `yaml:"kafka_client_id"`
+	DialTimeout time.Duration `yaml:"kafka_dial_timeout"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -54,17 +54,17 @@ func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.KafkaAddress, prefix+".kafka-address", "", "The Kafka backend address.")
-	f.StringVar(&cfg.KafkaTopic, prefix+".kafka-topic", "", "The Kafka topic name.")
-	f.StringVar(&cfg.KafkaClientID, prefix+".kafka-client-id", "", "The Kafka client ID.")
-	f.DurationVar(&cfg.KafkaDialTimeout, prefix+".kafka-dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
+	f.StringVar(&cfg.Address, prefix+".kafka-address", "", "The Kafka backend address.")
+	f.StringVar(&cfg.Topic, prefix+".kafka-topic", "", "The Kafka topic name.")
+	f.StringVar(&cfg.ClientID, prefix+".kafka-client-id", "", "The Kafka client ID.")
+	f.DurationVar(&cfg.DialTimeout, prefix+".kafka-dial-timeout", 2*time.Second, "The maximum time allowed to open a connection to a Kafka broker.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
-	if cfg.KafkaAddress == "" {
+	if cfg.Address == "" {
 		return ErrMissingKafkaAddress
 	}
-	if cfg.KafkaTopic == "" {
+	if cfg.Topic == "" {
 		return ErrMissingKafkaTopic
 	}
 

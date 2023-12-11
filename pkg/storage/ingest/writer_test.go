@@ -171,7 +171,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
 		writerCfg := createTestWriterConfig()
-		writerCfg.kafkaMaxInflightProduceRequests = 1
+		writerCfg.maxInflightProduceRequests = 1
 
 		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, clusterAddr, topicName, writerCfg)
@@ -250,8 +250,8 @@ func TestWriter_WriteSync(t *testing.T) {
 		require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, series1, nil, mimirpb.API))
 		elapsedTime := time.Since(startTime)
 
-		assert.Greater(t, elapsedTime, writerCfg.KafkaWriteTimeout/2)
-		assert.Less(t, elapsedTime, writerCfg.KafkaWriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
+		assert.Greater(t, elapsedTime, writerCfg.WriteTimeout/2)
+		assert.Less(t, elapsedTime, writerCfg.WriteTimeout*3) // High tolerance because the client does a backoff and timeout is evaluated after the backoff.
 	})
 
 	// This test documents how the Kafka client works. It's not what we ideally want, but it's how it works.
@@ -282,7 +282,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 				// Inject a slowdown on the 1st Produce request received by Kafka.
 				// NOTE: the slowdown is 1s longer than the client timeout.
-				time.Sleep(writerCfg.KafkaWriteTimeout + writerRequestTimeoutOverhead + time.Second)
+				time.Sleep(writerCfg.WriteTimeout + writerRequestTimeoutOverhead + time.Second)
 			}
 
 			return nil, nil, false
@@ -295,10 +295,8 @@ func TestWriter_WriteSync(t *testing.T) {
 			elapsedTime := time.Since(startTime)
 
 			// It should take nearly the client's write timeout.
-			expectedElapsedTime := writerCfg.KafkaWriteTimeout + writerRequestTimeoutOverhead
-			tolerance := time.Second
-			assert.Greater(t, elapsedTime, expectedElapsedTime-tolerance)
-			assert.Less(t, elapsedTime, expectedElapsedTime+tolerance)
+			expectedElapsedTime := writerCfg.WriteTimeout + writerRequestTimeoutOverhead
+			assert.InDelta(t, expectedElapsedTime, elapsedTime, float64(time.Second))
 		})
 
 		// The 2nd request is fired while the 1st is still executing, but will fail anyone because the previous
@@ -308,7 +306,7 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			// Wait 500ms less than the client timeout.
 			delay := 500 * time.Millisecond
-			time.Sleep(writerCfg.KafkaWriteTimeout + writerRequestTimeoutOverhead - delay)
+			time.Sleep(writerCfg.WriteTimeout + writerRequestTimeoutOverhead - delay)
 
 			startTime := time.Now()
 			require.Equal(t, kgo.ErrRecordTimeout, writer.WriteSync(ctx, partitionID, tenantID, series2, nil, mimirpb.API))
@@ -367,7 +365,7 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 func createTestWriterConfig() WriterConfig {
 	cfg := WriterConfig{}
 	flagext.DefaultValues(&cfg)
-	cfg.KafkaWriteTimeout = 2 * time.Second
+	cfg.WriteTimeout = 2 * time.Second
 	return cfg
 }
 
@@ -387,8 +385,8 @@ func createTestWriter(t *testing.T, clusterAddr, topicName string, writerCfg Wri
 
 	kafkaCfg := KafkaConfig{}
 	flagext.DefaultValues(&kafkaCfg)
-	kafkaCfg.KafkaAddress = clusterAddr
-	kafkaCfg.KafkaTopic = topicName
+	kafkaCfg.Address = clusterAddr
+	kafkaCfg.Topic = topicName
 
 	writer := NewWriter(kafkaCfg, writerCfg, test.NewTestingLogger(t), reg)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))

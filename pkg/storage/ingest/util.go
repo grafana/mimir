@@ -42,6 +42,6 @@ func IngesterPartition(ingesterID string) (int32, error) {
 		return 0, fmt.Errorf("no ingester sequence in name %s", ingesterID)
 	}
 
-	partitionID := int32(ingesterSeq<<2) | (zoneID & 0x3)
+	partitionID := int32(ingesterSeq<<2) | (zoneID & 0b11)
 	return partitionID, nil
 }

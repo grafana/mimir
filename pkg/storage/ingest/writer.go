@@ -30,10 +30,10 @@ const (
 )
 
 type WriterConfig struct {
-	KafkaWriteTimeout time.Duration `yaml:"kafka_write_timeout"`
+	WriteTimeout time.Duration `yaml:"kafka_write_timeout"`
 
 	// The following settings can only be overridden in tests.
-	kafkaMaxInflightProduceRequests int
+	maxInflightProduceRequests int
 }
 
 func (cfg *WriterConfig) RegisterFlags(f *flag.FlagSet) {
@@ -41,9 +41,9 @@ func (cfg *WriterConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *WriterConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.KafkaWriteTimeout, prefix+".kafka-write-timeout", 10*time.Second, "How long to wait for a incoming write request to be successfully committed to the Kafka backend. The request's data will be written to Kafka even if the incoming write request is cancelled. When a write fails, other buffered requests will fail too.")
+	f.DurationVar(&cfg.WriteTimeout, prefix+".kafka-write-timeout", 10*time.Second, "How long to wait for an incoming write request to be successfully committed to the Kafka backend.")
 
-	cfg.kafkaMaxInflightProduceRequests = 20
+	cfg.maxInflightProduceRequests = 20
 }
 
 // Writer is responsible to write incoming data to the ingest storage.
@@ -168,7 +168,7 @@ func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, record *kg
 	// Wait for a response or until the context has done.
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	case err := <-errCh:
 		return err
 	}
@@ -210,21 +210,19 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
 	return kgo.NewClient(
-		kgo.ClientID(w.kafkaCfg.KafkaClientID),
-		kgo.SeedBrokers(w.kafkaCfg.KafkaAddress),
+		kgo.ClientID(w.kafkaCfg.ClientID),
+		kgo.SeedBrokers(w.kafkaCfg.Address),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.AllowAutoTopicCreation(),
-		kgo.DefaultProduceTopic(w.kafkaCfg.KafkaTopic),
-		kgo.DialTimeout(w.kafkaCfg.KafkaDialTimeout),
+		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
+		kgo.DialTimeout(w.kafkaCfg.DialTimeout),
 		kgo.WithHooks(metrics),
 		kgo.WithLogger(newKafkaLogger(logger)),
 
 		// Use a static partitioner because we want to be in control of the partition.
 		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
 
-		// Set the upper bounds the size of a record batch. We intentionally don't set the producer linger
-		// because we expect the producer to be high volume and in such case the library doc recommend to not
-		// set linger.
+		// Set the upper bounds the size of a record batch.
 		kgo.ProducerBatchMaxBytes(16_000_000),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -239,22 +237,22 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		//
 		// The side effect of frequently refreshing the cluster metadata is that if the backend returns each time a
 		// different authoritative owner for a partition, then each time cluster metadata is updated the Kafka client
-		// will client a new connection for each partition, leading to an high connections churn rate.
+		// will create a new connection for each partition, leading to a high connections churn rate.
 		kgo.MetadataMaxAge(10*time.Second),
 
 		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
-		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. An higher
+		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
 		// number of in-flight requests, in addition to short buffering ("linger") in client side before firing the
 		// next Produce request allows us to reduce the end-to-end latency.
 		//
-		// The result of the multiplication of producer linger and max inflight requests should match the maximum
+		// The result of the multiplication of producer linger and max in-flight requests should match the maximum
 		// Produce latency expected by the Kafka backend in a steady state. For example, 50ms * 20 requests = 1s,
 		// which means the Kafka client will keep issuing a Produce request every 50ms as far as the Kafka backend
 		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
 		// issuing new Produce requests until some previous ones complete).
 		kgo.DisableIdempotentWrite(),
 		kgo.ProducerLinger(50*time.Millisecond),
-		kgo.MaxProduceRequestsInflightPerBroker(w.writerCfg.kafkaMaxInflightProduceRequests),
+		kgo.MaxProduceRequestsInflightPerBroker(w.writerCfg.maxInflightProduceRequests),
 
 		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
 		// With the default config it would retry infinitely.
@@ -262,11 +260,15 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		// Details of the involved timeouts:
 		// - RecordDeliveryTimeout: how long a Kafka client Produce() call can take for a given record. The overhead
 		//   timeout is NOT applied.
-		// - ProduceRequestTimeout: how a long to wait the response for the Produce request (the Kafka protocol message)
+		// - ProduceRequestTimeout: how long to wait for the response to the Produce request (the Kafka protocol message)
 		//   after being sent on the network. The actual timeout is increased by the configured overhead.
+		//
+		// When a Produce request to Kafka fail, the client will retry up until the RecordDeliveryTimeout is reached.
+		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
+		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
 		kgo.RecordRetries(math.MaxInt64),
-		kgo.RecordDeliveryTimeout(w.writerCfg.KafkaWriteTimeout),
-		kgo.ProduceRequestTimeout(w.writerCfg.KafkaWriteTimeout),
+		kgo.RecordDeliveryTimeout(w.writerCfg.WriteTimeout),
+		kgo.ProduceRequestTimeout(w.writerCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
 }

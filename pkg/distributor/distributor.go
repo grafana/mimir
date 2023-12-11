@@ -191,7 +191,7 @@ type Config struct {
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
 
-	// This config is dynamically injected because defined outside of distributor config.
+	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
 
 	// Limits for distributor
