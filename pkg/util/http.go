@@ -405,6 +405,9 @@ func NewRequestBuffers(p *sync.Pool) *RequestBuffers {
 // Get obtains a buffer from the pool. Buffer will be returned back to pool when CleanUp is called.
 func (rb *RequestBuffers) Buffer(size int) *bytes.Buffer {
 	if rb == nil {
+		if size < 0 {
+			size = 0
+		}
 		return bytes.NewBuffer(make([]byte, 0, size))
 	}
 
