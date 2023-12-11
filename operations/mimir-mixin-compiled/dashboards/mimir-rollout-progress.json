@@ -1253,12 +1253,15 @@
             "type": "table"
          },
          {
-            "aliasColors": { },
-            "bars": false,
-            "dashLength": 10,
-            "dashes": false,
             "datasource": "$datasource",
-            "fill": 1,
+            "fieldConfig": {
+               "defaults": {
+                  "custom": {
+                     "fillOpacity": 10
+                  },
+                  "unit": "percentunit"
+               }
+            },
             "gridPos": {
                "h": 8,
                "w": 8,
@@ -1266,28 +1269,16 @@
                "y": 8
             },
             "id": 12,
-            "legend": {
-               "avg": false,
-               "current": false,
-               "max": false,
-               "min": false,
-               "show": true,
-               "total": false,
-               "values": false
-            },
-            "lines": true,
-            "linewidth": 1,
             "links": [ ],
-            "nullPointMode": "null as zero",
-            "percentage": false,
-            "pointradius": 5,
-            "points": false,
-            "renderer": "flot",
-            "seriesOverrides": [ ],
-            "spaceLength": 10,
-            "span": 6,
-            "stack": false,
-            "steppedLine": false,
+            "options": {
+               "legend": {
+                  "showLegend": true
+               },
+               "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+               }
+            },
             "targets": [
                {
                   "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", route=~\"api_(v1|prom)_push|otlp_v1_metrics\"}))[1h:])\n)\n",
@@ -1304,41 +1295,8 @@
                   "legendLink": null
                }
             ],
-            "thresholds": [ ],
-            "timeFrom": null,
-            "timeShift": null,
             "title": "Latency vs 24h ago",
-            "tooltip": {
-               "shared": false,
-               "sort": 0,
-               "value_type": "individual"
-            },
-            "type": "graph",
-            "xaxis": {
-               "buckets": null,
-               "mode": "time",
-               "name": null,
-               "show": true,
-               "values": [ ]
-            },
-            "yaxes": [
-               {
-                  "format": "percentunit",
-                  "label": null,
-                  "logBase": 1,
-                  "max": null,
-                  "min": null,
-                  "show": true
-               },
-               {
-                  "format": "short",
-                  "label": null,
-                  "logBase": 1,
-                  "max": null,
-                  "min": null,
-                  "show": false
-               }
-            ]
+            "type": "timeseries"
          }
       ],
       "refresh": "10s",
