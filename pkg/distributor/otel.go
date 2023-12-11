@@ -94,7 +94,7 @@ func OTLPHandler(
 					// Extra space guarantees no reallocation
 					sz += bytes.MinRead
 				}
-				buf := buffers.Buffer(sz)
+				buf := buffers.Get(sz)
 				if compression == util.Gzip {
 					var err error
 					reader, err = gzip.NewReader(reader)

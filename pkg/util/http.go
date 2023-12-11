@@ -241,7 +241,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		// Extra space guarantees no reallocation
 		sz += bytes.MinRead
 	}
-	buf := buffers.Buffer(sz)
+	buf := buffers.Get(sz)
 	if _, err := buf.ReadFrom(reader); err != nil {
 		if compression == Gzip {
 			return nil, errors.Wrap(err, "decompress gzip")
@@ -272,7 +272,7 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
 
-	decBuf := buffers.Buffer(size)
+	decBuf := buffers.Get(size)
 	// Snappy bases itself on the target buffer's length, not capacity
 	decBufBytes := decBuf.Bytes()[0:size]
 
@@ -403,7 +403,7 @@ func NewRequestBuffers(p *sync.Pool) *RequestBuffers {
 }
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
-func (rb *RequestBuffers) Buffer(size int) *bytes.Buffer {
+func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
 	if rb == nil {
 		if size < 0 {
 			size = 0
