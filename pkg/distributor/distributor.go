@@ -1289,7 +1289,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// Get a subring if tenant has shuffle shard size configured.
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
-	// Use an independant context to make sure all ingesters get samples even if we return early
+	// Use an independent context to make sure all ingesters get samples even if we return early
 	localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
 
 	// All tokens, stored in order: series, metadata.
