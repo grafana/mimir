@@ -7,7 +7,6 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -143,7 +142,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 	// but we don't always want to cancel queries if the scheduler stream reports an error (eg. if the scheduler crashed).
 	ctx, cancel := context.WithCancelCause(execCtx)
 	defer func() {
-		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
+		cancel(cancellation.NewErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
 	}()
 
 	queryComplete := make(chan struct{})
@@ -197,7 +196,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 			// net/http package.
 			ctx, cancel := context.WithCancelCause(ctx)
-			defer cancel(util.NewCancellationError(errors.New("query evaluation finished")))
+			defer cancel(cancellation.NewErrorf("query evaluation finished"))
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
