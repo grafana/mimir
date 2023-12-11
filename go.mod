@@ -12,7 +12,7 @@ require (
 	github.com/failsafe-go/failsafe-go v0.4.1
 	github.com/felixge/fgprof v0.9.3
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.21.7
+	github.com/go-openapi/strfmt v0.21.9
 	github.com/go-openapi/swag v0.22.4
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
@@ -223,7 +223,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
-	go.mongodb.org/mongo-driver v1.12.0 // indirect
+	go.mongodb.org/mongo-driver v1.13.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v1.0.0-rcv0018 // indirect
 	go.opentelemetry.io/collector/semconv v0.89.0 // indirect
