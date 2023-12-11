@@ -93,7 +93,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 
 	// User-4 with no more blocks, but couple of mark and debug files. Should be fully deleted.
 	user4Mark := tsdb.NewTenantDeletionMark(time.Now())
-	user4Mark.FinishedTime = time.Now().Unix() - 60 // Set to check final user cleanup.
+	user4Mark.FinishedTime = util.JSONSecondsTimestamp(time.Now().Add(-60 * time.Second)) // Set to check final user cleanup.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-4", nil, user4Mark))
 	user4DebugMetaFile := path.Join("user-4", block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
