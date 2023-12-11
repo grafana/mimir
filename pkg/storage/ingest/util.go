@@ -2,9 +2,10 @@ package ingest
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/grafana/regexp"
 )
 
 // Regular expression used to parse the ingester numeric ID.
