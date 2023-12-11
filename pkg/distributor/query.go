@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -204,11 +205,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
-	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelFunc) (ingesterQueryResult, error) {
+	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Span.Finish()
-			cancelContext()
+			cancelContext(cancellation.NewErrorf("stream closed"))
 		}
 
 		var stream ingester_client.Ingester_QueryStreamClient
