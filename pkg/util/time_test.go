@@ -174,3 +174,48 @@ func TestNewDisableableTicker_Disabled(t *testing.T) {
 		break
 	}
 }
+
+func TestJSONSecondsTimeMarshal(t *testing.T) {
+	type testCase struct {
+		val  time.Time
+		json string
+	}
+
+	for _, tc := range []testCase{
+		{val: time.Time{}, json: `0`},
+		{val: time.Unix(1702291164, 0), json: `1702291164`},
+	} {
+		t.Run(tc.val.String(), func(t *testing.T) {
+			v, err := JSONSecondsTimestamp(tc.val).MarshalJSON()
+			require.NoError(t, err)
+			require.Equal(t, tc.json, string(v))
+		})
+	}
+}
+
+func TestJSONSecondsTimeUnmarshal(t *testing.T) {
+	type testCase struct {
+		json   string
+		errMsg string
+		val    time.Time
+	}
+
+	for _, tc := range []testCase{
+		{json: `0`, val: time.Time{}},
+		{json: `1702291164`, val: time.Unix(1702291164, 0)},
+		{json: `"1702291164"`, errMsg: `strconv.ParseInt: parsing "\"1702291164\"": invalid syntax`},
+		{json: `-5`, errMsg: "negative timestamp: -5"},
+	} {
+		t.Run(tc.json, func(t *testing.T) {
+			var v JSONSecondsTimestamp
+			err := v.UnmarshalJSON([]byte(tc.json))
+
+			if tc.errMsg == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.val, v.Time())
+			} else {
+				require.ErrorContains(t, err, tc.errMsg)
+			}
+		})
+	}
+}

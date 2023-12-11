@@ -6,6 +6,7 @@
 package util
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"net/http"
@@ -97,4 +98,35 @@ func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
 
 	tick := time.NewTicker(interval)
 	return func() { tick.Stop() }, tick.C
+}
+
+// JSONSecondsTimestamp is time.Time, but stored as Unix seconds integer value when marshalled to JSON.
+// Zero time.Time value is marshalled as 0.
+type JSONSecondsTimestamp time.Time
+
+func (t JSONSecondsTimestamp) MarshalJSON() ([]byte, error) {
+	if t.Time().IsZero() {
+		return []byte("0"), nil
+	}
+	return []byte(strconv.FormatInt(time.Time(t).Unix(), 10)), nil
+}
+
+func (t *JSONSecondsTimestamp) UnmarshalJSON(data []byte) error {
+	i, err := strconv.ParseInt(string(data[:]), 10, 64)
+	if err != nil {
+		return err
+	}
+	switch {
+	case i == 0:
+		*t = JSONSecondsTimestamp(time.Time{})
+	case i < 0:
+		return fmt.Errorf("negative timestamp: %d", i)
+	default:
+		*t = JSONSecondsTimestamp(time.Unix(i, 0))
+	}
+	return nil
+}
+
+func (t JSONSecondsTimestamp) Time() time.Time {
+	return time.Time(t)
 }

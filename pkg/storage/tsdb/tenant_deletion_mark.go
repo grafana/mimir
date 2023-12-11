@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -25,14 +26,14 @@ const TenantDeletionMarkPath = "markers/tenant-deletion-mark.json"
 
 type TenantDeletionMark struct {
 	// Unix timestamp when deletion marker was created.
-	DeletionTime int64 `json:"deletion_time"`
+	DeletionTime util.JSONSecondsTimestamp `json:"deletion_time"`
 
 	// Unix timestamp when cleanup was finished.
-	FinishedTime int64 `json:"finished_time,omitempty"`
+	FinishedTime util.JSONSecondsTimestamp `json:"finished_time,omitempty"`
 }
 
 func NewTenantDeletionMark(deletionTime time.Time) *TenantDeletionMark {
-	return &TenantDeletionMark{DeletionTime: deletionTime.Unix()}
+	return &TenantDeletionMark{DeletionTime: util.JSONSecondsTimestamp(deletionTime)}
 }
 
 // Checks for deletion mark for tenant. Errors other than "object not found" are returned.
