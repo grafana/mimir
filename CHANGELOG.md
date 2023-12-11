@@ -18,6 +18,12 @@
 
 ### Tools
 
+## 2.11.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6884
+
 ## 2.11.0-rc.0
 
 ### Grafana Mimir
