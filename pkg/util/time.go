@@ -112,7 +112,7 @@ func (t JSONSecondsTimestamp) MarshalJSON() ([]byte, error) {
 }
 
 func (t *JSONSecondsTimestamp) UnmarshalJSON(data []byte) error {
-	i, err := strconv.ParseInt(string(data[:]), 10, 64)
+	i, err := strconv.ParseInt(string(data), 10, 64)
 	if err != nil {
 		return err
 	}
