@@ -2,6 +2,10 @@
 
 ## 2.10.5 / unreleased
 
+### Grafana Mimir
+
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6886
+
 ### Documentation
 
 * [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #6757
