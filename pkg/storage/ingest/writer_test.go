@@ -26,6 +26,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+func TestMain(m *testing.M) {
+	test.VerifyNoLeakTestMain(m)
+}
+
 func TestWriter_WriteSync(t *testing.T) {
 	const (
 		topicName     = "test"
@@ -263,7 +267,15 @@ func TestWriter_WriteSync(t *testing.T) {
 			firstRequestReceived = make(chan struct{})
 		)
 
+		wg := sync.WaitGroup{}
+		wg.Add(3)
+
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			// Ensure the test waits for this too, since the client request will fail earlier
+			// (if we don't wait, the test will end before this function and then goleak will
+			// report a goroutine leak).
+			defer wg.Done()
+
 			if firstRequest.CompareAndSwap(true, false) {
 				// The produce request has been received by Kafka, so we can fire the next request.
 				close(firstRequestReceived)
@@ -275,9 +287,6 @@ func TestWriter_WriteSync(t *testing.T) {
 
 			return nil, nil, false
 		})
-
-		wg := sync.WaitGroup{}
-		wg.Add(2)
 
 		// The 1st request is expected to fail because Kafka will take longer than the configured timeout.
 		runAsync(&wg, func() {
@@ -382,6 +391,8 @@ func createTestWriter(t *testing.T, clusterAddr, topicName string, writerCfg Wri
 	kafkaCfg.KafkaTopic = topicName
 
 	writer := NewWriter(kafkaCfg, writerCfg, test.NewTestingLogger(t), reg)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), writer))
+
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), writer))
 	})
