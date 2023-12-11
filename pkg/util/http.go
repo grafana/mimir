@@ -272,11 +272,11 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
 
-	b := buffers.Buffer(size)
+	decBuf := buffers.Buffer(size)
 	// Snappy bases itself on the target buffer's length, not capacity
-	buf := b.Bytes()[0:size]
+	decBufBytes := decBuf.Bytes()[0:size]
 
-	decoded, err := snappy.Decode(buf, buffer.Bytes())
+	decoded, err := snappy.Decode(decBufBytes, buffer.Bytes())
 	if err != nil {
 		return nil, errors.Wrap(err, "decompress snappy")
 	}
@@ -402,7 +402,7 @@ func NewRequestBuffers(p *sync.Pool) *RequestBuffers {
 	return rb
 }
 
-// Get obtains a buffer from the pool. Buffer will be returned back to pool when CleanUp is called.
+// Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
 func (rb *RequestBuffers) Buffer(size int) *bytes.Buffer {
 	if rb == nil {
 		if size < 0 {
