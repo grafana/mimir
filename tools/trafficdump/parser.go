@@ -134,9 +134,9 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 
 	if rp.decodePush && req.Method == "POST" && strings.Contains(req.URL.Path, "/push") {
 		var matched bool
-		bp := bufferPool.Get().(*util.BufferProvider)
-		r.cleanup = bp.CleanUp
-		r.PushRequest, matched = rp.decodePushRequest(req, body, rp.matchers, bp)
+		rb := util.NewRequestBuffers(&bufferPool)
+		r.cleanup = rb.CleanUp
+		r.PushRequest, matched = rp.decodePushRequest(req, body, rp.matchers, rb)
 		if !matched {
 			r.ignored = true
 		}
@@ -156,16 +156,15 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 
 var bufferPool = sync.Pool{
 	New: func() any {
-		bp := util.NewBufferProvider(256 * 1024)
-		return &bp
+		return bytes.NewBuffer(make([]byte, 0, 256*1024))
 	},
 }
 
-func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher, bufferProvider *util.BufferProvider) (*pushRequest, bool) {
+func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher, buffers *util.RequestBuffers) (*pushRequest, bool) {
 	res := &pushRequest{Version: req.Header.Get("X-Prometheus-Remote-Write-Version")}
 
 	var wr mimirpb.WriteRequest
-	if err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, bufferProvider, &wr, util.RawSnappy); err != nil {
+	if err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
 		res.Error = fmt.Errorf("failed to decode decodePush request: %s", err).Error()
 		return nil, true
 	}
