@@ -93,7 +93,7 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	queryReq, err := c.cacheKey(ctx, req.URL.Path, reqValues)
 	if err != nil {
-		if !errors.Is(err, UnsupportedRequestError) {
+		if !errors.Is(err, ErrUnsupportedRequest) {
 			// Logging as info because it's not an actionable error here.
 			// We defer it to the downstream.
 			level.Info(spanLog).Log("msg", "skipped query response caching because failed to parse the request", "err", err)
