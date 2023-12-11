@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -423,18 +422,12 @@ func (p *BufferProvider) DecodingBuffer() *bytes.Buffer {
 	return p.decoding
 }
 
-// ReplaceDecodingBuffer replaces the decoding buffer with a new one backed by buf.
-func (p *BufferProvider) ReplaceDecodingBuffer(buf []byte) {
-	p.decoding = bytes.NewBuffer(buf)
-}
-
-// CleanUp releases p to the pool.
-func (p *BufferProvider) CleanUp(pool *sync.Pool) {
+// CleanUp resets p's buffers.
+func (p *BufferProvider) CleanUp() {
 	if p.body != nil {
 		p.body.Reset()
 	}
 	if p.decoding != nil {
 		p.decoding.Reset()
 	}
-	pool.Put(p)
 }
