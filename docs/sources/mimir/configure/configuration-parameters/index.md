@@ -1424,6 +1424,14 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
+# (experimental) Enqueue query requests with additional queue dimensions to
+# split tenant request queues into subqueues. This enables separate requests to
+# proceed from a tenant's subqueues even when other subqueues are blocked on
+# slow query requests. Must be set on both query-frontend and scheduler to take
+# effect. (default false)
+# CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
+[additional_query_queue_dimensions_enabled: <boolean> | default = false]
+
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -1504,6 +1512,14 @@ The `query_scheduler` block configures the query-scheduler.
 # blast radius when shuffle-sharding is enabled.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
+
+# (experimental) Enqueue query requests with additional queue dimensions to
+# split tenant request queues into subqueues. This enables separate requests to
+# proceed from a tenant's subqueues even when other subqueues are blocked on
+# slow query requests. Must be set on both query-frontend and scheduler to take
+# effect. (default false)
+# CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
+[additional_query_queue_dimensions_enabled: <boolean> | default = false]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.

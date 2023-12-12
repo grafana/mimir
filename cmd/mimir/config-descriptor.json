@@ -4995,6 +4995,17 @@
         },
         {
           "kind": "field",
+          "name": "additional_query_queue_dimensions_enabled",
+          "required": false,
+          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.additional-query-queue-dimensions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
           "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
@@ -14621,6 +14632,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.querier-forget-delay",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "additional_query_queue_dimensions_enabled",
+          "required": false,
+          "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {

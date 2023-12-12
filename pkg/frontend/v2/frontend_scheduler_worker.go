@@ -406,7 +406,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 
 	frontendToSchedulerRequest, err := w.toSchedulerAdapter.frontendToSchedulerEnqueueRequest(req, w.frontendAddr)
 	if err != nil {
-		level.Warn(spanLogger).Log("msg", "received error while converting frontend request to scheduler request", "err", err)
+		level.Warn(spanLogger).Log("msg", "error converting frontend request to scheduler request", "err", err)
 		req.enqueue <- enqueueResult{status: failed}
 		return err
 	}
