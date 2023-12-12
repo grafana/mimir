@@ -245,6 +245,18 @@
 * [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
 
+## 2.10.5
+
+### Grafana Mimir
+
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6886
+* [ENHANCEMENT] Update Docker base images from `alpine:3.18.3` to `alpine:3.18.5`. #6897
+
+### Documentation
+
+* [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #6757
+* [ENHANCEMENT] Document native histograms query and visualization. #6757
+
 ## 2.10.4
 
 ### Grafana Mimir
