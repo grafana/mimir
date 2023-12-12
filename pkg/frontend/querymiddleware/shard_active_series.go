@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
@@ -149,13 +148,12 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 }
 
 func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, next http.RoundTripper) ([]*http.Response, error) {
-	mtx := sync.Mutex{}
-	var resps []*http.Response
+	resps := make([]*http.Response, len(upstreamRequests))
 
 	g, ctx := errgroup.WithContext(ctx)
 	queryStats := stats.FromContext(ctx)
-	for _, req := range upstreamRequests {
-		r := req
+	for i, req := range upstreamRequests {
+		i, r := i, req
 		g.Go(func() error {
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			partialStats.AddShardedQueries(1)
@@ -171,10 +169,7 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 			}
 
 			queryStats.Merge(partialStats)
-
-			mtx.Lock()
-			resps = append(resps, resp)
-			mtx.Unlock()
+			resps[i] = resp
 
 			return nil
 		})
@@ -210,6 +205,9 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response)
 
 	g := new(errgroup.Group)
 	for _, res := range responses {
+		if res == nil {
+			continue
+		}
 		r := res
 		g.Go(func() error {
 			defer func(Body io.ReadCloser) {
