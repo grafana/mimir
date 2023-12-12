@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
@@ -73,7 +74,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 	// Run the gRPC client and process all the queries in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
 	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, fp.log)
-	defer execCancel()
+	defer execCancel(cancellation.NewErrorf("querier frontend processing loop terminated"))
 
 	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
