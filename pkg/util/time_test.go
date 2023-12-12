@@ -6,6 +6,7 @@
 package util
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -175,47 +176,31 @@ func TestNewDisableableTicker_Disabled(t *testing.T) {
 	}
 }
 
-func TestJSONSecondsTimeMarshal(t *testing.T) {
+func TestUnixSecondsJSON(t *testing.T) {
+	now := time.Now()
+
+	type obj struct {
+		Val UnixSeconds `json:"val,omitempty"`
+	}
+
 	type testCase struct {
-		val  time.Time
+		obj  obj
 		json string
 	}
 
 	for _, tc := range []testCase{
-		{val: time.Time{}, json: `0`},
-		{val: time.Unix(1702291164, 0), json: `1702291164`},
-	} {
-		t.Run(tc.val.String(), func(t *testing.T) {
-			v, err := JSONSecondsTimestamp(tc.val).MarshalJSON()
-			require.NoError(t, err)
-			require.Equal(t, tc.json, string(v))
-		})
-	}
-}
-
-func TestJSONSecondsTimeUnmarshal(t *testing.T) {
-	type testCase struct {
-		json   string
-		errMsg string
-		val    time.Time
-	}
-
-	for _, tc := range []testCase{
-		{json: `0`, val: time.Time{}},
-		{json: `1702291164`, val: time.Unix(1702291164, 0)},
-		{json: `"1702291164"`, errMsg: `strconv.ParseInt: parsing "\"1702291164\"": invalid syntax`},
-		{json: `-5`, errMsg: "negative timestamp: -5"},
+		{obj: obj{Val: 0}, json: `{}`},
+		{obj: obj{Val: UnixSecondsFromTime(now)}, json: fmt.Sprintf(`{"val":%d}`, now.Unix())},
 	} {
 		t.Run(tc.json, func(t *testing.T) {
-			var v JSONSecondsTimestamp
-			err := v.UnmarshalJSON([]byte(tc.json))
+			out, err := json.Marshal(tc.obj)
+			require.NoError(t, err)
+			require.Equal(t, tc.json, string(out))
 
-			if tc.errMsg == "" {
-				require.NoError(t, err)
-				require.Equal(t, tc.val, v.Time())
-			} else {
-				require.ErrorContains(t, err, tc.errMsg)
-			}
+			var newObj obj
+			err = json.Unmarshal([]byte(tc.json), &newObj)
+			require.NoError(t, err)
+			assert.Equal(t, tc.obj, newObj)
 		})
 	}
 }

@@ -26,14 +26,14 @@ const TenantDeletionMarkPath = "markers/tenant-deletion-mark.json"
 
 type TenantDeletionMark struct {
 	// Unix timestamp when deletion marker was created.
-	DeletionTime util.JSONSecondsTimestamp `json:"deletion_time"`
+	DeletionTime util.UnixSeconds `json:"deletion_time"`
 
 	// Unix timestamp when cleanup was finished.
-	FinishedTime util.JSONSecondsTimestamp `json:"finished_time,omitempty"`
+	FinishedTime util.UnixSeconds `json:"finished_time,omitempty"`
 }
 
 func NewTenantDeletionMark(deletionTime time.Time) *TenantDeletionMark {
-	return &TenantDeletionMark{DeletionTime: util.JSONSecondsTimestamp(deletionTime)}
+	return &TenantDeletionMark{DeletionTime: util.UnixSecondsFromTime(deletionTime)}
 }
 
 // Checks for deletion mark for tenant. Errors other than "object not found" are returned.
