@@ -44,9 +44,7 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, logger log.Logge
 func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response, error) {
 	const defaultNumShards = 1
 
-	ctx := r.Context()
-
-	spanLog, ctx := spanlogger.NewWithLogger(ctx, s.logger, "shardActiveSeries.RoundTrip")
+	spanLog, ctx := spanlogger.NewWithLogger(r.Context(), s.logger, "shardActiveSeries.RoundTrip")
 	defer spanLog.Finish()
 
 	numShards := setShardCountFromHeader(defaultNumShards, r, spanLog)
@@ -61,9 +59,14 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	parsed, err := parser.ParseExpr(values.Get("selector"))
+	valSelector := values.Get("selector")
+	if valSelector == "" {
+		return nil, apierror.New(apierror.TypeBadData, "selector parameter is required")
+	}
+
+	parsed, err := parser.ParseExpr(valSelector)
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, apierror.New(apierror.TypeBadData, "invalid selector")
 	}
 
 	selector, ok := parsed.(*parser.VectorSelector)
