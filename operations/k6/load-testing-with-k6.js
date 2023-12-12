@@ -99,7 +99,9 @@ const TENANT_ID = __ENV.K6_TENANT_ID || '';
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_ID });
+const write_client_headers = get_write_authentication_headers()
+
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_ID, headers:  write_client_headers });
 
 const query_client_headers = {
     'User-Agent': 'k6-load-test',
@@ -483,10 +485,6 @@ function align_timestamp_to_step(ts, step) {
  * @returns {string}
  */
 function get_remote_write_url() {
-    if (USERNAME !== '' || WRITE_TOKEN !== '') {
-        return `${SCHEME}://${USERNAME}:${WRITE_TOKEN}@${WRITE_HOSTNAME}/api/v1/push`;
-    }
-
     return `${SCHEME}://${WRITE_HOSTNAME}/api/v1/push`;
 }
 
@@ -506,6 +504,25 @@ function get_read_authentication_headers() {
 
     }
     
+    return auth_headers;
+}
+
+/**
+ * Returns the HTTP Authentication header to use on the write path.
+ * @returns {map}
+ */
+function get_write_authentication_headers() {
+    let auth_headers = new Map();
+
+    if (USERNAME !== '' || WRITE_TOKEN !== '') {
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${WRITE_TOKEN}`)}`)
+    }
+
+    if (TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', TENANT_ID)
+
+    }
+
     return auth_headers;
 }
 

@@ -7,7 +7,6 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -143,7 +142,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 	// but we don't always want to cancel queries if the scheduler stream reports an error (eg. if the scheduler crashed).
 	ctx, cancel := context.WithCancelCause(execCtx)
 	defer func() {
-		cancel(util.NewCancellationErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
+		cancel(cancellation.NewErrorf("query-scheduler loop in querier for query-scheduler %v terminated with error: %w", address, err))
 	}()
 
 	queryComplete := make(chan struct{})
@@ -197,7 +196,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 			// net/http package.
 			ctx, cancel := context.WithCancelCause(ctx)
-			defer cancel(util.NewCancellationError(errors.New("query evaluation finished")))
+			defer cancel(cancellation.NewErrorf("query evaluation finished"))
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
@@ -210,6 +209,10 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				defer queueSpan.Finish()
 
 				ctx = spanCtx
+
+				if err := sp.updateTracingHeaders(request.HttpRequest, queueSpan); err != nil {
+					level.Warn(sp.log).Log("msg", "could not update trace headers on httpgrpc request, trace may be malformed", "err", err)
+				}
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
@@ -296,6 +299,30 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
+	// Reset any trace headers on the HTTP request with the new parent span ID: the child span for the HTTP request created
+	// by the HTTP tracing infrastructure uses the trace information in the HTTP request headers, ignoring the trace
+	// information in the Golang context.
+	return span.Tracer().Inject(span.Context(), opentracing.HTTPHeaders, httpGrpcHeaderWriter{request})
+}
+
+type httpGrpcHeaderWriter struct {
+	request *httpgrpc.HTTPRequest
+}
+
+var _ opentracing.TextMapWriter = httpGrpcHeaderWriter{}
+
+func (w httpGrpcHeaderWriter) Set(key, val string) {
+	for _, h := range w.request.Headers {
+		if h.Key == key {
+			h.Values = []string{val}
+			return
+		}
+	}
+
+	w.request.Headers = append(w.request.Headers, &httpgrpc.Header{Key: key, Values: []string{val}})
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {

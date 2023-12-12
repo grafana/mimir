@@ -98,3 +98,14 @@ func NewDisableableTicker(interval time.Duration) (func(), <-chan time.Time) {
 	tick := time.NewTicker(interval)
 	return func() { tick.Stop() }, tick.C
 }
+
+// UnixSeconds is Unix timestamp with seconds precision.
+type UnixSeconds int64
+
+func UnixSecondsFromTime(t time.Time) UnixSeconds {
+	return UnixSeconds(t.Unix())
+}
+
+func (t UnixSeconds) Time() time.Time {
+	return time.Unix(int64(t), 0)
+}

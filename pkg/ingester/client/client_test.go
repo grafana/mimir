@@ -50,10 +50,10 @@ func TestMarshall(t *testing.T) {
 			plentySize   = 1024 * 1024
 		)
 		req := mimirpb.WriteRequest{}
-		_, err := util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), tooSmallSize, nil, &req, util.RawSnappy)
+		err := util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), tooSmallSize, nil, &req, util.RawSnappy)
 		require.Error(t, err)
-		_, err = util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), plentySize, nil, &req, util.RawSnappy)
+		err = util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), plentySize, nil, &req, util.RawSnappy)
 		require.NoError(t, err)
-		require.Equal(t, numSeries, len(req.Timeseries))
+		require.Len(t, req.Timeseries, numSeries)
 	}
 }

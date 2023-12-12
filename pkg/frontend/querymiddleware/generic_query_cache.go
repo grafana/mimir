@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -46,12 +47,12 @@ type genericQueryCache struct {
 	logger    log.Logger
 }
 
-func newGenericQueryCacheRoundTripper(cache cache.Cache, splitter keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
+func newGenericQueryCacheRoundTripper(cache cache.Cache, cacheKey keyingFunc, tenantTTL tenantCacheTTL, next http.RoundTripper, logger log.Logger, metrics *resultsCacheMetrics) http.RoundTripper {
 	return &genericQueryCache{
 		cache:     cache,
 		tenantTTL: tenantTTL,
 		metrics:   metrics,
-		cacheKey:  splitter,
+		cacheKey:  cacheKey,
 		next:      next,
 		logger:    logger,
 	}
@@ -92,9 +93,11 @@ func (c *genericQueryCache) RoundTrip(req *http.Request) (*http.Response, error)
 
 	queryReq, err := c.cacheKey(ctx, req.URL.Path, reqValues)
 	if err != nil {
-		// Logging as info because it's not an actionable error here.
-		// We defer it to the downstream.
-		level.Info(spanLog).Log("msg", "skipped query response caching because failed to parse the request", "err", err)
+		if !errors.Is(err, ErrUnsupportedRequest) {
+			// Logging as info because it's not an actionable error here.
+			// We defer it to the downstream.
+			level.Info(spanLog).Log("msg", "skipped query response caching because failed to parse the request", "err", err)
+		}
 
 		// We skip the caching but let the downstream try to handle it anyway,
 		// since it's not our responsibility to decide how to respond in this case.

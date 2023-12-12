@@ -180,6 +180,9 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 	}
 }
 
+// ErrUnsupportedRequest is intended to be used with CacheKeyGenerator
+var ErrUnsupportedRequest = errors.New("request is not cacheable")
+
 // CacheKeyGenerator generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
 type CacheKeyGenerator interface {
@@ -187,9 +190,15 @@ type CacheKeyGenerator interface {
 	QueryRequest(ctx context.Context, tenantID string, r Request) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
+	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValues should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
 	LabelValues(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 
 	// LabelValuesCardinality should return a cache key for a label values cardinality request. The cache key does not need to contain the tenant ID.
+	// LabelValuesCardinality can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
+	// LabelValuesCardinality should return a nil *GenericQueryCacheKey when it returns an error and
+	// should always return non-nil *GenericQueryCacheKey when the returned error is nil.
 	LabelValuesCardinality(ctx context.Context, path string, values url.Values) (*GenericQueryCacheKey, error)
 }
 

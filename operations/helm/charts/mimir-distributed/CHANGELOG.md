@@ -35,9 +35,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Change the default timeout used for index-queries caches from `200ms` to `450ms`. #6786
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.10.0`. #6022 #6110 #6558 #6681
 * [ENHANCEMENT] Add support for not setting replicas for distributor, querier, and query-frontend. #6373
+* [ENHANCEMENT] Make Memcached connection limit configurable. #6715
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
-* [ENHANCEMENT] Make Memcached connection limit configurable. #6715
+* [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ## 5.1.3
 

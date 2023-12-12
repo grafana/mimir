@@ -211,6 +211,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
@@ -237,6 +240,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
@@ -263,6 +269,9 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="30"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="60"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="120"} 0
@@ -278,6 +287,35 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 0
 				cortex_distributor_sample_delay_seconds_sum 0
 				cortex_distributor_sample_delay_seconds_count 0
+			`,
+		},
+		"A push to ingesters with samples that have timestamps which are in the future relative to wall clock time should be tracked correctly": {
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() + 17*1000},
+			metadata:       1,
+			metricNames:    []string{distributorSampleDelay},
+			expectedMetrics: `
+				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
+				# TYPE cortex_distributor_sample_delay_seconds histogram
+				cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
+				cortex_distributor_sample_delay_seconds_bucket{le="-15"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="-5"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum -34
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A timed out push should fail": {
@@ -5523,10 +5561,10 @@ func TestSendMessageMetadata(t *testing.T) {
 		Source: mimirpb.API,
 	}
 
-	err = d.send(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
 	require.NoError(t, err)
 
-	// Verify that d.send added message size to metadata.
+	// Verify that d.sendToIngester added message size to metadata.
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 

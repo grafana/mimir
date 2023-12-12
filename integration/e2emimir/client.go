@@ -30,6 +30,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -48,6 +49,50 @@ type Client struct {
 	orgID               string
 }
 
+type ClientOption func(*clientConfig)
+
+func WithAddHeader(key, value string) ClientOption {
+	return WithTripperware(func(tripper http.RoundTripper) http.RoundTripper {
+		return querymiddleware.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			req.Header.Add(key, value)
+			return tripper.RoundTrip(req)
+		})
+	})
+}
+
+func WithTripperware(wrap querymiddleware.Tripperware) ClientOption {
+	return func(c *clientConfig) {
+		c.defaultTransport = wrap(c.defaultTransport)
+		c.querierTransport = wrap(c.querierTransport)
+		c.alertmanagerTransport = wrap(c.alertmanagerTransport)
+	}
+}
+
+type clientConfig struct {
+	defaultTransport http.RoundTripper
+
+	querierTransport      http.RoundTripper
+	alertmanagerTransport http.RoundTripper
+}
+
+func defaultConfig() *clientConfig {
+	cfg := &clientConfig{
+		// Use fresh transport for each Client.
+		defaultTransport:      http.DefaultTransport.(*http.Transport).Clone(),
+		querierTransport:      http.DefaultTransport.(*http.Transport).Clone(),
+		alertmanagerTransport: http.DefaultTransport.(*http.Transport).Clone(),
+	}
+	// Disable compression in querier client so it's easier to debug issue looking at the HTTP responses
+	// logged by the querier.
+	cfg.querierTransport.(*http.Transport).DisableCompression = true
+
+	cfg.defaultTransport.(*http.Transport).MaxIdleConns = 0
+	cfg.defaultTransport.(*http.Transport).MaxConnsPerHost = 0
+	cfg.defaultTransport.(*http.Transport).MaxIdleConnsPerHost = 10000 // 0 would mean DefaultMaxIdleConnsPerHost, ie. 2.
+
+	return cfg
+}
+
 // NewClient makes a new Mimir client
 func NewClient(
 	distributorAddress string,
@@ -55,26 +100,21 @@ func NewClient(
 	alertmanagerAddress string,
 	rulerAddress string,
 	orgID string,
+	opts ...ClientOption,
 ) (*Client, error) {
-	// Disable compression in querier client so it's easier to debug issue looking at the HTTP responses
-	// logged by the querier.
-	querierTransport := http.DefaultTransport.(*http.Transport).Clone()
-	querierTransport.DisableCompression = true
+	cfg := defaultConfig()
+	for _, opt := range opts {
+		opt(cfg)
+	}
 
 	// Create querier API client
 	querierAPIClient, err := promapi.NewClient(promapi.Config{
 		Address:      "http://" + querierAddress + "/prometheus",
-		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: querierTransport},
+		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: cfg.querierTransport},
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	// Use fresh transport for each Client.
-	tr := (http.DefaultTransport).(*http.Transport).Clone()
-	tr.MaxIdleConns = 0
-	tr.MaxConnsPerHost = 0
-	tr.MaxIdleConnsPerHost = 10000 // 0 would mean DefaultMaxIdleConnsPerHost, ie. 2.
 
 	c := &Client{
 		distributorAddress:  distributorAddress,
@@ -82,7 +122,7 @@ func NewClient(
 		alertmanagerAddress: alertmanagerAddress,
 		rulerAddress:        rulerAddress,
 		timeout:             5 * time.Second,
-		httpClient:          &http.Client{Transport: tr},
+		httpClient:          &http.Client{Transport: cfg.defaultTransport},
 		querierClient:       promv1.NewAPI(querierAPIClient),
 		orgID:               orgID,
 	}
@@ -90,7 +130,7 @@ func NewClient(
 	if alertmanagerAddress != "" {
 		alertmanagerAPIClient, err := promapi.NewClient(promapi.Config{
 			Address:      "http://" + alertmanagerAddress,
-			RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: http.DefaultTransport},
+			RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: cfg.alertmanagerTransport},
 		})
 		if err != nil {
 			return nil, err
