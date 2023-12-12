@@ -12,6 +12,18 @@
 * [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #6757
 * [ENHANCEMENT] Document native histograms query and visualization. #6757
 
+## 2.10.5
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Update Docker base images from `alpine:3.18.3` to `alpine:3.18.5`. #6897
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6886
+
+### Documentation
+
+* [ENHANCEMENT] Document the concept of native histograms and how to send them to Mimir, migration path. #6757
+* [ENHANCEMENT] Document native histograms query and visualization. #6757
+
 ## 2.10.4
 
 ### Grafana Mimir
