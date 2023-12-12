@@ -52,8 +52,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		errorResponse   error
 
 		// Error expectations
-		checkResponseErr  func(t *testing.T, err error) (continueTest bool)
-		checkUnmarshalErr func(t *testing.T, err error) (continueTest bool)
+		checkResponseErr func(t *testing.T, err error) (continueTest bool)
 
 		// Expected result
 		expect             result
@@ -85,6 +84,15 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 			checkResponseErr: func(t *testing.T, err error) (cont bool) {
 				assert.True(t, apierror.IsNonRetryableAPIError(err))
+				return false
+			},
+		},
+		{
+			name:    "shard count bounded by limits",
+			request: validReq(1024),
+			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "shard count 1024 exceeds allowed maximum (128)")
 				return false
 			},
 		},
@@ -213,7 +221,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			})
 
 			// Run the request through the middleware.
-			s := newShardActiveSeriesMiddleware(upstream, log.NewNopLogger())
+			s := newShardActiveSeriesMiddleware(upstream, mockLimits{maxShardedQueries: 128}, log.NewNopLogger())
 			resp, err := s.RoundTrip(tt.request().WithContext(user.InjectOrgID(tt.request().Context(), "test")))
 			if !tt.checkResponseErr(t, err) {
 				return

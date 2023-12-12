@@ -335,7 +335,7 @@ func newQueryTripperware(
 		}
 
 		if cfg.ShardActiveSeriesQueries {
-			activeSeries = newShardActiveSeriesMiddleware(activeSeries, log)
+			activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

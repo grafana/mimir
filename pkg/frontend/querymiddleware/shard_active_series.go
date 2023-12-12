@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -31,12 +32,14 @@ import (
 
 type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
+	limits   Limits
 	logger   log.Logger
 }
 
-func newShardActiveSeriesMiddleware(upstream http.RoundTripper, logger log.Logger) http.RoundTripper {
+func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
 	return &shardActiveSeriesMiddleware{
 		upstream: upstream,
+		limits:   limits,
 		logger:   logger,
 	}
 }
@@ -47,11 +50,23 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 	spanLog, ctx := spanlogger.NewWithLogger(r.Context(), s.logger, "shardActiveSeries.RoundTrip")
 	defer spanLog.Finish()
 
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
 	numShards := setShardCountFromHeader(defaultNumShards, r, spanLog)
 
 	if numShards < 2 {
 		spanLog.DebugLog("msg", "query sharding disabled for request")
 		return s.upstream.RoundTrip(r)
+	}
+
+	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); numShards > maxShards {
+		return nil, apierror.New(
+			apierror.TypeBadData,
+			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", numShards, maxShards),
+		)
 	}
 
 	values, err := util.ParseRequestFormWithoutConsumingBody(r)
