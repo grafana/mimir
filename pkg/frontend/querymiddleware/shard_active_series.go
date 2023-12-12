@@ -203,10 +203,23 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response)
 
 			it := jsoniter.Parse(jsoniter.ConfigFastest, r.Body, 512)
 
-			field := it.ReadObject()
-			if field != "data" {
-				err := errors.New("expected data field at top level")
-				return err
+			// Iterate over fields until we find data or error fields
+			foundDataField := false
+			for it.Error == nil {
+				field := it.ReadObject()
+				if field == "error" {
+					return fmt.Errorf("error in partial response: %s", it.ReadString())
+				}
+				if field == "data" {
+					foundDataField = true
+					break
+				}
+				// If the field is neither data nor error, we skip it.
+				it.ReadAny()
+			}
+
+			if !foundDataField {
+				return errors.New("expected data field at top level")
 			}
 
 			if it.WhatIsNext() != jsoniter.ArrayValue {
