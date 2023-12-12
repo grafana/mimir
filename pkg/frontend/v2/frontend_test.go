@@ -58,7 +58,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	grpcPort, err := strconv.Atoi(p)
 	require.NoError(t, err)
 
-	cfg := Config{}
+	cfg := Config{AdditionalQueryQueueDimensionsEnabled: true}
 	flagext.DefaultValues(&cfg)
 	cfg.SchedulerAddress = l.Addr().String()
 	cfg.WorkerConcurrency = concurrency

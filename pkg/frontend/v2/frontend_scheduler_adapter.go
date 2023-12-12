@@ -6,6 +6,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/tenant"
 
@@ -16,6 +18,7 @@ import (
 )
 
 type frontendToSchedulerAdapter struct {
+	log    log.Logger
 	cfg    Config
 	limits Limits
 }
@@ -86,6 +89,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
+		level.Warn(a.log).Log("unsupported request type", "query", httpRequest)
 		return nil, nil
 	}
 }

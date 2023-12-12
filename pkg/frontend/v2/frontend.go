@@ -139,6 +139,7 @@ type enqueueResult struct {
 func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{
+		log:    log,
 		cfg:    cfg,
 		limits: limits,
 	}
