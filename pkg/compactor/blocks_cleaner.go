@@ -355,11 +355,11 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	// but that is fine -- they only check whether tenant deletion marker exists or not.
 	if deletedBlocks > 0 || mark.FinishedTime == 0 {
 		level.Info(userLogger).Log("msg", "updating finished time in tenant deletion mark")
-		mark.FinishedTime = time.Now().Unix()
+		mark.FinishedTime = util.UnixSecondsFromTime(time.Now())
 		return errors.Wrap(mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark), "failed to update tenant deletion mark")
 	}
 
-	if time.Since(time.Unix(mark.FinishedTime, 0)) < c.cfg.TenantCleanupDelay {
+	if time.Since(mark.FinishedTime.Time()) < c.cfg.TenantCleanupDelay {
 		return nil
 	}
 
