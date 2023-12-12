@@ -80,8 +80,9 @@ type RequestQueue struct {
 	services.Service
 	log log.Logger
 
-	maxOutstandingPerTenant int
-	forgetDelay             time.Duration
+	maxOutstandingPerTenant          int
+	additionalQueueDimensionsEnabled bool
+	forgetDelay                      time.Duration
 
 	connectedQuerierWorkers *atomic.Int32
 
@@ -122,15 +123,18 @@ type requestToEnqueue struct {
 func NewRequestQueue(
 	log log.Logger,
 	maxOutstandingPerTenant int,
+	additionalQueueDimensionsEnabled bool,
 	forgetDelay time.Duration,
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
 ) *RequestQueue {
 	q := &RequestQueue{
-		log:                     log,
-		maxOutstandingPerTenant: maxOutstandingPerTenant,
-		forgetDelay:             forgetDelay,
+		log:                              log,
+		maxOutstandingPerTenant:          maxOutstandingPerTenant,
+		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
+		forgetDelay:                      forgetDelay,
+
 		connectedQuerierWorkers: atomic.NewInt32(0),
 		queueLength:             queueLength,
 		discardedRequests:       discardedRequests,
@@ -159,7 +163,7 @@ func (q *RequestQueue) starting(_ context.Context) error {
 
 func (q *RequestQueue) dispatcherLoop() {
 	stopping := false
-	queueBroker := newQueueBroker(q.maxOutstandingPerTenant, q.forgetDelay)
+	queueBroker := newQueueBroker(q.maxOutstandingPerTenant, q.additionalQueueDimensionsEnabled, q.forgetDelay)
 	waitingGetNextRequestForQuerierCalls := list.New()
 
 	for {

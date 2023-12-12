@@ -1506,13 +1506,6 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
 
-# (experimental) If a querier disconnects without sending notification about
-# graceful shutdown, the query-scheduler will keep the querier in the tenant's
-# shard until the forget delay has passed. This feature is useful to reduce the
-# blast radius when shuffle-sharding is enabled.
-# CLI flag: -query-scheduler.querier-forget-delay
-[querier_forget_delay: <duration> | default = 0s]
-
 # (experimental) Enqueue query requests with additional queue dimensions to
 # split tenant request queues into subqueues. This enables separate requests to
 # proceed from a tenant's subqueues even when other subqueues are blocked on
@@ -1520,6 +1513,13 @@ The `query_scheduler` block configures the query-scheduler.
 # effect. (default false)
 # CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
 [additional_query_queue_dimensions_enabled: <boolean> | default = false]
+
+# (experimental) If a querier disconnects without sending notification about
+# graceful shutdown, the query-scheduler will keep the querier in the tenant's
+# shard until the forget delay has passed. This feature is useful to reduce the
+# blast radius when shuffle-sharding is enabled.
+# CLI flag: -query-scheduler.querier-forget-delay
+[querier_forget_delay: <duration> | default = 0s]
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.

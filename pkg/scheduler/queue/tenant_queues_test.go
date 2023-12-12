@@ -21,7 +21,7 @@ import (
 )
 
 func TestQueues(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, true, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -81,7 +81,7 @@ func TestQueues(t *testing.T) {
 
 func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 	maxTenantQueueSize := 100
-	qb := newQueueBroker(maxTenantQueueSize, 0)
+	qb := newQueueBroker(maxTenantQueueSize, true, 0)
 	additionalQueueDimensions := map[int][]string{
 		0: nil,
 		1: {"ingester"},
@@ -142,7 +142,7 @@ func TestQueuesRespectMaxTenantQueueSizeWithSubQueues(t *testing.T) {
 }
 
 func TestQueuesOnTerminatingQuerier(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, true, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -172,7 +172,7 @@ func TestQueuesOnTerminatingQuerier(t *testing.T) {
 }
 
 func TestQueuesWithQueriers(t *testing.T) {
-	qb := newQueueBroker(0, 0)
+	qb := newQueueBroker(0, true, 0)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -251,7 +251,7 @@ func TestQueuesConsistency(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			qb := newQueueBroker(0, testData.forgetDelay)
+			qb := newQueueBroker(0, true, testData.forgetDelay)
 			assert.NotNil(t, qb)
 			assert.NoError(t, isConsistent(qb))
 
@@ -302,7 +302,7 @@ func TestQueues_ForgetDelay(t *testing.T) {
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, forgetDelay)
+	qb := newQueueBroker(0, true, forgetDelay)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 
@@ -394,7 +394,7 @@ func TestQueues_ForgetDelay_ShouldCorrectlyHandleQuerierReconnectingBeforeForget
 	)
 
 	now := time.Now()
-	qb := newQueueBroker(0, forgetDelay)
+	qb := newQueueBroker(0, true, forgetDelay)
 	assert.NotNil(t, qb)
 	assert.NoError(t, isConsistent(qb))
 

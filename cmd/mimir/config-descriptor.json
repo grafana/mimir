@@ -14625,17 +14625,6 @@
         },
         {
           "kind": "field",
-          "name": "querier_forget_delay",
-          "required": false,
-          "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-scheduler.querier-forget-delay",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "additional_query_queue_dimensions_enabled",
           "required": false,
           "desc": "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)",
@@ -14643,6 +14632,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-scheduler.additional-query-queue-dimensions-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "querier_forget_delay",
+          "required": false,
+          "desc": "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-scheduler.querier-forget-delay",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {

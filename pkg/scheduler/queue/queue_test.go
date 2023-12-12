@@ -60,7 +60,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
 							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
-							queue := NewRequestQueue(log.NewNopLogger(), 100, 0, queueLength, discardedRequests, enqueueDuration)
+							queue := NewRequestQueue(log.NewNopLogger(), 100, true, 0, queueLength, discardedRequests, enqueueDuration)
 
 							start := make(chan struct{})
 							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
@@ -186,10 +186,14 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1, true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -235,10 +239,15 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
@@ -269,10 +278,15 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -291,14 +305,19 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
 	// passing a nextRequestForQuerierCall for a canceled querier connection
-	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
+	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
 	tenantMaxQueriers := 0 // no sharding

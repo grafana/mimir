@@ -104,10 +104,11 @@ type queueBroker struct {
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
-	maxTenantQueueSize int
+	maxTenantQueueSize               int
+	additionalQueueDimensionsEnabled bool
 }
 
-func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
+func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
 		tenantQueuesTree: NewTreeQueue("root"),
 		tenantQuerierAssignments: tenantQuerierAssignments{
@@ -118,7 +119,8 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 			tenantsByID:        map[TenantID]*queueTenant{},
 			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		},
-		maxTenantQueueSize: maxTenantQueueSize,
+		maxTenantQueueSize:               maxTenantQueueSize,
+		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 	}
 }
 
@@ -135,7 +137,7 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	queuePath, err := makeQueuePath(request)
+	queuePath, err := qb.makeQueuePath(request)
 	if err != nil {
 		return err
 	}
@@ -160,19 +162,21 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 		return err
 	}
 
-	queuePath, err := makeQueuePath(request)
+	queuePath, err := qb.makeQueuePath(request)
 	if err != nil {
 		return err
 	}
 	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
 }
 
-func makeQueuePath(request *tenantRequest) (QueuePath, error) {
-	if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
-		return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
+func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
+	if qb.additionalQueueDimensionsEnabled {
+		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
+		}
 	}
-	// else request.req is a frontend/v1.request,
-	// or a SchedulerRequest with no AdditionalQueueDimensions
+
+	// else request.req is a frontend/v1.request, or additional queue dimensions are disabled
 	return QueuePath{string(request.tenantID)}, nil
 }
 
