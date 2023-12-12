@@ -122,11 +122,11 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 	}
 	parsed, err := parser.ParseExpr(valSelector)
 	if err != nil {
-		return nil, errors.New("invalid selector")
+		return nil, fmt.Errorf("invalid selector: %w", err)
 	}
 	selector, ok := parsed.(*parser.VectorSelector)
 	if !ok {
-		return nil, errors.New("invalid selector")
+		return nil, fmt.Errorf("invalid selector: %w", err)
 	}
 
 	return selector, nil

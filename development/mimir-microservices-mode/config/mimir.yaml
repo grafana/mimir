@@ -139,6 +139,7 @@ frontend:
   align_queries_with_step: true
   cache_results: true
   additional_query_queue_dimensions_enabled: true
+  shard_active_series_queries: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
