@@ -96,6 +96,12 @@ const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
 */
 const TENANT_ID = __ENV.K6_TENANT_ID || '';
 
+/**
+ * Project ID to send k6 cloud tests to.
+ * @type {*|string}
+ */
+const PROJECT_ID = __ENV.K6_PROJECT_ID || '';
+
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
@@ -129,6 +135,12 @@ const query_request_rates = {
  * @constant {object}
  */
 export const options = {
+    ext: {
+        loadimpact: {
+            projectID: PROJECT_ID || '',
+        }
+    },
+
     thresholds: {
         // SLA: 99.9% of writes succeed.
         'checks{type:write}': ['rate > 0.999'],
