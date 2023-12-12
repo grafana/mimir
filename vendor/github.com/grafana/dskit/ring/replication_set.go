@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go/ext"
 
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/spanlogger"
 )
 
@@ -213,7 +214,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuor
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	wrappedF := func(ctx context.Context, desc *InstanceDesc, _ context.CancelFunc) (T, error) {
+	wrappedF := func(ctx context.Context, desc *InstanceDesc, _ context.CancelCauseFunc) (T, error) {
 		return f(ctx, desc)
 	}
 
@@ -232,7 +233,7 @@ func DoUntilQuorum[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuor
 //     DoUntilQuorumWithoutSuccessfulContextCancellation
 //
 // Failing to do this may result in a memory leak.
-func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
+func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Context, r ReplicationSet, cfg DoUntilQuorumConfig, f func(context.Context, *InstanceDesc, context.CancelCauseFunc) (T, error), cleanupFunc func(T)) ([]T, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -309,12 +310,12 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 		}
 	}
 
-	terminate := func(err error) ([]T, error) {
-		if cfg.Logger != nil {
+	terminate := func(err error, cause string) ([]T, error) {
+		if cfg.Logger != nil && !errors.Is(err, context.Canceled) { // Cancellation is not an error.
 			ext.Error.Set(cfg.Logger.Span, true)
 		}
 
-		contextTracker.cancelAllContexts()
+		contextTracker.cancelAllContexts(cancellation.NewErrorf(cause))
 		cleanupResultsAlreadyReceived()
 		return nil, err
 	}
@@ -330,12 +331,13 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 	for !resultTracker.succeeded() {
 		select {
 		case <-ctx.Done():
-			level.Debug(logger).Log("msg", "parent context done, returning", "err", ctx.Err())
+			err := context.Cause(ctx)
+			level.Debug(logger).Log("msg", "parent context done, returning", "err", err)
 
 			// No need to cancel individual instance contexts, as they inherit the cancellation from ctx.
 			cleanupResultsAlreadyReceived()
 
-			return nil, ctx.Err()
+			return nil, err
 		case <-hedgingTrigger:
 			resultTracker.startAdditionalRequests()
 		case result := <-resultsChan:
@@ -344,7 +346,7 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 			if result.err != nil && cfg.IsTerminalError != nil && cfg.IsTerminalError(result.err) {
 				level.Warn(logger).Log("msg", "cancelling all outstanding requests because a terminal error occurred", "err", result.err)
 				// We must return before calling resultTracker.done() below, otherwise done() might start further requests if request minimisation is enabled.
-				return terminate(result.err)
+				return terminate(result.err, "a terminal error occurred")
 			}
 
 			resultTracker.done(result.instance, result.err)
@@ -352,11 +354,11 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 			if result.err == nil {
 				resultsMap[result.instance] = result.result
 			} else {
-				contextTracker.cancelContextFor(result.instance)
+				contextTracker.cancelContextFor(result.instance, cancellation.NewErrorf("this instance returned an error: %w", result.err))
 
 				if resultTracker.failed() {
-					level.Error(logger).Log("msg", "cancelling all requests because quorum cannot be reached")
-					return terminate(result.err)
+					level.Error(logger).Log("msg", "cancelling all outstanding requests because quorum cannot be reached")
+					return terminate(result.err, "quorum cannot be reached")
 				}
 			}
 		}
@@ -374,12 +376,12 @@ func DoUntilQuorumWithoutSuccessfulContextCancellation[T any](ctx context.Contex
 			if resultTracker.shouldIncludeResultFrom(instance) {
 				results = append(results, result)
 			} else {
-				contextTracker.cancelContextFor(instance)
+				contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
 				cleanupFunc(result)
 			}
 		} else {
 			// Nothing to clean up (yet) - this will be handled by deferred call above.
-			contextTracker.cancelContextFor(instance)
+			contextTracker.cancelContextFor(instance, cancellation.NewErrorf("quorum reached, result not required from this instance"))
 		}
 	}
 
