@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 * [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6886
+* [ENHANCEMENT] Update Docker base images from `alpine:3.18.3` to `alpine:3.18.5`. #6897
 
 ### Documentation
 
