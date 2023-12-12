@@ -196,7 +196,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 				}
 
 				if len(tt.invalidResponse) > 0 {
-					return &http.Response{Body: io.NopCloser(bytes.NewReader(tt.invalidResponse))}, nil
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(tt.invalidResponse))}, nil
 				}
 
 				require.NoError(t, r.ParseForm())
@@ -217,7 +217,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 				resp, err := json.Marshal(result{Data: tt.validResponses[shard.ShardIndex]})
 				require.NoError(t, err)
 
-				return &http.Response{Body: io.NopCloser(bytes.NewReader(resp))}, nil
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(resp))}, nil
 			})
 
 			// Run the request through the middleware.

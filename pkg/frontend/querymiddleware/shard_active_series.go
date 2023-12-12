@@ -86,7 +86,7 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 	resp, err := doShardedRequests(ctx, reqs, s.upstream)
 	if err != nil {
 		if errors.Is(err, distributor.ErrResponseTooLarge) {
-			return nil, apierror.New(apierror.TypeBadData, err.Error())
+			return nil, apierror.New(apierror.TypeBadData, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
@@ -174,6 +174,15 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 				return err
 			}
 
+			if resp.StatusCode != http.StatusOK {
+				span.LogFields(otlog.Int("statusCode", resp.StatusCode))
+				body, _ := io.ReadAll(resp.Body)
+				if strings.Contains(string(body), distributor.ErrResponseTooLarge.Error()) {
+					return distributor.ErrResponseTooLarge
+				}
+				return fmt.Errorf("received unexpected response from upstream: status %d, body: %s", resp.StatusCode, string(body))
+			}
+
 			queryStats.Merge(partialStats)
 			resps[i] = resp
 
@@ -181,7 +190,18 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 		})
 	}
 
-	return resps, g.Wait()
+	err := g.Wait()
+	if err != nil {
+		// If there was an error, we need to read and close all response bodies.
+		for _, resp := range resps {
+			if resp != nil {
+				_, _ = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+			}
+		}
+	}
+
+	return resps, err
 }
 
 func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Expr, error) {
