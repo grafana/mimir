@@ -210,6 +210,10 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 				defer queueSpan.Finish()
 
 				ctx = spanCtx
+
+				if err := sp.updateTracingHeaders(request.HttpRequest, queueSpan); err != nil {
+					level.Warn(sp.log).Log("msg", "could not update trace headers on httpgrpc request, trace may be malformed", "err", err)
+				}
 			}
 			logger := util_log.WithContext(ctx, sp.log)
 
@@ -296,6 +300,30 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
+	// Reset any trace headers on the HTTP request with the new parent span ID: the child span for the HTTP request created
+	// by the HTTP tracing infrastructure uses the trace information in the HTTP request headers, ignoring the trace
+	// information in the Golang context.
+	return span.Tracer().Inject(span.Context(), opentracing.HTTPHeaders, httpGrpcHeaderWriter{request})
+}
+
+type httpGrpcHeaderWriter struct {
+	request *httpgrpc.HTTPRequest
+}
+
+var _ opentracing.TextMapWriter = httpGrpcHeaderWriter{}
+
+func (w httpGrpcHeaderWriter) Set(key, val string) {
+	for _, h := range w.request.Headers {
+		if h.Key == key {
+			h.Values = []string{val}
+			return
+		}
+	}
+
+	w.request.Headers = append(w.request.Headers, &httpgrpc.Header{Key: key, Values: []string{val}})
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
