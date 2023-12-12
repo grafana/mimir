@@ -216,12 +216,18 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		// MetadataMinAge() sets the minimum time between two cluster metadata updates due to events.
 		// MetadataMaxAge() sets how frequently the periodic update should occur.
 		//
-		// We configure the client to frequently refresh the cluster metadata. This allows us to quickly react in case
-		// some brokers are unhealthy.
+		// It's important to note that the periodic update is also used to discover new brokers (e.g. during a
+		// rolling update or after a scale up). For this reason, it's important to run the update frequently.
 		//
-		// The side effect of frequently refreshing the cluster metadata is that if the backend returns each time a
-		// different authoritative owner for a partition, then each time cluster metadata is updated the Kafka client
-		// will create a new connection for each partition, leading to a high connections churn rate.
+		// The other two side effects of frequently updating the cluster metadata:
+		// 1. The "metadata" request may be expensive to run on the Kafka backend.
+		// 2. If the backend returns each time a different authoritative owner for a partition, then each time
+		//    the cluster metadata is updated the Kafka client will create a new connection for each partition,
+		//    leading to a high connections churn rate.
+		//
+		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
+		// there are errors or not, the metadata requests frequency doesn't change.
+		kgo.MetadataMinAge(10*time.Second),
 		kgo.MetadataMaxAge(10*time.Second),
 
 		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
