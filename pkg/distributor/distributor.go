@@ -777,6 +777,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	}
 }
 
+var tombstoneSymbolTable labels.SymbolTable // Not properly constructed, we only use a pointer to it.
+
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		cleanupInDefer := true
@@ -802,7 +804,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		var removeTsIndexes []int
-		lb := labels.NewBuilder(labels.EmptyLabels())
+		lb := labels.NewBuilderWithSymbolTable(&tombstoneSymbolTable) // Suppress allocating a symbol-table we don't need.
 		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
 			ts := req.Timeseries[tsIdx]
 
