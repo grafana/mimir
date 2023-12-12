@@ -105,7 +105,7 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 		res, err := d.ActiveSeries(ctx, req.Matchers)
 		if err != nil {
 			if errors.Is(err, distributor.ErrResponseTooLarge) {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, "response shard exceeds size limit, retry with an increased shard count", http.StatusBadRequest)
 				return
 			}
 			respondFromError(err, w)
