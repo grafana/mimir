@@ -438,17 +438,28 @@
 * [BUGFIX] Stop tools from panicking when `-help` flag is passed. #5412
 * [BUGFIX] Remove github.com/golang/glog command line flags from tools. #5413
 
+## 2.9.4
+
+### Grafana Mimir
+
+* [ENHANCEMENT] Update Docker base images from `alpine:3.18.3` to `alpine:3.18.5`. #6895
+
 ## 2.9.3
+
+### Grafana Mimir
 
 * [BUGFIX] Update `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` to `0.44` which includes a fix for CVE-2023-45142. #6637
 
 ## 2.9.2
+
+### Grafana Mimir
 
 * [BUGFIX] Update grpc-go library to 1.56.3 and `golang.org/x/net` to `0.17`, which include fix for CVE-2023-44487. #6353 #6364
 
 ## 2.9.1
 
 ### Grafana Mimir
+
 * [ENHANCEMENT] Update alpine base image to 3.18.3. #6021
 
 ## 2.9.0
