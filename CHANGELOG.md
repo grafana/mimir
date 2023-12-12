@@ -1,10 +1,16 @@
 # Changelog
 
-## 2.9.3
+## 2.9.4
 
 ### Grafana Mimir
 
 * [ENHANCEMENT] Update Docker base images from `alpine:3.18.3` to `alpine:3.18.5`. #6895
+
+## 2.9.3
+
+### Grafana Mimir
+
+* [BUGFIX] Update `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` to `0.44` which includes a fix for CVE-2023-45142. #6637
 
 ## 2.9.2
 
