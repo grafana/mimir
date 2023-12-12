@@ -23,10 +23,15 @@ type frontendToSchedulerAdapter struct {
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 	req *frontendRequest, frontendAddr string,
 ) (*schedulerpb.FrontendToScheduler, error) {
-	addlQueueDims, err := a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
-	if err != nil {
-		return nil, err
+	var addlQueueDims []string
+	var err error
+	if a.cfg.AdditionalQueryQueueDimensionsEnabled {
+		addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
+		if err != nil {
+			return nil, err
+		}
 	}
+
 	return &schedulerpb.FrontendToScheduler{
 		Type:                      schedulerpb.ENQUEUE,
 		QueryID:                   req.queryID,
