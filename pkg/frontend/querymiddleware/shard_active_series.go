@@ -235,12 +235,17 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response)
 		})
 	}
 
-	go s.writeMergedResponse(g, writer, items)
+	go func() {
+		// We ignore the error from the errgroup because it will be checked again later.
+		_ = g.Wait()
+		close(items)
+	}()
+	go s.writeMergedResponse(g.Wait, writer, items)
 
 	return &http.Response{Body: reader, StatusCode: http.StatusOK}
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(g *errgroup.Group, w io.WriteCloser, series chan any) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(check func() error, w io.WriteCloser, items chan any) {
 	defer func(w io.Closer) {
 		_ = w.Close()
 	}(w)
@@ -252,40 +257,25 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(g *errgroup.Group, w i
 
 	stream.WriteObjectStart()
 	stream.WriteObjectField("data")
-
 	stream.WriteArrayStart()
-
-	doneWriting := make(chan struct{})
-	go func() {
-		firstItem := true
-		for {
-			item, ok := <-series
-			if !ok {
-				doneWriting <- struct{}{}
-				return
-			}
-			if firstItem {
-				firstItem = false
-			} else {
-				stream.WriteMore()
-			}
-			stream.WriteVal(item)
+	firstItem := true
+	for item := range items {
+		if firstItem {
+			firstItem = false
+		} else {
+			stream.WriteMore()
 		}
-	}()
-
-	err := g.Wait()
-	close(series)
-	<-doneWriting
-
+		stream.WriteVal(item)
+	}
 	stream.WriteArrayEnd()
 
-	if err != nil {
+	if err := check(); err != nil {
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")
 		stream.WriteMore()
 		stream.WriteObjectField("error")
-		stream.WriteString(err.Error())
+		stream.WriteString(fmt.Sprintf("error merging partial responses: %s", err.Error()))
 	}
 
 	stream.WriteObjectEnd()
