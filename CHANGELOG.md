@@ -15,6 +15,7 @@
 * [BUGFIX] Fix panic during tsdb Commit #6766
 * [BUGFIX] tsdb/head: wlog exemplars after samples #6766
 * [BUGFIX] Ruler: fix issue where "failed to remotely evaluate query expression, will retry" messages are logged without context such as the trace ID and do not appear in trace events. #6789
+* [BUGFIX] Querier: fix issue where spans in query request traces were not nested correctly. #6893
 
 ### Mixin
 
