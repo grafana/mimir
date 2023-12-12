@@ -28,7 +28,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.25.1-0.20230502165937-0f3ab929fa37
+	github.com/prometheus/alertmanager v0.25.1
 	github.com/prometheus/client_golang v1.15.1
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.42.0
@@ -172,7 +172,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.2 // indirect
 	github.com/hashicorp/memberlist v0.5.0 // indirect
 	github.com/hashicorp/serf v0.10.1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect

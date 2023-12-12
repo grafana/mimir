@@ -1,12 +1,9 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package lru
 
 import (
 	"sync"
 
-	"github.com/hashicorp/golang-lru/v2/simplelru"
+	"github.com/hashicorp/golang-lru/simplelru"
 )
 
 // ARCCache is a thread-safe fixed size Adaptive Replacement Cache (ARC).
@@ -17,41 +14,41 @@ import (
 // it is roughly 2x the cost, and the extra memory overhead is linear
 // with the size of the cache. ARC has been patented by IBM, but is
 // similar to the TwoQueueCache (2Q) which requires setting parameters.
-type ARCCache[K comparable, V any] struct {
+type ARCCache struct {
 	size int // Size is the total capacity of the cache
 	p    int // P is the dynamic preference towards T1 or T2
 
-	t1 simplelru.LRUCache[K, V]        // T1 is the LRU for recently accessed items
-	b1 simplelru.LRUCache[K, struct{}] // B1 is the LRU for evictions from t1
+	t1 simplelru.LRUCache // T1 is the LRU for recently accessed items
+	b1 simplelru.LRUCache // B1 is the LRU for evictions from t1
 
-	t2 simplelru.LRUCache[K, V]        // T2 is the LRU for frequently accessed items
-	b2 simplelru.LRUCache[K, struct{}] // B2 is the LRU for evictions from t2
+	t2 simplelru.LRUCache // T2 is the LRU for frequently accessed items
+	b2 simplelru.LRUCache // B2 is the LRU for evictions from t2
 
 	lock sync.RWMutex
 }
 
 // NewARC creates an ARC of the given size
-func NewARC[K comparable, V any](size int) (*ARCCache[K, V], error) {
+func NewARC(size int) (*ARCCache, error) {
 	// Create the sub LRUs
-	b1, err := simplelru.NewLRU[K, struct{}](size, nil)
+	b1, err := simplelru.NewLRU(size, nil)
 	if err != nil {
 		return nil, err
 	}
-	b2, err := simplelru.NewLRU[K, struct{}](size, nil)
+	b2, err := simplelru.NewLRU(size, nil)
 	if err != nil {
 		return nil, err
 	}
-	t1, err := simplelru.NewLRU[K, V](size, nil)
+	t1, err := simplelru.NewLRU(size, nil)
 	if err != nil {
 		return nil, err
 	}
-	t2, err := simplelru.NewLRU[K, V](size, nil)
+	t2, err := simplelru.NewLRU(size, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize the ARC
-	c := &ARCCache[K, V]{
+	c := &ARCCache{
 		size: size,
 		p:    0,
 		t1:   t1,
@@ -63,7 +60,7 @@ func NewARC[K comparable, V any](size int) (*ARCCache[K, V], error) {
 }
 
 // Get looks up a key's value from the cache.
-func (c *ARCCache[K, V]) Get(key K) (value V, ok bool) {
+func (c *ARCCache) Get(key interface{}) (value interface{}, ok bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -81,11 +78,11 @@ func (c *ARCCache[K, V]) Get(key K) (value V, ok bool) {
 	}
 
 	// No hit
-	return
+	return nil, false
 }
 
 // Add adds a value to the cache.
-func (c *ARCCache[K, V]) Add(key K, value V) {
+func (c *ARCCache) Add(key, value interface{}) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -180,30 +177,30 @@ func (c *ARCCache[K, V]) Add(key K, value V) {
 
 // replace is used to adaptively evict from either T1 or T2
 // based on the current learned value of P
-func (c *ARCCache[K, V]) replace(b2ContainsKey bool) {
+func (c *ARCCache) replace(b2ContainsKey bool) {
 	t1Len := c.t1.Len()
 	if t1Len > 0 && (t1Len > c.p || (t1Len == c.p && b2ContainsKey)) {
 		k, _, ok := c.t1.RemoveOldest()
 		if ok {
-			c.b1.Add(k, struct{}{})
+			c.b1.Add(k, nil)
 		}
 	} else {
 		k, _, ok := c.t2.RemoveOldest()
 		if ok {
-			c.b2.Add(k, struct{}{})
+			c.b2.Add(k, nil)
 		}
 	}
 }
 
 // Len returns the number of cached entries
-func (c *ARCCache[K, V]) Len() int {
+func (c *ARCCache) Len() int {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.t1.Len() + c.t2.Len()
 }
 
 // Keys returns all the cached keys
-func (c *ARCCache[K, V]) Keys() []K {
+func (c *ARCCache) Keys() []interface{} {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	k1 := c.t1.Keys()
@@ -212,7 +209,7 @@ func (c *ARCCache[K, V]) Keys() []K {
 }
 
 // Remove is used to purge a key from the cache
-func (c *ARCCache[K, V]) Remove(key K) {
+func (c *ARCCache) Remove(key interface{}) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if c.t1.Remove(key) {
@@ -230,7 +227,7 @@ func (c *ARCCache[K, V]) Remove(key K) {
 }
 
 // Purge is used to clear the cache
-func (c *ARCCache[K, V]) Purge() {
+func (c *ARCCache) Purge() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.t1.Purge()
@@ -241,7 +238,7 @@ func (c *ARCCache[K, V]) Purge() {
 
 // Contains is used to check if the cache contains a key
 // without updating recency or frequency.
-func (c *ARCCache[K, V]) Contains(key K) bool {
+func (c *ARCCache) Contains(key interface{}) bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.t1.Contains(key) || c.t2.Contains(key)
@@ -249,7 +246,7 @@ func (c *ARCCache[K, V]) Contains(key K) bool {
 
 // Peek is used to inspect the cache value of a key
 // without updating recency or frequency.
-func (c *ARCCache[K, V]) Peek(key K) (value V, ok bool) {
+func (c *ARCCache) Peek(key interface{}) (value interface{}, ok bool) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	if val, ok := c.t1.Peek(key); ok {
