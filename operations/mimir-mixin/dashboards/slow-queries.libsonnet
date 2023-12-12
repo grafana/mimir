@@ -35,26 +35,10 @@ local filename = 'mimir-slow-queries.json';
               },
             },
             {
-              // Compute the query time range.
-              id: 'calculateField',
-              options: {
-                alias: 'Time range',
-                mode: 'binary',
-                binary: {
-                  left: 'param_end',
-                  operator: '-',
-                  reducer: 'sum',
-                  right: 'param_start',
-                },
-                reduce: { reducer: 'sum' },
-                replaceFields: false,
-              },
-            },
-            {
               id: 'organize',
               options: {
                 // Hide fields we don't care.
-                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'param_end', 'param_start', 'param_time', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time'],
+                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time'],
 
                 excludeByName: {
                   [field]: true
@@ -62,7 +46,7 @@ local filename = 'mimir-slow-queries.json';
                 },
 
                 // Order fields.
-                local orderedFields = ['ts', 'user', 'param_query', 'Time range', 'param_step', 'response_time'],
+                local orderedFields = ['ts', 'user', 'length', 'param_start', 'param_end', 'parm_time', 'param_step', 'param_query', 'Time range', 'param_step', 'response_time'],
 
                 indexByName: {
                   [orderedFields[i]]: i
