@@ -68,24 +68,9 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		)
 	}
 
-	values, err := util.ParseRequestFormWithoutConsumingBody(r)
+	selector, err := parseSelector(r)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
-	valSelector := values.Get("selector")
-	if valSelector == "" {
-		return nil, apierror.New(apierror.TypeBadData, "selector parameter is required")
-	}
-
-	parsed, err := parser.ParseExpr(valSelector)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, "invalid selector")
-	}
-
-	selector, ok := parsed.(*parser.VectorSelector)
-	if !ok {
-		return nil, apierror.New(apierror.TypeBadData, "invalid selector")
 	}
 
 	spanLog.DebugLog(
@@ -124,6 +109,27 @@ func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanl
 		}
 	}
 	return origShardCount
+}
+
+func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
+	values, err := util.ParseRequestFormWithoutConsumingBody(req)
+	if err != nil {
+		return nil, err
+	}
+	valSelector := values.Get("selector")
+	if valSelector == "" {
+		return nil, errors.New("selector parameter is required")
+	}
+	parsed, err := parser.ParseExpr(valSelector)
+	if err != nil {
+		return nil, errors.New("invalid selector")
+	}
+	selector, ok := parsed.(*parser.VectorSelector)
+	if !ok {
+		return nil, errors.New("invalid selector")
+	}
+
+	return selector, nil
 }
 
 func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
