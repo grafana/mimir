@@ -445,6 +445,16 @@ func TestUnMarkForNoCompact(t *testing.T) {
 				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
 			},
 		},
+		"unmark block with no no-compact marker should fail": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				// upload blocks
+				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				require.NoError(t, err)
+			},
+			expectedError: func(id ulid.ULID) error {
+				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
+			},
+		},
 	} {
 		t.Run(tname, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()

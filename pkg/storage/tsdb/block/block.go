@@ -348,9 +348,8 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	}
 
 	noCompactMark, err := json.Marshal(NoCompactMark{
-		ID:      id,
-		Version: NoCompactMarkVersion1,
-
+		ID:            id,
+		Version:       NoCompactMarkVersion1,
 		NoCompactTime: time.Now().Unix(),
 		Reason:        reason,
 		Details:       details,
@@ -362,7 +361,9 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
-	markedForNoCompact.Inc()
+	if markedForNoCompact != nil {
+		markedForNoCompact.Inc()
+	}
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
 	return nil
 }

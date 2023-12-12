@@ -10,19 +10,31 @@
 <p>Current time: {{ .Now }}</p>
 <p>Showing blocks for tenant: <strong>{{ .Tenant }}</strong></p>
 <p>
-    <form>
+    <form id="configForm">
+        <label for="action-type">Actions to perform:</label>&nbsp;
+        <select id="action-type" name="action_type">
+            <option value="none"{{ if or (eq .ActionType "") (eq .ActionType "none") }} selected{{ end }}>None</option>
+            <option value="no-compact"{{ if eq .ActionType "no-compact" }} selected{{ end }}>Upload no-compact marker</option>
+            <option value="delete-no-compact"{{ if eq .ActionType "delete-no-compact" }} selected{{ end }}>Delete no-compact marker</option>
+        </select> &nbsp;
+        <button class="item-to-control" type="button" style="background-color: lightgrey;" onclick="reloadWithAction()">
+            <span style="padding: 0.5em 1em; font-size: 100%;">Execute Action</span>
+        </button>
+        <br>
+        <br>
         <input type="checkbox" id="show-deleted" name="show_deleted" {{ if .ShowDeleted }} checked {{ end }}>&nbsp;<label for="show-deleted">Show Deleted</label> &nbsp;&nbsp;
         <input type="checkbox" id="show-sources" name="show_sources" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
         <input type="checkbox" id="show-parents" name="show_parents" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
         <label for="split-count">Split count (non-zero value shows block split ID):</label>&nbsp;<input id="split-count" name="split_count" type="text" value="{{ .SplitCount }}" style="width: 6em;" />
         <button type="submit" style="background-color: lightgrey;">
-            <span style="padding: 0.5em 1em; font-size: 125%;">Reload</span>
+            <span style="padding: 0.5em 1em; font-size: 100%;">Reload</span>
         </button>
     </form>
 </p>
-<table border="1" cellpadding="5" style="border-collapse: collapse">
+<table border="1" cellpadding="5" style="border-collapse: collapse" id="blocksInfo">
     <thead>
     <tr>
+        <th class="item-to-control">Action</th>
         <th>Block ID</th>
         {{ if gt .SplitCount 0 }}
         <th>Split ID</th>{{ end }}
@@ -49,6 +61,7 @@
     {{ $page := . }}
     {{ range .FormattedBlocks }}
         <tr>
+            <td class="item-to-control"><input type="checkbox"></td>
             <td>{{ .ULID }}</td>
             {{ if gt $page.SplitCount 0 }}
             <td>{{ .SplitID }}</td>{{ end }}
@@ -90,5 +103,82 @@
     {{ end }}
     </tbody>
 </table>
+<script>
+    // Get the dropdown and elements to control
+    var dropdown = document.getElementById("action-type");
+    var elementsToControl = document.querySelectorAll(".item-to-control");
+
+    // Function to toggle visibility for each element
+    function toggleVisibility(isVisible) {
+        elementsToControl.forEach(function (element) {
+            if (isVisible) {
+                element.removeAttribute("hidden");
+            } else {
+                element.setAttribute("hidden", "hidden");
+            }
+        });
+    }
+
+    // Add an event listener to the dropdown
+    dropdown.addEventListener("change", function () {
+        var isVisible = dropdown.value !== "none";
+        console.log("Setting visibility to: " + isVisible + " for " + dropdown.value);
+        toggleVisibility(isVisible);
+    });
+
+    // Set the initial visibility based on the selected option
+    var isVisible = dropdown.value !== "none";
+    toggleVisibility(isVisible);
+
+    // Function to reload the page with the action
+    function reloadWithAction() {
+        var form = document.getElementById('configForm');
+
+        // Get the blocks uid from the table and add it to the form
+        var table = document.getElementById('blocksInfo');
+
+        // Create an array to hold the structured table data
+        var blockUIDs = [];
+
+        // Iterate through the table rows
+        var rows = table.getElementsByTagName('tr');
+        for (var i = 1; i < rows.length; i++) { // Start from 1 to skip header row
+            var cells = rows[i].getElementsByTagName('td');
+
+            // Extract uid from the "Block ID" column (assuming it's the second column)
+            var checkboxStatus = cells[0].getElementsByTagName('input')[0].checked;
+            if (!checkboxStatus) {
+                continue;
+            }
+            // Add the uid to the array
+            blockUIDs.push(cells[1].textContent);
+        }
+
+        // Check if the array is empty
+        if (blockUIDs.length === 0) {
+            // Display an alert popup if the array is empty
+            alert("No block seleted for action!");
+        }
+
+        // Check if the input field already exists
+        var blockUIDsField = form.querySelector('input[name="block_uids"]');
+
+        if (blockUIDsField) {
+            // If it exists, update its value
+            blockUIDsField.value = encodeURIComponent(JSON.stringify(blockUIDs));
+        } else {
+            // If it doesn't exist, create a new input field
+            blockUIDsField = document.createElement('input');
+            blockUIDsField.type = 'hidden';
+            blockUIDsField.name = 'block_uids';
+            blockUIDsField.value = btoa(JSON.stringify(blockUIDs));
+
+            // Append the new input to the form
+            form.appendChild(blockUIDsField);
+        }
+
+        form.submit();
+    }
+</script>
 </body>
 </html>

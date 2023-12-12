@@ -4,16 +4,21 @@ package storegateway
 
 import (
 	_ "embed" // Used to embed html template
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -33,6 +38,24 @@ type blocksPageContents struct {
 	ShowSources     bool                 `json:"-"`
 	ShowParents     bool                 `json:"-"`
 	SplitCount      int                  `json:"-"`
+	ActionType      ActionType           `json:"-"`
+}
+
+type ActionType string
+
+const (
+	ActionTypeNone            ActionType = "none"
+	ActionTypeNoCompact       ActionType = "no-compact"
+	ActionTypeDeleteNoCompact ActionType = "delete-no-compact"
+)
+
+func isValidActionType(value ActionType) bool {
+	switch value {
+	case ActionTypeNone, ActionTypeNoCompact, ActionTypeDeleteNoCompact:
+		return true
+	default:
+		return false
+	}
 }
 
 type formattedBlockData struct {
@@ -74,6 +97,73 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	showDeleted := req.Form.Get("show_deleted") == "on"
 	showSources := req.Form.Get("show_sources") == "on"
 	showParents := req.Form.Get("show_parents") == "on"
+	actionType := req.Form.Get("action_type")
+	if actionType == "" {
+		actionType = string(ActionTypeNone) // Set the default value to "none"
+	}
+
+	if !isValidActionType(ActionType(actionType)) {
+		// Handle the case where the parsed value is not a valid action type
+		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
+		return
+	}
+	action := ActionType(actionType)
+	// When blockUids is set, and dropdown action is "no-compact" or "delete-no-compact",
+	// we will perform the action on the selected blocks
+	if (action == ActionTypeNoCompact || action == ActionTypeDeleteNoCompact) && req.Form.Get("block_uids") != "" {
+		var uids []string
+		// URL-decode the string
+		decodedString, err := url.QueryUnescape(req.Form.Get("block_uids"))
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Error decoding URL: %s", err.Error()))
+			return
+		}
+
+		decodedBytes, err := base64.StdEncoding.DecodeString(decodedString)
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
+			return
+		}
+		if err := json.Unmarshal(decodedBytes, &uids); err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Can't parse block_uids: %s", err))
+			return
+		}
+		for _, uid := range uids {
+			ulid, err := ulid.Parse(uid)
+			if err != nil {
+				util.WriteTextResponse(w, fmt.Sprintf("Can't parse ULID %s: %s", uid, err))
+				return
+			}
+			bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
+			if action == ActionTypeNoCompact {
+				err = block.MarkForNoCompact(
+					req.Context(),
+					s.logger,
+					bkt,
+					ulid,
+					block.ManualNoCompactReason,
+					"Manual Operations from Admin UI: Mark for no compaction",
+					nil,
+				)
+				if err != nil {
+					util.WriteTextResponse(w, fmt.Sprintf("Can't mark for no compaction block uid %s: %s", ulid, err))
+					return
+				}
+			} else if action == ActionTypeDeleteNoCompact {
+				err = block.DeleteNoCompactMarker(
+					req.Context(),
+					s.logger,
+					bkt,
+					ulid,
+				)
+				if err != nil {
+					util.WriteTextResponse(w, fmt.Sprintf("Can't delete no compaction marker for block %s: %s", ulid, err))
+					return
+				}
+			}
+		}
+	}
+
 	var splitCount int
 	if sc := req.Form.Get("split_count"); sc != "" {
 		splitCount, _ = strconv.Atoi(sc)
@@ -156,6 +246,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowDeleted: showDeleted,
 		ShowSources: showSources,
 		ShowParents: showParents,
+		ActionType:  action,
 	}, blocksPageTemplate, req)
 }
 
