@@ -195,12 +195,12 @@ func TestUnixSecondsJSON(t *testing.T) {
 		t.Run(tc.json, func(t *testing.T) {
 			out, err := json.Marshal(tc.obj)
 			require.NoError(t, err)
-			require.Equal(t, tc.json, string(out))
+			require.JSONEq(t, tc.json, string(out))
 
 			var newObj obj
 			err = json.Unmarshal([]byte(tc.json), &newObj)
 			require.NoError(t, err)
-			assert.Equal(t, tc.obj, newObj)
+			require.Equal(t, tc.obj, newObj)
 		})
 	}
 }
