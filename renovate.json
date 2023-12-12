@@ -12,7 +12,7 @@
     "packageRules": [
       {
         "matchBaseBranches": ["release-2.10","release-2.9"],
-        "packagePatterns": ["*"],
+        "excludeDepPatterns": [".*SECURITY.*"],
         "enabled": false
       },
       {
