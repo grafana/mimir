@@ -191,7 +191,6 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response) *http.Response {
 	reader, writer := io.Pipe()
 
-	json = jsoniter.ConfigCompatibleWithStandardLibrary
 	items := make(chan any)
 
 	g := new(errgroup.Group)
