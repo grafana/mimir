@@ -3,7 +3,6 @@ package util
 
 import (
 	"bytes"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,12 +10,7 @@ import (
 )
 
 func TestRequestBuffers(t *testing.T) {
-	p := sync.Pool{
-		New: func() any {
-			return bytes.NewBuffer(nil)
-		},
-	}
-	rb := NewRequestBuffers(&p)
+	rb := NewRequestBuffers(&fakePool{})
 	t.Cleanup(rb.CleanUp)
 
 	b := rb.Get(1024)
@@ -42,4 +36,22 @@ func TestRequestBuffers(t *testing.T) {
 		assert.Equal(t, 1024, b.Cap())
 		assert.Zero(t, b.Len())
 	})
+}
+
+type fakePool struct {
+	buffers []*bytes.Buffer
+}
+
+func (p *fakePool) Get() any {
+	if len(p.buffers) > 0 {
+		b := p.buffers[0]
+		p.buffers = p.buffers[1:]
+		return b
+	}
+
+	return bytes.NewBuffer(nil)
+}
+
+func (p *fakePool) Put(x any) {
+	p.buffers = append(p.buffers, x.(*bytes.Buffer))
 }

@@ -3,19 +3,26 @@ package util
 
 import (
 	"bytes"
-	"sync"
 )
+
+// Pool is an abstraction of sync.Pool, for testability.
+type Pool interface {
+	// Get a pooled object.
+	Get() any
+	// Put back an object into the pool.
+	Put(any)
+}
 
 // RequestBuffers provides pooled request buffers.
 type RequestBuffers struct {
-	p       *sync.Pool
+	p       Pool
 	buffers []*bytes.Buffer
 	// Allows avoiding heap allocation
 	buffersBacking [10]*bytes.Buffer
 }
 
-// NewRequestBuffers returns a new RequestBuffers given a sync.Pool.
-func NewRequestBuffers(p *sync.Pool) *RequestBuffers {
+// NewRequestBuffers returns a new RequestBuffers given a Pool.
+func NewRequestBuffers(p Pool) *RequestBuffers {
 	rb := &RequestBuffers{
 		p: p,
 	}
