@@ -188,7 +188,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 	require.NoError(t, err)
 
 	pm := newProcessorManager(ctx, &mockProcessor{}, cc, "test")
-	pm.concurrency(1)
+	pm.concurrency(1, "starting")
 
 	test.Poll(t, time.Second, 1, func() interface{} {
 		return int(pm.currentProcessors.Load())
@@ -200,7 +200,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 		return int(pm.currentProcessors.Load())
 	})
 
-	pm.stop()
+	pm.stop("stopping")
 	test.Poll(t, time.Second, 0, func() interface{} {
 		return int(pm.currentProcessors.Load())
 	})
