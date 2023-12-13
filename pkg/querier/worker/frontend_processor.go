@@ -85,7 +85,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 			continue
 		}
 
-		if err := fp.process(c, inflightQuery); err != nil {
+		if err := fp.process(c, address, inflightQuery); err != nil {
 			if !grpcutil.IsCanceled(err) {
 				level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
 				backoff.Wait()
@@ -98,10 +98,10 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 }
 
 // process loops processing requests on an established stream.
-func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, inflightQuery *atomic.Bool) error {
+func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, address string, inflightQuery *atomic.Bool) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancel(c.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(c.Context())
+	defer cancel(cancellation.NewErrorf("query-frontend loop in querier for query-frontend %v terminated with error: %v", address, err))
 
 	for ctx.Err() == nil {
 		request, err := c.Recv()
@@ -147,8 +147,8 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 	// on the context being cancelled to abort streaming and terminate a goroutine if the query is aborted. Requests that
 	// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 	// net/http package.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(cancellation.NewErrorf("query evaluation finished"))
 
 	var stats *querier_stats.Stats
 	if statsEnabled {
