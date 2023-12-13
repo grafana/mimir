@@ -13,6 +13,9 @@ std.manifestYamlDoc({
     // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
     use_query_scheduler: true,
 
+    // Whether ruler should use the query-frontend and queriers to execute queries, rather than executing them in-process
+    ruler_use_remote_execution: false,
+
     // Three options are supported for ring in this jsonnet:
     // - consul
     // - memberlist (consul is not started at all)
@@ -136,6 +139,7 @@ std.manifestYamlDoc({
       target: 'ruler',
       httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
+      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '',
     })
     for id in std.range(1, count)
   },
