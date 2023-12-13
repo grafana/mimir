@@ -418,14 +418,15 @@ func TestUnMarkForNoCompact(t *testing.T) {
 	testutil.VerifyNoLeak(t)
 	ctx := context.Background()
 	tmpDir := t.TempDir()
-	for _, tcase := range []struct {
-		name          string
-		preUpload     func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
+	for tname, tcase := range map[string]struct {
+		setupTest     func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
 		expectedError func(id ulid.ULID) error
 	}{
-		{
-			name: "unmark existing block should succeed",
-			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+		"unmark existing block should succeed": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				// upload blocks and no-compact marker
+				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				require.NoError(t, err)
 				m, err := json.Marshal(NoCompactMark{
 					ID:            id,
 					NoCompactTime: time.Now().Unix(),
@@ -438,29 +439,25 @@ func TestUnMarkForNoCompact(t *testing.T) {
 				return nil
 			},
 		},
-		{
-			name:      "unmark non-existing block should fail",
-			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+		"unmark non-existing block should fail": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
 			expectedError: func(id ulid.ULID) error {
-				return errors.Errorf("unmark for no-compaction failed %s/no-compact-mark.json: inmem: object not found", id.String())
+				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
 			},
 		},
 	} {
-		t.Run(tcase.name, func(t *testing.T) {
+		t.Run(tname, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
 				100, 0, 1000, labels.FromStrings("ext1", "val1"))
 			require.NoError(t, err)
-
-			tcase.preUpload(t, id, bkt)
-			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
-
-			err = UnMarkForNoCompact(ctx, log.NewNopLogger(), bkt, id)
-			if tcase.expectedError(id) != nil {
-				require.EqualError(t, err, tcase.expectedError(id).Error())
+			tcase.setupTest(t, id, bkt)
+			err = DeleteNoCompactMarker(ctx, log.NewNopLogger(), bkt, id)
+			if expErr := tcase.expectedError(id); expErr != nil {
+				require.EqualError(t, err, expErr.Error())
 			} else {
 				require.NoError(t, err)
-				_, ok := bkt.Objects()[path.Join(tmpDir, id.String())]
+				_, ok := bkt.Objects()[path.Join(id.String(), NoCompactMarkFilename)]
 				require.False(t, ok)
 			}
 		})
