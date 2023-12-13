@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -114,10 +113,10 @@ func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 	}
 }
 
-func defaultTestConfig(addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:       prometheus.NewPedanticRegistry(),
-		logger:         log.NewLogfmtLogger(os.Stdout),
+		logger:         log.NewNopLogger(),
 		addr:           addr,
 		topicName:      topicName,
 		partitionID:    partitionID,
@@ -127,7 +126,7 @@ func defaultTestConfig(addr string, topicName string, partitionID int32, consume
 }
 
 func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
-	cfg := defaultTestConfig(addr, topicName, partitionID, consumer)
+	cfg := defaultReaderTestConfig(addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
