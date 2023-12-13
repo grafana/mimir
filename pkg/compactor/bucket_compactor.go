@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
@@ -770,13 +771,13 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 	for {
 		var (
 			wg                     sync.WaitGroup
-			workCtx, workCtxCancel = context.WithCancel(ctx)
+			workCtx, workCtxCancel = context.WithCancelCause(ctx)
 			jobChan                = make(chan *Job)
 			errChan                = make(chan error, c.concurrency)
 			finishedAllJobs        = true
 			mtx                    sync.Mutex
 		)
-		defer workCtxCancel()
+		defer workCtxCancel(cancellation.NewErrorf("compaction iteration cancelled"))
 
 		// Set up workers who will compact the jobs when the jobs are ready.
 		// They will compact available jobs until they encounter an error, after which they will stop.
@@ -948,7 +949,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			jobErrs.Add(jobErr)
 		}
 
-		workCtxCancel()
+		workCtxCancel(cancellation.NewErrorf("compaction iteration stopped"))
 		if len(jobErrs) > 0 {
 			return jobErrs.Err()
 		}
