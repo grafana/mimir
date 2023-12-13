@@ -23,19 +23,24 @@ const READ_HOSTNAME = __ENV.K6_READ_HOSTNAME || fail('K6_READ_HOSTNAME environme
  */
 const SCHEME = __ENV.K6_SCHEME || 'http';
 /**
- * Username to use for HTTP bearer authentication.
+ * Username to use for HTTP bearer authentication for writes.
  * @constant {string}
  */
-const USERNAME = __ENV.K6_USERNAME || '';
+const WRITE_USERNAME = __ENV.K6_WRITE_USERNAME || '';
+/**
+ * Username to use for HTTP bearer authentication for reads.
+ * @constant {string}
+ */
+const READ_USERNAME = __ENV.K6_READ_USERNAME || '';
 /**
  * Authentication token to use for HTTP bearer authentication on requests to write path.
  * @constant {string}
-*/
+ */
 const WRITE_TOKEN = __ENV.K6_WRITE_TOKEN || '';
 /**
  * Authentication token to use for HTTP bearer authentication on requests to read path.
  * @constant {string}
-*/
+ */
 const READ_TOKEN = __ENV.K6_READ_TOKEN || '';
 /**
  * Number of remote write requests to send every SCRAPE_INTERVAL_SECONDS.
@@ -90,11 +95,20 @@ const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
  */
 const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
 /**
- * Tenant ID to read from/write to.
+ * Tenant ID to write to. Note that this option is mutually exclusive with
+ * using the write username (HTTP basic auth).
  * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
  * @constant {string}
-*/
-const TENANT_ID = __ENV.K6_TENANT_ID || '';
+ */
+const WRITE_TENANT_ID = __ENV.K6_WRITE_TENANT_ID || '';
+
+/**
+ * Tenant ID to read from to. Note that this option is mutually exclusive with
+ * using the read username (HTTP basic auth).
+ * By default, no tenant ID is specified requiring the cluster to have multi-tenancy disabled.
+ * @constant {string}
+ */
+const READ_TENANT_ID = __ENV.K6_READ_TENANT_ID || '';
 
 /**
  * Project ID to send k6 cloud tests to.
@@ -107,7 +121,7 @@ console.debug("Remote write URL:", remote_write_url)
 
 const write_client_headers = get_write_authentication_headers()
 
-const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: TENANT_ID, headers:  write_client_headers });
+const write_client = new remote.Client({ url: remote_write_url, timeout: '32s', tenant_name: WRITE_TENANT_ID, headers:  write_client_headers });
 
 const query_client_headers = {
     'User-Agent': 'k6-load-test',
@@ -506,16 +520,15 @@ function get_remote_write_url() {
  */
 function get_read_authentication_headers() {
     let auth_headers = new Map();
-    
-    if (USERNAME !== '' || READ_TOKEN !== '') {
-        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${READ_TOKEN}`)}`)
-    }
-    
-    if (TENANT_ID !== '') {
-        auth_headers.set('X-Scope-OrgID', TENANT_ID)
 
+    if (READ_USERNAME !== '' || READ_TOKEN !== '') {
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${READ_USERNAME}:${READ_TOKEN}`)}`)
     }
-    
+
+    if (READ_TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', READ_TENANT_ID)
+    }
+
     return auth_headers;
 }
 
@@ -526,13 +539,12 @@ function get_read_authentication_headers() {
 function get_write_authentication_headers() {
     let auth_headers = new Map();
 
-    if (USERNAME !== '' || WRITE_TOKEN !== '') {
-        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${USERNAME}:${WRITE_TOKEN}`)}`)
+    if (WRITE_USERNAME !== '' || WRITE_TOKEN !== '') {
+        auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${WRITE_USERNAME}:${WRITE_TOKEN}`)}`)
     }
 
-    if (TENANT_ID !== '') {
-        auth_headers.set('X-Scope-OrgID', TENANT_ID)
-
+    if (WRITE_TENANT_ID !== '') {
+        auth_headers.set('X-Scope-OrgID', WRITE_TENANT_ID)
     }
 
     return auth_headers;
