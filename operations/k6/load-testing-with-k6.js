@@ -44,7 +44,7 @@ const WRITE_TOKEN = __ENV.K6_WRITE_TOKEN || '';
 const READ_TOKEN = __ENV.K6_READ_TOKEN || '';
 /**
  * Number of remote write requests to send every SCRAPE_INTERVAL_SECONDS.
- * Note that the effective rate is multipled by HA_REPLICAS.
+ * Note that the effective rate is multiplied by HA_REPLICAS.
  * @constant {number}
  */
 const WRITE_REQUEST_RATE = parseInt(__ENV.K6_WRITE_REQUEST_RATE || 1);
@@ -552,7 +552,7 @@ function get_write_authentication_headers() {
 
 /**
  * Runs a range query randomly generated based on the configured distribution defined in range_query_distribution.
- * It validate that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
+ * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
  */
 export function run_range_query() {
     const name = "range query";
@@ -603,7 +603,7 @@ export function run_instant_query_high_cardinality() {
 
 /**
  * Runs an instant query randomly generated based on the configured distribution defined in instant_query_distribution.
- * It validate that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
+ * It validates that a successful response is received and tags requests with { type: "read" } so that requests can be distinguished from writes.
  * Instant queries are run with a time one minute in the past to simulate rule evaluations.
  */
 export function run_instant_query(name, config) {
