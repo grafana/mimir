@@ -15,6 +15,7 @@ import (
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/crypto/tls"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -42,14 +43,14 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 // of both actors.
 type rulerNotifier struct {
 	notifier  *notifier.Manager
-	sdCancel  context.CancelFunc
+	sdCancel  context.CancelCauseFunc
 	sdManager *discovery.Manager
 	wg        sync.WaitGroup
 	logger    gklog.Logger
 }
 
 func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
-	sdCtx, sdCancel := context.WithCancel(context.Background())
+	sdCtx, sdCancel := context.WithCancelCause(context.Background())
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, l),
 		sdCancel:  sdCancel,
@@ -86,7 +87,7 @@ func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 }
 
 func (rn *rulerNotifier) stop() {
-	rn.sdCancel()
+	rn.sdCancel(cancellation.NewErrorf("rulerNotifier stopped"))
 	rn.notifier.Stop()
 	rn.wg.Wait()
 }
