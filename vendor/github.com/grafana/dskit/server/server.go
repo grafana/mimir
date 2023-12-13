@@ -350,6 +350,22 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 
 	level.Info(logger).Log("msg", "server listening on addresses", "http", httpListener.Addr(), "grpc", grpcListener.Addr())
 
+	// Setup HTTP server
+	var router *mux.Router
+	if cfg.Router != nil {
+		router = cfg.Router
+	} else {
+		router = mux.NewRouter()
+	}
+	if cfg.PathPrefix != "" {
+		// Expect metrics and pprof handlers to be prefixed with server's path prefix.
+		// e.g. /loki/metrics or /loki/debug/pprof
+		router = router.PathPrefix(cfg.PathPrefix).Subrouter()
+	}
+	if cfg.RegisterInstrumentation {
+		RegisterInstrumentationWithGatherer(router, gatherer)
+	}
+
 	// Setup gRPC server
 	serverLog := middleware.GRPCServerLog{
 		Log:                      logger,
@@ -363,6 +379,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 		otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
+		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, reportGRPCStatusesOptions...),
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
@@ -418,22 +435,6 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
 	grpcOnHTTPServer := grpc.NewServer(grpcOptions...)
-
-	// Setup HTTP server
-	var router *mux.Router
-	if cfg.Router != nil {
-		router = cfg.Router
-	} else {
-		router = mux.NewRouter()
-	}
-	if cfg.PathPrefix != "" {
-		// Expect metrics and pprof handlers to be prefixed with server's path prefix.
-		// e.g. /loki/metrics or /loki/debug/pprof
-		router = router.PathPrefix(cfg.PathPrefix).Subrouter()
-	}
-	if cfg.RegisterInstrumentation {
-		RegisterInstrumentationWithGatherer(router, gatherer)
-	}
 
 	sourceIPs, err := middleware.NewSourceIPs(cfg.LogSourceIPsHeader, cfg.LogSourceIPsRegex)
 	if err != nil {
