@@ -534,7 +534,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/dskit v0.0.0-20231213032400-8900003395bb
+# github.com/grafana/dskit v0.0.0-20231213223053-84f5540a28dd
 ## explicit; go 1.20
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -592,6 +592,11 @@ github.com/grafana/e2e/images
 # github.com/grafana/gomemcache v0.0.0-20231023152154-6947259a0586
 ## explicit; go 1.18
 github.com/grafana/gomemcache/memcache
+# github.com/grafana/pyroscope-go/godeltaprof v0.1.6
+## explicit; go 1.16
+github.com/grafana/pyroscope-go/godeltaprof
+github.com/grafana/pyroscope-go/godeltaprof/http/pprof
+github.com/grafana/pyroscope-go/godeltaprof/internal/pprof
 # github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6
 ## explicit; go 1.17
 github.com/grafana/regexp
@@ -693,10 +698,12 @@ github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 ## explicit; go 1.7
 github.com/julienschmidt/httprouter
-# github.com/klauspost/compress v1.17.2
-## explicit; go 1.18
+# github.com/klauspost/compress v1.17.3
+## explicit; go 1.19
 github.com/klauspost/compress
+github.com/klauspost/compress/flate
 github.com/klauspost/compress/fse
+github.com/klauspost/compress/gzip
 github.com/klauspost/compress/huff0
 github.com/klauspost/compress/internal/cpuinfo
 github.com/klauspost/compress/internal/snapref

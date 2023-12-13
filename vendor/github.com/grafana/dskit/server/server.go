@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/grafana/pyroscope-go/godeltaprof/http/pprof" // anonymous import to get godelatprof handlers registered
+
 	gokit_log "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
