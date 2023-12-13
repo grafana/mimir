@@ -1114,7 +1114,7 @@ go.opencensus.io/trace/tracestate
 # go.opentelemetry.io/collector/featuregate v1.0.0-rcv0018
 ## explicit; go 1.20
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.0.0-rcv0018
+# go.opentelemetry.io/collector/pdata v1.0.0
 ## explicit; go 1.20
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/data
