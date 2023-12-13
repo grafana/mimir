@@ -9,12 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -29,8 +31,24 @@ func TestMain(m *testing.M) {
 	util_test.VerifyNoLeakTestMain(m)
 }
 
+// cannot import constants from frontend/v2 due to import cycle,
+// but content of the strings should not matter as much as the number of options
+var secondQueueDimensionOptions = []string{
+	"ingester",
+	"store-gateway",
+	"ingester-and-store-gateway",
+}
+
+func randAdditionalQueueDimension() []string {
+	idx := rand.Intn(len(secondQueueDimensionOptions) + 1)
+	if idx == len(secondQueueDimensionOptions) {
+		// randomly don't add a second queue dimension at all to ensure the items still get dequeued
+		return nil
+	}
+	return secondQueueDimensionOptions[idx : idx+1]
+}
+
 func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	req := "the query request"
 	maxQueriers := 0
 
 	for _, numTenants := range []int{1, 10, 1000} {
@@ -42,7 +60,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"})
 							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
-							queue := NewRequestQueue(log.NewNopLogger(), 100, 0, queueLength, discardedRequests, enqueueDuration)
+							queue := NewRequestQueue(log.NewNopLogger(), 100, true, 0, queueLength, discardedRequests, enqueueDuration)
 
 							start := make(chan struct{})
 							producersAndConsumers, ctx := errgroup.WithContext(context.Background())
@@ -72,10 +90,33 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 							runProducer := func(producerIdx int) error {
 								requestCount := requestCount(b.N, numProducers, producerIdx)
 								tenantID := producerIdx % numTenants
+								tenantIDStr := strconv.Itoa(tenantID)
 								<-start
 
 								for i := 0; i < requestCount; i++ {
 									for {
+										// when running this benchmark for memory usage comparison,
+										// we want to have a relatively representative size of request
+										// in order not to skew the % delta between queue implementations.
+										// Unless the request starts to get copied, the size of the requests in the queue
+										// should significantly outweigh the memory used to implement the queue mechanics.
+										req := &SchedulerRequest{
+											Ctx:             context.Background(),
+											FrontendAddress: "http://query-frontend:8007",
+											UserID:          tenantIDStr,
+											Request: &httpgrpc.HTTPRequest{
+												Method: "GET",
+												Headers: []*httpgrpc.Header{
+													{Key: "QueryId", Values: []string{"12345678901234567890"}},
+													{Key: "Accept", Values: []string{"application/vnd.mimir.queryresponse+protobuf", "application/json"}},
+													{Key: "X-Scope-OrgId", Values: []string{tenantIDStr}},
+													{Key: "uber-trace-id", Values: []string{"48475050943e8e05:70e8b02d28e4337b:077cd9b649b6ac02:1"}},
+												},
+												Url: "/prometheus/api/v1/query_range?end=1701720000&query=rate%28go_goroutines%7Bcluster%3D%22docker-compose-local%22%2Cjob%3D%22mimir-microservices-mode%2Fquery-scheduler%22%2Cnamespace%3D%22mimir-microservices-mode%22%7D%5B10m15s%5D%29&start=1701648000&step=60",
+											},
+											AdditionalQueueDimensions: randAdditionalQueueDimension(),
+										}
+										//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
 										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriers, func() {})
 										if err == nil {
 											break
@@ -145,10 +186,14 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBecauseQuerierHasBeenForgotten(t *testing.T) {
 	const forgetDelay = 3 * time.Second
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1, true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	// Start the queue service.
 	ctx := context.Background()
@@ -175,7 +220,12 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 
 	// Enqueue a request from an user which would be assigned to querier-1.
 	// NOTE: "user-1" hash falls in the querier-1 shard.
-	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", "request", 1, nil))
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+	}
+	require.NoError(t, queue.EnqueueRequestToDispatcher("user-1", req, 1, nil))
 
 	startTime := time.Now()
 	querier2wg.Wait()
@@ -189,10 +239,15 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queue))
 	t.Cleanup(func() {
@@ -223,10 +278,15 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	ctx := context.Background()
 	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
@@ -245,20 +305,30 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	const forgetDelay = 3 * time.Second
 	const querierID = "querier-1"
 
-	queue := NewRequestQueue(log.NewNopLogger(), 1, forgetDelay,
+	queue := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		true,
+		forgetDelay,
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}))
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+	)
 
 	// bypassing queue dispatcher loop for direct usage of the queueBroker and
 	// passing a nextRequestForQuerierCall for a canceled querier connection
-	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.forgetDelay)
+	queueBroker := newQueueBroker(queue.maxOutstandingPerTenant, queue.additionalQueueDimensionsEnabled, queue.forgetDelay)
 	queueBroker.addQuerierConnection(querierID)
 
 	tenantMaxQueriers := 0 // no sharding
+	req := &SchedulerRequest{
+		Ctx:                       context.Background(),
+		Request:                   &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"},
+		AdditionalQueueDimensions: randAdditionalQueueDimension(),
+	}
 	tr := tenantRequest{
 		tenantID: TenantID("tenant-1"),
-		req:      "request",
+		req:      req,
 	}
 
 	require.Nil(t, queueBroker.tenantQueuesTree.getNode(QueuePath{"tenant-1"}))

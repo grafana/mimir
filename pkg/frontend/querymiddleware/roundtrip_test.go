@@ -393,7 +393,7 @@ func TestIsLabelsQuery(t *testing.T) {
 
 	for _, testData := range tests {
 		t.Run(testData.path, func(t *testing.T) {
-			assert.Equal(t, testData.expected, isLabelsQuery(testData.path))
+			assert.Equal(t, testData.expected, IsLabelsQuery(testData.path))
 		})
 	}
 }
