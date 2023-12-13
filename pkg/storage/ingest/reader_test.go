@@ -32,12 +32,12 @@ func TestReader(t *testing.T) {
 	content := []byte("special content")
 	consumer := newTestConsumer(2)
 
-	startReader(t, ctx, clusterAddr, topicName, partitionID, consumer)
+	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	produceRecord(t, ctx, writeClient, topicName, partitionID, content)
-	produceRecord(t, ctx, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
 	messages, err := consumer.waitRecords(2, 5*time.Second, 0)
 	assert.NoError(t, err)
@@ -57,18 +57,18 @@ func TestReader_IgnoredConsumerErrors(t *testing.T) {
 
 	content := []byte("special content")
 	consumer := newTestConsumer(1)
-	startReader(t, ctx, clusterAddr, topicName, partitionID, consumer)
+	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	// Write to Kafka.
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	produceRecord(t, ctx, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
 	messages, err := consumer.waitRecords(1, time.Second, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{content}, messages)
 
-	produceRecord(t, ctx, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
 	messages, err = consumer.waitRecords(1, time.Second, 0)
 	assert.NoError(t, err)
@@ -86,7 +86,7 @@ func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	return writeClient
 }
 
-func produceRecord(t *testing.T, ctx context.Context, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) {
+func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
@@ -126,7 +126,7 @@ func defaultTestConfig(addr string, topicName string, partitionID int32, consume
 	}
 }
 
-func startReader(t *testing.T, ctx context.Context, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
 	cfg := defaultTestConfig(addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -156,11 +156,11 @@ func TestReader_Commit(t *testing.T) {
 		addSupportForConsumerGroups(t, cluster, topicName, partitionID)
 
 		consumer := newTestConsumer(3)
-		reader := startReader(t, ctx, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
 
 		_, err := consumer.waitRecords(3, time.Second, commitInterval*2) // wait for a few commits to make sure empty commits don't cause issues
 		require.NoError(t, err)
@@ -168,9 +168,9 @@ func TestReader_Commit(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
 		messageSentAfterShutdown := []byte("4")
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, messageSentAfterShutdown)
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, messageSentAfterShutdown)
 
-		startReader(t, ctx, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		messages, err := consumer.waitRecords(1, time.Second, 0)
 		assert.NoError(t, err)
@@ -187,18 +187,18 @@ func TestReader_Commit(t *testing.T) {
 		addSupportForConsumerGroups(t, cluster, topicName, partitionID)
 
 		consumer := newTestConsumer(4)
-		reader := startReader(t, ctx, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
 
 		_, err := consumer.waitRecords(3, time.Second, 0)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		produceRecord(t, ctx, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("4"))
-		startReader(t, ctx, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("4"))
+		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		_, err = consumer.waitRecords(4, time.Second, 0)
 		assert.NoError(t, err)

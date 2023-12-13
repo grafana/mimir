@@ -26,7 +26,7 @@ type pusherConsumer struct {
 
 type parsedRecord struct {
 	*mimirpb.WriteRequest
-	tenantId string
+	tenantID string
 	err      error
 }
 
@@ -59,7 +59,7 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		}
 		processingStart := time.Now()
 
-		ctx := user.InjectOrgID(ctx, wr.tenantId)
+		ctx := user.InjectOrgID(ctx, wr.tenantID)
 		_, err := c.p.Push(ctx, wr.WriteRequest)
 
 		c.metrics.processingTime.Observe(time.Since(processingStart).Seconds())
@@ -78,7 +78,7 @@ func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []Record,
 
 	for _, record := range records {
 		pRecord := parsedRecord{
-			tenantId:     record.TenantID,
+			tenantID:     record.TenantID,
 			WriteRequest: &mimirpb.WriteRequest{},
 		}
 		// We don't free the WriteRequest slices because they are being freed by the Pusher.
