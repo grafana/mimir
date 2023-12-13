@@ -23,22 +23,22 @@ const READ_HOSTNAME = __ENV.K6_READ_HOSTNAME || fail('K6_READ_HOSTNAME environme
  */
 const SCHEME = __ENV.K6_SCHEME || 'http';
 /**
- * Username to use for HTTP bearer authentication for writes.
+ * Username to use for HTTP basic authentication for writes.
  * @constant {string}
  */
 const WRITE_USERNAME = __ENV.K6_WRITE_USERNAME || '';
 /**
- * Username to use for HTTP bearer authentication for reads.
+ * Username to use for HTTP basic authentication for reads.
  * @constant {string}
  */
 const READ_USERNAME = __ENV.K6_READ_USERNAME || '';
 /**
- * Authentication token to use for HTTP bearer authentication on requests to write path.
+ * Authentication token to use for HTTP basic authentication on requests to write path.
  * @constant {string}
  */
 const WRITE_TOKEN = __ENV.K6_WRITE_TOKEN || '';
 /**
- * Authentication token to use for HTTP bearer authentication on requests to read path.
+ * Authentication token to use for HTTP basic authentication on requests to read path.
  * @constant {string}
  */
 const READ_TOKEN = __ENV.K6_READ_TOKEN || '';
