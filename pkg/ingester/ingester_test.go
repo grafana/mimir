@@ -32,6 +32,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/kv"
 	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/middleware"
@@ -9777,4 +9778,200 @@ func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
 		labelSets = append(labelSets, l)
 	}
 	return labelSets
+}
+
+func TestIngester_Starting(t *testing.T) {
+	tests := map[string]struct {
+		failingCause                         error
+		expectedStateAfterStarting           services.State
+		expectedLifecyclerStateAfterStarting services.State
+		expectedRingStateAfterStarting       ring.InstanceState
+	}{
+		"if starting() has no error, ingester is running and its ring state is ACTIVE": {
+			failingCause:                         nil,
+			expectedStateAfterStarting:           services.Running,
+			expectedLifecyclerStateAfterStarting: services.Running,
+			expectedRingStateAfterStarting:       ring.ACTIVE,
+		},
+		"if starting() runs into context.Canceled, ingester fails, its lifecycler terminates, and its ring state is LEAVING": {
+			failingCause:                         context.Canceled,
+			expectedStateAfterStarting:           services.Failed,
+			expectedLifecyclerStateAfterStarting: services.Terminated,
+			expectedRingStateAfterStarting:       ring.LEAVING,
+		},
+		"if starting() runs into an error, ingester fails, its lifecycler terminates, and its ring state is LEAVING": {
+			failingCause:                         errors.New("this is an error"),
+			expectedStateAfterStarting:           services.Failed,
+			expectedLifecyclerStateAfterStarting: services.Terminated,
+			expectedRingStateAfterStarting:       ring.LEAVING,
+		},
+	}
+
+	// For each test case we do the following things:
+	// - We start an ingester without errors, and we show it was not in the ring before,
+	//   but it is in the ring in the ACTIVE state after we started it.
+	// - We shut down ingester properly, and we show it remains in the ring in the LEAVING state.
+	// - We start the ingester the second time, possibly with the error specified in the test,
+	//   and we show that in the case of error, it didn't start, and it remains in the ring in
+	//   the LEAVING state. If no error is specified, we properly shut down ingester and show
+	//   it remains in the ring in the LEAVING state.
+	// - We start the ingester the third time, without errors, and we show the same behavior
+	//   it had during the first run.
+	for testName, testCase := range tests {
+		cfg := defaultIngesterTestConfig(t)
+		cfg.IngesterRing.UnregisterOnShutdown = false
+		t.Run(testName, func(t *testing.T) {
+			// Start the first ingester.
+			fI1 := newFailingIngester(t, cfg, nil, nil)
+			kvStore := fI1.kvStore
+			ctx := context.Background()
+			// Ensure that ingester fI1 is not in the ring yet.
+			require.Nil(t, fI1.getInstance(ctx))
+
+			fI1.startWaitAndCheck(t, ctx)
+			// Check that fI1 is running, and that it is in the ring with state is ACTIVE.
+			fI1.checkRingState(t, ctx, ring.ACTIVE)
+			require.Equal(t, services.Running, fI1.BasicService.State())
+			require.Equal(t, services.Running, fI1.lifecycler.BasicService.State())
+
+			fI1.shutDownWaitAndCheck(t, ctx)
+
+			// Start the same ingester, but with an error.
+			fI2 := newFailingIngester(t, cfg, kvStore, testCase.failingCause)
+			ctx = context.Background()
+			// Before starting check that ingester fI2 is already in the ring, and its state is LEAVING.
+			fI2.checkRingState(t, ctx, ring.LEAVING)
+
+			fI2.startWaitAndCheck(t, ctx)
+			require.Equal(t, testCase.expectedStateAfterStarting, fI2.BasicService.State())
+			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI2.lifecycler.BasicService.State())
+			fI2.checkRingState(t, ctx, testCase.expectedRingStateAfterStarting)
+
+			if testCase.failingCause == nil {
+				fI2.shutDownWaitAndCheck(t, ctx)
+			}
+
+			// Start the same ingester, without errors.
+			fI3 := newFailingIngester(t, cfg, kvStore, nil)
+			ctx = context.Background()
+			// Before starting, check that ingester fI3 is already in the ring, and its state is LEAVING.
+			fI3.checkRingState(t, ctx, ring.LEAVING)
+
+			fI3.startWaitAndCheck(t, ctx)
+			// Check that fI3 is running, and that it is in the ring with state is ACTIVE.
+			fI3.checkRingState(t, ctx, ring.ACTIVE)
+			require.Equal(t, services.Running, fI3.BasicService.State())
+			require.Equal(t, services.Running, fI3.lifecycler.BasicService.State())
+
+			fI3.shutDownWaitAndCheck(t, ctx)
+		})
+	}
+}
+
+type failingIngester struct {
+	*Ingester
+	kvStore      kv.Client
+	failingCause error
+}
+
+func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCause error) *failingIngester {
+	registry := prometheus.NewRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, registry)
+	require.NoError(t, err)
+	fI := &failingIngester{
+		Ingester:     i,
+		failingCause: failingCause,
+	}
+	if kvStore != nil {
+		fI.kvStore = kvStore
+	}
+	fI.BasicService = services.NewBasicService(fI.starting, fI.updateLoop, fI.stopping)
+	return fI
+}
+
+func (i *failingIngester) startWaitAndCheck(t *testing.T, ctx context.Context) {
+	err := services.StartAndAwaitRunning(ctx, i)
+	if i.failingCause == nil {
+		require.NoError(t, err)
+		// Wait until the ingester is healthy.
+		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+			return i.lifecycler.HealthyInstancesCount()
+		})
+	} else {
+		require.Error(t, err)
+		require.ErrorIs(t, err, i.failingCause)
+
+		// Ensure ingester remains unhealthy.
+		test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
+			return i.lifecycler.HealthyInstancesCount()
+		})
+	}
+}
+
+func (i *failingIngester) shutDownWaitAndCheck(t *testing.T, ctx context.Context) {
+	// We properly shut down ingester, and ensure that it is terminated,
+	// but it stays in the ring with the state LEAVING.
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
+	i.checkRingState(t, ctx, ring.LEAVING)
+	require.Equal(t, services.Terminated, i.BasicService.State())
+	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
+}
+
+func (i *failingIngester) starting(parentCtx context.Context) error {
+	ctx, cancel := context.WithCancel(parentCtx)
+	if i.failingCause != nil {
+		if errors.Is(i.failingCause, context.Canceled) {
+			go func() {
+				cancel()
+				fmt.Println("Context has been canceled")
+			}()
+		} else {
+			ctx = &mockContext{
+				ctx: ctx,
+				err: i.failingCause,
+			}
+		}
+	}
+	return i.Ingester.starting(ctx)
+}
+
+func (i *failingIngester) getInstance(ctx context.Context) *ring.InstanceDesc {
+	d, err := i.lifecycler.KVStore.Get(ctx, IngesterRingKey)
+	if err != nil {
+		return nil
+	}
+	instanceDesc, ok := ring.GetOrCreateRingDesc(d).Ingesters[i.lifecycler.ID]
+	if !ok {
+		return nil
+	}
+	return &instanceDesc
+}
+
+type mockContext struct {
+	ctx context.Context
+	err error
+}
+
+func (c *mockContext) Deadline() (time.Time, bool) {
+	return c.ctx.Deadline()
+}
+
+func (c *mockContext) Done() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+func (c *mockContext) Err() error {
+	return c.err
+}
+
+func (c *mockContext) Value(key any) interface{} {
+	return c.ctx.Value(key)
+}
+
+func (i *failingIngester) checkRingState(t *testing.T, ctx context.Context, expectedState ring.InstanceState) {
+	instance := i.getInstance(ctx)
+	require.NotNil(t, instance)
+	require.Equal(t, expectedState, instance.GetState())
 }

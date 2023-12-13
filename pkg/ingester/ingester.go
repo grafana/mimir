@@ -433,7 +433,14 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 	return nil
 }
 
-func (i *Ingester) starting(ctx context.Context) error {
+func (i *Ingester) starting(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			// if starting() fails for any reason (e.g., context canceled),
+			// the lifecycler must be stopped.
+			services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+		}
+	}()
 	if err := i.openExistingTSDB(ctx); err != nil {
 		// Try to rollback and close opened TSDBs before halting the ingester.
 		i.closeAllTSDB()
