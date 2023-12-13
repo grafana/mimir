@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
@@ -262,12 +263,12 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 
 	ctx := context.Background()
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	defer func() {
 		signal.Stop(c)
-		cancel()
+		cancel(cancellation.NewErrorf("application stopped"))
 	}()
 	var lastErr error
 	var n int
@@ -279,7 +280,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 			a.nonDuplicateAlerts.Set(float64(n))
 			select {
 			case <-c:
-				cancel()
+				cancel(cancellation.NewErrorf("application received shutdown signal"))
 				return
 			case <-ticker.C:
 				continue
