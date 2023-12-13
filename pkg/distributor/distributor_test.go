@@ -2246,6 +2246,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 func TestDistributor_ActiveSeries(t *testing.T) {
 	const numIngesters = 5
+	const responseSizeLimitBytes = 1024
 
 	collision1, collision2 := labelsWithHashCollision()
 
@@ -2259,6 +2260,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
+		{labels.FromStrings(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
 
 	tests := map[string]struct {
@@ -2290,7 +2292,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedNumQueriedIngesters: numIngesters,
 		},
 		"aborts if response is too large": {
-			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, bigMetricMagicName)},
+			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
 			expectError:     ErrResponseTooLarge,
 		},
 	}
@@ -2298,11 +2300,15 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor and ingesters.
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
 			distributors, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
 				shuffleShardSize: test.shuffleShardSize,
+				limits:           limits,
 			})
 			d := distributors[0]
 
@@ -4396,8 +4402,6 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 	return result, nil
 }
 
-const bigMetricMagicName = "big_metric"
-
 func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
 	i.Lock()
 	defer i.Unlock()
@@ -4411,13 +4415,6 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 	matchers, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {
 		return nil, err
-	}
-
-	// Return a large response for the big_metric metric.
-	for _, m := range matchers {
-		if m.Name == labels.MetricName && m.Matches(bigMetricMagicName) {
-			return &activeSeriesStream{results: []*client.ActiveSeriesResponse{{Metric: largeMetric()}}}, nil
-		}
 	}
 
 	var results []*client.ActiveSeriesResponse
@@ -4438,18 +4435,6 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 	}
 
 	return &activeSeriesStream{results: results}, nil
-}
-
-func largeMetric() []*mimirpb.Metric {
-	const lblSize = 1024
-	const numSeries = activeSeriesResponseMaxSize / lblSize
-
-	tpl := fmt.Sprintf("%%0%dd", lblSize)
-	var m []*mimirpb.Metric
-	for ix := 0; ix < numSeries; ix++ {
-		m = append(m, &mimirpb.Metric{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: bigMetricMagicName}, {Name: "foo", Value: fmt.Sprintf(tpl, ix)}}})
-	}
-	return m
 }
 
 type activeSeriesStream struct {

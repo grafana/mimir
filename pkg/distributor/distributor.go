@@ -1819,7 +1819,16 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	res := newActiveSeriesResponse(d.hashCollisionCount)
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	maxResponseSize := math.MaxInt
+	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
+		maxResponseSize = limit
+	}
+	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
@@ -1882,21 +1891,21 @@ type activeSeriesResponse struct {
 	lbls               labels.Labels
 	hashCollisionCount prometheus.Counter
 
-	buf  []byte
-	size int
+	buf     []byte
+	size    int
+	maxSize int
 }
 
-func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int) *activeSeriesResponse {
 	return &activeSeriesResponse{
 		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
+		maxSize:            maxSize,
 	}
 }
 
 var ErrResponseTooLarge = errors.New("response too large")
-
-const activeSeriesResponseMaxSize = 5 * 1024 * 1024
 
 func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 
@@ -1911,7 +1920,7 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 
 			r.buf = l.Bytes(r.buf)
 			r.size += len(r.buf)
-			if r.size > activeSeriesResponseMaxSize {
+			if r.size > r.maxSize {
 				return ErrResponseTooLarge
 			}
 
@@ -1933,7 +1942,7 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 
 				r.buf = l.Bytes(r.buf)
 				r.size += len(r.buf)
-				if r.size > activeSeriesResponseMaxSize {
+				if r.size > r.maxSize {
 					return ErrResponseTooLarge
 				}
 

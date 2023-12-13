@@ -3705,6 +3705,17 @@
         },
         {
           "kind": "field",
+          "name": "active_series_results_max_size_bytes",
+          "required": false,
+          "desc": "Maximum size of an active series request result shard in bytes. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 419430400,
+          "fieldFlag": "querier.active-series-results-max-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_evaluation_delay_duration",
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
