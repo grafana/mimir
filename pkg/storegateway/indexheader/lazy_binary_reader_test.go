@@ -52,15 +52,17 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
+		ctx := context.Background()
+
 		// Should lazy load the index upon first usage.
-		v, err := r.IndexVersion()
+		v, err := r.IndexVersion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 2, v)
 		require.True(t, r.reader != nil)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
-		labelNames, err := r.LabelNames()
+		labelNames, err := r.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -87,7 +89,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
 		// Ensure it can read data.
-		labelNames, err := r.LabelNames()
+		labelNames, err := r.LabelNames(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -103,8 +105,10 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 		require.NoError(t, err)
 		require.Nil(t, r.reader)
 
+		ctx := context.Background()
+
 		// Should lazy load the index upon first usage.
-		labelNames, err := r.LabelNames()
+		labelNames, err := r.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -117,7 +121,7 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
 
 		// Should lazy load again upon next usage.
-		labelNames, err = r.LabelNames()
+		labelNames, err = r.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -143,7 +147,7 @@ func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 		})
 
 		// Should lazy load the index upon first usage.
-		labelNames, err := r.LabelNames()
+		labelNames, err := r.LabelNames(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -208,7 +212,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 				case <-done:
 					return
 				default:
-					_, err := r.PostingsOffset("a", "1")
+					_, err := r.PostingsOffset(context.Background(), "a", "1")
 					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading), "unexpected error: %s", err)
 				}
 			}
@@ -223,7 +227,8 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
-		r.EagerLoad()
+		ctx := context.Background()
+		r.EagerLoad(ctx)
 
 		require.NoError(t, err)
 		require.NotNil(t, r.reader, "t.reader must already eagerly loaded")
@@ -235,14 +240,14 @@ func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
 		// The index should already be loaded, the following call will return reader already loaded above
-		v, err := r.IndexVersion()
+		v, err := r.IndexVersion(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 2, v)
 		require.True(t, r.reader != nil)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
-		labelNames, err := r.LabelNames()
+		labelNames, err := r.LabelNames(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"a"}, labelNames)
 		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
@@ -327,7 +332,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	for i := 0; i < numLazyReader; i++ {
 		index := i
 		go func() {
-			_, err := lazyReaders[index].IndexVersion()
+			_, err := lazyReaders[index].IndexVersion(context.Background())
 			require.ErrorIs(t, err, errOhNo)
 			wg.Done()
 		}()
@@ -360,7 +365,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	for i := 0; i < numClients; i++ {
 		go func() {
 			<-start
-			_, _ = lazyReader.IndexVersion()
+			_, _ = lazyReader.IndexVersion(context.Background())
 			clientWG.Done()
 		}()
 	}
@@ -397,7 +402,7 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 
 		closed := atomic.NewBool(false)
 
-		sr, err := r.SymbolsReader()
+		sr, err := r.SymbolsReader(context.Background())
 		require.NoError(t, err)
 
 		wg := sync.WaitGroup{}
