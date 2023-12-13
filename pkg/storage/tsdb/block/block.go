@@ -357,7 +357,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	return nil
 }
 
-func UnMarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) error {
+func DeleteNoCompactMarker(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
 	if err := bkt.Delete(ctx, m); err != nil {
 		return errors.Wrapf(err, "unmark for no-compaction failed %s", m)
