@@ -1915,7 +1915,7 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 }
 
 func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
 	defer span.Finish()
 	span.SetTag("blockID", b.meta.ULID)
 

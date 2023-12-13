@@ -25,6 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var (
@@ -265,6 +266,9 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.W
 
 // loadReader is called from getOrLoadReader, without any locks.
 func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
+	logger, ctx := spanlogger.NewWithLogger(ctx, r.logger, "LazyBinaryReader.loadReader")
+	defer logger.Finish()
+
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
@@ -286,7 +290,7 @@ func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
 		return r.readerErr
 	}
 
-	level.Debug(r.logger).Log("msg", "lazy loading index-header file", "path", r.filepath)
+	logger.DebugLog("msg", "lazy loading index-header file", "path", r.filepath)
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
@@ -300,7 +304,7 @@ func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
 	r.reader = reader
 	elapsed := time.Since(startTime)
 
-	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
+	logger.DebugLog("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
 	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
 	return nil
