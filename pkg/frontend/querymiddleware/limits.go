@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
@@ -216,8 +217,8 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 }
 
 func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(cancellation.NewErrorf("limitedParallelismRoundTripper finished"))
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
 	if err != nil {
