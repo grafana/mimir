@@ -362,6 +362,6 @@ func DeleteNoCompactMarker(ctx context.Context, logger log.Logger, bkt objstore.
 	if err := bkt.Delete(ctx, m); err != nil {
 		return errors.Wrapf(err, "deletion of no-compaction marker for block %s has failed", id.String())
 	}
-	level.Info(logger).Log("msg", "block has been unmarked for no compaction", "block", id)
+	level.Info(logger).Log("msg", "no-compaction marker has been deleted; block can be compacted in the future", "block", id)
 	return nil
 }
