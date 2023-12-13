@@ -9815,22 +9815,22 @@ func TestIngester_Starting(t *testing.T) {
 			// Ensure that ingester fI1 is not in the ring yet.
 			require.Nil(t, fI1.getInstance(ctx))
 
-			fI1.startWaitAndCheck(t, ctx)
+			fI1.startWaitAndCheck(ctx, t)
 			// Check that fI1's lifecycler is running, and that fI1 is in the ring with state ACTIVE.
 			require.Equal(t, services.Running, fI1.lifecycler.State())
-			fI1.checkRingState(t, ctx, ring.ACTIVE)
+			fI1.checkRingState(ctx, t, ring.ACTIVE)
 
-			fI1.shutDownWaitAndCheck(t, ctx)
+			fI1.shutDownWaitAndCheck(ctx, t)
 
 			// Start the same ingester, but with an error.
 			fI2 := newFailingIngester(t, cfg, kvStore, testCase.failingCause)
 			ctx = context.Background()
 			// Before starting check that ingester fI2 is already in the ring, and its state is LEAVING.
-			fI2.checkRingState(t, ctx, ring.LEAVING)
+			fI2.checkRingState(ctx, t, ring.LEAVING)
 
-			fI2.startWaitAndCheck(t, ctx)
+			fI2.startWaitAndCheck(ctx, t)
 			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI2.lifecycler.State())
-			fI2.checkRingState(t, ctx, testCase.expectedRingStateAfterStarting)
+			fI2.checkRingState(ctx, t, testCase.expectedRingStateAfterStarting)
 		})
 	}
 }
@@ -9852,7 +9852,7 @@ func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCaus
 	return fI
 }
 
-func (i *failingIngester) startWaitAndCheck(t *testing.T, ctx context.Context) {
+func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 	err := services.StartAndAwaitRunning(ctx, i)
 	var expectedHealthyIngesters int
 	if i.failingCause == nil {
@@ -9868,11 +9868,11 @@ func (i *failingIngester) startWaitAndCheck(t *testing.T, ctx context.Context) {
 	})
 }
 
-func (i *failingIngester) shutDownWaitAndCheck(t *testing.T, ctx context.Context) {
+func (i *failingIngester) shutDownWaitAndCheck(ctx context.Context, t *testing.T) {
 	// We properly shut down ingester, and ensure that it lifecycler is terminated,
 	// but that the ingester stays in the ring with the state LEAVING.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
-	i.checkRingState(t, ctx, ring.LEAVING)
+	i.checkRingState(ctx, t, ring.LEAVING)
 	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
 }
 
@@ -9903,7 +9903,7 @@ func (i *failingIngester) getInstance(ctx context.Context) *ring.InstanceDesc {
 	return &instanceDesc
 }
 
-func (i *failingIngester) checkRingState(t *testing.T, ctx context.Context, expectedState ring.InstanceState) {
+func (i *failingIngester) checkRingState(ctx context.Context, t *testing.T, expectedState ring.InstanceState) {
 	instance := i.getInstance(ctx)
 	require.NotNil(t, instance)
 	require.Equal(t, expectedState, instance.GetState())

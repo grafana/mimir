@@ -438,7 +438,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		if err != nil {
 			// if starting() fails for any reason (e.g., context canceled),
 			// the lifecycler must be stopped.
-			services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
 		}
 	}()
 	if err := i.openExistingTSDB(ctx); err != nil {
