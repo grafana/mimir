@@ -50,164 +50,126 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 
 	now := time.Now()
 
-	t.Run("query with start after query store after is ingesters only", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:                            |----|
+	// range and label queries have `start` and `end` params,
+	// requiring different cases than instant queries with only a `time` param
+	rangeAndLabelQueryTests := map[string]struct {
+		start                       time.Time
+		end                         time.Time
+		expectedAddlQueueDimensions []string
+	}{
+		"query with start after query store after is ingesters only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                            |----|
+			start:                       now.Add(-adapter.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			end:                         now,
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersQueueDimension},
+		},
+		"query with end before query ingesters within is store-gateways only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:        |----|
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Hour),
+			end:                         now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryStoreGatewayQueueDimension},
+		},
+		"query with start before query ingesters and end after query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:            |--------------|
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-adapter.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
+		},
+		"query with start before query ingesters and end before query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:             |---------|
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-adapter.cfg.QueryStoreAfter).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
+		},
+		"query with start after query ingesters and end after query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                  |---------|
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute),
+			end:                         now.Add(-adapter.cfg.QueryStoreAfter).Add(-1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
+		},
+		"query with start and end between query ingesters and query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time range:                 |-----|
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(30 * time.Minute),
+			end:                         now,
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
+		},
+	}
 
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.cfg.QueryStoreAfter).Add(1 * time.Minute)
-		end := now
+	for testName, testData := range rangeAndLabelQueryTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		instantHTTPReq := makeInstantHTTPRequest(ctx, start)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
+			rangeHTTPReq := makeRangeHTTPRequest(ctx, testData.start, testData.end, 60)
+			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, testData.start, testData.end)
 
-		reqs := []*http.Request{rangeHTTPReq, instantHTTPReq, labelValuesHTTPReq}
+			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
 
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+			for _, req := range reqs {
+				httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
+				require.NoError(t, err)
+
+				additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
+					ctx, httpgrpcReq, now,
+				)
+				require.NoError(t, err)
+				require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+			}
+		})
+	}
+
+	instantQueryTests := map[string]struct {
+		time                        time.Time
+		expectedAddlQueueDimensions []string
+	}{
+		"query with time after query store after is ingesters only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                                 |
+			time:                        now.Add(-adapter.cfg.QueryStoreAfter).Add(1 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersQueueDimension},
+		},
+		"query with end before query ingesters within is store-gateways only": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                   |
+			time:                        now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Hour),
+			expectedAddlQueueDimensions: []string{ShouldQueryStoreGatewayQueueDimension},
+		},
+		"query with start and end between query ingesters and query store is ingesters-and-store-gateways": {
+			// query ingesters:                |------------------
+			// query store-gateways:   ------------------|
+			// query time:                          |
+			time:                        now.Add(-adapter.limits.QueryIngestersWithin("")).Add(30 * time.Minute),
+			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
+		},
+	}
+	for testName, testData := range instantQueryTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+
+			instantHTTPReq := makeInstantHTTPRequest(ctx, testData.time)
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(instantHTTPReq)
 			require.NoError(t, err)
 
 			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
 				ctx, httpgrpcReq, now,
 			)
 			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryIngestersQueueDimension}, additionalQueueDimensions)
-		}
-	})
-
-	t.Run("query with end before query ingesters within is store-gateways only", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:        |----|
-
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Hour)
-		end := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute)
-
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		instantHTTPReq := makeInstantHTTPRequest(ctx, start)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
-
-		reqs := []*http.Request{rangeHTTPReq, instantHTTPReq, labelValuesHTTPReq}
-
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
-			require.NoError(t, err)
-
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryStoreGatewayQueueDimension}, additionalQueueDimensions)
-		}
-	})
-
-	t.Run("query with start before query ingesters and end after query store is ingesters-and-store-gateways", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:            |--------------|
-
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute)
-		end := now.Add(-adapter.cfg.QueryStoreAfter).Add(1 * time.Minute)
-
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
-
-		reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
-
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
-			require.NoError(t, err)
-
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}, additionalQueueDimensions)
-		}
-	})
-
-	t.Run("query with start before query ingesters and end before query store is ingesters-and-store-gateways", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:             |---------|
-
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute)
-		end := now.Add(-adapter.cfg.QueryStoreAfter).Add(-1 * time.Minute)
-
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
-
-		reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
-
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
-			require.NoError(t, err)
-
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}, additionalQueueDimensions)
-		}
-	})
-
-	t.Run("query with start after query ingesters and end after query store is ingesters-and-store-gateways", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:                  |---------|
-
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(-1 * time.Minute)
-		end := now.Add(-adapter.cfg.QueryStoreAfter).Add(-1 * time.Minute)
-
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
-
-		reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
-
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
-			require.NoError(t, err)
-
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}, additionalQueueDimensions)
-		}
-	})
-
-	t.Run("query with start and end between query ingesters and query store is ingesters-and-store-gateways", func(t *testing.T) {
-		// query ingesters:                |------------------
-		// query store-gateways:   ------------------|
-		// query time range:                 |-----|
-
-		ctx := user.InjectOrgID(context.Background(), "tenant-0")
-		start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(30 * time.Minute)
-		end := now
-
-		rangeHTTPReq := makeRangeHTTPRequest(ctx, start, end, 60)
-		instantHTTPReq := makeInstantHTTPRequest(ctx, start)
-		labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, start, end)
-
-		reqs := []*http.Request{rangeHTTPReq, instantHTTPReq, labelValuesHTTPReq}
-
-		for _, req := range reqs {
-			httpgrpcReq, err := httpgrpc.FromHTTPRequest(req)
-			require.NoError(t, err)
-
-			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
-				ctx, httpgrpcReq, now,
-			)
-			require.NoError(t, err)
-			require.Equal(t, []string{ShouldQueryIngestersAndStoreGatewayQueueDimension}, additionalQueueDimensions)
-		}
-	})
+			require.Equal(t, testData.expectedAddlQueueDimensions, additionalQueueDimensions)
+		})
+	}
 
 	t.Run("malformed httpgrpc requests fail decoding", func(t *testing.T) {
 		reqFailsHTTPDecode := &httpgrpc.HTTPRequest{Method: ";"}

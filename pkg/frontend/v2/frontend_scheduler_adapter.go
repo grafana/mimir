@@ -89,7 +89,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Warn(a.log).Log("unsupported request type", "query", httpRequest)
+		level.Warn(a.log).Log("msg", "unsupported request type", "query", httpRequest)
 		return nil, nil
 	}
 }
