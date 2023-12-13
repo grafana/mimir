@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -142,7 +143,7 @@ func TestPusherConsumer(t *testing.T) {
 
 				return tc.responses[receivedReqs].WriteResponse, tc.responses[receivedReqs].err
 			})
-			c := newPusherConsumer(pusher, log.NewNopLogger())
+			c := newPusherConsumer(pusher, newReaderMetrics(1, prometheus.NewPedanticRegistry()), log.NewNopLogger())
 			err := c.Consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)

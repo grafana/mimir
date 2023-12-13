@@ -55,7 +55,7 @@ type PartitionReader struct {
 
 func NewReaderForPusher(kafkaAddress, kafkaTopic, kafkaClientID string, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := newReaderMetrics(partitionID, reg)
-	consumer := newPusherConsumer(pusher, logger)
+	consumer := newPusherConsumer(pusher, metrics, logger)
 	return newReader(kafkaAddress, kafkaTopic, kafkaClientID, partitionID, consumer, logger, metrics)
 }
 
