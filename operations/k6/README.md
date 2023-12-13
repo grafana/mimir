@@ -21,7 +21,7 @@ xk6 build --with github.com/grafana/xk6-client-prometheus-remote@latest
 The [load-testing-with-k6.js] script can be configured using the following environment variables:
 
 | Environment variable          | Required | Default value | Description                                                                           |
-|-------------------------------| -------- | ------------- |---------------------------------------------------------------------------------------|
+| ----------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------- |
 | `K6_WRITE_HOSTNAME`           | Yes      |               | Mimir hostname to connect to on the write path.                                       |
 | `K6_READ_HOSTNAME`            | Yes      |               | Mimir hostname to connect to on the read path.                                        |
 | `K6_SCHEME`                   |          | http          | The protocol scheme used for requests.                                                |
