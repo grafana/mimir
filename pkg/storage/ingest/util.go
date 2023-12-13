@@ -10,8 +10,20 @@ import (
 	"github.com/grafana/regexp"
 )
 
-// Regular expression used to parse the ingester numeric ID.
-var ingesterIDRegexp = regexp.MustCompile("-(zone-.-)?([0-9]+)$")
+var (
+	// Regular expression used to parse the ingester numeric ID.
+	ingesterIDRegexp = regexp.MustCompile("-(zone-.-)?([0-9]+)$")
+
+	// The Prometheus summary objectives used when tracking latency.
+	latencySummaryObjectives = map[float64]float64{
+		0.5:   0.05,
+		0.90:  0.01,
+		0.99:  0.001,
+		0.995: 0.001,
+		0.999: 0.001,
+		1:     0.001,
+	}
+)
 
 // IngesterPartition returns the partition ID to use to write to a specific ingester partition.
 // The input ingester ID is expected to end either with "zone-X-Y" or only "-Y" where "X" is a letter in the range [a,d]
