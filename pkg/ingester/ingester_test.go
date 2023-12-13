@@ -9783,56 +9783,71 @@ func buildSeriesSet(t *testing.T, series *Series) []labels.Labels {
 func TestIngester_Starting(t *testing.T) {
 	tests := map[string]struct {
 		failingCause                         error
+		isIngesterInTheRing                  bool
 		expectedLifecyclerStateAfterStarting services.State
 		expectedRingStateAfterStarting       ring.InstanceState
 	}{
-		"if starting() runs into context.Canceled, its lifecycler terminates, and its ring state is LEAVING": {
+		"if starting() of an ingester which is not in the ring runs into context.Canceled, its lifecycler terminates, and it is not in the ring": {
+			failingCause:                         context.Canceled,
+			isIngesterInTheRing:                  false,
+			expectedLifecyclerStateAfterStarting: services.Terminated,
+		},
+		"if starting() of an ingester which is not in the ring runs into an error, its lifecycler terminates, and it is not in the ring": {
+			failingCause:                         errors.New("this is an error"),
+			isIngesterInTheRing:                  false,
+			expectedLifecyclerStateAfterStarting: services.Terminated,
+		},
+		"if starting() of an ingester with ring state LEAVING runs into context.Canceled, its lifecycler terminates, and its ring state is LEAVING": {
 			failingCause:                         context.Canceled,
 			expectedLifecyclerStateAfterStarting: services.Terminated,
 			expectedRingStateAfterStarting:       ring.LEAVING,
 		},
-		"if starting() runs into an error, its lifecycler terminates, and its ring state is LEAVING": {
+		"if starting() of an ingester with ring state LEAVING runs into an error, its lifecycler terminates, and its ring state is LEAVING": {
 			failingCause:                         errors.New("this is an error"),
 			expectedLifecyclerStateAfterStarting: services.Terminated,
 			expectedRingStateAfterStarting:       ring.LEAVING,
 		},
 	}
 
-	// For each test case we do the following things:
-	// - We start an ingester without errors, and we show it was not in the ring before,
-	//   but it is in the ring in the ACTIVE state after we started it.
-	// - We shut down ingester properly, and we show it remains in the ring in the LEAVING state.
-	// - We try to start the ingester one more time, but we run into the error specified in the test,
-	//   and we show that it remains in the ring in the LEAVING state.
 	for testName, testCase := range tests {
 		cfg := defaultIngesterTestConfig(t)
-		cfg.IngesterRing.UnregisterOnShutdown = false
 		t.Run(testName, func(t *testing.T) {
-			// Start the first ingester.
-			fI1 := newFailingIngester(t, cfg, nil, nil)
-			kvStore := fI1.kvStore
+			var checkInitalRingState func(context.Context, *failingIngester)
+			var checkFinalRingState func(context.Context, *failingIngester)
+			if testCase.isIngesterInTheRing {
+				cfg.IngesterRing.UnregisterOnShutdown = false
+				// Ensure that ingester fI is already in the ring, and its state is LEAVING.
+				checkInitalRingState = func(ctx context.Context, fI *failingIngester) { fI.checkRingState(ctx, t, ring.LEAVING) }
+				// Ensure that ingester fI is in the expected state after failing starting().
+				checkFinalRingState = func(ctx context.Context, fI *failingIngester) {
+					fI.checkRingState(ctx, t, testCase.expectedRingStateAfterStarting)
+				}
+			} else {
+				// Ensure that ingester fI is not in the ring either before or after failing starting().
+				checkInitalRingState = func(ctx context.Context, fI *failingIngester) { require.Nil(t, fI.getInstance(ctx)) }
+				checkFinalRingState = func(ctx context.Context, fI *failingIngester) { require.Nil(t, fI.getInstance(ctx)) }
+			}
+			fI := setupFailingIngester(t, cfg, testCase.failingCause)
 			ctx := context.Background()
-			// Ensure that ingester fI1 is not in the ring yet.
-			require.Nil(t, fI1.getInstance(ctx))
+			checkInitalRingState(ctx, fI)
 
-			fI1.startWaitAndCheck(ctx, t)
-			// Check that fI1's lifecycler is running, and that fI1 is in the ring with state ACTIVE.
-			require.Equal(t, services.Running, fI1.lifecycler.State())
-			fI1.checkRingState(ctx, t, ring.ACTIVE)
-
-			fI1.shutDownWaitAndCheck(ctx, t)
-
-			// Start the same ingester, but with an error.
-			fI2 := newFailingIngester(t, cfg, kvStore, testCase.failingCause)
-			ctx = context.Background()
-			// Before starting check that ingester fI2 is already in the ring, and its state is LEAVING.
-			fI2.checkRingState(ctx, t, ring.LEAVING)
-
-			fI2.startWaitAndCheck(ctx, t)
-			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI2.lifecycler.State())
-			fI2.checkRingState(ctx, t, testCase.expectedRingStateAfterStarting)
+			fI.startWaitAndCheck(ctx, t)
+			require.Equal(t, testCase.expectedLifecyclerStateAfterStarting, fI.lifecycler.State())
+			checkFinalRingState(ctx, fI)
 		})
 	}
+}
+
+func setupFailingIngester(t *testing.T, cfg Config, failingCause error) *failingIngester {
+	// Start the first ingester. This ensures the ring will be created.
+	fI := newFailingIngester(t, cfg, nil, nil)
+	kvStore := fI.kvStore
+	ctx := context.Background()
+	fI.startWaitAndCheck(ctx, t)
+	fI.shutDownWaitAndCheck(ctx, t)
+
+	// Start the same ingester with an error.
+	return newFailingIngester(t, cfg, kvStore, failingCause)
 }
 
 type failingIngester struct {
@@ -9869,10 +9884,8 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 }
 
 func (i *failingIngester) shutDownWaitAndCheck(ctx context.Context, t *testing.T) {
-	// We properly shut down ingester, and ensure that it lifecycler is terminated,
-	// but that the ingester stays in the ring with the state LEAVING.
+	// We properly shut down ingester, and ensure that it lifecycler is terminated.
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, i))
-	i.checkRingState(ctx, t, ring.LEAVING)
 	require.Equal(t, services.Terminated, i.lifecycler.BasicService.State())
 }
 
@@ -9884,7 +9897,6 @@ func (i *failingIngester) starting(parentCtx context.Context) error {
 		ctx, cancel := context.WithCancel(parentCtx)
 		go func() {
 			cancel()
-			fmt.Println("Context has been canceled")
 		}()
 		return i.Ingester.starting(ctx)
 	}
