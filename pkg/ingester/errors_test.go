@@ -805,3 +805,10 @@ func checkErrorWithStatusDetails(t *testing.T, details []any, expectedDetails *m
 		require.Equal(t, expectedDetails, errDetails)
 	}
 }
+
+func checkErrorWithStatus(t *testing.T, err error, expectedErr error) {
+	require.Error(t, err)
+	errWithStatus, ok := err.(errorWithStatus)
+	require.True(t, ok)
+	require.True(t, errWithStatus.equals(expectedErr))
+}
