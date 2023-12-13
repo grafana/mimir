@@ -414,6 +414,59 @@ func TestMarkForNoCompact(t *testing.T) {
 	}
 }
 
+func TestUnMarkForNoCompact(t *testing.T) {
+	testutil.VerifyNoLeak(t)
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	for _, tcase := range []struct {
+		name          string
+		preUpload     func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
+		expectedError func(id ulid.ULID) error
+	}{
+		{
+			name: "unmark existing block should succeed",
+			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				m, err := json.Marshal(NoCompactMark{
+					ID:            id,
+					NoCompactTime: time.Now().Unix(),
+					Version:       NoCompactMarkVersion1,
+				})
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), NoCompactMarkFilename), bytes.NewReader(m)))
+			},
+			expectedError: func(_ ulid.ULID) error {
+				return nil
+			},
+		},
+		{
+			name:      "unmark non-existing block should fail",
+			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {},
+			expectedError: func(id ulid.ULID) error {
+				return errors.Errorf("unmark for no-compaction failed %s/no-compact-mark.json: inmem: object not found", id.String())
+			},
+		},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			bkt := objstore.NewInMemBucket()
+			id, err := CreateBlock(ctx, tmpDir, fiveLabels,
+				100, 0, 1000, labels.FromStrings("ext1", "val1"))
+			require.NoError(t, err)
+
+			tcase.preUpload(t, id, bkt)
+			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
+
+			err = UnMarkForNoCompact(ctx, log.NewNopLogger(), bkt, id)
+			if tcase.expectedError(id) != nil {
+				require.EqualError(t, err, tcase.expectedError(id).Error())
+			} else {
+				require.NoError(t, err)
+				_, ok := bkt.Objects()[path.Join(tmpDir, id.String())]
+				require.False(t, ok)
+			}
+		})
+	}
+}
+
 func TestUploadCleanup(t *testing.T) {
 	testutil.VerifyNoLeak(t)
 

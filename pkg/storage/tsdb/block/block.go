@@ -356,3 +356,12 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
 	return nil
 }
+
+func UnMarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID) error {
+	m := path.Join(id.String(), NoCompactMarkFilename)
+	if err := bkt.Delete(ctx, m); err != nil {
+		return errors.Wrapf(err, "unmark for no-compaction failed %s", m)
+	}
+	level.Info(logger).Log("msg", "block has been unmarked for no compaction", "block", id)
+	return nil
+}
