@@ -4,17 +4,20 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type Pusher interface {
@@ -63,7 +66,9 @@ func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 }
 
 func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedRecord) error {
+	recordIdx := -1
 	for wr := range reqC {
+		recordIdx++
 		if wr.err != nil {
 			level.Error(c.l).Log("msg", "failed to parse write request; skipping", "err", wr.err)
 			continue
@@ -75,12 +80,35 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		if err != nil {
-			level.Error(c.l).Log("msg", "failed to push write request; skipping", "err", err)
-			// TODO move distributor's isClientError to a separate package and use that here to swallow only client errors and abort on others
-			continue
+			if !isClientIngesterError(err) {
+				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
+			}
+			level.Warn(c.l).Log("msg", "consuming write request", "err", err, "user", wr.tenantID)
 		}
 	}
 	return nil
+}
+
+func isClientIngesterError(err error) bool {
+	stat, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		// This should not be reached but in case it is, fall back to assuming it's our fault.
+		return false
+	}
+	if util.IsHTTPStatusCode(stat.Code()) {
+		// This is needed for backwards compatibility and can be removed after Mimir 2.14
+		// when the ingester will return only mimirpb errors.
+		return stat.Code()/100 == 4
+	}
+
+	if details := stat.Details(); len(details) > 0 {
+		if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+			// This is usually the case.
+			return errDetails.Cause == mimirpb.BAD_DATA
+		}
+	}
+	// This should not be reached but in case it is, fall back to assuming it's our fault.
+	return false
 }
 
 func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {
