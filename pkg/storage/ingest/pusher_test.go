@@ -44,14 +44,14 @@ func TestPusherConsumer(t *testing.T) {
 	okResponse := response{WriteResponse: &mimirpb.WriteResponse{}}
 
 	testCases := map[string]struct {
-		records     []Record
+		records     []record
 		responses   []response
 		expectedWRs []*mimirpb.WriteRequest
 		expErr      string
 	}{
 		"single record": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -59,10 +59,10 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:1],
 		},
 		"multiple records": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
-				{Content: wrBytes[1], TenantID: tenantID},
-				{Content: wrBytes[2], TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -72,10 +72,10 @@ func TestPusherConsumer(t *testing.T) {
 			expectedWRs: writeReqs[0:3],
 		},
 		"unparsable record": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
-				{Content: []byte{0}, TenantID: tenantID},
-				{Content: wrBytes[1], TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: []byte{0}, tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -85,10 +85,10 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      "",
 		},
 		"failed processing of record": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
-				{Content: wrBytes[1], TenantID: tenantID},
-				{Content: wrBytes[2], TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -99,9 +99,9 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      "",
 		},
 		"failed processing of last record": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
-				{Content: wrBytes[1], TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -111,10 +111,10 @@ func TestPusherConsumer(t *testing.T) {
 			expErr:      "",
 		},
 		"failed processing & failed unmarshalling": {
-			records: []Record{
-				{Content: wrBytes[0], TenantID: tenantID},
-				{Content: wrBytes[1], TenantID: tenantID},
-				{Content: []byte{0}, TenantID: tenantID},
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: []byte{0}, tenantID: tenantID},
 			},
 			responses: []response{
 				okResponse,
@@ -146,7 +146,7 @@ func TestPusherConsumer(t *testing.T) {
 				return tc.responses[receivedReqs].WriteResponse, tc.responses[receivedReqs].err
 			})
 			c := newPusherConsumer(pusher, newReaderMetrics(1, prometheus.NewPedanticRegistry()), log.NewNopLogger())
-			err := c.Consume(context.Background(), tc.records)
+			err := c.consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
 			} else {

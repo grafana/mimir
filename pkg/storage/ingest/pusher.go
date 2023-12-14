@@ -40,7 +40,7 @@ func newPusherConsumer(p Pusher, metrics readerMetrics, l log.Logger) *pusherCon
 	}
 }
 
-func (c pusherConsumer) Consume(ctx context.Context, records []Record) error {
+func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 	recC := make(chan parsedRecord)
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(cancellation.NewErrorf("done consuming records"))
@@ -74,17 +74,17 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 	return nil
 }
 
-func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []Record, reqC chan<- parsedRecord) {
+func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, reqC chan<- parsedRecord) {
 	defer close(reqC)
 	done := ctx.Done()
 
 	for _, record := range records {
 		pRecord := parsedRecord{
-			tenantID:     record.TenantID,
+			tenantID:     record.tenantID,
 			WriteRequest: &mimirpb.WriteRequest{},
 		}
 		// We don't free the WriteRequest slices because they are being freed by the Pusher.
-		err := pRecord.WriteRequest.Unmarshal(record.Content)
+		err := pRecord.WriteRequest.Unmarshal(record.content)
 		if err != nil {
 			err = errors.Wrap(err, "parsing ingest consumer write request")
 			pRecord.err = err

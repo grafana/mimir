@@ -25,13 +25,13 @@ import (
 // consumerGroup is only used to store commit offsets, not for actual consuming.
 const consumerGroup = "mimir"
 
-type Record struct {
-	TenantID string
-	Content  []byte
+type record struct {
+	tenantID string
+	content  []byte
 }
 
-type RecordConsumer interface {
-	Consume(context.Context, []Record) error
+type recordConsumer interface {
+	consume(context.Context, []record) error
 }
 
 type PartitionReader struct {
@@ -45,7 +45,7 @@ type PartitionReader struct {
 	client    *kgo.Client
 	admClient *kadm.Client
 
-	consumer RecordConsumer
+	consumer recordConsumer
 	metrics  readerMetrics
 
 	commitInterval time.Duration
@@ -61,7 +61,7 @@ func NewReaderForPusher(kafkaAddress, kafkaTopic, kafkaClientID string, partitio
 	return newReader(kafkaAddress, kafkaTopic, kafkaClientID, partitionID, consumer, logger, metrics)
 }
 
-func newReader(kafkaAddress, kafkaTopic, kafkaClientID string, partitionID int32, consumer RecordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
+func newReader(kafkaAddress, kafkaTopic, kafkaClientID string, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaAddress:   kafkaAddress,
 		kafkaTopic:     kafkaTopic,
@@ -144,7 +144,7 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
-	records := make([]Record, 0, len(fetches.Records()))
+	records := make([]record, 0, len(fetches.Records()))
 
 	var minOffset, maxOffset int
 	fetches.EachRecord(func(record *kgo.Record) {
@@ -153,17 +153,17 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		records = append(records, mapRecord(record))
 	})
 
-	err := r.consumer.Consume(ctx, records)
+	err := r.consumer.consume(ctx, records)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "encountered error processing records; skipping", "min_offset", minOffset, "max_offset", maxOffset, "err", err)
 		// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
 	}
 }
 
-func mapRecord(record *kgo.Record) Record {
-	return Record{
-		Content:  record.Value,
-		TenantID: string(record.Key),
+func mapRecord(r *kgo.Record) record {
+	return record{
+		content:  r.Value,
+		tenantID: string(r.Key),
 	}
 }
 

@@ -101,7 +101,7 @@ type readerTestCfg struct {
 	addr           string
 	topicName      string
 	partitionID    int32
-	consumer       RecordConsumer
+	consumer       recordConsumer
 	registry       *prometheus.Registry
 	logger         log.Logger
 	commitInterval time.Duration
@@ -115,7 +115,7 @@ func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 	}
 }
 
-func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
+func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:       prometheus.NewPedanticRegistry(),
 		logger:         log.NewNopLogger(),
@@ -127,7 +127,7 @@ func defaultReaderTestConfig(addr string, topicName string, partitionID int32, c
 	}
 }
 
-func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+func startReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
 	cfg := defaultReaderTestConfig(addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
@@ -260,9 +260,9 @@ func newTestConsumer(capacity int) testConsumer {
 	}
 }
 
-func (t testConsumer) Consume(_ context.Context, records []Record) error {
+func (t testConsumer) consume(_ context.Context, records []record) error {
 	for _, r := range records {
-		t.messages <- r.Content
+		t.messages <- r.content
 	}
 	return nil
 }
