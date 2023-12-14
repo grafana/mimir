@@ -1386,7 +1386,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	if len(matchers) == 0 {
 		// Do it via index reader to have pending reader registered correctly.
 		// LabelNames are already sorted.
-		names, err := indexr.block.indexHeaderReader.LabelNames()
+		names, err := indexr.block.indexHeaderReader.LabelNames(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "label names")
 		}
@@ -1580,7 +1580,7 @@ func blockLabelValues(ctx context.Context, b *bucketBlock, postingsStrategy post
 	}
 
 	// TODO: if matchers contains labelName, we could use it to filter out label values here.
-	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(labelName, "", nil)
+	allValuesPostingOffsets, err := b.indexHeaderReader.LabelValuesOffsets(ctx, labelName, "", nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
@@ -1915,13 +1915,13 @@ func (b *bucketBlock) chunkRangeReader(ctx context.Context, seq int, off, length
 }
 
 func (b *bucketBlock) loadedIndexReader(ctx context.Context, postingsStrategy postingsSelectionStrategy, stats *safeQueryStats) *bucketIndexReader {
-	span, _ := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
+	span, ctx := opentracing.StartSpanFromContext(ctx, "bucketBlock.loadedIndexReader")
 	defer span.Finish()
 	span.SetTag("blockID", b.meta.ULID)
 
 	loadStartTime := time.Now()
 	// Call IndexVersion to lazy load the index header if it lazy-loaded.
-	_, _ = b.indexHeaderReader.IndexVersion()
+	_, _ = b.indexHeaderReader.IndexVersion(ctx)
 	stats.update(func(stats *queryStats) {
 		stats.streamingSeriesIndexHeaderLoadDuration += time.Since(loadStartTime)
 	})
