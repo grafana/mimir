@@ -183,8 +183,10 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 				return fmt.Errorf("received unexpected response from upstream: status %d, body: %s", resp.StatusCode, string(body))
 			}
 
-			queryStats.Merge(partialStats)
 			resps[i] = resp
+
+			span.LogFields(otlog.Uint64("seriesCount", partialStats.LoadFetchedSeries()))
+			queryStats.Merge(partialStats)
 
 			return nil
 		})
