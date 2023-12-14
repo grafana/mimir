@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets for compactor, ingester, store-gateway, and alertmanager via `*.persistance.enableRetentionPolicy`, `*.persistance.whenDeleted`, and `*.persistance.whenScaled`. #6106
+* [FEATURE] Add pure Ingress option instead of the gateway service. #6932
 * [CHANGE] Remove deprecated configuration parameter `blocks_storage.bucket_store.max_chunk_pool_bytes`. #6673
 * [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500 for ingester and to 100 for all components. #5666
 * [CHANGE] Changed default `clusterDomain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
