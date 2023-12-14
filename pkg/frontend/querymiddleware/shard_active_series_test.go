@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,12 +27,18 @@ import (
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
-	const defaultShardCount = 3
+	const tenantShardCount = 4
+	const tenantMaxShardCount = 128
 
-	validReq := func(shardCount int) func() *http.Request {
+	validReq := func() *http.Request {
+		r := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__="metric"}`))
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		return r
+	}
+
+	validReqWithShardHeader := func(shardCount int) func() *http.Request {
 		return func() *http.Request {
-			r := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__="metric"}`))
-			r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			r := validReq()
 			r.Header.Add(totalShardsControlHeader, strconv.Itoa(shardCount))
 			return r
 		}
@@ -63,7 +70,6 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 
 			request: func() *http.Request {
 				request := httptest.NewRequest("GET", "/active_series", nil)
-				request.Header.Add(totalShardsControlHeader, strconv.Itoa(defaultShardCount))
 				return request
 			},
 			checkResponseErr: func(t *testing.T, err error) (cont bool) {
@@ -78,7 +84,6 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 				v := &url.Values{}
 				v.Set("selector", "{invalid}")
 				r := httptest.NewRequest("GET", "/active_series", nil)
-				r.Header.Add(totalShardsControlHeader, strconv.Itoa(defaultShardCount))
 				r.URL.RawQuery = v.Encode()
 				return r
 			},
@@ -89,42 +94,42 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		},
 		{
 			name:    "shard count bounded by limits",
-			request: validReq(1024),
+			request: validReqWithShardHeader(tenantMaxShardCount + 1),
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "shard count 1024 exceeds allowed maximum (128)")
+				assert.Contains(t, err.Error(), fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", tenantMaxShardCount+1, tenantMaxShardCount))
 				return false
 			},
 		},
 		{
 			name:            "upstream response: invalid type for data field",
 			invalidResponse: []byte(`{"data": "unexpected"}`),
-			request:         validReq(defaultShardCount),
+			request:         validReq,
 
 			// We don't expect an error here because it only occurs later as the response is
 			// being streamed.
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				return assert.NoError(t, err)
 			},
-			expectedShardCount: 3,
+			expectedShardCount: tenantShardCount,
 			expect:             result{Status: "error", Error: "expected data field to contain an array"},
 		},
 		{
 			name:            "upstream response: no data field",
 			invalidResponse: []byte(`{"unexpected": "response"}`),
-			request:         validReq(defaultShardCount),
+			request:         validReq,
 
 			// We don't expect an error here because it only occurs later as the response is
 			// being streamed.
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				return assert.NoError(t, err)
 			},
-			expectedShardCount: 3,
+			expectedShardCount: tenantShardCount,
 			expect:             result{Status: "error", Error: "expected data field at top level"},
 		},
 		{
 			name:    "upstream response: error",
-			request: validReq(defaultShardCount),
+			request: validReq,
 
 			errorResponse: errors.New("upstream error"),
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
@@ -133,8 +138,8 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:    "happy path, 3 shards",
-			request: validReq(defaultShardCount),
+			name:    "honours shard count from request header",
+			request: validReqWithShardHeader(3),
 
 			validResponses: [][]labels.Labels{
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
@@ -151,8 +156,28 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 		},
 		{
+			name:    "uses tenant's default shard count if none is specified in the request header",
+			request: validReq,
+			validResponses: [][]labels.Labels{
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "3")},
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "4")},
+			},
+			checkResponseErr: noError,
+			expect: result{
+				Data: []labels.Labels{
+					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+					labels.FromStrings(labels.MetricName, "metric", "shard", "3"),
+					labels.FromStrings(labels.MetricName, "metric", "shard", "4"),
+				},
+			},
+			expectedShardCount: tenantShardCount,
+		},
+		{
 			name:    "no sharding, request passed through",
-			request: validReq(1),
+			request: validReqWithShardHeader(1),
 
 			validResponses:   [][]labels.Labels{{labels.FromStrings(labels.MetricName, "metric")}},
 			checkResponseErr: noError,
@@ -160,7 +185,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		},
 		{
 			name:    "handles empty shards",
-			request: validReq(6),
+			request: validReqWithShardHeader(6),
 			validResponses: [][]labels.Labels{
 				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
 				{},
@@ -221,7 +246,11 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			})
 
 			// Run the request through the middleware.
-			s := newShardActiveSeriesMiddleware(upstream, mockLimits{maxShardedQueries: 128}, log.NewNopLogger())
+			s := newShardActiveSeriesMiddleware(
+				upstream,
+				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
+				log.NewNopLogger(),
+			)
 			resp, err := s.RoundTrip(tt.request().WithContext(user.InjectOrgID(tt.request().Context(), "test")))
 			if !tt.checkResponseErr(t, err) {
 				return

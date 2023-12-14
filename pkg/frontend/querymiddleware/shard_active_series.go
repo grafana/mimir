@@ -44,8 +44,6 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, l
 }
 
 func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response, error) {
-	const defaultNumShards = 1
-
 	spanLog, ctx := spanlogger.NewWithLogger(r.Context(), s.logger, "shardActiveSeries.RoundTrip")
 	defer spanLog.Finish()
 
@@ -54,17 +52,18 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	numShards := setShardCountFromHeader(defaultNumShards, r, spanLog)
+	defaultShardCount := s.limits.QueryShardingTotalShards(tenantID)
+	shardCount := setShardCountFromHeader(defaultShardCount, r, spanLog)
 
-	if numShards < 2 {
+	if shardCount < 2 {
 		spanLog.DebugLog("msg", "query sharding disabled for request")
 		return s.upstream.RoundTrip(r)
 	}
 
-	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); numShards > maxShards {
+	if maxShards := s.limits.QueryShardingMaxShardedQueries(tenantID); shardCount > maxShards {
 		return nil, apierror.New(
 			apierror.TypeBadData,
-			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", numShards, maxShards),
+			fmt.Sprintf("shard count %d exceeds allowed maximum (%d)", shardCount, maxShards),
 		)
 	}
 
@@ -75,10 +74,10 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 
 	spanLog.DebugLog(
 		"msg", "sharding active series query",
-		"shardCount", numShards, "selector", selector.String(),
+		"shardCount", shardCount, "selector", selector.String(),
 	)
 
-	reqs, err := buildShardedRequests(ctx, r, numShards, selector)
+	reqs, err := buildShardedRequests(ctx, r, shardCount, selector)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
@@ -100,7 +99,7 @@ func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanl
 		if err != nil {
 			continue
 		}
-		if shards > 0 {
+		if shards >= 0 {
 			spanLog.DebugLog(
 				"msg",
 				fmt.Sprintf("using shard count from header %s: %d", totalShardsControlHeader, shards),
