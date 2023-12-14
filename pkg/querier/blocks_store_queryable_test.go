@@ -10,13 +10,18 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
@@ -941,6 +946,164 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
+	const (
+		tenantID   = "user-1"
+		metricName = "test_metric"
+		minT       = int64(math.MinInt64)
+		maxT       = int64(math.MaxInt64)
+	)
+
+	var (
+		block1 = ulid.MustNew(1, nil)
+	)
+
+	// Create an utility to easily run each test case in isolation.
+	prepareTestCase := func(t *testing.T) (*mockStoreGatewayServer, *blocksStoreQuerier) {
+		// Create a GRPC server used to query the mocked service.
+		grpcServer := grpc.NewServer()
+		t.Cleanup(grpcServer.GracefulStop)
+
+		srv := &mockStoreGatewayServer{}
+		storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
+
+		listener, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+
+		go func() {
+			require.NoError(t, grpcServer.Serve(listener))
+		}()
+
+		// Mock the blocks finder.
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+
+		// Create a real gRPC client connecting to the gRPC server we control in this test.
+		clientCfg := grpcclient.Config{}
+		flagext.DefaultValues(&clientCfg)
+
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, prometheus.NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
+		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][]ulid.ULID{
+				client: {block1},
+			},
+		}}
+
+		q := &blocksStoreQuerier{
+			minT:        minT,
+			maxT:        maxT,
+			finder:      finder,
+			stores:      stores,
+			consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+			logger:      log.NewNopLogger(),
+			metrics:     newBlocksStoreQueryableMetrics(nil),
+			limits:      &blocksStoreLimitsMock{},
+		}
+
+		return srv, q
+	}
+
+	t.Run("Series()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of Series().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.On("Series", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+			close(waitExecution)
+			<-continueExecution
+		})
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		sp := &storage.SelectHints{Start: minT, End: maxT}
+		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, set.Err(), context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		srv.AssertNumberOfCalls(t, "Series", 1)
+	})
+
+	t.Run("LabelNames()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelNames().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.On("LabelNames", mock.Anything, mock.Anything).Return(&storepb.LabelNamesResponse{}, nil).Run(func(args mock.Arguments) {
+			close(waitExecution)
+			<-continueExecution
+		})
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		srv.AssertNumberOfCalls(t, "LabelNames", 1)
+	})
+
+	t.Run("LabelValues()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelValues().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.On("LabelValues", mock.Anything, mock.Anything).Return(&storepb.LabelValuesResponse{}, nil).Run(func(args mock.Arguments) {
+			close(waitExecution)
+			<-continueExecution
+		})
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelValues(ctx, labels.MetricName)
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		srv.AssertNumberOfCalls(t, "LabelValues", 1)
+	})
 }
 
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {
