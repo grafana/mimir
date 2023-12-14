@@ -366,7 +366,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 			return
 		}
 
-		cancel(cancellation.NewErrorf("validation complete"))
+		cancel(cancellation.NewErrorf("validation completed"))
 		wg.Wait() // use waitgroup to ensure validation ts update is complete
 	}
 

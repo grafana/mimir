@@ -208,7 +208,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("Frontend.RoundTripGRPC finished"))
+	defer cancel(cancellation.NewErrorf("executing query round trip finished"))
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),

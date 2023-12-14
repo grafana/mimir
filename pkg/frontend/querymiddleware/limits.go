@@ -218,7 +218,7 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 
 func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(r.Context())
-	defer cancel(cancellation.NewErrorf("limitedParallelismRoundTripper finished"))
+	defer cancel(cancellation.NewErrorf("executing parallel queries finished"))
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
 	if err != nil {

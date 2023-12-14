@@ -49,7 +49,7 @@ func newExecutionContext(workerCtx context.Context, logger log.Logger) (execCtx 
 			}
 
 			level.Debug(logger).Log("msg", "querier worker context has been canceled and there's no inflight query, canceling the execution context too")
-			execCancel(cancellation.NewErrorf("querier worker context cancelled"))
+			execCancel(cancellation.NewErrorf("querier worker context cancelled: %w", context.Cause(workerCtx)))
 		case <-execCtx.Done():
 			// Nothing to do. The execution context has been explicitly canceled.
 		}
