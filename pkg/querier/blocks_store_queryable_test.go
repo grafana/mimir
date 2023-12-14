@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -1016,16 +1017,20 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		// Mock the gRPC server to control the execution of Series().
 		var (
 			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
 			waitExecution     = make(chan struct{})
 			continueExecution = make(chan struct{})
 		)
 
 		srv, q := prepareTestCase(t)
 
-		srv.On("Series", mock.Anything, mock.Anything).Return(nil).Run(func(args mock.Arguments) {
-			close(waitExecution)
-			<-continueExecution
-		})
+		srv.onSeries = func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return nil
+		}
 
 		go func() {
 			// Cancel the context while Series() is executing.
@@ -1041,23 +1046,27 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		assert.ErrorIs(t, set.Err(), context.Canceled)
 
 		// Ensure the blocks store querier didn't retry requests to store-gateways.
-		srv.AssertNumberOfCalls(t, "Series", 1)
+		assert.Equal(t, int64(1), numExecutions.Load())
 	})
 
 	t.Run("LabelNames()", func(t *testing.T) {
 		// Mock the gRPC server to control the execution of LabelNames().
 		var (
 			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
 			waitExecution     = make(chan struct{})
 			continueExecution = make(chan struct{})
 		)
 
 		srv, q := prepareTestCase(t)
 
-		srv.On("LabelNames", mock.Anything, mock.Anything).Return(&storepb.LabelNamesResponse{}, nil).Run(func(args mock.Arguments) {
-			close(waitExecution)
-			<-continueExecution
-		})
+		srv.onLabelNames = func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelNamesResponse{}, nil
+		}
 
 		go func() {
 			// Cancel the context while Series() is executing.
@@ -1072,23 +1081,27 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		assert.ErrorIs(t, err, context.Canceled)
 
 		// Ensure the blocks store querier didn't retry requests to store-gateways.
-		srv.AssertNumberOfCalls(t, "LabelNames", 1)
+		assert.Equal(t, int64(1), numExecutions.Load())
 	})
 
 	t.Run("LabelValues()", func(t *testing.T) {
 		// Mock the gRPC server to control the execution of LabelValues().
 		var (
 			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
 			waitExecution     = make(chan struct{})
 			continueExecution = make(chan struct{})
 		)
 
 		srv, q := prepareTestCase(t)
 
-		srv.On("LabelValues", mock.Anything, mock.Anything).Return(&storepb.LabelValuesResponse{}, nil).Run(func(args mock.Arguments) {
-			close(waitExecution)
-			<-continueExecution
-		})
+		srv.onLabelValues = func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelValuesResponse{}, nil
+		}
 
 		go func() {
 			// Cancel the context while Series() is executing.
@@ -1103,7 +1116,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		assert.ErrorIs(t, err, context.Canceled)
 
 		// Ensure the blocks store querier didn't retry requests to store-gateways.
-		srv.AssertNumberOfCalls(t, "LabelValues", 1)
+		assert.Equal(t, int64(1), numExecutions.Load())
 	})
 }
 

@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -31,7 +30,6 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 	defer grpcServer.GracefulStop()
 
 	srv := &mockStoreGatewayServer{}
-	srv.On("Series", mock.Anything, mock.Anything).Return(nil)
 	storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
 
 	listener, err := net.Listen("tcp", "localhost:0")
@@ -77,20 +75,31 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 }
 
 type mockStoreGatewayServer struct {
-	mock.Mock
+	onSeries      func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error
+	onLabelNames  func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
+	onLabelValues func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)
 }
 
 func (m *mockStoreGatewayServer) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	args := m.Called(req, srv)
-	return args.Error(0)
+	if m.onSeries != nil {
+		return m.onSeries(req, srv)
+	}
+
+	return nil
 }
 
 func (m *mockStoreGatewayServer) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	args := m.Called(ctx, req)
-	return args.Get(0).(*storepb.LabelNamesResponse), args.Error(1)
+	if m.onLabelNames != nil {
+		return m.onLabelNames(ctx, req)
+	}
+
+	return nil, nil
 }
 
 func (m *mockStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	args := m.Called(ctx, req)
-	return args.Get(0).(*storepb.LabelValuesResponse), args.Error(1)
+	if m.onLabelValues != nil {
+		return m.onLabelValues(ctx, req)
+	}
+
+	return nil, nil
 }
