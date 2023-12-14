@@ -6,7 +6,6 @@
 package queue
 
 import (
-	"errors"
 	"math/rand"
 	"sort"
 	"time"
@@ -105,12 +104,13 @@ type queueBroker struct {
 
 	tenantQuerierAssignments tenantQuerierAssignments
 
-	maxTenantQueueSize int
+	maxTenantQueueSize               int
+	additionalQueueDimensionsEnabled bool
 }
 
-func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBroker {
+func newQueueBroker(maxTenantQueueSize int, additionalQueueDimensionsEnabled bool, forgetDelay time.Duration) *queueBroker {
 	return &queueBroker{
-		tenantQueuesTree: NewTreeQueue("root", maxTenantQueueSize),
+		tenantQueuesTree: NewTreeQueue("root"),
 		tenantQuerierAssignments: tenantQuerierAssignments{
 			queriersByID:       map[QuerierID]*querierConn{},
 			querierIDsSorted:   nil,
@@ -119,7 +119,8 @@ func newQueueBroker(maxTenantQueueSize int, forgetDelay time.Duration) *queueBro
 			tenantsByID:        map[TenantID]*queueTenant{},
 			tenantQuerierIDs:   map[TenantID]map[QuerierID]struct{}{},
 		},
-		maxTenantQueueSize: maxTenantQueueSize,
+		maxTenantQueueSize:               maxTenantQueueSize,
+		additionalQueueDimensionsEnabled: additionalQueueDimensionsEnabled,
 	}
 }
 
@@ -136,11 +137,17 @@ func (qb *queueBroker) enqueueRequestBack(request *tenantRequest, tenantMaxQueri
 		return err
 	}
 
-	queuePath := QueuePath{string(request.tenantID)}
-	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
-	if errors.Is(err, ErrMaxQueueLengthExceeded) {
-		return errors.Join(err, ErrTooManyRequests)
+	queuePath, err := qb.makeQueuePath(request)
+	if err != nil {
+		return err
 	}
+	if tenantQueueNode := qb.tenantQueuesTree.getNode(queuePath[:1]); tenantQueueNode != nil {
+		if tenantQueueNode.ItemCount()+1 > qb.maxTenantQueueSize {
+			return ErrTooManyRequests
+		}
+	}
+
+	err = qb.tenantQueuesTree.EnqueueBackByPath(queuePath, request)
 	return err
 }
 
@@ -155,8 +162,22 @@ func (qb *queueBroker) enqueueRequestFront(request *tenantRequest, tenantMaxQuer
 		return err
 	}
 
-	queuePath := QueuePath{string(request.tenantID)}
+	queuePath, err := qb.makeQueuePath(request)
+	if err != nil {
+		return err
+	}
 	return qb.tenantQueuesTree.EnqueueFrontByPath(queuePath, request)
+}
+
+func (qb *queueBroker) makeQueuePath(request *tenantRequest) (QueuePath, error) {
+	if qb.additionalQueueDimensionsEnabled {
+		if schedulerRequest, ok := request.req.(*SchedulerRequest); ok {
+			return append(QueuePath{string(request.tenantID)}, schedulerRequest.AdditionalQueueDimensions...), nil
+		}
+	}
+
+	// else request.req is a frontend/v1.request, or additional queue dimensions are disabled
+	return QueuePath{string(request.tenantID)}, nil
 }
 
 func (qb *queueBroker) dequeueRequestForQuerier(lastTenantIndex int, querierID QuerierID) (*tenantRequest, *queueTenant, int, error) {

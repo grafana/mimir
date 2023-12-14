@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -756,7 +755,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
-	middleware.InitHTTPGRPCMiddleware(mimir.Cfg.Server.Router)
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err

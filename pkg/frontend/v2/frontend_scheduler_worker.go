@@ -44,7 +44,8 @@ type frontendSchedulerWorkers struct {
 	frontendAddress string
 
 	// Channel with requests that should be forwarded to the scheduler.
-	requestsCh <-chan *frontendRequest
+	requestsCh         <-chan *frontendRequest
+	toSchedulerAdapter frontendToSchedulerAdapter
 
 	schedulerDiscovery        services.Service
 	schedulerDiscoveryWatcher *services.FailureWatcher
@@ -56,12 +57,20 @@ type frontendSchedulerWorkers struct {
 	enqueueDuration *prometheus.HistogramVec
 }
 
-func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
+func newFrontendSchedulerWorkers(
+	cfg Config,
+	frontendAddress string,
+	requestsCh <-chan *frontendRequest,
+	toSchedulerAdapter frontendToSchedulerAdapter,
+	log log.Logger,
+	reg prometheus.Registerer,
+) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
 		cfg:                       cfg,
 		log:                       log,
 		frontendAddress:           frontendAddress,
 		requestsCh:                requestsCh,
+		toSchedulerAdapter:        toSchedulerAdapter,
 		workers:                   map[string]*frontendSchedulerWorker{},
 		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueueDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -139,7 +148,16 @@ func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	}
 
 	// No worker for this address yet, start a new one.
-	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueueDuration.WithLabelValues(address), f.log)
+	w = newFrontendSchedulerWorker(
+		conn,
+		address,
+		f.frontendAddress,
+		f.requestsCh,
+		f.toSchedulerAdapter,
+		f.cfg.WorkerConcurrency,
+		f.enqueueDuration.WithLabelValues(address),
+		f.log,
+	)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -227,6 +245,8 @@ type frontendSchedulerWorker struct {
 	// Shared between all frontend workers.
 	requestsCh <-chan *frontendRequest
 
+	toSchedulerAdapter frontendToSchedulerAdapter
+
 	// Cancellation requests for this scheduler are received via this channel. It is passed to frontend after
 	// query has been enqueued to scheduler.
 	cancelCh chan uint64
@@ -235,16 +255,26 @@ type frontendSchedulerWorker struct {
 	enqueueDuration prometheus.Observer
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestsCh <-chan *frontendRequest, concurrency int, enqueueDuration prometheus.Observer, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(
+	conn *grpc.ClientConn,
+	schedulerAddr string,
+	frontendAddr string,
+	requestsCh <-chan *frontendRequest,
+	toSchedulerAdapter frontendToSchedulerAdapter,
+	concurrency int,
+	enqueueDuration prometheus.Observer,
+	log log.Logger,
+) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
-		log:             log,
-		conn:            conn,
-		concurrency:     concurrency,
-		schedulerAddr:   schedulerAddr,
-		frontendAddr:    frontendAddr,
-		requestsCh:      requestsCh,
-		cancelCh:        make(chan uint64, schedulerWorkerCancelChanCapacity),
-		enqueueDuration: enqueueDuration,
+		log:                log,
+		conn:               conn,
+		concurrency:        concurrency,
+		schedulerAddr:      schedulerAddr,
+		frontendAddr:       frontendAddr,
+		requestsCh:         requestsCh,
+		toSchedulerAdapter: toSchedulerAdapter,
+		cancelCh:           make(chan uint64, schedulerWorkerCancelChanCapacity),
+		enqueueDuration:    enqueueDuration,
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -374,14 +404,14 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	durationTimer := prometheus.NewTimer(w.enqueueDuration)
 	defer durationTimer.ObserveDuration()
 
-	err := loop.Send(&schedulerpb.FrontendToScheduler{
-		Type:            schedulerpb.ENQUEUE,
-		QueryID:         req.queryID,
-		UserID:          req.userID,
-		HttpRequest:     req.request,
-		FrontendAddress: w.frontendAddr,
-		StatsEnabled:    req.statsEnabled,
-	})
+	frontendToSchedulerRequest, err := w.toSchedulerAdapter.frontendToSchedulerEnqueueRequest(req, w.frontendAddr)
+	if err != nil {
+		level.Warn(spanLogger).Log("msg", "error converting frontend request to scheduler request", "err", err)
+		req.enqueue <- enqueueResult{status: failed}
+		return err
+	}
+
+	err = loop.Send(frontendToSchedulerRequest)
 	if err != nil {
 		level.Warn(spanLogger).Log("msg", "received error while sending request to scheduler", "err", err)
 		req.enqueue <- enqueueResult{status: failed}

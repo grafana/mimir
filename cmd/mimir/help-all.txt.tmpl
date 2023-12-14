@@ -1785,6 +1785,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Number of series to buffer per store-gateway when streaming chunks from store-gateways. (default 256)
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
+  -query-frontend.additional-query-queue-dimensions-enabled
+    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.cache-results
@@ -1993,6 +1995,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
     	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+  -query-scheduler.additional-query-queue-dimensions-enabled
+    	[experimental] Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

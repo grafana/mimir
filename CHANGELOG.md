@@ -9,6 +9,7 @@
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
 * [ENHANCEMENT] Ruler: exclude vector queries from being tracked in `cortex_ruler_queries_zero_fetched_series_total`. #6544
+* [ENHANCEMENT] Query-Frontend and Query-Scheduler: split tenant query request queues by query component with `query-frontend.additional-query-queue-dimensions-enabled` and `query-scheduler.additional-query-queue-dimensions-enabled`. #6772
 * [ENHANCEMENT] Store-gateway: include more information about lazy index-header loading in traces. #6922
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
@@ -17,6 +18,7 @@
 * [BUGFIX] tsdb/head: wlog exemplars after samples #6766
 * [BUGFIX] Ruler: fix issue where "failed to remotely evaluate query expression, will retry" messages are logged without context such as the trace ID and do not appear in trace events. #6789
 * [BUGFIX] Querier: fix issue where spans in query request traces were not nested correctly. #6893
+* [BUGFIX] Fix issue where all incoming HTTP requests have duplicate trace spans. #6920
 
 ### Mixin
 
