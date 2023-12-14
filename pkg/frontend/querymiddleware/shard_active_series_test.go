@@ -23,6 +23,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -54,9 +55,10 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		request func() *http.Request
 
 		// Possible responses from upstream
-		validResponses  [][]labels.Labels
-		invalidResponse []byte
-		errorResponse   error
+		validResponses [][]labels.Labels
+		responseStatus int
+		responseBody   string
+		errorResponse  error
 
 		// Error expectations
 		checkResponseErr func(t *testing.T, err error) (continueTest bool)
@@ -102,9 +104,10 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 		},
 		{
-			name:            "upstream response: invalid type for data field",
-			invalidResponse: []byte(`{"data": "unexpected"}`),
-			request:         validReq,
+			name:           "upstream response: invalid type for data field",
+			request:        validReq,
+			responseStatus: http.StatusOK,
+			responseBody:   `{"data": "unexpected"}`,
 
 			// We don't expect an error here because it only occurs later as the response is
 			// being streamed.
@@ -115,9 +118,10 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			expect:             result{Status: "error", Error: "expected data field to contain an array"},
 		},
 		{
-			name:            "upstream response: no data field",
-			invalidResponse: []byte(`{"unexpected": "response"}`),
-			request:         validReq,
+			name:           "upstream response: no data field",
+			request:        validReq,
+			responseStatus: http.StatusOK,
+			responseBody:   `{unexpected: "response"}`,
 
 			// We don't expect an error here because it only occurs later as the response is
 			// being streamed.
@@ -126,6 +130,17 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectedShardCount: tenantShardCount,
 			expect:             result{Status: "error", Error: "expected data field at top level"},
+		},
+		{
+			name:           "upstream response: response too large",
+			request:        validReq,
+			responseStatus: http.StatusBadRequest,
+			responseBody:   distributor.ErrResponseTooLarge.Error(),
+
+			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
+				assert.Contains(t, err.Error(), distributor.ErrResponseTooLarge.Error())
+				return false
+			},
 		},
 		{
 			name:    "upstream response: error",
@@ -220,8 +235,8 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 					return nil, tt.errorResponse
 				}
 
-				if len(tt.invalidResponse) > 0 {
-					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(tt.invalidResponse))}, nil
+				if tt.validResponses == nil {
+					return &http.Response{StatusCode: tt.responseStatus, Body: io.NopCloser(strings.NewReader(tt.responseBody))}, nil
 				}
 
 				require.NoError(t, r.ParseForm())
