@@ -224,7 +224,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 					// If the stream has already been broken, it's expected that the Send() call will fail too.
 					// The error returned by Recv() is often more descriptive, so we include it in this log line as well.
 					level.Error(logger).Log(
-						"msg", "error notifying scheduler about finished query after the scheduler stream previously failed and returned error previousErr",
+						"msg", "error notifying scheduler about finished query after the scheduler stream previously failed and returned error",
 						"err", err,
 						"addr", address,
 						"previousErr", previousErr,
