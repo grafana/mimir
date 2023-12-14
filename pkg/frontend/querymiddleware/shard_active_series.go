@@ -90,7 +90,7 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
-	return s.mergeResponses(resp), nil
+	return s.mergeResponses(ctx, resp), nil
 }
 
 func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanlogger.SpanLogger) int {
@@ -164,7 +164,7 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 			partialStats.AddShardedQueries(1)
 
 			var span opentracing.Span
-			span, childCtx = opentracing.StartSpanFromContext(childCtx, "shardActiveSeries.doRequests")
+			span, childCtx = opentracing.StartSpanFromContext(childCtx, "shardActiveSeries.doShardedRequest")
 			defer span.Finish()
 
 			resp, err := next.RoundTrip(r.WithContext(childCtx))
@@ -225,7 +225,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 	}, nil
 }
 
-func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response) *http.Response {
+func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response) *http.Response {
 	reader, writer := io.Pipe()
 
 	items := make(chan any)
@@ -280,15 +280,18 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(responses []*http.Response)
 		_ = g.Wait()
 		close(items)
 	}()
-	go s.writeMergedResponse(g.Wait, writer, items)
+	go s.writeMergedResponse(ctx, g.Wait, writer, items)
 
 	return &http.Response{Body: reader, StatusCode: http.StatusOK}
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(check func() error, w io.WriteCloser, items chan any) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan any) {
 	defer func(w io.Closer) {
 		_ = w.Close()
 	}(w)
+
+	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
+	defer span.Finish()
 
 	stream := jsoniter.NewStream(jsoniter.ConfigFastest, w, 512)
 	defer func(stream *jsoniter.Stream) {
@@ -310,6 +313,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(check func() error, w 
 	stream.WriteArrayEnd()
 
 	if err := check(); err != nil {
+		span.LogFields(otlog.Error(err))
 		stream.WriteMore()
 		stream.WriteObjectField("status")
 		stream.WriteString("error")
