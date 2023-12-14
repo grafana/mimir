@@ -144,7 +144,7 @@ func remoteReadStreamedXORChunks(
 	for i, qr := range req.Queries {
 		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
 			if errors.Is(err, context.Canceled) {
-				level.Warn(logger).Log("msg", "the remote read request has been canceled", "err", err)
+				// We're intentionally not logging in this case to reduce noise about an unactionable condition.
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				return
 			}
