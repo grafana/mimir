@@ -13,6 +13,8 @@ import (
 	"google.golang.org/api/iterator"
 )
 
+var errUploadTerminated = cancellation.NewErrorf("upload terminated")
+
 type gcsBucket struct {
 	storage.BucketHandle
 	name string
@@ -106,7 +108,7 @@ func (bkt *gcsBucket) ListPrefix(ctx context.Context, prefix string, recursive b
 
 func (bkt *gcsBucket) Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error {
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("upload terminated"))
+	defer cancel(errUploadTerminated)
 
 	obj := bkt.Object(objectName)
 	w := obj.NewWriter(ctx)

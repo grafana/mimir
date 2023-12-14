@@ -37,6 +37,9 @@ const (
 	schedulerWorkerCancelChanCapacity = 1000
 )
 
+var errFrontendSchedulerWorkerLoopIterationStopping = cancellation.NewErrorf("frontend scheduler worker loop iteration stopping")
+var errFrontendSchedulerWorkerStopping = cancellation.NewErrorf("frontend scheduler worker stopping")
+
 type frontendSchedulerWorkers struct {
 	services.Service
 
@@ -264,7 +267,7 @@ func (w *frontendSchedulerWorker) start() {
 }
 
 func (w *frontendSchedulerWorker) stop() {
-	w.cancel(cancellation.NewErrorf("frontend scheduler worker stopping"))
+	w.cancel(errFrontendSchedulerWorkerStopping)
 	w.wg.Wait()
 	if err := w.conn.Close(); err != nil {
 		level.Error(w.log).Log("msg", "error while closing connection to scheduler", "err", err)
@@ -275,7 +278,7 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 	// attemptLoop returns false if there was any error with forwarding requests to scheduler.
 	attemptLoop := func() bool {
 		ctx, cancel := context.WithCancelCause(ctx)
-		defer cancel(cancellation.NewErrorf("frontend scheduler worker loop iteration stopping")) // cancel the stream after we are done to release resources
+		defer cancel(errFrontendSchedulerWorkerLoopIterationStopping) // cancel the stream after we are done to release resources
 
 		loop, loopErr := client.FrontendLoop(ctx)
 		if loopErr != nil {

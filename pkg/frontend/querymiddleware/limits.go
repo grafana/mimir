@@ -27,6 +27,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+var errExecutingParallelQueriesFinished = cancellation.NewErrorf("executing parallel queries finished")
+
 // Limits allows us to specify per-tenant runtime limits on the behavior of
 // the query handling code.
 type Limits interface {
@@ -218,7 +220,7 @@ func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 
 func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(r.Context())
-	defer cancel(cancellation.NewErrorf("executing parallel queries finished"))
+	defer cancel(errExecutingParallelQueriesFinished)
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
 	if err != nil {

@@ -45,6 +45,7 @@ const (
 
 var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
+var errValidationCompleted = cancellation.NewErrorf("validation completed")
 
 // StartBlockUpload handles request for starting block upload.
 //
@@ -366,7 +367,7 @@ func (c *MultitenantCompactor) validateAndCompleteBlockUpload(logger log.Logger,
 			return
 		}
 
-		cancel(cancellation.NewErrorf("validation completed"))
+		cancel(errValidationCompleted)
 		wg.Wait() // use waitgroup to ensure validation ts update is complete
 	}
 

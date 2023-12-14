@@ -41,6 +41,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
+var errFrontendDisconnected = cancellation.NewErrorf("frontend disconnected")
+
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
 	services.Service
@@ -320,7 +323,7 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	cf.connections--
 	if cf.connections == 0 {
 		delete(s.connectedFrontends, frontendAddress)
-		cf.cancel(cancellation.NewErrorf("frontend disconnected"))
+		cf.cancel(errFrontendDisconnected)
 	}
 }
 
@@ -330,7 +333,7 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
-			cancel(cancellation.NewErrorf("enqueuing request failed"))
+			cancel(errEnqueuingRequestFailed)
 		}
 	}()
 

@@ -29,6 +29,8 @@ var (
 		MinBackoff: 250 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
 	}
+
+	errQuerierFrontendProcessingLoopTerminated = cancellation.NewErrorf("querier frontend processing loop terminated")
 )
 
 func newFrontendProcessor(cfg Config, handler RequestHandler, log log.Logger) *frontendProcessor {
@@ -74,7 +76,7 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 	// Run the gRPC client and process all the queries in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
 	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, fp.log)
-	defer execCancel(cancellation.NewErrorf("querier frontend processing loop terminated"))
+	defer execCancel(errQuerierFrontendProcessingLoopTerminated)
 
 	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
@@ -148,7 +150,7 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 	// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 	// net/http package.
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("query evaluation finished"))
+	defer cancel(errQueryEvaluationFinished)
 
 	var stats *querier_stats.Stats
 	if statsEnabled {

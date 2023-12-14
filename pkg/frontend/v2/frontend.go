@@ -38,6 +38,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
+
 // Config for a Frontend.
 type Config struct {
 	SchedulerAddress  string            `yaml:"scheduler_address"`
@@ -208,7 +210,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(cancellation.NewErrorf("executing query round trip finished"))
+	defer cancel(errExecutingQueryRoundTripFinished)
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),

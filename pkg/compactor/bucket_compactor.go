@@ -34,6 +34,9 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
+var errCompactionIterationCancelled = cancellation.NewErrorf("compaction iteration cancelled")
+var errCompactionIterationStopped = cancellation.NewErrorf("compaction iteration stopped")
+
 type DeduplicateFilter interface {
 	block.MetadataFilter
 
@@ -777,7 +780,8 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			finishedAllJobs        = true
 			mtx                    sync.Mutex
 		)
-		defer workCtxCancel(cancellation.NewErrorf("compaction iteration cancelled"))
+
+		defer workCtxCancel(errCompactionIterationCancelled)
 
 		// Set up workers who will compact the jobs when the jobs are ready.
 		// They will compact available jobs until they encounter an error, after which they will stop.
@@ -949,7 +953,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			jobErrs.Add(jobErr)
 		}
 
-		workCtxCancel(cancellation.NewErrorf("compaction iteration stopped"))
+		workCtxCancel(errCompactionIterationStopped)
 		if len(jobErrs) > 0 {
 			return jobErrs.Err()
 		}

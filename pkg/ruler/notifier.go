@@ -26,6 +26,8 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+var errRulerNotifierStopped = cancellation.NewErrorf("rulerNotifier stopped")
+
 type NotifierConfig struct {
 	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
 	TLS        tls.ClientConfig `yaml:",inline"`
@@ -87,7 +89,7 @@ func (rn *rulerNotifier) applyConfig(cfg *config.Config) error {
 }
 
 func (rn *rulerNotifier) stop() {
-	rn.sdCancel(cancellation.NewErrorf("rulerNotifier stopped"))
+	rn.sdCancel(errRulerNotifierStopped)
 	rn.notifier.Stop()
 	rn.wg.Wait()
 }
