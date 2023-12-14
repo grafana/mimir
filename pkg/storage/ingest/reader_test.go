@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -118,7 +119,7 @@ func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
 		registry:       prometheus.NewPedanticRegistry(),
-		logger:         log.NewNopLogger(),
+		logger:         log.NewLogfmtLogger(os.Stdout),
 		addr:           addr,
 		topicName:      topicName,
 		partitionID:    partitionID,
@@ -153,8 +154,7 @@ func TestReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		cluster, clusterAddr := createTestCluster(t, partitionID+1, topicName)
-		addSupportForConsumerGroups(t, cluster, topicName, partitionID)
+		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(3)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -184,8 +184,7 @@ func TestReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		cluster, clusterAddr := createTestCluster(t, partitionID+1, topicName)
-		addSupportForConsumerGroups(t, cluster, topicName, partitionID)
+		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -207,45 +206,80 @@ func TestReader_Commit(t *testing.T) {
 }
 
 // addSupportForConsumerGroups adds very bare-bones support for one consumer group.
-func addSupportForConsumerGroups(t *testing.T, cluster *kfake.Cluster, topicName string, partitionID int32) {
-	var committedOffset int64
+// It expects that only one partition is consumed at a time.
+func addSupportForConsumerGroups(t *testing.T, cluster *kfake.Cluster, topicName string, numPartitions int32) {
+	committedOffsets := make([]int64, numPartitions+1)
 
 	cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		commitR := request.(*kmsg.OffsetCommitRequest)
 		assert.Equal(t, consumerGroup, commitR.Group)
-		assert.Len(t, commitR.Topics, 1)
+		assert.Len(t, commitR.Topics, 1, "test only has support for one topic per request")
 		topic := commitR.Topics[0]
 		assert.Equal(t, topicName, topic.Topic)
-		assert.Len(t, topic.Partitions, 1)
-		assert.EqualValues(t, partitionID, topic.Partitions[0].Partition)
+		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
 
-		committedOffset = topic.Partitions[0].Offset
+		partitionID := topic.Partitions[0].Partition
+		committedOffsets[partitionID] = topic.Partitions[0].Offset
 
 		resp := request.ResponseKind().(*kmsg.OffsetCommitResponse)
-		resp.Topics = []kmsg.OffsetCommitResponseTopic{{}}
-		resp.Topics[0].Topic = topicName
-		resp.Topics[0].Partitions = []kmsg.OffsetCommitResponseTopicPartition{{}}
-		resp.Topics[0].Partitions[0].Partition = partitionID
-		t.Log("recorded committed offset", committedOffset)
+		resp.Default()
+		resp.Topics = []kmsg.OffsetCommitResponseTopic{
+			{
+				Topic:      topicName,
+				Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}},
+			},
+		}
+
 		return resp, nil, true
 	})
 
 	cluster.ControlKey(kmsg.OffsetFetch.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
 		cluster.KeepControl()
 		commitR := request.(*kmsg.OffsetFetchRequest)
-		assert.Len(t, commitR.Groups, 1)
+		assert.Len(t, commitR.Groups, 1, "test only has support for one consumer group per request")
 		assert.Equal(t, commitR.Groups[0].Group, consumerGroup)
 
+		const allPartitions = -1
+		var partitionID int32
+
+		if len(commitR.Groups[0].Topics) == 0 {
+			// An empty request means fetch all topic-partitions for this group.
+			partitionID = allPartitions
+		} else {
+			partitionID = commitR.Groups[0].Topics[0].Partitions[0]
+			assert.Len(t, commitR.Groups[0], 1, "test only has support for one partition per request")
+			assert.Len(t, commitR.Groups[0].Topics[0].Partitions, 1, "test only has support for one partition per request")
+		}
+
+		var partitionsResp []kmsg.OffsetFetchResponseGroupTopicPartition
+		if partitionID == allPartitions {
+			for i := int32(1); i < numPartitions+1; i++ {
+				partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
+					Partition: i,
+					Offset:    committedOffsets[i],
+				})
+			}
+		} else {
+			partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
+				Partition: partitionID,
+				Offset:    committedOffsets[partitionID],
+			})
+		}
+
 		resp := request.ResponseKind().(*kmsg.OffsetFetchResponse)
-		resp.Groups = []kmsg.OffsetFetchResponseGroup{{}}
-		resp.Groups[0].Group = consumerGroup
-		resp.Groups[0].Topics = []kmsg.OffsetFetchResponseGroupTopic{{}}
-		resp.Groups[0].Topics[0].Topic = topicName
-		resp.Groups[0].Topics[0].Partitions = []kmsg.OffsetFetchResponseGroupTopicPartition{{}}
-		resp.Groups[0].Topics[0].Partitions[0].Partition = partitionID
-		resp.Groups[0].Topics[0].Partitions[0].Offset = committedOffset
-		t.Log("responding with committed offset", committedOffset)
+		resp.Default()
+		resp.Groups = []kmsg.OffsetFetchResponseGroup{
+			{
+				Group: consumerGroup,
+				Topics: []kmsg.OffsetFetchResponseGroupTopic{
+					{
+						Topic:      topicName,
+						Partitions: partitionsResp,
+					},
+				},
+			},
+		}
 		return resp, nil, true
 	})
 }

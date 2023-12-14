@@ -380,6 +380,8 @@ func createTestCluster(t *testing.T, numPartitions int32, topicName string) (*kf
 	addrs := cluster.ListenAddrs()
 	require.Len(t, addrs, 1)
 
+	addSupportForConsumerGroups(t, cluster, topicName, numPartitions)
+
 	return cluster, addrs[0]
 }
 

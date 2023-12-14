@@ -246,7 +246,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (kgo.Off
 	defer adm.Close()
 
 	offsets, err := adm.FetchOffsets(ctx, consumerGroup)
-	if errors.Is(err, kerr.GroupIDNotFound) || errors.Is(err, kerr.UnknownTopicOrPartition) {
+	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		// In case we are booting up for the first time ever against this topic.
 		return kgo.NewOffset().AtEnd(), nil
 	}
