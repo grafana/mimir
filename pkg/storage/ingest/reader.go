@@ -55,17 +55,17 @@ type PartitionReader struct {
 	logger log.Logger
 }
 
-func NewReaderForPusher(kafkaAddress, kafkaTopic, kafkaClientID string, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := newReaderMetrics(partitionID, reg)
 	consumer := newPusherConsumer(pusher, metrics, logger)
-	return newReader(kafkaAddress, kafkaTopic, kafkaClientID, partitionID, consumer, logger, metrics)
+	return newReader(kafkaCfg, partitionID, consumer, logger, metrics)
 }
 
-func newReader(kafkaAddress, kafkaTopic, kafkaClientID string, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
+func newReader(kafkaCfg KafkaConfig, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
 	r := &PartitionReader{
-		kafkaAddress:   kafkaAddress,
-		kafkaTopic:     kafkaTopic,
-		kafkaClientID:  kafkaClientID,
+		kafkaAddress:   kafkaCfg.Address,
+		kafkaTopic:     kafkaCfg.Topic,
+		kafkaClientID:  kafkaCfg.ClientID,
 		partitionID:    partitionID,
 		consumer:       consumer, // TODO consume records in parallel
 		commitInterval: time.Second,

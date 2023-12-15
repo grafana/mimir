@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -99,8 +98,7 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 }
 
 type readerTestCfg struct {
-	addr           string
-	topicName      string
+	kafka          KafkaConfig
 	partitionID    int32
 	consumer       recordConsumer
 	registry       *prometheus.Registry
@@ -118,10 +116,12 @@ func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 
 func defaultReaderTestConfig(addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
 	return &readerTestCfg{
-		registry:       prometheus.NewPedanticRegistry(),
-		logger:         log.NewLogfmtLogger(os.Stdout),
-		addr:           addr,
-		topicName:      topicName,
+		registry: prometheus.NewPedanticRegistry(),
+		logger:   log.NewNopLogger(),
+		kafka: KafkaConfig{
+			Address: addr,
+			Topic:   topicName,
+		},
 		partitionID:    partitionID,
 		consumer:       consumer,
 		commitInterval: 10 * time.Second,
@@ -133,7 +133,7 @@ func startReader(ctx context.Context, t *testing.T, addr string, topicName strin
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newReader(cfg.addr, cfg.topicName, "", cfg.partitionID, cfg.consumer, cfg.logger, newReaderMetrics(partitionID, cfg.registry))
+	reader, err := newReader(cfg.kafka, cfg.partitionID, cfg.consumer, cfg.logger, newReaderMetrics(partitionID, cfg.registry))
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 
