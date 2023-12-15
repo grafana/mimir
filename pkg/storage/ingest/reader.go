@@ -147,23 +147,19 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		minOffset = math.MaxInt
 		maxOffset = 0
 	)
-	fetches.EachRecord(func(record *kgo.Record) {
-		minOffset = min(minOffset, int(record.Offset))
-		maxOffset = max(maxOffset, int(record.Offset))
-		records = append(records, mapRecord(record))
+	fetches.EachRecord(func(r *kgo.Record) {
+		minOffset = min(minOffset, int(r.Offset))
+		maxOffset = max(maxOffset, int(r.Offset))
+		records = append(records, record{
+			content:  r.Value,
+			tenantID: string(r.Key),
+		})
 	})
 
 	err := r.consumer.consume(ctx, records)
 	if err != nil {
 		level.Error(r.logger).Log("msg", "encountered error processing records; skipping", "min_offset", minOffset, "max_offset", maxOffset, "err", err)
 		// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
-	}
-}
-
-func mapRecord(r *kgo.Record) record {
-	return record{
-		content:  r.Value,
-		tenantID: string(r.Key),
 	}
 }
 
