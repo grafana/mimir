@@ -428,20 +428,15 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		//nolint:staticcheck
-		legacyPartitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
-		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingester legacy partition ID")
-		}
-
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, legacyPartitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
-		if err != nil {
-			return nil, errors.Wrap(err, "creating ingest storage reader")
-		}
-
 		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingester partition ID")
+		}
+
+		// Use the zone as the consumer group
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, i.lifecycler.Zone, i, log.With(logger, "component", "ingest_reader"), registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
 		partitionRingKV := cfg.IngesterPartitionRing.kvMock

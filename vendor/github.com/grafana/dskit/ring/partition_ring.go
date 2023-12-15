@@ -240,6 +240,11 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 	return NewPartitionRing(r.desc.WithPartitions(result)), nil
 }
 
+func (r *PartitionRing) PartitionOwners() map[int32][]string {
+	// TODO returning by reference is risky
+	return r.ownersByPartition
+}
+
 // PartitionsCount returns the number of partitions in the ring.
 func (r *PartitionRing) PartitionsCount() int {
 	return len(r.desc.Partitions)
