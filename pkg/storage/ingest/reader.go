@@ -55,13 +55,13 @@ type PartitionReader struct {
 	logger log.Logger
 }
 
-func NewReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := newReaderMetrics(partitionID, reg)
 	consumer := newPusherConsumer(pusher, metrics, logger)
-	return newReader(kafkaCfg, partitionID, consumer, logger, metrics)
+	return newPartitionReader(kafkaCfg, partitionID, consumer, logger, metrics)
 }
 
-func newReader(kafkaCfg KafkaConfig, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
+func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
 	r := &PartitionReader{
 		kafkaAddress:   kafkaCfg.Address,
 		kafkaTopic:     kafkaCfg.Topic,

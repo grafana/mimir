@@ -133,7 +133,7 @@ func startReader(ctx context.Context, t *testing.T, addr string, topicName strin
 	for _, o := range opts {
 		o(cfg)
 	}
-	reader, err := newReader(cfg.kafka, cfg.partitionID, cfg.consumer, cfg.logger, newReaderMetrics(partitionID, cfg.registry))
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, cfg.consumer, cfg.logger, newReaderMetrics(partitionID, cfg.registry))
 	require.NoError(t, err)
 	reader.commitInterval = cfg.commitInterval
 
