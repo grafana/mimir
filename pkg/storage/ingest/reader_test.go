@@ -302,7 +302,7 @@ func (t testConsumer) consume(_ context.Context, records []record) error {
 }
 
 // waitRecords expects to receive numRecords records within waitTimeout.
-// waitRecords waits for drainPeriod after receiving numRecords records to ensure that no more records are received.
+// waitRecords waits for an additional drainPeriod after receiving numRecords records to ensure that no more records are received.
 // waitRecords returns an error if a different number of records is received.
 func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.Duration) ([][]byte, error) {
 	var messages [][]byte
