@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/klauspost/compress/s2"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
@@ -34,6 +35,7 @@ type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
 	limits   Limits
 	logger   log.Logger
+	encoder  *s2.Writer
 }
 
 func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
@@ -41,6 +43,7 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, l
 		upstream: upstream,
 		limits:   limits,
 		logger:   logger,
+		encoder:  s2.NewWriter(nil),
 	}
 }
 
@@ -283,18 +286,25 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 	}()
 	go s.writeMergedResponse(ctx, g.Wait, writer, items)
 
-	return &http.Response{Body: reader, StatusCode: http.StatusOK}
+	response := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
+	response.Header.Set("Content-Type", "application/x-snappy-framed")
+	response.Header.Set("Content-Encoding", "x-snappy-framed")
+
+	return response
 }
 
 func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan any) {
-	defer func(w io.Closer) {
+	defer func(encoder, w io.Closer) {
+		_ = encoder.Close()
 		_ = w.Close()
-	}(w)
+	}(s.encoder, w)
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
 	defer span.Finish()
 
-	stream := jsoniter.NewStream(jsoniter.ConfigFastest, w, 512)
+	s.encoder.Reset(w)
+
+	stream := jsoniter.NewStream(jsoniter.ConfigFastest, s.encoder, 512)
 	defer func(stream *jsoniter.Stream) {
 		_ = stream.Flush()
 	}(stream)

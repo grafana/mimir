@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/klauspost/compress/s2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
@@ -276,7 +277,11 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 				_ = Body.Close()
 			}(resp.Body)
 
-			body, err := io.ReadAll(resp.Body)
+			var br io.Reader = resp.Body
+			if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+				br = s2.NewReader(br)
+			}
+			body, err := io.ReadAll(br)
 			assert.NoError(t, err)
 
 			var res result
