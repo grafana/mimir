@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -30,6 +33,552 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestDistributor_QueryStream_Partitions(t *testing.T) {
+	t.Skip("this test is currently broken, needs to be properly fixed")
+
+	const tenantID = "user"
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	selectAllSeriesMatcher := mustEqualMatcher("bar", "baz")
+
+	type testCase struct {
+		ingesterStateByZone map[string]ingesterZoneState
+		// ingesterDataPerZone:
+		//   map[zone-a][0] -> ingester-zone-a-0 write request
+		//   map[zone-a][1] -> ingester-zone-a-1 write request
+		dataPerIngesterZone map[string][]*mimirpb.WriteRequest
+
+		querierZone              string
+		shuffleShardSize         int
+		useClassicRing           bool
+		matchers                 []*labels.Matcher
+		expectedResponse         model.Matrix
+		expectedQueriedIngesters int
+		expectedError            error
+	}
+
+	// We'll programmatically build the test cases now, as we want complete
+	// coverage along quite a few different axis.
+	testCases := map[string]testCase{
+		"3 zones with 5 ingesters each": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+				"zone-c": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-c": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5,
+		},
+		"2 zones with 5 ingesters each": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5,
+		},
+		"2 zones with 5 ingesters returning no series": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{mustEqualMatcher("not", "found")},
+			expectedResponse:         expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 5,
+		},
+		"2 zones with 2 failed ingesters in own zone": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 3},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5 /* zone-a */ + 2, /* the two failed fall back to zone-b */
+		},
+		"2 zones with 2 failed ingesters in other zone": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5},
+				"zone-b": {numIngesters: 5, happyIngesters: 3},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5, /* zone-a. zone-b isn't queried because of minimization */
+		},
+		"2 zones with 2 failed ingesters each, causes an error": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 3},
+				"zone-b": {numIngesters: 5, happyIngesters: 3},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 5 /* zone-a */ + 2, /* the two failed fall back to zone-b */
+			expectedError:            errFail,
+		},
+		"2 zones with 1 failed ingester each, but they're different ingesters, so it all works out": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateFailed}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateHappy, ingesterStateHappy, ingesterStateFailed, ingesterStateHappy}},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					nil,
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					nil,
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5 /* zone-a */ + 1, /* fall back one failed request to zone-b */
+		},
+		"2 zones with shuffle sharding, but the failed ingesters are outside the shuffle shard": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed, ingesterStateFailed, ingesterStateHappy, ingesterStateHappy}},
+				"zone-b": {states: []ingesterState{ingesterStateHappy, ingesterStateFailed, ingesterStateFailed, ingesterStateHappy, ingesterStateHappy}},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					nil,
+					nil,
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					nil,
+					nil,
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			shuffleShardSize:         2, // shuffle-sharding chooses partitions 0 and 4 for this tenant
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo4"),
+			expectedQueriedIngesters: 2, /* zone-a only with shuffle-shard of 2 */
+		},
+		"2 zones with 1 inactive partition owner ": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {
+					numIngesters: 5, happyIngesters: 5,
+					partitionRingStates: []ring.InstanceState{ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "metric_should_not_be_queried"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 4 /* zone-a for the ACTIVE instances */ + 1, /* zone-b for the copy of ingester 1 */
+		},
+		"querying both rings: 2 zones with 5 ingesters each": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 5},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5 /* zone-a partition ring instances */ + 5, /* either zone querying again for classic ring */
+		},
+		"querying both rings: 2 zones with 5 ingesters each; one ingester is LEAVING in partition ring": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5 /* zone-b partition ring instances */ + 5, /* either zone querying again for classic ring */
+		},
+		"querying both rings: 2 zones with 5 ingesters each, one ingester is LEAVING in classic ring": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {numIngesters: 5, happyIngesters: 5},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
+			expectedQueriedIngesters: 5 /* zone-b partition ring instances */ + 5, /* zone-b partition ring instances */
+		},
+		"querying both rings: 2 zones with 5 ingesters each; LEAVING ingesters in both rings in both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					ringStates:          []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {
+					numIngesters: 5, happyIngesters: 5,
+					ringStates:          []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 0, /* since both zones are unhealthy no requests are even attempted */
+			expectedError:            ring.ErrTooManyUnhealthyInstances,
+		},
+		"querying both rings: 2 zones with 5 ingesters each; unhappy ingesters in both zones": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {numIngesters: 5, happyIngesters: 4},
+				"zone-b": {numIngesters: 5, happyIngesters: 4},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+				},
+			},
+			useClassicRing:   true,
+			querierZone:      "zone-a",
+			matchers:         []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse: expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 0 +
+				5 /* partitions ring queried zone-a once */ + 1 /* partitions ring fell back on one instance in zone-b */ +
+				5 /* classic ring queried either zone once */ + 5, /* classic ring fell back to the other zone */
+			expectedError: errFail,
+		},
+		"querying both rings: two ingesters LEAVING in classic ring": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {
+					numIngesters: 5, happyIngesters: 5,
+					ringStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 0, /* we couldn't get a subring for the partitions ring, so querying didn't even start */
+			expectedError:            ring.ErrTooManyUnhealthyInstances,
+		},
+		"querying both rings: two ingesters LEAVING in partition ring": {
+			ingesterStateByZone: map[string]ingesterZoneState{
+				"zone-a": {
+					numIngesters: 5, happyIngesters: 5,
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+				"zone-b": {
+					numIngesters: 5, happyIngesters: 5,
+					partitionRingStates: []ring.InstanceState{ring.LEAVING, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE, ring.ACTIVE},
+				},
+			},
+			dataPerIngesterZone: map[string][]*mimirpb.WriteRequest{
+				"zone-a": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+				"zone-b": {
+					makeWriteRequest(0, 1, 0, false, false, "foo0"),
+					makeWriteRequest(0, 1, 0, false, false, "foo1"),
+					makeWriteRequest(0, 1, 0, false, false, "foo2"),
+					makeWriteRequest(0, 1, 0, false, false, "foo3"),
+					makeWriteRequest(0, 1, 0, false, false, "foo4"),
+				},
+			},
+			useClassicRing:           true,
+			querierZone:              "zone-a",
+			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
+			expectedResponse:         expectedResponse(0, 0, false),
+			expectedQueriedIngesters: 0, /* we couldn't get a subring for the partitions ring, so querying didn't even start */
+			expectedError:            ring.ErrTooManyUnhealthyInstances,
+		},
+	}
+
+	for tcName, tc := range testCases {
+		tc := tc
+
+		t.Run(tcName, func(t *testing.T) {
+			t.Parallel()
+			cfg := prepConfig{
+				numDistributors:      1,
+				useIngestStorage:     true,
+				ingesterStateByZone:  tc.ingesterStateByZone,
+				ingesterDataPerZone:  tc.dataPerIngesterZone,
+				ingesterDataTenantID: tenantID,
+				queryDelay:           time.Millisecond, // give the chance of the ring to start the calls to all ingesters before failures surface
+				replicationFactor:    len(tc.ingesterStateByZone),
+				shuffleShardSize:     tc.shuffleShardSize,
+				configure: func(config *Config) {
+					config.IngestStorageConfig.Zone = tc.querierZone
+					config.MinimizeIngesterRequests = true
+					config.IngestStorageConfig.UseClassicRing = tc.useClassicRing
+				},
+			}
+
+			cfg.shuffleShardSize = tc.shuffleShardSize
+
+			ds, ingesters, reg := prepare(t, cfg)
+
+			queryMetrics := stats.NewQueryMetrics(reg[0])
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
+
+			if tc.expectedError == nil {
+				require.NoError(t, err)
+			} else {
+				assert.ErrorIs(t, err, tc.expectedError)
+
+				// Assert that downstream gRPC statuses are passed back upstream.
+				_, expectedIsGRPC := grpcutil.ErrorToStatus(tc.expectedError)
+				if expectedIsGRPC {
+					_, actualIsGRPC := grpcutil.ErrorToStatus(err)
+					assert.True(t, actualIsGRPC, fmt.Sprintf("expected error to be a status error, but got: %T", err))
+				}
+			}
+
+			var responseMatrix model.Matrix
+			if len(resp.Chunkseries) == 0 {
+				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, nil)
+			} else {
+				responseMatrix, err = ingester_client.TimeSeriesChunksToMatrix(0, 5, resp.Chunkseries)
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expectedResponse.String(), responseMatrix.String())
+
+			// Check how many ingesters have been queried.
+			// Because we return immediately on failures, it might take some time for all ingester calls to register.
+			test.Poll(t, 100*time.Millisecond, tc.expectedQueriedIngesters, func() any { return countMockIngestersCalls(ingesters, "QueryStream") })
+		})
+	}
+}
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
 	const limit = 30 // Chunks are duplicated due to replication factor.

@@ -24,11 +24,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/middleware"
-	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -49,6 +44,13 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -86,6 +88,9 @@ const (
 
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
+
+	PartitionRingName = "ingester-partitions"
+	PartitionRingKey  = "partitions-v1" // TODO: change to "ingester-partitions" when we're happy with protobuf.
 
 	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
 
@@ -186,6 +191,8 @@ type Config struct {
 
 	// This config is dynamically injected because defined outside the ingester config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
+
+	RemoveInactivePartitionsAfterInterval time.Duration `yaml:"remove_inactive_partitions_after_interval"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -213,6 +220,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	// the default behaviour of Mimir should be as this flag were set to true.
 	// TODO: Remove in Mimir 2.14.0
 	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
+	f.DurationVar(&cfg.RemoveInactivePartitionsAfterInterval, "ingester.remove-inactive-partitions-after-interval", 12*time.Hour, "At what point should inactive (read-only) partitions be removed from the partitions ring.")
 }
 
 func (cfg *Config) Validate(logger log.Logger) error {
@@ -315,7 +323,10 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
-	ingestReader *ingest.PartitionReader
+	ingestReader         *ingest.PartitionReader
+	partitionID          int32
+	partitionRingKV      kv.Client
+	shutdownMarkerExists atomic.Bool
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -420,13 +431,20 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		partitionID, err := ingest.IngesterID(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+		// Use the zone as the consumer group
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i.lifecycler.Zone, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
+		}
+
+		i.partitionID = partitionID
+		i.partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, "partitions-ring-ingester-lifecycler"), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating KV store for partition ring")
 		}
 	}
 
@@ -553,6 +571,16 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if shutdownMarkerFound {
 		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownMarkerPath)
 		i.setPrepareShutdown()
+	}
+
+	if i.cfg.IngestStorageConfig.Enabled {
+		s := services.NewIdleService(i.partitionRingStarting, i.partitionRingStopping)
+		err := s.StartAsync(context.Background())
+		if err != nil {
+			return errors.Wrap(err, "partitions ring")
+		}
+
+		i.subservicesWatcher.WatchService(s)
 	}
 
 	i.subservices, err = services.NewManager(servs...)
@@ -3318,15 +3346,55 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 
 // setPrepareShutdown toggles ingester lifecycler config to prepare for shutdown
 func (i *Ingester) setPrepareShutdown() {
+	i.shutdownMarkerExists.Store(true)
 	i.lifecycler.SetUnregisterOnShutdown(true)
 	i.lifecycler.SetFlushOnShutdown(true)
 	i.metrics.shutdownMarker.Set(1)
 }
 
 func (i *Ingester) unsetPrepareShutdown() {
+	i.shutdownMarkerExists.Store(false)
 	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
 	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
 	i.metrics.shutdownMarker.Set(0)
+
+	i.updateIngesterPartitionState(ring.PartitionActive)
+}
+
+// PreparePartitionDownscaleHandler prepares ingester for downscaling. Partitions that ingester handles are switched to Inactive state (read-only).
+//
+// Following methods are supported:
+//
+// * GET -- returns timestamp when partition was switched to Inactive state, or 0, if partition is not in Inactive state.
+// * POST -- sets partition to Inactive state (if not yet set), and returns timestamp switch to Inactive state this happened.
+// * DELETE -- sets partition back to Active state.
+func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		i.updateIngesterPartitionState(ring.PartitionInactive)
+
+	case http.MethodDelete:
+		i.updateIngesterPartitionState(ring.PartitionActive)
+	}
+
+	s, t, err := i.getPartitionStateAndTimestamp()
+	if err != nil {
+		level.Error(i.logger).Log("msg", "failed to check partition state in the ring", "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	if s == ring.PartitionInactive {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": t.Unix()})
+	} else {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": 0})
+	}
 }
 
 // ShutdownHandler triggers the following set of operations in order:
@@ -3625,4 +3693,149 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+}
+
+func (i *Ingester) partitionRingStarting(ctx context.Context) error {
+	err := i.partitionRingKV.CAS(ctx, PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		var pr *ring.PartitionRingDesc
+		if in != nil {
+			if r, ok := in.(*ring.PartitionRingDesc); ok {
+				pr = r
+			}
+		}
+		if pr == nil {
+			pr = ring.NewPartitionRingDesc()
+		}
+
+		changed := false
+
+		// Create partition, or make it active, if necessary.
+		// If this ingester is marked for shutdown, we don't need to create partition or make it active.
+		// If partition already exists, and is active, we mark partition as INACTIVE.
+		if i.shutdownMarkerExists.Load() {
+			pd, ok := pr.Partitions[i.partitionID]
+			if ok && pd.IsActive() {
+				pr.UpdatePartitionState(i.partitionID, ring.PartitionInactive, time.Now())
+				changed = true
+			}
+			// If partition doesn't exist, we don't need to create it, since ingester is going to shutdown.
+		} else {
+			pd, ok := pr.Partitions[i.partitionID]
+			if !ok {
+				pr.AddPartition(i.partitionID, ring.PartitionActive, time.Now())
+				changed = true
+			} else if !pd.IsActive() {
+				pr.UpdatePartitionState(i.partitionID, ring.PartitionActive, time.Now())
+				changed = true
+			}
+		}
+
+		// Also add partition owner (ingester) to the ring.
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, ring.OwnerActive, i.partitionID, time.Now()) {
+			changed = true
+		}
+
+		if changed {
+			return pr, true, nil
+		}
+		return nil, false, nil
+	})
+	return errors.Wrap(err, "creating partition and owner in the partitions ring")
+}
+
+// This method is called after lifecycler has been stopped. If this ingester is shutting down, and partition is INACTIVE for enough,
+// we can remove the partition (and also the owner) from the partitions ring.
+func (i *Ingester) partitionRingStopping(_ error) error {
+	var removingPartition bool
+
+	err := i.partitionRingKV.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		removingPartition = false // set back to false. We can get here multiple times, if CAS function failed. We need to capture last state -- that got applied.
+
+		// We can always remove the owner from partitions ring.
+		// If ingester is shutting down, and partition is inactive for enough time, we can remove the partition as well, if there are no other owners.
+		var pr *ring.PartitionRingDesc
+		if in != nil {
+			if r, ok := in.(*ring.PartitionRingDesc); ok {
+				pr = r
+			}
+		}
+		if pr == nil {
+			return nil, false, nil
+		}
+
+		pr.RemoveOwner(i.lifecycler.ID)
+
+		if i.shutdownMarkerExists.Load() {
+			p, ok := pr.Partitions[i.partitionID]
+			graceTime := time.Now().Add(-i.cfg.RemoveInactivePartitionsAfterInterval)
+			if ok && p.State == ring.PartitionInactive && time.Unix(p.StateTimestamp, 0).Before(graceTime) && pr.PartitionOwnersCount(i.partitionID) == 0 {
+				removingPartition = true
+				pr.RemovePartition(i.partitionID)
+			}
+		}
+
+		return pr, true, nil
+	})
+
+	if err != nil {
+		return errors.Wrap(err, "removing owner from the partitions ring")
+	}
+	if removingPartition {
+		level.Info(i.logger).Log("msg", "removed inactive partition from partition ring", "partition", i.partitionID)
+	}
+	return nil
+}
+
+func (i *Ingester) updateIngesterPartitionState(state ring.PartitionState) {
+	if i.partitionRingKV == nil {
+		return
+	}
+
+	var updatedState bool
+
+	err := i.partitionRingKV.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		updatedState = false // set back to false. We can get here multiple times, if CAS function failed. We need to capture last state -- that got applied.
+
+		var pr *ring.PartitionRingDesc
+		if in != nil {
+			if r, ok := in.(*ring.PartitionRingDesc); ok {
+				pr = r
+			}
+		}
+		if pr == nil {
+			return nil, false, nil
+		}
+
+		if pr.UpdatePartitionState(i.partitionID, state, time.Now()) {
+			updatedState = true
+			return pr, true, nil
+		}
+		return nil, false, nil
+	})
+	if err != nil {
+		level.Warn(i.logger).Log("msg", "failed to update ingester's partition ring state", "partitionID", i.partitionID, "state", state.String(), "err", err)
+	}
+
+	if updatedState {
+		level.Warn(i.logger).Log("msg", "updated partition state", "partitionID", i.partitionID, "state", state.String())
+	}
+}
+
+func (i *Ingester) getPartitionStateAndTimestamp() (ring.PartitionState, time.Time, error) {
+	v, err := i.partitionRingKV.Get(context.Background(), PartitionRingKey)
+	if err != nil {
+		return ring.PartitionUnknown, time.Time{}, err
+	}
+
+	pr, ok := v.(*ring.PartitionRingDesc)
+	if !ok {
+		return ring.PartitionUnknown, time.Time{}, fmt.Errorf("failed to get partition ring")
+	}
+
+	p, ok := pr.Partitions[i.partitionID]
+	if !ok {
+		return ring.PartitionUnknown, time.Time{}, fmt.Errorf("unknown partition")
+	}
+
+	return p.GetState(), time.Unix(p.GetStateTimestamp(), 0), nil
 }

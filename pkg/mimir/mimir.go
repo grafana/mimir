@@ -687,6 +687,8 @@ type Mimir struct {
 	API                      *api.API
 	Server                   *server.Server
 	IngesterRing             *ring.Ring
+	PartitionRingWatcher     *ring.PartitionRingWatcher
+	PartitionRing            *ring.PartitionInstanceRing
 	TenantLimits             validation.TenantLimits
 	Overrides                *validation.Overrides
 	ActiveGroupsCleanup      *util.ActiveGroupsCleanupService
@@ -828,9 +830,9 @@ func (t *Mimir) Run() error {
 	// implementation provided by module.Ring over the BasicLifecycler
 	// available in ingesters
 	if t.IngesterRing != nil {
-		t.API.RegisterRing(t.IngesterRing)
+		t.API.RegisterIngesterRing(t.IngesterRing)
 	} else if t.Ingester != nil {
-		t.API.RegisterRing(t.Ingester.RingHandler())
+		t.API.RegisterIngesterRing(t.Ingester.RingHandler())
 	}
 
 	// get all services, create service manager and tell it to start

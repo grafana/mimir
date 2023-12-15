@@ -2103,7 +2103,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -2544,7 +2544,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
 			replicationSet, err := ds[0].GetIngesters(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+			assert.Equal(t, testData.expectedIngesters, len(replicationSet[0].Instances))
 
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
@@ -3494,6 +3494,10 @@ type ingesterZoneState struct {
 	// ringStates explicitly sets the state of each ingester in the ring.
 	// If unset, instances will be in ring.ACTIVE state.
 	ringStates []ring.InstanceState
+
+	// partitionRingStates explicitly sets the state of each ingester in the ring.
+	// If unset, instances will be in ring.ACTIVE state.
+	partitionRingStates []ring.InstanceState
 }
 
 type prepConfig struct {
@@ -3560,6 +3564,13 @@ func (c prepConfig) totalZones() int {
 	return len(c.ingesterStateByZone)
 }
 
+func (c prepConfig) ingesterPartitionRingState(zone string, id int) ring.InstanceState {
+	if len(c.ingesterStateByZone[zone].partitionRingStates) == 0 {
+		return ring.ACTIVE
+	}
+	return c.ingesterStateByZone[zone].partitionRingStates[id]
+}
+
 func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
 	if len(c.ingesterStateByZone[zone].ringStates) == 0 {
 		return ring.ACTIVE
@@ -3582,6 +3593,9 @@ func (c prepConfig) validate(t testing.TB) {
 			}
 			if len(state.ringStates) > 0 {
 				require.Len(t, state.ringStates, ingestersInZone, "ringStates cannot be longer than the number of ingesters in the zone")
+			}
+			if len(state.partitionRingStates) > 0 {
+				require.Len(t, state.partitionRingStates, ingestersInZone, "partitionRingStates cannot be longer than the number of ingesters in the zone")
 			}
 			require.LessOrEqual(t, len(c.ingesterDataPerZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
 		}
@@ -3678,6 +3692,30 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
+func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
+	// Use a real ring with a mock KV store to test ring RF logic.
+	ingesterDescs := map[string]ring.OwnerDesc{}
+	partitionDescs := map[int32]ring.PartitionDesc{}
+	for _, ing := range ingesters {
+		addr := ing.address()
+		ingesterDescs[addr] = ring.OwnerDesc{
+			OwnedPartition: int32(ing.id),
+		}
+	}
+	numPartitions := cfg.totalIngesters() / cfg.totalZones()
+	for i := 0; i < numPartitions; i++ {
+		partitionDescs[int32(i)] = ring.PartitionDesc{
+			Tokens:         []uint32{uint32((math.MaxUint32 / numPartitions) * i)},
+			State:          ring.PartitionActive,
+			StateTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
+		}
+	}
+	return &ring.PartitionRingDesc{
+		Owners:     ingesterDescs,
+		Partitions: partitionDescs,
+	}
+}
+
 func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry) {
 	cfg.validate(t)
 
@@ -3699,11 +3737,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		rf = 3
 	}
 
+	ingestersHeartbeatTimeout := 60 * time.Minute
 	ingestersRing, err := ring.New(ring.Config{
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
-		HeartbeatTimeout:     60 * time.Minute,
+		HeartbeatTimeout:     ingestersHeartbeatTimeout,
 		ReplicationFactor:    rf,
 		ZoneAwarenessEnabled: cfg.totalZones() > 1,
 	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
@@ -3713,6 +3752,32 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
 	})
+
+	var (
+		partitionsRingWatcher  *ring.PartitionRingWatcher
+		partitionsInstanceRing *ring.PartitionInstanceRing
+	)
+
+	if cfg.useIngestStorage {
+		partitionsKvStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
+		err := partitionsKvStore.CAS(context.Background(), ingester.PartitionRingKey,
+			func(_ interface{}) (interface{}, bool, error) {
+				return preparePartitionsRing(cfg, ingesters), true, nil
+			},
+		)
+		require.NoError(t, err)
+
+		partitionsRingWatcher, err = ring.NewPartitionRingWatcher(partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), partitionsRingWatcher))
+
+		partitionsInstanceRing = ring.NewPartitionInstanceRing(partitionsRingWatcher, ingestersRing, ingestersHeartbeatTimeout)
+
+		expectedPartitions := cfg.totalIngesters() / cfg.totalZones() // assuming that 1 ingester hosts 1 partition
+		test.Poll(t, time.Second, expectedPartitions, func() interface{} {
+			return partitionsInstanceRing.InstancesCount()
+		})
+	}
 
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 		for _, ing := range ingesters {
@@ -3731,8 +3796,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 
 	distributors := make([]*Distributor, 0, cfg.numDistributors)
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
-	for i := 0; i < cfg.numDistributors; i++ {
 
+	for i := 0; i < cfg.numDistributors; i++ {
 		var (
 			distributorCfg Config
 			clientConfig   client.Config
@@ -3774,7 +3839,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsInstanceRing, true, reg, logger)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
@@ -3795,7 +3860,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
 	}
 
-	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
+	t.Cleanup(func() { stopAll(distributors, ingestersRing, partitionsRingWatcher) })
 
 	return distributors, ingesters, registries
 }
@@ -3824,13 +3889,18 @@ func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone 
 	}
 }
 
-func stopAll(ds []*Distributor, r *ring.Ring) {
+func stopAll(ds []*Distributor, r *ring.Ring, pr *ring.PartitionRingWatcher) {
 	for _, d := range ds {
-		services.StopAndAwaitTerminated(context.Background(), d) //nolint:errcheck
+		_ = services.StopAndAwaitTerminated(context.Background(), d)
 	}
 
 	// Mock consul doesn't stop quickly, so don't wait.
-	r.StopAsync()
+	if r != nil {
+		r.StopAsync()
+	}
+	if pr != nil {
+		_ = services.StopAndAwaitTerminated(context.Background(), pr)
+	}
 }
 
 func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
@@ -4073,6 +4143,9 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 }
 
 func expectedResponse(start, end int, histograms bool, metrics ...string) model.Matrix {
+	if len(metrics) == 0 {
+		metrics = []string{"foo"}
+	}
 	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
 	for _, metricName := range metrics {
@@ -4985,6 +5058,14 @@ func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 	return count
 }
 
+func countMockIngestersCalls(ingesters []*mockIngester, name string) int {
+	count := 0
+	for _, i := range ingesters {
+		count += i.countCalls(name)
+	}
+	return count
+}
+
 // TestDistributor_MetricsWithRequestModifications tests that the distributor metrics are properly updated when
 // requests get modified by the mechanisms that can modify them: relabel rules, drop labels, ha-dedupe, forwarding, limits.
 func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
@@ -5811,7 +5892,7 @@ func TestSendMessageMetadata(t *testing.T) {
 		return mock, nil
 	})
 
-	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, false, nil, log.NewNopLogger())
+	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NotNil(t, d)
 
@@ -5952,7 +6033,7 @@ func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
 				ZoneAwarenessEnabled: true,
 			}
 
-			cfg := d.queryQuorumConfig(context.Background(), replicationSet)
+			cfg := d.queryQuorumConfigClassic(context.Background(), replicationSet)
 			sorted := cfg.ZoneSorter(uniqueZones(testCase.instances))
 
 			testCase.verify(t, sorted)
@@ -5990,4 +6071,54 @@ func (m *mockInstanceClient) Check(_ context.Context, _ *grpc_health_v1.HealthCh
 func (m *mockInstanceClient) Push(ctx context.Context, _ *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	m.md, _ = metadata.FromOutgoingContext(ctx)
 	return nil, nil
+}
+
+func TestQueryQuorumConfigPartitions(t *testing.T) {
+	testCases := map[string]struct {
+		ownZone string
+		zones   []string
+		verify  func(t *testing.T, sortedZones []string)
+	}{
+		"no instances": {
+			ownZone: "zone-a",
+			zones:   []string{},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Empty(t, sortedZones)
+			},
+		},
+		"one zone": {
+			ownZone: "zone-a",
+			zones:   []string{"zone-a"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"one zone, different from own zone": {
+			ownZone: "zone-a",
+			zones:   []string{"zone-b"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-b"}, sortedZones)
+			},
+		},
+		"multiple zones, own zone is first": {
+			ownZone: "zone-a",
+			zones:   []string{"zone-b", "zone-a", "zone-c"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, sortedZones[0], "zone-a")
+				require.ElementsMatch(t, []string{"zone-b", "zone-c"}, sortedZones[1:])
+			},
+		},
+	}
+
+	d := &Distributor{}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			d.cfg.IngestStorageConfig.Zone = testCase.ownZone
+			cfg := d.queryQuorumConfigPartitions(context.Background())
+			sorted := cfg.ZoneSorter(testCase.zones)
+
+			testCase.verify(t, sorted)
+		})
+	}
 }

@@ -151,10 +151,14 @@ func (i *InstanceDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, n
 // IsHeartbeatHealthy returns whether the heartbeat timestamp for the ingester is within the
 // specified timeout period. A timeout of zero disables the timeout; the heartbeat is ignored.
 func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now time.Time) bool {
+	return IsHeartbeatHealthy(time.Unix(i.Timestamp, 0), heartbeatTimeout, now)
+}
+
+func IsHeartbeatHealthy(timestamp time.Time, heartbeatTimeout time.Duration, now time.Time) bool {
 	if heartbeatTimeout == 0 {
 		return true
 	}
-	return now.Sub(time.Unix(i.Timestamp, 0)) <= heartbeatTimeout
+	return now.Sub(timestamp) <= heartbeatTimeout
 }
 
 // IsReady returns no error if the instance is ACTIVE and healthy.
@@ -202,7 +206,6 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 	other, ok := mergeable.(*Desc)
 	if !ok {
-		// This method only deals with non-nil rings.
 		return nil, fmt.Errorf("expected *ring.Desc, got %T", mergeable)
 	}
 

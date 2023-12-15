@@ -10,7 +10,7 @@ prometheus:
       scrape_configs:
         - job_name: mimir-read-write-mode/mimir-write
           static_configs:
-            - targets: ['mimir-write-1:8080', 'mimir-write-2:8080', 'mimir-write-3:8080']
+            - targets: ['mimir-write-1:8080', 'mimir-write-2:8080', 'mimir-write-3:8080', 'mimir-write-4:8080']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-read-write-mode'

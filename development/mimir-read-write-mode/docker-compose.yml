@@ -35,7 +35,7 @@
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
-      - "8006:8080"
+      - "8021:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -54,7 +54,7 @@
     "hostname": "mimir-backend-2"
     "image": "mimir"
     "ports":
-      - "8007:8080"
+      - "8022:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -73,7 +73,7 @@
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
-      - "8004:8080"
+      - "8011:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -92,7 +92,7 @@
     "hostname": "mimir-read-2"
     "image": "mimir"
     "ports":
-      - "8005:8080"
+      - "8012:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -156,6 +156,27 @@
       - "./config:/mimir/config"
       - "./activity:/activity"
       - ".data-mimir-write-3:/data:delegated"
+  "mimir-write-4":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-4"
+    "depends_on":
+      - "minio"
+      - "kafka"
+    "environment": []
+    "hostname": "mimir-write-4"
+    "image": "mimir"
+    "ports":
+      - "8004:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-4:/data:delegated"
   "minio":
     "command":
       - "server"

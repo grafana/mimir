@@ -4,23 +4,24 @@ common:
   storage:
     backend: s3
     s3:
-      endpoint:          minio:9000
-      access_key_id:     mimir
+      endpoint: minio:9000
+      access_key_id: mimir
       secret_access_key: supersecret
-      insecure:          true
+      insecure: true
 
 ingest_storage:
-  enabled:       true
+  enabled: true
   kafka:
     address: kafka:9092
-    topic:   mimir-ingest
+    topic: mimir-ingest
 
 ingester:
   return_only_grpc_errors: true
+  remove_inactive_partitions_after_interval: 1m
 
 blocks_storage:
   s3:
-    bucket_name:       mimir-blocks
+    bucket_name: mimir-blocks
   tsdb:
     dir: /data/ingester
 
@@ -43,7 +44,13 @@ blocks_storage:
 
 memberlist:
   # Use write replicas as seed nodes.
-  join_members: [ mimir-write-1, mimir-write-2, mimir-write-3 ]
+  join_members:
+    - mimir-write-zone-a-1
+    - mimir-write-zone-b-1
+    - mimir-write-zone-a-2
+    - mimir-write-zone-b-2
+    - mimir-write-zone-a-3
+    - mimir-write-zone-b-3
 
 ruler:
   rule_path: /data/ruler
@@ -57,7 +64,7 @@ ruler:
 
 ruler_storage:
   s3:
-    bucket_name:       mimir-ruler
+    bucket_name: mimir-ruler
   cache:
     backend: memcached
     memcached:
@@ -82,6 +89,7 @@ overrides_exporter:
 
 limits:
   native_histograms_ingestion_enabled: true
+  ingestion_rate: 100000000
 
 runtime_config:
   file: ./config/runtime.yaml

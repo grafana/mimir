@@ -56,9 +56,16 @@ func (d *Distributor) AllUserStatsHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	var replicationFactor int
+	if d.cfg.IngestStorageConfig.Enabled {
+		replicationFactor = d.partitionsInstanceRing.ReplicationFactor()
+	} else {
+		replicationFactor = d.ingestersRing.ReplicationFactor()
+	}
+
 	util.RenderHTTPResponse(w, ingesterStatsPageContents{
 		Now:               time.Now(),
 		Stats:             stats,
-		ReplicationFactor: d.ingestersRing.ReplicationFactor(),
+		ReplicationFactor: replicationFactor,
 	}, ingesterStatsPageTemplate, r)
 }
