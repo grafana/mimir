@@ -38,10 +38,8 @@ type recordConsumer interface {
 type PartitionReader struct {
 	services.Service
 
-	kafkaAddress  string
-	kafkaTopic    string
-	kafkaClientID string
-	partitionID   int32
+	kafkaCfg    KafkaConfig
+	partitionID int32
 
 	client    *kgo.Client
 	admClient *kadm.Client
@@ -64,9 +62,7 @@ func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher
 
 func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, consumer recordConsumer, logger log.Logger, metrics readerMetrics) (*PartitionReader, error) {
 	r := &PartitionReader{
-		kafkaAddress:   kafkaCfg.Address,
-		kafkaTopic:     kafkaCfg.Topic,
-		kafkaClientID:  kafkaCfg.ClientID,
+		kafkaCfg:       kafkaCfg,
 		partitionID:    partitionID,
 		consumer:       consumer, // TODO consume records in parallel
 		commitInterval: time.Second,
@@ -186,27 +182,17 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
-	client, err := kgo.NewClient(
-		kgo.ClientID(r.kafkaClientID),
-		kgo.SeedBrokers(r.kafkaAddress),
+	opts := append(
+		commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
-			r.kafkaTopic: {r.partitionID: at},
+			r.kafkaCfg.Topic: {r.partitionID: at},
 		}),
 		kgo.FetchMinBytes(1),
 		kgo.FetchMaxBytes(100_000_000),
 		kgo.FetchMaxWait(5*time.Second),
 		kgo.FetchMaxPartitionBytes(50_000_000),
-		// Frequently refresh the cluster metadata. This allows us to quickly react in case some brokers are unhealthy,
-		// because the client updates the cluster info only at this frequency (and not after errors too).
-		//
-		// The side effect of frequently refreshing the cluster metadata is that if the backend returns each time a
-		// different authoritative owner for a partition, then each time cluster metadata is updated the Kafka client
-		// will client a new connection for each partition, leading to an high connections churn rate.
-		kgo.MetadataMaxAge(10*time.Second),
-		kgo.WithHooks(r.metrics.kprom),
-		kgo.WithLogger(newKafkaLogger(r.logger)),
 	)
-
+	client, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating kafka client")
 	}
@@ -242,7 +228,7 @@ func (r *PartitionReader) fetchLastCommittedOffsetWithRetries(ctx context.Contex
 }
 
 func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (kgo.Offset, error) {
-	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaAddress))
+	cl, err := kgo.NewClient(kgo.SeedBrokers(r.kafkaCfg.Address))
 	if err != nil {
 		return kgo.NewOffset(), errors.Wrap(err, "unable to create admin client")
 	}
@@ -257,7 +243,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (kgo.Off
 	if err != nil {
 		return kgo.NewOffset(), errors.Wrap(err, "unable to fetch group offsets")
 	}
-	offset, _ := offsets.Lookup(r.kafkaTopic, r.partitionID)
+	offset, _ := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
 	return kgo.NewOffset().At(offset.At), nil
 }
 
@@ -289,7 +275,7 @@ func (r *PartitionReader) commitLoop(ctx context.Context) {
 			if err != nil || !committed.Ok() {
 				level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error())
 			} else {
-				committedOffset, _ := committed.Lookup(r.kafkaTopic, r.partitionID)
+				committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
 				level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
 				clear(toCommit)
 			}
