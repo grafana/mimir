@@ -30,18 +30,24 @@ std.manifestYamlDoc({
       publishedHttpPort: 8003,
       extraVolumes: ['.data-mimir-write-3:/data:delegated'],
     }),
+    'mimir-write-4': mimirService({
+      name: 'mimir-write-4',
+      target: 'write',
+      publishedHttpPort: 8004,
+      extraVolumes: ['.data-mimir-write-4:/data:delegated'],
+    }),
   },
 
   read:: {
     'mimir-read-1': mimirService({
       name: 'mimir-read-1',
       target: 'read',
-      publishedHttpPort: 8004,
+      publishedHttpPort: 8011,
     }),
     'mimir-read-2': mimirService({
       name: 'mimir-read-2',
       target: 'read',
-      publishedHttpPort: 8005,
+      publishedHttpPort: 8012,
     }),
   },
 
@@ -49,12 +55,12 @@ std.manifestYamlDoc({
     'mimir-backend-1': mimirService({
       name: 'mimir-backend-1',
       target: 'backend',
-      publishedHttpPort: 8006,
+      publishedHttpPort: 8021,
     }),
     'mimir-backend-2': mimirService({
       name: 'mimir-backend-2',
       target: 'backend',
-      publishedHttpPort: 8007,
+      publishedHttpPort: 8022,
     }),
   },
 

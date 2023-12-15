@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package ring;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "ring.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message PartitionRingDesc {
+  map<int32, PartitionDesc> partitions = 1 [(gogoproto.nullable) = false];
+
+  // Instances that own the partitions.
+  map<string, OwnerDesc> owners = 2 [(gogoproto.nullable) = false];
+}
+
+message PartitionDesc {
+  // Unique tokens, generated with deterministic token generator.
+  repeated uint32 tokens = 1;
+
+  PartitionState state = 2;
+  // When has the state last changed for this partition. Unix timestamp in seconds.
+  int64 stateTimestamp = 3;
+}
+
+enum PartitionState {
+  PartitionUnknown = 0;
+
+  PartitionActive = 1;
+  PartitionInactive = 2;
+  // This state is not visible to ring clients, it's only used for gossiping, and partitions in this state are removed before client can see them.
+  PartitionDeleted = 3;
+}
+
+
+// Owner handles given partition. Multiple owners can own the same partition.
+message OwnerDesc {
+  // ID of the instance. This value is the same as the key in the owners map in PartitionRingDesc.
+  string id = 1;
+
+  string addr = 2;
+  string zone = 3;
+
+  // Partitions that belong to this owner.
+  repeated int32 ownedPartitions = 4;
+
+  // Unix timestamp in seconds of the last heartbeat sent by this instance.
+  int64 heartbeat = 6;
+  InstanceState state = 7;
+}

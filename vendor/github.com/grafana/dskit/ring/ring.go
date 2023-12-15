@@ -1134,3 +1134,32 @@ func (r *Ring) numberOfKeysOwnedByInstance(keys []uint32, op Operation, instance
 	}
 	return owned, nil
 }
+
+type ReadRingBatchRingAdapter struct {
+	ring ReadRing
+
+	bufDescs [GetBufferSize]InstanceDesc
+	bufHosts [GetBufferSize]string
+	bufZones [GetBufferSize]string
+}
+
+func NewReadRingBatchAdapter(ring ReadRing) *ReadRingBatchRingAdapter {
+	return &ReadRingBatchRingAdapter{
+		ring:     ring,
+		bufDescs: [5]InstanceDesc{},
+		bufHosts: [5]string{},
+		bufZones: [5]string{},
+	}
+}
+
+func (r *ReadRingBatchRingAdapter) InstancesCount() int {
+	return r.ring.InstancesCount()
+}
+
+func (r *ReadRingBatchRingAdapter) ReplicationFactor() int {
+	return r.ring.ReplicationFactor()
+}
+
+func (r *ReadRingBatchRingAdapter) Get(key uint32, op Operation) (ReplicationSet, error) {
+	return r.ring.Get(key, op, r.bufDescs[:0], r.bufHosts[:0], r.bufZones[:0])
+}

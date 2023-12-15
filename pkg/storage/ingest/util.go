@@ -35,6 +35,7 @@ var (
 // The input ingester ID is expected to end either with "zone-X-Y" or only "-Y" where "X" is a letter in the range [a,d]
 // and "Y" is a positive integer number. This means that this function supports up to 4 zones starting
 // with letter "a" or no zones at all.
+// Deprecated: We don't want per-zone partitions.
 func IngesterPartition(ingesterID string) (int32, error) {
 	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
@@ -62,6 +63,22 @@ func IngesterPartition(ingesterID string) (int32, error) {
 
 	partitionID := int32(ingesterSeq<<2) | (zoneID & 0b11)
 	return partitionID, nil
+}
+
+// IngesterID returns ID from ingester. (TODO: replace IngesterPartition with this)
+func IngesterID(ingesterID string) (int32, error) {
+	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
+	if len(match) == 0 {
+		return 0, fmt.Errorf("name doesn't match regular expression %s %q", ingesterID, ingesterIDRegexp.String())
+	}
+
+	// Parse the ingester sequence number.
+	ingesterSeq, err := strconv.Atoi(match[2])
+	if err != nil {
+		return 0, fmt.Errorf("no ingester sequence in name %s", ingesterID)
+	}
+
+	return int32(ingesterSeq), nil
 }
 
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {

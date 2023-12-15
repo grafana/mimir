@@ -24,11 +24,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
-	"github.com/grafana/dskit/middleware"
-	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -49,6 +44,13 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -86,6 +88,8 @@ const (
 
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
+
+	PartitionRingKey = "partitions"
 
 	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
 
@@ -315,7 +319,9 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
-	ingestReader *ingest.PartitionReader
+	ingestReader    *ingest.PartitionReader
+	partitionID     ring.PartitionID
+	partitionRingKV kv.Client
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -420,13 +426,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		partitionID, err := ingest.IngesterID(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
 		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
+		}
+
+		i.partitionID = ring.PartitionID(partitionID)
+		i.partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, "partitions-ring-ingester-lifecycler"), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating KV store for partition ring")
 		}
 	}
 
@@ -510,6 +522,16 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
+	}
+
+	if i.cfg.IngestStorageConfig.Enabled {
+		s := services.NewBasicService(i.partitionRingStarting, i.partitionRingRunning, nil)
+		err := s.StartAsync(context.Background())
+		if err != nil {
+			return errors.Wrap(err, "partitions ring")
+		}
+
+		i.subservicesWatcher.WatchService(s)
 	}
 
 	// let's start the rest of subservices via manager
@@ -3624,4 +3646,92 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 	}
 
 	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
+}
+
+func (i *Ingester) partitionRingStarting(ctx context.Context) error {
+	err := i.partitionRingKV.CAS(ctx, PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		var pr *ring.PartitionRingDesc
+		if in != nil {
+			if r, ok := in.(*ring.PartitionRingDesc); ok {
+				pr = r
+			}
+		}
+		if pr == nil {
+			pr = ring.NewPartitionRingDesc()
+		}
+
+		// Create partition, or make it active, if necessary.
+		changed := false
+		pd, ok := pr.Partition(ring.PartitionID(i.partitionID))
+		if !ok {
+			pr.AddActivePartition(ring.PartitionID(i.partitionID), time.Now())
+			changed = true
+		} else if !pd.IsActive() {
+			pr.ActivatePartition(ring.PartitionID(i.partitionID), time.Now())
+			changed = true
+		}
+
+		// Also add partition owner (ingester) to the ring.
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
+			changed = true
+		}
+
+		if changed {
+			return pr, true, nil
+		}
+		return nil, false, nil
+	})
+	return errors.Wrap(err, "creating partition and owner in the partitions ring")
+}
+
+func (i *Ingester) partitionRingRunning(ctx context.Context) error {
+	t := time.NewTicker(i.cfg.IngesterRing.HeartbeatPeriod)
+	defer t.Stop()
+
+	lifecyclerStopping := make(chan struct{})
+
+	// When lifecycler terminates or fails (it can't do both), close lifecyclerStopping channel.
+	i.lifecycler.AddListener(services.NewListener(nil, nil, nil, func(from services.State) {
+		close(lifecyclerStopping)
+	}, func(from services.State, failure error) {
+		close(lifecyclerStopping)
+	}))
+
+	update := func(in interface{}) (out interface{}, retry bool, err error) {
+		var pr *ring.PartitionRingDesc
+		if in != nil {
+			if r, ok := in.(*ring.PartitionRingDesc); ok {
+				pr = r
+			}
+		}
+		if pr == nil {
+			pr = ring.NewPartitionRingDesc()
+		}
+
+		// Update entry in the ring with current state and heartbeat.
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
+			return pr, true, nil
+		}
+		return nil, false, nil
+	}
+
+outer:
+	for {
+		select {
+		case <-t.C:
+			err := i.partitionRingKV.CAS(ctx, PartitionRingKey, update)
+			if err != nil {
+				level.Warn(i.logger).Log("msg", "failed to update ingester entry in partitions ring", "err", err)
+			}
+
+		case <-lifecyclerStopping:
+			break outer
+		}
+	}
+
+	err := i.partitionRingKV.CAS(ctx, PartitionRingKey, update)
+	if err != nil {
+		level.Warn(i.logger).Log("msg", "failed to update ingester entry in partitions ring", "err", err)
+	}
+	return nil
 }

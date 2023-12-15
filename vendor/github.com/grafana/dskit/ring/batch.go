@@ -52,7 +52,7 @@ func isHTTPStatus4xx(err error) bool {
 // DoBatch is a deprecated version of DoBatchWithOptions where grpc errors containing status codes 4xx are treated as client errors.
 // Deprecated. Use DoBatchWithOptions instead.
 func DoBatch(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, cleanup func()) error {
-	return DoBatchWithOptions(ctx, op, r, keys, callback, DoBatchOptions{
+	return DoBatchWithOptions(ctx, op, NewReadRingBatchAdapter(r), keys, callback, DoBatchOptions{
 		Cleanup:       cleanup,
 		IsClientError: isHTTPStatus4xx,
 	})
@@ -86,6 +86,12 @@ func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 	}
 }
 
+type BatchRingAdapter interface {
+	InstancesCount() int
+	ReplicationFactor() int
+	Get(key uint32, op Operation) (ReplicationSet, error)
+}
+
 // DoBatchWithOptions request against a set of keys in the ring, handling replication and failures.
 // For example if we want to write N items where they may all hit different instances,
 // and we want them all replicated R ways with quorum writes,
@@ -94,7 +100,7 @@ func (o *DoBatchOptions) replaceZeroValuesWithDefaults() {
 // See comments on DoBatchOptions for available options for this call.
 //
 // Not implemented as a method on Ring, so we can test separately.
-func DoBatchWithOptions(ctx context.Context, op Operation, r ReadRing, keys []uint32, callback func(InstanceDesc, []int) error, o DoBatchOptions) error {
+func DoBatchWithOptions(ctx context.Context, op Operation, r BatchRingAdapter, keys []uint32, callback func(InstanceDesc, []int) error, o DoBatchOptions) error {
 	o.replaceZeroValuesWithDefaults()
 
 	if r.InstancesCount() <= 0 {
@@ -105,11 +111,6 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r ReadRing, keys []ui
 	itemTrackers := make([]itemTracker, len(keys))
 	instances := make(map[string]instance, r.InstancesCount())
 
-	var (
-		bufDescs [GetBufferSize]InstanceDesc
-		bufHosts [GetBufferSize]string
-		bufZones [GetBufferSize]string
-	)
 	for i, key := range keys {
 		// Get call below takes ~1 microsecond for ~500 instances.
 		// Checking every 10K calls would be every 10ms.
@@ -120,7 +121,7 @@ func DoBatchWithOptions(ctx context.Context, op Operation, r ReadRing, keys []ui
 			}
 		}
 
-		replicationSet, err := r.Get(key, op, bufDescs[:0], bufHosts[:0], bufZones[:0])
+		replicationSet, err := r.Get(key, op)
 		if err != nil {
 			o.Cleanup()
 			return err

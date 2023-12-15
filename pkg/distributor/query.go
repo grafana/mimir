@@ -53,12 +53,13 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		}
 
 		// We ask for all ingesters without passing matchers because exemplar queries take in an array of label matchers.
-		replicationSet, err := d.GetIngesters(ctx)
+		replicationSets, err := d.GetIngesters(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngestersExemplars(ctx, replicationSet, req)
+		// TODO: handle multiple replication sets.
+		result, err = d.queryIngestersExemplars(ctx, replicationSets, req)
 		if err != nil {
 			return err
 		}
@@ -84,12 +85,43 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 		}
 
-		replicationSet, err := d.GetIngesters(ctx)
+		replicationSets, err := d.GetIngesters(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics)
+		if len(replicationSets) == 1 {
+			result, err = d.queryIngesterStream(ctx, replicationSets[0], req, queryMetrics)
+		} else if len(replicationSets) > 1 {
+			// FIXME: this is very naive implementation.
+			// Disable streaming for now.
+			req.StreamingChunksBatchSize = 0
+
+			// Collect per-partition results for later merging.
+			var partitionResults []ingesterQueryResult
+
+			for i := 0; err == nil && i < len(replicationSets); i++ {
+				// log instances in each replication set.
+				level.Info(d.log).Log("msg", "replication sets", "rs", i, "instances", len(replicationSets[i].Instances), "max errors", replicationSets[i].MaxErrors)
+				for _, inst := range replicationSets[i].Instances {
+					level.Info(d.log).Log("msg", "replication sets", "rs", i, "addr", inst.Addr, "id", inst.Id, "zone", inst.Zone)
+				}
+
+				var newResult ingester_client.CombinedQueryStreamResponse
+				newResult, err = d.queryIngesterStream(ctx, replicationSets[i], req, nil) // we will use queryMetrics for final results
+				if err == nil {
+					partitionResults = append(partitionResults, ingesterQueryResult{
+						chunkseriesBatches: [][]ingester_client.TimeSeriesChunk{newResult.Chunkseries},
+						timeseriesBatches:  [][]mimirpb.TimeSeries{newResult.Timeseries},
+						streamingSeries:    seriesChunksStream{}, // streaming is disabled
+					})
+				}
+			}
+
+			// We need to combine results from different partitions.
+			result = combineQueryStreamResults(partitionResults, queryMetrics, 0)
+		}
+
 		if err != nil {
 			return err
 		}
@@ -107,11 +139,12 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	return result, err
 }
 
-// GetIngesters returns a replication set including all ingesters.
-func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, error) {
+// GetIngesters returns a slice of replication set including all that should be queried for user.
+// If multiple replication sets are returned, each must be queried separately, and results combined.
+func (d *Distributor) GetIngesters(ctx context.Context) ([]ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return ring.ReplicationSet{}, err
+		return nil, err
 	}
 
 	// If tenant uses shuffle sharding, we should only query ingesters which are
@@ -119,11 +152,24 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
-	if shardSize > 0 && lookbackPeriod > 0 {
-		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
+	if d.cfg.IngestStorageConfig.Enabled {
+		r := d.partitionsRingWatcher.GetRing()
+		if shardSize > 0 && lookbackPeriod > 0 {
+			r, err = r.ShuffleRingPartitions(userID, shardSize, lookbackPeriod, time.Now())
+			if err != nil {
+				return nil, err
+			}
+		}
+		return r.ReplicationSetsForQuerying(readNoExtend, 10*time.Minute)
+	} else {
+		var rs ring.ReplicationSet
+		if shardSize > 0 && lookbackPeriod > 0 {
+			rs, err = d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(readNoExtend)
+		} else {
+			rs, err = d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
+		}
+		return []ring.ReplicationSet{rs}, err
 	}
-
-	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
@@ -152,11 +198,11 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 }
 
 // queryIngestersExemplars queries the ingesters for exemplars.
-func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
+func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.ExemplarQueryRequest) (*ingester_client.ExemplarQueryResponse, error) {
 	// Fetch exemplars from multiple ingesters in parallel, using the replicationSet
 	// to deal with consistency.
 
-	results, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
+	results, err := forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.ExemplarQueryResponse, error) {
 		return client.QueryExemplars(ctx, req)
 	})
 	if err != nil {
@@ -343,6 +389,18 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
 
+	resp := combineQueryStreamResults(results, queryMetrics, d.estimatedIngestersPerSeries(replicationSet))
+
+	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
+
+	// Stats for streaming series are handled in streamingChunkSeries.
+	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries)))
+	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
+
+	return resp, nil
+}
+
+func combineQueryStreamResults(results []ingesterQueryResult, queryMetrics *stats.QueryMetrics, estimatedIngestersPerSeries int) ingester_client.CombinedQueryStreamResponse {
 	// We keep track of the number of chunks that were able to be deduplicated entirely
 	// via the AccumulateChunks function (fast) instead of needing to merge samples one
 	// by one (slow). Useful to verify the performance impact of things that potentially
@@ -351,8 +409,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	deduplicatedChunks := 0
 	totalChunks := 0
 	defer func() {
-		queryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
-		queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+		if queryMetrics != nil {
+			queryMetrics.IngesterChunksDeduplicated.Add(float64(deduplicatedChunks))
+			queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
+		}
 	}()
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
@@ -400,7 +460,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	resp := ingester_client.CombinedQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSet)),
+		StreamingSeries: mergeSeriesChunkStreams(results, estimatedIngestersPerSeries),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -408,14 +468,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)
 	}
-
-	reqStats.AddFetchedSeries(uint64(len(resp.Chunkseries) + len(resp.Timeseries) + len(resp.StreamingSeries)))
-
-	// Stats for streaming series are handled in streamingChunkSeries.
-	reqStats.AddFetchedChunkBytes(uint64(ingester_client.ChunksSize(resp.Chunkseries)))
-	reqStats.AddFetchedChunks(uint64(ingester_client.ChunksCount(resp.Chunkseries)))
-
-	return resp, nil
+	return resp
 }
 
 // estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.

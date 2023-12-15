@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -162,7 +163,8 @@ type Distributor struct {
 	ingesterDoBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
-	ingestStorageWriter *ingest.Writer
+	ingestStorageWriter   *ingest.Writer
+	partitionsRingWatcher *ring.PartitionRingWatcher
 }
 
 // Config contains the configuration required to
@@ -248,7 +250,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRingWatcher *ring.PartitionRingWatcher, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -474,6 +476,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if cfg.IngestStorageConfig.Enabled {
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
+
+		if partitionsRingWatcher == nil {
+			return nil, errors.New("ingest storage requires partitions ring")
+		}
+		d.partitionsRingWatcher = partitionsRingWatcher
 	}
 
 	d.subservices, err = services.NewManager(subservices...)
@@ -1304,14 +1311,27 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
-	// Get a subring if tenant has shuffle shard size configured.
-	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+
+	var targetRing ring.BatchRingAdapter
+	if d.cfg.IngestStorageConfig.Enabled {
+		r := d.partitionsRingWatcher.GetRing()
+		// TODO: this should be a method on partitionsRingWatchers, so that we can implement caching there.
+		subring, err := r.ShuffleRingPartitions(userID, d.limits.IngestionTenantShardSize(userID), 0, time.Time{})
+		if err != nil {
+			return err
+		}
+		targetRing = subring.BatchRing()
+	} else {
+		// Get a subring if tenant has shuffle shard size configured.
+		subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+		targetRing = ring.NewReadRingBatchAdapter(subRing)
+	}
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
-		func(ingester ring.InstanceDesc, indexes []int) error {
+	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, targetRing, keys,
+		func(instance ring.InstanceDesc, indexes []int) error {
 			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// Do not cancel the remoteRequestContext in this callback:
@@ -1319,9 +1339,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			localCtx, _ := remoteRequestContext()
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, ingester, req)
+				err = d.sendToStorage(localCtx, userID, instance, req)
 			} else {
-				err = d.sendToIngester(localCtx, ingester, req)
+				err = d.sendToIngester(localCtx, instance, req)
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -1417,17 +1437,17 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 
 // sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
 // This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	partitionID, err := ingest.IngesterPartition(ingester.Id)
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
+	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
 	if err != nil {
 		return err
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req)
+	return d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), userID, req)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
-func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSet ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (T, error)) ([]T, error) {
+func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, f func(context.Context, ingester_client.IngesterClient) (T, error)) ([]T, error) {
 	wrappedF := func(ctx context.Context, ing *ring.InstanceDesc) (T, error) {
 		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
@@ -1442,7 +1462,20 @@ func forReplicationSet[T any](ctx context.Context, d *Distributor, replicationSe
 		// Nothing to do.
 	}
 
-	return ring.DoUntilQuorum(ctx, replicationSet, d.queryQuorumConfig(ctx, replicationSet), wrappedF, cleanup)
+	// FIXME: this is very naive implementation.
+	if len(replicationSets) == 1 {
+		return ring.DoUntilQuorum(ctx, replicationSets[0], d.queryQuorumConfig(ctx, replicationSets[0]), wrappedF, cleanup)
+	}
+
+	var result []T
+	for _, rs := range replicationSets {
+		res, err := ring.DoUntilQuorum(ctx, rs, d.queryQuorumConfig(ctx, rs), wrappedF, cleanup)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, res...)
+	}
+	return result, nil
 }
 
 func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring.ReplicationSet) ring.DoUntilQuorumConfig {
@@ -1474,7 +1507,7 @@ func (d *Distributor) queryQuorumConfig(ctx context.Context, replicationSet ring
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	replicationSets, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1484,7 +1517,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelValuesResponse, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelValuesResponse, error) {
 		return client.LabelValues(ctx, req)
 	})
 	if err != nil {
@@ -1511,7 +1544,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	replicationSets, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1526,7 +1559,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	}
 	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
 	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
-	_, err = forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (ingester_client.Ingester_LabelNamesAndValuesClient, error) {
+	_, err = forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (ingester_client.Ingester_LabelNamesAndValuesClient, error) {
 		stream, err := client.LabelNamesAndValues(ctx, req)
 		if err != nil {
 			return nil, err
@@ -1664,11 +1697,12 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	rss, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	replicationSet := rss[0] // FIXME: support for partitions.
 	// If we have a single zone, we require all ingesters to respond.
 	if replicationSet.ZoneCount() == 1 {
 		replicationSet.MaxErrors = 0
@@ -1814,11 +1848,12 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	rss, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	replicationSet := rss[0] // FIXME: support for partitions.
 	if replicationSet.ZoneCount() == 1 {
 		replicationSet.MaxErrors = 0
 	}
@@ -1887,7 +1922,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return ignored{}, nil
 	}
 
-	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)
+	_, err = forReplicationSet(ctx, d, []ring.ReplicationSet{replicationSet}, ingesterQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -2022,7 +2057,7 @@ func approximateFromZones[T ~float64 | ~uint64](zoneCount int, replicationFactor
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	replicationSets, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2032,7 +2067,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelNamesResponse, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelNamesResponse, error) {
 		return client.LabelNames(ctx, req)
 	})
 	if err != nil {
@@ -2058,7 +2093,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	replicationSets, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2068,7 +2103,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
 		return client.MetricsForLabelMatchers(ctx, req)
 	})
 	if err != nil {
@@ -2097,12 +2132,12 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	replicationSets, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	resps, err := forReplicationSet(ctx, d, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsMetadataResponse, error) {
+	resps, err := forReplicationSet(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsMetadataResponse, error) {
 		return client.MetricsMetadata(ctx, req)
 	})
 	if err != nil {
@@ -2134,11 +2169,12 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.CountMethod) (*UserStats, error) {
-	replicationSet, err := d.GetIngesters(ctx)
+	rss, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	replicationSet := rss[0] // FIXME: support for partitions.
 	// If we have a single zone, we can't tolerate any errors.
 	if replicationSet.ZoneCount() == 1 {
 		replicationSet.MaxErrors = 0
