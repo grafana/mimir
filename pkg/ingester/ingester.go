@@ -414,7 +414,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 		i.ingestReader, err = ingest.NewReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
-			return nil, errors.Wrap(err, "creating ingestion client")
+			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 	}
 
