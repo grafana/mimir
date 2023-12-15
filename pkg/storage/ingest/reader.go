@@ -56,7 +56,7 @@ type PartitionReader struct {
 
 func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, pusher Pusher, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
 	metrics := newReaderMetrics(partitionID, reg)
-	consumer := newPusherConsumer(pusher, metrics, logger)
+	consumer := newPusherConsumer(pusher, reg, logger)
 	return newPartitionReader(kafkaCfg, partitionID, consumer, logger, metrics)
 }
 
@@ -280,7 +280,6 @@ func (r *PartitionReader) commitLoop(ctx context.Context) {
 }
 
 type readerMetrics struct {
-	processingTime  prometheus.Summary
 	receiveDelay    prometheus.Summary
 	recordsPerFetch prometheus.Histogram
 	kprom           *kprom.Metrics
@@ -290,13 +289,6 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 	factory := promauto.With(reg)
 
 	return readerMetrics{
-		processingTime: factory.NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingest_storage_reader_processing_time_seconds",
-			Help:       "Time taken to process a single record (write request).",
-			Objectives: latencySummaryObjectives,
-			MaxAge:     time.Minute,
-			AgeBuckets: 10,
-		}),
 		receiveDelay: factory.NewSummary(prometheus.SummaryOpts{
 			Name:       "cortex_ingest_storage_reader_receive_delay_seconds",
 			Help:       "Delay between producing a record and receiving it in the consumer.",

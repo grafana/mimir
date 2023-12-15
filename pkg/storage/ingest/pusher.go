@@ -11,6 +11,8 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -22,8 +24,8 @@ type Pusher interface {
 type pusherConsumer struct {
 	p Pusher
 
-	metrics readerMetrics
-	l       log.Logger
+	processingTimeSeconds prometheus.Observer
+	l                     log.Logger
 }
 
 type parsedRecord struct {
@@ -32,11 +34,17 @@ type parsedRecord struct {
 	err      error
 }
 
-func newPusherConsumer(p Pusher, metrics readerMetrics, l log.Logger) *pusherConsumer {
+func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
 	return &pusherConsumer{
-		p:       p,
-		metrics: metrics,
-		l:       l,
+		p: p,
+		l: l,
+		processingTimeSeconds: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
+			Name:       "cortex_ingest_storage_reader_processing_time_seconds",
+			Help:       "Time taken to process a single record (write request).",
+			Objectives: latencySummaryObjectives,
+			MaxAge:     time.Minute,
+			AgeBuckets: 10,
+		}),
 	}
 }
 
@@ -64,7 +72,7 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		ctx := user.InjectOrgID(ctx, wr.tenantID)
 		_, err := c.p.Push(ctx, wr.WriteRequest)
 
-		c.metrics.processingTime.Observe(time.Since(processingStart).Seconds())
+		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 		if err != nil {
 			level.Error(c.l).Log("msg", "failed to push write request; skipping", "err", err)
 			// TODO move distributor's isClientError to a separate package and use that here to swallow only client errors and abort on others

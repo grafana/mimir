@@ -145,7 +145,7 @@ func TestPusherConsumer(t *testing.T) {
 
 				return tc.responses[receivedReqs].WriteResponse, tc.responses[receivedReqs].err
 			})
-			c := newPusherConsumer(pusher, newReaderMetrics(1, prometheus.NewPedanticRegistry()), log.NewNopLogger())
+			c := newPusherConsumer(pusher, prometheus.NewPedanticRegistry(), log.NewNopLogger())
 			err := c.consume(context.Background(), tc.records)
 			if tc.expErr == "" {
 				assert.NoError(t, err)
