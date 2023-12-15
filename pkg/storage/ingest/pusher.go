@@ -53,6 +53,7 @@ func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(cancellation.NewErrorf("done consuming records"))
 
+	// Speed up consumption by unmarhsalling the next request while the previous one is being pushed.
 	go c.unmarshalRequests(ctx, records, recC)
 	err := c.pushRequests(ctx, recC)
 	if err != nil {
