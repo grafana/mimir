@@ -4,6 +4,7 @@ package ingest
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -146,7 +147,10 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
 	records := make([]record, 0, len(fetches.Records()))
 
-	var minOffset, maxOffset int
+	var (
+		minOffset = math.MaxInt
+		maxOffset = 0
+	)
 	fetches.EachRecord(func(record *kgo.Record) {
 		minOffset = min(minOffset, int(record.Offset))
 		maxOffset = max(maxOffset, int(record.Offset))
