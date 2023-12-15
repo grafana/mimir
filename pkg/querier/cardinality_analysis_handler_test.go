@@ -795,30 +795,32 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 		requestParams        map[string][]string
 		expectMatcherSetSize int
 		returnedError        error
-		expectError          bool
+		expectStatusCode     int
 	}{
 		{
-			name:        "should error on missing selector param",
-			expectError: true,
+			name:             "should error on missing selector param",
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "should error on invalid selector",
-			requestParams: map[string][]string{"selector": {"-not-valid-"}},
-			expectError:   true,
+			name:             "should error on invalid selector",
+			requestParams:    map[string][]string{"selector": {"-not-valid-"}},
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "should error on multiple selectors",
-			requestParams: map[string][]string{"selector": {"a", "b"}},
-			expectError:   true,
+			name:             "should error on multiple selectors",
+			requestParams:    map[string][]string{"selector": {"a", "b"}},
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "valid selector",
-			requestParams: map[string][]string{"selector": {`{job="prometheus"}`}},
+			name:             "valid selector",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			expectStatusCode: http.StatusOK,
 		},
 		{
-			name:          "upstream error: response too large",
-			returnedError: pkg_distributor.ErrResponseTooLarge,
-			expectError:   true,
+			name:             "upstream error: response too large",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			returnedError:    pkg_distributor.ErrResponseTooLarge,
+			expectStatusCode: http.StatusRequestEntityTooLarge,
 		},
 	}
 
@@ -848,8 +850,9 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 
-			if test.expectError {
-				require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+			assert.Equal(t, test.expectStatusCode, recorder.Result().StatusCode)
+
+			if test.expectStatusCode != http.StatusOK {
 				return
 			}
 

@@ -105,7 +105,10 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 		res, err := d.ActiveSeries(ctx, req.Matchers)
 		if err != nil {
 			if errors.Is(err, distributor.ErrResponseTooLarge) {
-				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusBadRequest)
+				// http.StatusRequestEntityTooLarge (413) is about the request (not the response)
+				// body size, but it's the closest we have, and we're using the same status code
+				// in the query scheduler to express the same error condition.
+				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusRequestEntityTooLarge)
 				return
 			}
 			respondFromError(err, w)

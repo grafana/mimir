@@ -23,7 +23,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -134,11 +133,11 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		{
 			name:           "upstream response: response too large",
 			request:        validReq,
-			responseStatus: http.StatusBadRequest,
-			responseBody:   distributor.ErrResponseTooLarge.Error(),
+			responseStatus: http.StatusRequestEntityTooLarge,
+			responseBody:   "",
 
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
-				assert.Contains(t, err.Error(), distributor.ErrResponseTooLarge.Error())
+				assert.Contains(t, err.Error(), errShardCountTooLow.Error())
 				return false
 			},
 		},

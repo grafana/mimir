@@ -22,12 +22,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+var errShardCountTooLow = errors.New("shard count too low")
 
 type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
@@ -84,7 +85,7 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 
 	resp, err := doShardedRequests(ctx, reqs, s.upstream)
 	if err != nil {
-		if errors.Is(err, distributor.ErrResponseTooLarge) {
+		if errors.Is(err, errShardCountTooLow) {
 			return nil, apierror.New(apierror.TypeBadData, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
@@ -176,8 +177,8 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 			if resp.StatusCode != http.StatusOK {
 				span.LogFields(otlog.Int("statusCode", resp.StatusCode))
 				body, _ := io.ReadAll(resp.Body)
-				if strings.Contains(string(body), distributor.ErrResponseTooLarge.Error()) {
-					return distributor.ErrResponseTooLarge
+				if resp.StatusCode == http.StatusRequestEntityTooLarge {
+					return errShardCountTooLow
 				}
 				return fmt.Errorf("received unexpected response from upstream: status %d, body: %s", resp.StatusCode, string(body))
 			}
