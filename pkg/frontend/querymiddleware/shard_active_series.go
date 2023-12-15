@@ -232,7 +232,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response) *http.Response {
 	reader, writer := io.Pipe()
 
-	items := make(chan any)
+	items := make(chan map[string]string)
 
 	g := new(errgroup.Group)
 	for _, res := range responses {
@@ -272,7 +272,12 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 			}
 
 			for it.ReadArray() {
-				items <- it.Read()
+				item := make(map[string]string)
+				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
+					item[s] = iterator.ReadString()
+					return true
+				})
+				items <- item
 			}
 
 			return it.Error
@@ -293,7 +298,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 	return response
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan any) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan map[string]string) {
 	defer func(encoder, w io.Closer) {
 		_ = encoder.Close()
 		_ = w.Close()
@@ -319,7 +324,18 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		} else {
 			stream.WriteMore()
 		}
-		stream.WriteVal(item)
+		stream.WriteObjectStart()
+		firstField := true
+		for k, v := range item {
+			if firstField {
+				firstField = false
+			} else {
+				stream.WriteMore()
+			}
+			stream.WriteObjectField(k)
+			stream.WriteString(v)
+		}
+		stream.WriteObjectEnd()
 	}
 	stream.WriteArrayEnd()
 
