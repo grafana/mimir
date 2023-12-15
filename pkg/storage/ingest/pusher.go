@@ -82,8 +82,8 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 	return nil
 }
 
-func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, reqC chan<- parsedRecord) {
-	defer close(reqC)
+func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {
+	defer close(recC)
 	done := ctx.Done()
 
 	for _, record := range records {
@@ -100,7 +100,7 @@ func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record,
 		select {
 		case <-done:
 			return
-		case reqC <- pRecord:
+		case recC <- pRecord:
 		}
 	}
 }
