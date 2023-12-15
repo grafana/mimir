@@ -218,46 +218,21 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
 	switch {
-	case isRangeQuery(r.URL.Path):
+	case IsRangeQuery(r.URL.Path):
 		return c.decodeRangeQueryRequest(r)
-	case isInstantQuery(r.URL.Path):
+	case IsInstantQuery(r.URL.Path):
 		return c.decodeInstantQueryRequest(r)
 	default:
 		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
 	}
-
 }
 
 func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
-	result.Start, err = util.ParseTime(r.FormValue("start"))
+	result.Start, result.End, result.Step, err = DecodeRangeQueryTimeParams(r)
 	if err != nil {
-		return nil, decorateWithParamName(err, "start")
-	}
-
-	result.End, err = util.ParseTime(r.FormValue("end"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "end")
-	}
-
-	if result.End < result.Start {
-		return nil, errEndBeforeStart
-	}
-
-	result.Step, err = parseDurationMs(r.FormValue("step"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "step")
-	}
-
-	if result.Step <= 0 {
-		return nil, errNegativeStep
-	}
-
-	// For safety, limit the number of returned points per timeseries.
-	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
-	if (result.End-result.Start)/result.Step > 11000 {
-		return nil, errStepTooSmall
+		return nil, err
 	}
 
 	result.Query = r.FormValue("query")
@@ -269,7 +244,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
-	result.Time, err = util.ParseTime(r.FormValue("time"))
+	result.Time, err = DecodeInstantQueryTimeParams(r)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
@@ -278,6 +253,65 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
 	return &result, nil
+}
+
+func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err error) {
+	start, err = util.ParseTime(r.FormValue("start"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "start")
+	}
+
+	end, err = util.ParseTime(r.FormValue("end"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "end")
+	}
+
+	if end < start {
+		return 0, 0, 0, errEndBeforeStart
+	}
+
+	step, err = parseDurationMs(r.FormValue("step"))
+	if err != nil {
+		return 0, 0, 0, decorateWithParamName(err, "step")
+	}
+
+	if step <= 0 {
+		return 0, 0, 0, errNegativeStep
+	}
+
+	// For safety, limit the number of returned points per timeseries.
+	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
+	if (end-start)/step > 11000 {
+		return 0, 0, 0, errStepTooSmall
+	}
+
+	return start, end, step, nil
+}
+
+func DecodeInstantQueryTimeParams(r *http.Request) (int64, error) {
+	time, err := util.ParseTime(r.FormValue("time"))
+	if err != nil {
+		return 0, decorateWithParamName(err, "time")
+	}
+	return time, nil
+}
+
+func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
+	start, err = util.ParseTime(r.FormValue("start"))
+	if err != nil {
+		return 0, 0, decorateWithParamName(err, "start")
+	}
+
+	end, err = util.ParseTime(r.FormValue("end"))
+	if err != nil {
+		return 0, 0, decorateWithParamName(err, "end")
+	}
+
+	if end < start {
+		return 0, 0, errEndBeforeStart
+	}
+
+	return start, end, nil
 }
 
 func decodeOptions(r *http.Request, opts *Options) {

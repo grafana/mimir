@@ -333,13 +333,13 @@ func newQueryTripperware(
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
-			case isRangeQuery(r.URL.Path):
+			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
-			case isInstantQuery(r.URL.Path):
+			case IsInstantQuery(r.URL.Path):
 				return instant.RoundTrip(r)
-			case isCardinalityQuery(r.URL.Path):
+			case IsCardinalityQuery(r.URL.Path):
 				return cardinality.RoundTrip(r)
-			case isLabelsQuery(r.URL.Path):
+			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			default:
 				return next.RoundTrip(r)
@@ -383,7 +383,7 @@ func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
 	return func(next http.RoundTripper) http.RoundTripper {
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			op := "query"
-			if isRangeQuery(r.URL.Path) {
+			if IsRangeQuery(r.URL.Path) {
 				op = "query_range"
 			}
 
@@ -401,27 +401,27 @@ func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
 	}
 }
 
-func isRangeQuery(path string) bool {
+func IsRangeQuery(path string) bool {
 	return strings.HasSuffix(path, queryRangePathSuffix)
 }
 
-func isInstantQuery(path string) bool {
+func IsInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
 }
 
-func isCardinalityQuery(path string) bool {
+func IsCardinalityQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) ||
 		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix) ||
 		strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
 }
 
-func isLabelsQuery(path string) bool {
+func IsLabelsQuery(path string) bool {
 	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
 }
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if isInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
+		if IsInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
 			nowUnixStr := strconv.FormatInt(time.Now().Unix(), 10)
 
 			q := r.URL.Query()

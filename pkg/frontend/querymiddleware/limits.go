@@ -103,6 +103,9 @@ type Limits interface {
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
+
+	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
+	QueryIngestersWithin(userID string) time.Duration
 }
 
 type limitsMiddleware struct {

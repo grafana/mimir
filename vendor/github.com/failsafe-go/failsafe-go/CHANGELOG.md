@@ -1,18 +1,24 @@
 ## Upcoming Release
 
+## 0.4.2
+
+### Bug Fixes
+
+- Fixed #23 - RetryPolicy backoff not computing
+
 ## 0.4.1
 
-## Bug Fixes
+### Bug Fixes
 
 - Fixed #22 - RetryPolicy with ReturnLastFailure returning too late
 
 ## 0.4.0
 
-## Improvements
+### Improvements
 
 - Always cancel Context on when a Timeout policy is exceeded
 
-## API changes
+### API changes
 
 - Rename Fn -> Func and DelayFunction -> DelayFunc
 - Change some params from int to uint

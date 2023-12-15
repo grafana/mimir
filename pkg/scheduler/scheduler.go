@@ -60,7 +60,7 @@ type Scheduler struct {
 	activeUsers  *util.ActiveUsersCleanupService
 
 	pendingRequestsMu sync.Mutex
-	pendingRequests   map[requestKey]*schedulerRequest // Request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
+	pendingRequests   map[requestKey]*queue.SchedulerRequest // request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -95,15 +95,19 @@ type connectedFrontend struct {
 }
 
 type Config struct {
-	MaxOutstandingPerTenant int                       `yaml:"max_outstanding_requests_per_tenant"`
-	QuerierForgetDelay      time.Duration             `yaml:"querier_forget_delay" category:"experimental"`
-	GRPCClientConfig        grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
-	ServiceDiscovery        schedulerdiscovery.Config `yaml:",inline"`
+	MaxOutstandingPerTenant               int           `yaml:"max_outstanding_requests_per_tenant"`
+	AdditionalQueryQueueDimensionsEnabled bool          `yaml:"additional_query_queue_dimensions_enabled" category:"experimental"`
+	QuerierForgetDelay                    time.Duration `yaml:"querier_forget_delay" category:"experimental"`
+
+	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
+	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
+	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-scheduler.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
+
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
 	cfg.ServiceDiscovery.RegisterFlags(f, logger)
 }
@@ -121,7 +125,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		pendingRequests:    map[requestKey]*schedulerRequest{},
+		pendingRequests:    map[requestKey]*queue.SchedulerRequest{},
 		connectedFrontends: map[string]*connectedFrontend{},
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -143,7 +147,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
-	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
+	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.AdditionalQueryQueueDimensionsEnabled, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
 
 	s.queueDuration = promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
@@ -193,23 +197,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 type Limits interface {
 	// MaxQueriersPerUser returns max queriers to use per tenant, or 0 if shuffle sharding is disabled.
 	MaxQueriersPerUser(user string) int
-}
-
-type schedulerRequest struct {
-	frontendAddress string
-	userID          string
-	queryID         uint64
-	request         *httpgrpc.HTTPRequest
-	statsEnabled    bool
-
-	enqueueTime time.Time
-
-	ctx       context.Context
-	ctxCancel context.CancelCauseFunc
-	queueSpan opentracing.Span
-
-	// This is only used for testing.
-	parentSpanContext opentracing.SpanContext
 }
 
 // FrontendLoop handles connection from frontend.
@@ -339,20 +326,21 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 
 	userID := msg.GetUserID()
 
-	req := &schedulerRequest{
-		frontendAddress: frontendAddr,
-		userID:          msg.UserID,
-		queryID:         msg.QueryID,
-		request:         msg.HttpRequest,
-		statsEnabled:    msg.StatsEnabled,
+	req := &queue.SchedulerRequest{
+		FrontendAddress:           frontendAddr,
+		UserID:                    msg.UserID,
+		QueryID:                   msg.QueryID,
+		Request:                   msg.HttpRequest,
+		StatsEnabled:              msg.StatsEnabled,
+		AdditionalQueueDimensions: msg.AdditionalQueueDimensions,
 	}
 
 	now := time.Now()
 
-	req.parentSpanContext = opentracing.SpanFromContext(requestContext).Context()
-	req.queueSpan, req.ctx = opentracing.StartSpanFromContext(ctx, "queued")
-	req.enqueueTime = now
-	req.ctxCancel = cancel
+	req.ParentSpanContext = opentracing.SpanFromContext(requestContext).Context()
+	req.QueueSpan, req.Ctx = opentracing.StartSpanFromContext(ctx, "queued")
+	req.EnqueueTime = now
+	req.CancelFunc = cancel
 
 	// aggregate the max queriers limit in the case of a multi tenant query
 	tenantIDs, err := tenant.TenantIDsFromOrgID(userID)
@@ -379,7 +367,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, query
 	key := requestKey{frontendAddr: frontendAddr, queryID: queryID}
 	req := s.pendingRequests[key]
 	if req != nil {
-		req.ctxCancel(cancellation.NewErrorf(reason))
+		req.CancelFunc(cancellation.NewErrorf(reason))
 	}
 
 	delete(s.pendingRequests, key)
@@ -412,11 +400,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		}
 		lastUserIndex = idx
 
-		r := req.(*schedulerRequest)
+		r := req.(*queue.SchedulerRequest)
 
-		queueTime := time.Since(r.enqueueTime)
+		queueTime := time.Since(r.EnqueueTime)
 		s.queueDuration.Observe(queueTime.Seconds())
-		r.queueSpan.Finish()
+		r.QueueSpan.Finish()
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
@@ -430,9 +418,9 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 
-		if r.ctx.Err() != nil {
+		if r.Ctx.Err() != nil {
 			// Remove from pending requests.
-			s.cancelRequestAndRemoveFromPending(r.frontendAddress, r.queryID, "request cancelled")
+			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request cancelled")
 
 			lastUserIndex = lastUserIndex.ReuseLastUser()
 			continue
@@ -453,20 +441,20 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 	return &schedulerpb.NotifyQuerierShutdownResponse{}, nil
 }
 
-func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *schedulerRequest, queueTime time.Duration) error {
+func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
 	// Make sure to cancel request at the end to clean up resources.
-	defer s.cancelRequestAndRemoveFromPending(req.frontendAddress, req.queryID, "request complete")
+	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.
 	errCh := make(chan error, 1)
 	go func() {
 		err := querier.Send(&schedulerpb.SchedulerToQuerier{
-			UserID:          req.userID,
-			QueryID:         req.queryID,
-			FrontendAddress: req.frontendAddress,
-			HttpRequest:     req.request,
-			StatsEnabled:    req.statsEnabled,
+			UserID:          req.UserID,
+			QueryID:         req.QueryID,
+			FrontendAddress: req.FrontendAddress,
+			HttpRequest:     req.Request,
+			StatsEnabled:    req.StatsEnabled,
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
 		if err != nil {
@@ -479,38 +467,38 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 	}()
 
 	select {
-	case <-req.ctx.Done():
+	case <-req.Ctx.Done():
 		// If the upstream request is cancelled (eg. frontend issued CANCEL or closed connection),
 		// we need to cancel the downstream req. Only way we can do that is to return a gRPC error
 		// here with code Canceled and close the stream.
 		// Querier is expecting this semantics.
-		s.cancelledRequests.WithLabelValues(req.userID).Inc()
-		return status.Error(codes.Canceled, context.Cause(req.ctx).Error())
+		s.cancelledRequests.WithLabelValues(req.UserID).Inc()
+		return status.Error(codes.Canceled, context.Cause(req.Ctx).Error())
 
 	case err := <-errCh:
 		// Is there was an error handling this request due to network IO,
 		// then error out this upstream request _and_ stream.
 
 		if err != nil {
-			s.forwardErrorToFrontend(req.ctx, req, err)
+			s.forwardErrorToFrontend(req.Ctx, req, err)
 		}
 		return err
 	}
 }
 
-func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRequest, requestErr error) {
+func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor},
 		nil)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddress, "err", err, "requestErr", requestErr)
 		return
 	}
 
-	conn, err := grpc.DialContext(ctx, req.frontendAddress, opts...)
+	conn, err := grpc.DialContext(ctx, req.FrontendAddress, opts...)
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to create gRPC connection to frontend to report error", "frontend", req.FrontendAddress, "err", err, "requestErr", requestErr)
 		return
 	}
 
@@ -520,9 +508,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 
 	client := frontendv2pb.NewFrontendForQuerierClient(conn)
 
-	userCtx := user.InjectOrgID(ctx, req.userID)
+	userCtx := user.InjectOrgID(ctx, req.UserID)
 	_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
-		QueryID: req.queryID,
+		QueryID: req.QueryID,
 		HttpResponse: &httpgrpc.HTTPResponse{
 			Code: http.StatusInternalServerError,
 			Body: []byte(requestErr.Error()),
@@ -530,7 +518,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 	})
 
 	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
+		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddress, "err", err, "requestErr", requestErr)
 		return
 	}
 }
