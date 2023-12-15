@@ -193,42 +193,16 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
-	return kgo.NewClient(
-		kgo.ClientID(w.kafkaCfg.ClientID),
-		kgo.SeedBrokers(w.kafkaCfg.Address),
+	opts := append(
+		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.AllowAutoTopicCreation(),
 		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
-		kgo.DialTimeout(w.kafkaCfg.DialTimeout),
-		kgo.WithHooks(metrics),
-		kgo.WithLogger(newKafkaLogger(logger)),
 
 		// Use a static partitioner because we want to be in control of the partition.
 		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
 
 		// Set the upper bounds the size of a record batch.
 		kgo.ProducerBatchMaxBytes(16_000_000),
-
-		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
-		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
-		// (b) when some events occur (e.g. backoff due to errors).
-		//
-		// MetadataMinAge() sets the minimum time between two cluster metadata updates due to events.
-		// MetadataMaxAge() sets how frequently the periodic update should occur.
-		//
-		// It's important to note that the periodic update is also used to discover new brokers (e.g. during a
-		// rolling update or after a scale up). For this reason, it's important to run the update frequently.
-		//
-		// The other two side effects of frequently updating the cluster metadata:
-		// 1. The "metadata" request may be expensive to run on the Kafka backend.
-		// 2. If the backend returns each time a different authoritative owner for a partition, then each time
-		//    the cluster metadata is updated the Kafka client will create a new connection for each partition,
-		//    leading to a high connections churn rate.
-		//
-		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
-		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(10*time.Second),
-		kgo.MetadataMaxAge(10*time.Second),
 
 		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
 		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
@@ -261,6 +235,7 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
+	return kgo.NewClient(opts...)
 }
 
 type kafkaStaticPartitioner struct {

@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -179,6 +180,9 @@ type Config struct {
 	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+
+	// This config is dynamically injected because defined outside the ingester config.
+	IngestStorageConfig ingest.Config `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -298,6 +302,8 @@ type Ingester struct {
 	utilizationBasedLimiter utilizationBasedLimiter
 
 	errorSamplers ingesterErrSamplers
+
+	ingestReader *ingest.PartitionReader
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -399,6 +405,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
+	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
+		kafkaCfg := ingestCfg.KafkaConfig
+
+		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		if err != nil {
+			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
+		}
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating ingest storage reader")
+		}
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -482,6 +501,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ownedSeriesService != nil {
 		servs = append(servs, i.ownedSeriesService)
+	}
+
+	if i.ingestReader != nil {
+		servs = append(servs, i.ingestReader)
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
