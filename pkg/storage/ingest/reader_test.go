@@ -40,9 +40,9 @@ func TestReader(t *testing.T) {
 	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
-	messages, err := consumer.waitRecords(2, 5*time.Second, 0)
+	records, err := consumer.waitRecords(2, 5*time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content, content}, messages)
+	assert.Equal(t, [][]byte{content, content}, records)
 }
 
 func TestReader_IgnoredConsumerErrors(t *testing.T) {
@@ -65,15 +65,15 @@ func TestReader_IgnoredConsumerErrors(t *testing.T) {
 
 	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
-	messages, err := consumer.waitRecords(1, time.Second, 0)
+	records, err := consumer.waitRecords(1, time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content}, messages)
+	assert.Equal(t, [][]byte{content}, records)
 
 	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
 
-	messages, err = consumer.waitRecords(1, time.Second, 0)
+	records, err = consumer.waitRecords(1, time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content}, messages)
+	assert.Equal(t, [][]byte{content}, records)
 }
 
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
@@ -168,14 +168,14 @@ func TestReader_Commit(t *testing.T) {
 
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
-		messageSentAfterShutdown := []byte("4")
-		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, messageSentAfterShutdown)
+		recordsSentAfterShutdown := []byte("4")
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, recordsSentAfterShutdown)
 
 		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
-		messages, err := consumer.waitRecords(1, time.Second, 0)
+		records, err := consumer.waitRecords(1, time.Second, 0)
 		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{messageSentAfterShutdown}, messages)
+		assert.Equal(t, [][]byte{recordsSentAfterShutdown}, records)
 	})
 
 	t.Run("respect commit interval", func(t *testing.T) {
@@ -285,18 +285,18 @@ func addSupportForConsumerGroups(t *testing.T, cluster *kfake.Cluster, topicName
 }
 
 type testConsumer struct {
-	messages chan []byte
+	records chan []byte
 }
 
 func newTestConsumer(capacity int) testConsumer {
 	return testConsumer{
-		messages: make(chan []byte, capacity),
+		records: make(chan []byte, capacity),
 	}
 }
 
 func (t testConsumer) consume(_ context.Context, records []record) error {
 	for _, r := range records {
-		t.messages <- r.content
+		t.records <- r.content
 	}
 	return nil
 }
@@ -305,24 +305,24 @@ func (t testConsumer) consume(_ context.Context, records []record) error {
 // waitRecords waits for an additional drainPeriod after receiving numRecords records to ensure that no more records are received.
 // waitRecords returns an error if a different number of records is received.
 func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.Duration) ([][]byte, error) {
-	var messages [][]byte
+	var records [][]byte
 	timeout := time.After(waitTimeout)
 	for {
 		select {
-		case msg := <-t.messages:
-			messages = append(messages, msg)
-			if len(messages) != numRecords {
+		case msg := <-t.records:
+			records = append(records, msg)
+			if len(records) != numRecords {
 				continue
 			}
 			if drainPeriod == 0 {
-				return messages, nil
+				return records, nil
 			}
 			timeout = time.After(drainPeriod)
 		case <-timeout:
-			if len(messages) != numRecords {
-				return nil, fmt.Errorf("waiting for records: received %d, expected %d", len(messages), numRecords)
+			if len(records) != numRecords {
+				return nil, fmt.Errorf("waiting for records: received %d, expected %d", len(records), numRecords)
 			}
-			return messages, nil
+			return records, nil
 		}
 	}
 }
