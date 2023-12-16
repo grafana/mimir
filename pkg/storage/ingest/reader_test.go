@@ -59,14 +59,16 @@ func TestReader_ConsumerError(t *testing.T) {
 
 	// We need indirection so we can swap out this function without changing the consumer implementation.
 	invocations := atomic.NewInt64(0)
-	receive := func(records []record) error {
+	returnErrors := atomic.NewBool(true)
+	trackingConsumer := newTestConsumer(2)
+	consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		invocations.Inc()
+		if !returnErrors.Load() {
+			return trackingConsumer.consume(ctx, records)
+		}
 		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
 		assert.Equal(t, "1", string(records[0].content))
-		invocations.Inc()
 		return errors.New("consumer error")
-	}
-	consumer := consumerFunc(func(_ context.Context, records []record) error {
-		return receive(records)
 	})
 	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
@@ -79,10 +81,8 @@ func TestReader_ConsumerError(t *testing.T) {
 	// There are more than one invocation because the reader will retry.
 	assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
 
-	trackingConsumer := newTestConsumer(2)
-	receive = func(records []record) error {
-		return trackingConsumer.consume(ctx, records)
-	}
+	returnErrors.Store(false)
+
 	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
