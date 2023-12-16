@@ -57,7 +57,6 @@ func TestReader_ConsumerError(t *testing.T) {
 
 	_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
 
-	// We need indirection so we can swap out this function without changing the consumer implementation.
 	invocations := atomic.NewInt64(0)
 	returnErrors := atomic.NewBool(true)
 	trackingConsumer := newTestConsumer(2)
