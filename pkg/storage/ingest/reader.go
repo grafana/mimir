@@ -185,6 +185,7 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
 		r.metrics.receiveDelay.Observe(now.Sub(record.Timestamp).Seconds())
 	})
 
+	r.metrics.fetchesTotal.Add(float64(len(fetches)))
 	r.metrics.recordsPerFetch.Observe(float64(numRecords))
 }
 
@@ -321,6 +322,7 @@ type readerMetrics struct {
 	receiveDelay    prometheus.Summary
 	recordsPerFetch prometheus.Histogram
 	fetchesErrors   prometheus.Counter
+	fetchesTotal    prometheus.Counter
 	kprom           *kprom.Metrics
 }
 
@@ -343,6 +345,10 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer) readerMetric
 		fetchesErrors: factory.NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_fetch_errors_total",
 			Help: "The number of fetch errors encountered by the consumer.",
+		}),
+		fetchesTotal: factory.NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_fetches_total",
+			Help: "Total number of Kafka fetches received by the consumer.",
 		}),
 		kprom: kprom.NewMetrics("cortex_ingest_storage_reader",
 			kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, reg)),
