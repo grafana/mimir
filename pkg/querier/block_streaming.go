@@ -259,10 +259,10 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 		totalChunks += numChunks
 		if err := s.queryLimiter.AddChunks(numChunks); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-			return validation.LimitError(err.Error())
+			return err
 		}
 
 		s.stats.AddFetchedChunks(uint64(numChunks))
@@ -365,7 +365,7 @@ func (s *storeGatewayStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return errors.Wrapf(err, "attempted to read series at index %v from store-gateway chunks stream, but the stream has failed", seriesIndex)

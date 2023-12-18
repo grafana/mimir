@@ -33,7 +33,7 @@ var (
 )
 
 func limitError(format string, limit uint64) validation.LimitError {
-	return validation.LimitError(fmt.Sprintf(format, limit))
+	return validation.NewLimitError(fmt.Sprintf(format, limit))
 }
 
 func NewMaxSeriesHitLimitError(maxSeriesPerQuery uint64) validation.LimitError {

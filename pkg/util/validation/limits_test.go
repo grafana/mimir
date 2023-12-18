@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
@@ -879,4 +880,30 @@ func TestExtensionMarshalling(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
 	})
+}
+
+func TestIsLimitError(t *testing.T) {
+	const msg = "this is an error"
+	testCases := map[string]struct {
+		err             error
+		expectedOutcome bool
+	}{
+		"a random error is not a LimitError": {
+			err:             errors.New(msg),
+			expectedOutcome: false,
+		},
+		"errors implementing LimitError interface are LimitErrors": {
+			err:             NewLimitError(msg),
+			expectedOutcome: true,
+		},
+		"wrapped LimitErrors are LimitErrors": {
+			err:             errors.Wrap(NewLimitError(msg), "wrapped"),
+			expectedOutcome: true,
+		},
+	}
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
+		})
+	}
 }
