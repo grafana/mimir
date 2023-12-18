@@ -711,7 +711,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 // this function also sends the hints and the stats.
 func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	req *storepb.SeriesRequest,
-	srv storepb.Store_SeriesServer,
+	srv storegatewaypb.StoreGateway_SeriesServer,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
 ) (numSeries int, err error) {
@@ -768,7 +768,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 
 func (s *BucketStore) sendStreamingChunks(
 	req *storepb.SeriesRequest,
-	srv storepb.Store_SeriesServer,
+	srv storegatewaypb.StoreGateway_SeriesServer,
 	it seriesChunksSetIterator,
 	stats *safeQueryStats,
 	totalSeriesCount int,
@@ -876,7 +876,7 @@ func (s *BucketStore) sendStreamingChunks(
 
 func (s *BucketStore) sendSeriesChunks(
 	req *storepb.SeriesRequest,
-	srv storepb.Store_SeriesServer,
+	srv storegatewaypb.StoreGateway_SeriesServer,
 	seriesSet storepb.SeriesSet,
 	stats *safeQueryStats,
 ) error {
@@ -921,7 +921,7 @@ func (s *BucketStore) sendSeriesChunks(
 	return nil
 }
 
-func (s *BucketStore) sendMessage(typ string, srv storepb.Store_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
+func (s *BucketStore) sendMessage(typ string, srv storegatewaypb.StoreGateway_SeriesServer, msg interface{}, encodeDuration, sendDuration *time.Duration) error {
 	// We encode it ourselves into a PreparedMsg in order to measure the time it takes.
 	encodeBegin := time.Now()
 	pmsg := &grpc.PreparedMsg{}
@@ -941,7 +941,7 @@ func (s *BucketStore) sendMessage(typ string, srv storepb.Store_SeriesServer, ms
 	return nil
 }
 
-func (s *BucketStore) sendHints(srv storepb.Store_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
+func (s *BucketStore) sendHints(srv storegatewaypb.StoreGateway_SeriesServer, resHints *hintspb.SeriesResponseHints) error {
 	var anyHints *types.Any
 	var err error
 	if anyHints, err = types.MarshalAny(resHints); err != nil {
@@ -955,7 +955,7 @@ func (s *BucketStore) sendHints(srv storepb.Store_SeriesServer, resHints *hintsp
 	return nil
 }
 
-func (s *BucketStore) sendStats(srv storepb.Store_SeriesServer, stats *safeQueryStats) error {
+func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, stats *safeQueryStats) error {
 	var encodeDuration, sendDuration time.Duration
 	defer stats.update(func(stats *queryStats) {
 		stats.streamingSeriesSendResponseDuration += sendDuration

@@ -326,8 +326,8 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 	}
 
 	return store.Series(req, spanSeriesServer{
-		Store_SeriesServer: srv,
-		ctx:                spanCtx,
+		StoreGateway_SeriesServer: srv,
+		ctx:                       spanCtx,
 	})
 }
 
@@ -597,7 +597,7 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 }
 
 type spanSeriesServer struct {
-	storepb.Store_SeriesServer
+	storegatewaypb.StoreGateway_SeriesServer
 
 	ctx context.Context
 }
