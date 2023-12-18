@@ -72,6 +72,7 @@
 ### Mimirtool
 
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
+* [BUGFIX] Analyze rule-file: .metricsUsed field wasn't populated. #6953
 
 ### Mimir Continuous Test
 
