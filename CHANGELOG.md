@@ -72,6 +72,7 @@
 ### Mimirtool
 
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
+* [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load` #6760
 * [BUGFIX] Analyze rule-file: .metricsUsed field wasn't populated. #6953
 
 ### Mimir Continuous Test
