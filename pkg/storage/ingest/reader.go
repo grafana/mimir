@@ -155,7 +155,10 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
-	records := make([]record, 0, len(fetches.Records()))
+	if fetches.NumRecords() == 0 {
+		return
+	}
+	records := make([]record, 0, fetches.NumRecords())
 
 	var (
 		minOffset = math.MaxInt
