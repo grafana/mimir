@@ -64,8 +64,9 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 		checkResponseErr func(t *testing.T, err error) (continueTest bool)
 
 		// Expected result
-		expect             result
-		expectedShardCount int
+		expect                result
+		expectedShardCount    int
+		expectContentEncoding string
 	}{
 		{
 			name: "no selector",
@@ -217,6 +218,27 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectedShardCount: 6,
 		},
+		{
+			name: "honours Accept-Encoding header",
+			request: func() *http.Request {
+				r := validReq()
+				r.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+				r.Header.Add(totalShardsControlHeader, "2")
+				return r
+			},
+			validResponses: [][]labels.Labels{
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+			},
+			checkResponseErr: noError,
+			expect: result{
+				Data: []labels.Labels{
+					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+				},
+			},
+			expectContentEncoding: encodingTypeSnappyFramed,
+		},
 	}
 
 	for _, tt := range tests {
@@ -278,7 +300,8 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			}(resp.Body)
 
 			var br io.Reader = resp.Body
-			if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+			assert.Equal(t, tt.expectContentEncoding, resp.Header.Get("Content-Encoding"))
+			if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
 				br = s2.NewReader(br)
 			}
 			body, err := io.ReadAll(br)

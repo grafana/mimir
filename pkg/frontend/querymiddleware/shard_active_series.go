@@ -29,6 +29,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+const encodingTypeSnappyFramed = "x-snappy-framed"
+
 var errShardCountTooLow = errors.New("shard count too low")
 
 type shardActiveSeriesMiddleware struct {
@@ -94,7 +96,7 @@ func (s *shardActiveSeriesMiddleware) RoundTrip(r *http.Request) (*http.Response
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}
 
-	return s.mergeResponses(ctx, resp), nil
+	return s.mergeResponses(ctx, resp, r.Header.Get("Accept-Encoding")), nil
 }
 
 func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanlogger.SpanLogger) int {
@@ -229,7 +231,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 	}, nil
 }
 
-func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response) *http.Response {
+func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, acceptEncoding string) *http.Response {
 	reader, writer := io.Pipe()
 
 	items := make(chan map[string]string)
@@ -289,16 +291,19 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		_ = g.Wait()
 		close(items)
 	}()
-	go s.writeMergedResponse(ctx, g.Wait, writer, items)
 
 	response := &http.Response{Body: reader, StatusCode: http.StatusOK, Header: http.Header{}}
-	response.Header.Set("Content-Type", "application/x-snappy-framed")
-	response.Header.Set("Content-Encoding", "x-snappy-framed")
+	response.Header.Set("Content-Type", "application/json")
+	if acceptEncoding == encodingTypeSnappyFramed {
+		response.Header.Set("Content-Encoding", encodingTypeSnappyFramed)
+	}
+
+	go s.writeMergedResponse(ctx, g.Wait, writer, items, acceptEncoding)
 
 	return response
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan map[string]string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan map[string]string, encodingType string) {
 	defer func(encoder, w io.Closer) {
 		_ = encoder.Close()
 		_ = w.Close()
@@ -307,9 +312,16 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
 	defer span.Finish()
 
-	s.encoder.Reset(w)
+	var out io.Writer = w
+	if encodingType == encodingTypeSnappyFramed {
+		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
+		out = s.encoder
+		s.encoder.Reset(w)
+	} else {
+		span.LogFields(otlog.String("encoding", "none"))
+	}
 
-	stream := jsoniter.NewStream(jsoniter.ConfigFastest, s.encoder, 512)
+	stream := jsoniter.NewStream(jsoniter.ConfigFastest, out, 512)
 	defer func(stream *jsoniter.Stream) {
 		_ = stream.Flush()
 	}(stream)
