@@ -34,6 +34,8 @@ const (
 	// Google's recommendation is to keep protobuf message not larger than 1MB.
 	// https://developers.google.com/protocol-buffers/docs/techniques#large-data
 	maxRemoteReadFrameBytes = 1024 * 1024
+
+	statusClientClosedRequest = 499
 )
 
 // RemoteReadHandler handles Prometheus remote read requests.
@@ -141,7 +143,13 @@ func remoteReadStreamedXORChunks(
 
 	for i, qr := range req.Queries {
 		if err := processReadStreamedQueryRequest(ctx, i, qr, q, w, f, maxBytesInFrame); err != nil {
-			level.Error(logger).Log("msg", "error streaming remote read response", "err", err)
+			if errors.Is(err, context.Canceled) {
+				// We're intentionally not logging in this case to reduce noise about an unactionable condition.
+				http.Error(w, err.Error(), statusClientClosedRequest)
+				return
+			}
+
+			level.Error(logger).Log("msg", "error while processing remote read request", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

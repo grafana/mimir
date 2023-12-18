@@ -595,8 +595,9 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check", "err", err)
-	return newStoreConsistencyCheckFailedError(remainingBlocks)
+	err = newStoreConsistencyCheckFailedError(remainingBlocks)
+	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
+	return err
 }
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {

@@ -49,7 +49,7 @@ func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc,
 	}
 
 	return &storeGatewayClient{
-		StoreGatewayClient: storegatewaypb.NewStoreGatewayClient(conn),
+		StoreGatewayClient: storegatewaypb.NewCustomStoreGatewayClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
 	}, nil

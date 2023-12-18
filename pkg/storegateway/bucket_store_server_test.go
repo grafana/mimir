@@ -75,7 +75,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 		server:         grpc.NewServer(),
 		serverListener: listener,
 		requestSeries: func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error) {
-			client := storegatewaypb.NewStoreGatewayClient(conn)
+			client := storegatewaypb.NewCustomStoreGatewayClient(conn)
 			return client.Series(ctx, req)
 		},
 	}

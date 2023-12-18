@@ -363,6 +363,11 @@ lint: check-makefiles
 		"flag.{Parse,NArg,Arg,Args}=github.com/grafana/dskit/flagext.{ParseFlagsAndArguments,ParseFlagsWithoutArguments}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Ensure we use our custom gRPC clients.
+	faillint -paths \
+		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
