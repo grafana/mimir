@@ -132,6 +132,9 @@ func (r *PartitionReader) logFetchErrs(fetches kgo.Fetches) {
 		// Recreating the client would cause duplicate metrics registration, so we don't do it for now.
 		mErr.Add(fmt.Errorf("topic %q, partition %d: %w", s, i, err))
 	})
+	if len(mErr) == 0 {
+		return
+	}
 	r.metrics.fetchesErrors.Add(float64(len(mErr)))
 	level.Error(r.logger).Log("msg", "encountered error while fetching", "err", mErr.Err())
 }
