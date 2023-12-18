@@ -18,7 +18,6 @@ import (
 	"errors"
 	"math"
 
-	"github.com/oklog/ulid"
 	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -38,29 +37,26 @@ var _ IndexReader = &OOOHeadIndexReader{}
 // decided to do this to avoid code duplication.
 // The only methods that change are the ones about getting Series and Postings.
 type OOOHeadIndexReader struct {
-	*headIndexReader            // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
-	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
+	*headIndexReader // A reference to the headIndexReader so we can reuse as many interface implementation as possible.
 }
 
-func NewOOOHeadIndexReader(head *Head, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *OOOHeadIndexReader {
+func NewOOOHeadIndexReader(head *Head, mint, maxt int64) *OOOHeadIndexReader {
 	hr := &headIndexReader{
 		head: head,
 		mint: mint,
 		maxt: maxt,
 	}
-	return &OOOHeadIndexReader{hr, lastGarbageCollectedMmapRef}
+	return &OOOHeadIndexReader{hr}
 }
 
 func (oh *OOOHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
-	return oh.series(ref, builder, chks, oh.lastGarbageCollectedMmapRef, 0)
+	return oh.series(ref, builder, chks, 0)
 }
 
-// lastGarbageCollectedMmapRef gives the last mmap chunk that may be being garbage collected and so
-// any chunk at or before this ref will not be considered. 0 disables this check.
-//
-// maxMmapRef tells upto what max m-map chunk that we can consider. If it is non-0, then
-// the oooHeadChunk will not be considered.
-func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastGarbageCollectedMmapRef, maxMmapRef chunks.ChunkDiskMapperRef) error {
+// The passed lastMmapRef tells upto what max m-map chunk that we can consider.
+// If it is 0, it means all chunks need to be considered.
+// If it is non-0, then the oooHeadChunk must not be considered.
+func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta, lastMmapRef chunks.ChunkDiskMapperRef) error {
 	s := oh.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
@@ -115,14 +111,14 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, builder *labels.Scra
 	// so we can set the correct markers.
 	if s.ooo.oooHeadChunk != nil {
 		c := s.ooo.oooHeadChunk
-		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && maxMmapRef == 0 {
+		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && lastMmapRef == 0 {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.ooo.oooMmappedChunks))))
 			addChunk(c.minTime, c.maxTime, ref)
 		}
 	}
 	for i := len(s.ooo.oooMmappedChunks) - 1; i >= 0; i-- {
 		c := s.ooo.oooMmappedChunks[i]
-		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (maxMmapRef == 0 || maxMmapRef.GreaterThanOrEqualTo(c.ref)) && (lastGarbageCollectedMmapRef == 0 || c.ref.GreaterThan(lastGarbageCollectedMmapRef)) {
+		if c.OverlapsClosedInterval(oh.mint, oh.maxt) && (lastMmapRef == 0 || lastMmapRef.GreaterThanOrEqualTo(c.ref)) {
 			ref := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
 			addChunk(c.minTime, c.maxTime, ref)
 		}
@@ -241,51 +237,46 @@ func (oh *OOOHeadIndexReader) Postings(ctx context.Context, name string, values 
 type OOOHeadChunkReader struct {
 	head       *Head
 	mint, maxt int64
-	isoState   *oooIsolationState
 }
 
-func NewOOOHeadChunkReader(head *Head, mint, maxt int64, isoState *oooIsolationState) *OOOHeadChunkReader {
+func NewOOOHeadChunkReader(head *Head, mint, maxt int64) *OOOHeadChunkReader {
 	return &OOOHeadChunkReader{
-		head:     head,
-		mint:     mint,
-		maxt:     maxt,
-		isoState: isoState,
+		head: head,
+		mint: mint,
+		maxt: maxt,
 	}
 }
 
-func (cr OOOHeadChunkReader) ChunkOrIterable(meta chunks.Meta) (chunkenc.Chunk, chunkenc.Iterable, error) {
+func (cr OOOHeadChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	sid, _ := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
 	if s == nil {
-		return nil, nil, storage.ErrNotFound
+		return nil, storage.ErrNotFound
 	}
 
 	s.Lock()
 	if s.ooo == nil {
 		// There is no OOO data for this series.
 		s.Unlock()
-		return nil, nil, storage.ErrNotFound
+		return nil, storage.ErrNotFound
 	}
-	mc, err := s.oooMergedChunks(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
+	c, err := s.oooMergedChunk(meta, cr.head.chunkDiskMapper, cr.mint, cr.maxt)
 	s.Unlock()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// This means that the query range did not overlap with the requested chunk.
-	if len(mc.chunkIterables) == 0 {
-		return nil, nil, storage.ErrNotFound
+	if len(c.chunks) == 0 {
+		return nil, storage.ErrNotFound
 	}
 
-	return nil, mc, nil
+	return c, nil
 }
 
 func (cr OOOHeadChunkReader) Close() error {
-	if cr.isoState != nil {
-		cr.isoState.Close()
-	}
 	return nil
 }
 
@@ -320,7 +311,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		ch.lastWBLFile = lastWBLFile
 	}
 
-	ch.oooIR = NewOOOHeadIndexReader(head, math.MinInt64, math.MaxInt64, 0)
+	ch.oooIR = NewOOOHeadIndexReader(head, math.MinInt64, math.MaxInt64)
 	n, v := index.AllPostingsKey()
 
 	// TODO: verify this gets only ooo samples.
@@ -379,20 +370,20 @@ func (ch *OOOCompactionHead) Index() (IndexReader, error) {
 }
 
 func (ch *OOOCompactionHead) Chunks() (ChunkReader, error) {
-	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt, nil), nil
+	return NewOOOHeadChunkReader(ch.oooIR.head, ch.oooIR.mint, ch.oooIR.maxt), nil
 }
 
 func (ch *OOOCompactionHead) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 
-var oooCompactionHeadULID = ulid.MustParse("0000000000XX000COMPACTHEAD")
-
 func (ch *OOOCompactionHead) Meta() BlockMeta {
+	var id [16]byte
+	copy(id[:], "copy(id[:], \"ooo_compact_head\")")
 	return BlockMeta{
 		MinTime: ch.mint,
 		MaxTime: ch.maxt,
-		ULID:    oooCompactionHeadULID,
+		ULID:    id,
 		Stats: BlockStats{
 			NumSeries: uint64(len(ch.postings)),
 		},
@@ -405,7 +396,7 @@ func (ch *OOOCompactionHead) Meta() BlockMeta {
 // Only the method of BlockReader interface are valid for the cloned OOOCompactionHead.
 func (ch *OOOCompactionHead) CloneForTimeRange(mint, maxt int64) *OOOCompactionHead {
 	return &OOOCompactionHead{
-		oooIR:       NewOOOHeadIndexReader(ch.oooIR.head, mint, maxt, 0),
+		oooIR:       NewOOOHeadIndexReader(ch.oooIR.head, mint, maxt),
 		lastMmapRef: ch.lastMmapRef,
 		postings:    ch.postings,
 		chunkRange:  ch.chunkRange,
@@ -451,7 +442,7 @@ func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardI
 }
 
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
-	return ir.ch.oooIR.series(ref, builder, chks, 0, ir.ch.lastMmapRef)
+	return ir.ch.oooIR.series(ref, builder, chks, ir.ch.lastMmapRef)
 }
 
 func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {

@@ -196,6 +196,7 @@
 * [BUGFIX] Querier: attempt to query ingesters in PENDING state, to reduce the likelihood that scaling up the number of ingesters in multiple zones simultaneously causes a read outage. #6726 #6727
 * [BUGFIX] Querier: don't cancel inflight queries from a query-scheduler if the stream between the querier and query-scheduler is broken. #6728
 * [BUGFIX] Store-gateway: Fix double-counting of some duration metrics. #6616
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6884
 
 ### Mixin
 
@@ -237,6 +238,7 @@
 * [BUGFIX] Fix the issue where `--read-timeout` was applied to the entire `mimirtool analyze grafana` invocation rather than to individual Grafana API calls. #5915
 * [BUGFIX] Fix incorrect remote-read path joining for `mimirtool remote-read` commands on Windows. #6011
 * [BUGFIX] Fix template files full path being sent in `mimirtool alertmanager load` command. #6138
+* [BUGFIX] Analyze rule-file: .metricsUsed field wasn't populated. #6953
 
 ### Mimir Continuous Test
 

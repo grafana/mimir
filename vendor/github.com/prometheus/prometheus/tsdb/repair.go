@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -125,7 +124,7 @@ func readBogusMetaFile(dir string) (*BlockMeta, error) {
 		return nil, err
 	}
 	if m.Version != metaVersion1 && m.Version != 2 {
-		return nil, fmt.Errorf("unexpected meta file version %d", m.Version)
+		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
 	return &m, nil
 }

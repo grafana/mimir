@@ -77,7 +77,10 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 }
 
 func (s *Storage) Notify() {
-	s.rws.Notify()
+	for _, q := range s.rws.queues {
+		// These should all be non blocking
+		q.watcher.Notify()
+	}
 }
 
 // ApplyConfig updates the state as the new config requires.

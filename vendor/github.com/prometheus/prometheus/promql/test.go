@@ -49,7 +49,7 @@ var (
 )
 
 const (
-	defaultEpsilon = 0.000001 // Relative error allowed for sample values.
+	epsilon = 0.000001 // Relative error allowed for sample values.
 )
 
 var testStartTime = time.Unix(0, 0).UTC()
@@ -440,7 +440,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if (expH == nil) != (v.H == nil) || (expH != nil && !expH.Equals(v.H)) {
 				return fmt.Errorf("expected %v for %s but got %s", HistogramTestExpression(expH), v.Metric, HistogramTestExpression(v.H))
 			}
-			if !almostEqual(exp0.Value, v.F, defaultEpsilon) {
+			if !almostEqual(exp0.Value, v.F) {
 				return fmt.Errorf("expected %v for %s but got %v", exp0.Value, v.Metric, v.F)
 			}
 
@@ -464,7 +464,7 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 		if exp0.Histogram != nil {
 			return fmt.Errorf("expected Histogram %v but got scalar %s", exp0.Histogram.TestExpression(), val.String())
 		}
-		if !almostEqual(exp0.Value, val.V, defaultEpsilon) {
+		if !almostEqual(exp0.Value, val.V) {
 			return fmt.Errorf("expected Scalar %v but got %v", val.V, exp0.Value)
 		}
 
@@ -663,9 +663,9 @@ func (t *test) clear() {
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
-// almostEqual returns true if a and b differ by less than their sum
-// multiplied by epsilon.
-func almostEqual(a, b, epsilon float64) bool {
+// samplesAlmostEqual returns true if the two sample lines only differ by a
+// small relative error in their sample value.
+func almostEqual(a, b float64) bool {
 	// NaN has no equality but for testing we still want to know whether both values
 	// are NaN.
 	if math.IsNaN(a) && math.IsNaN(b) {
@@ -677,13 +677,12 @@ func almostEqual(a, b, epsilon float64) bool {
 		return true
 	}
 
-	absSum := math.Abs(a) + math.Abs(b)
 	diff := math.Abs(a - b)
 
-	if a == 0 || b == 0 || absSum < minNormal {
+	if a == 0 || b == 0 || diff < minNormal {
 		return diff < epsilon*minNormal
 	}
-	return diff/math.Min(absSum, math.MaxFloat64) < epsilon
+	return diff/(math.Abs(a)+math.Abs(b)) < epsilon
 }
 
 func parseNumber(s string) (float64, error) {

@@ -17,7 +17,6 @@ package wlog
 import (
 	"bufio"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -31,6 +30,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/klauspost/compress/zstd"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/slices"
 
@@ -137,7 +137,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 		level.Warn(logger).Log("msg", "Last page of the wlog is torn, filling it with zeros", "segment", segName)
 		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
 			f.Close()
-			return nil, fmt.Errorf("zero-pad torn page: %w", err)
+			return nil, errors.Wrap(err, "zero-pad torn page")
 		}
 	}
 	return &Segment{SegmentFile: f, i: k, dir: dir}, nil
@@ -298,7 +298,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		return nil, errors.New("invalid segment size")
 	}
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return nil, fmt.Errorf("create dir: %w", err)
+		return nil, errors.Wrap(err, "create dir")
 	}
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -331,7 +331,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
-		return nil, fmt.Errorf("get segment range: %w", err)
+		return nil, errors.Wrap(err, "get segment range")
 	}
 
 	// Index of the Segment we want to open and write to.
@@ -414,9 +414,11 @@ func (w *WL) Repair(origErr error) error {
 	// But that's not generally applicable if the records have any kind of causality.
 	// Maybe as an extra mode in the future if mid-WAL corruptions become
 	// a frequent concern.
-	var cerr *CorruptionErr
-	if !errors.As(origErr, &cerr) {
-		return fmt.Errorf("cannot handle error: %w", origErr)
+	err := errors.Cause(origErr) // So that we can pick up errors even if wrapped.
+
+	cerr, ok := err.(*CorruptionErr)
+	if !ok {
+		return errors.Wrap(origErr, "cannot handle error")
 	}
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
@@ -427,7 +429,7 @@ func (w *WL) Repair(origErr error) error {
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
 	if err != nil {
-		return fmt.Errorf("list segments: %w", err)
+		return errors.Wrap(err, "list segments")
 	}
 	level.Warn(w.logger).Log("msg", "Deleting all segments newer than corrupted segment", "segment", cerr.Segment)
 
@@ -438,14 +440,14 @@ func (w *WL) Repair(origErr error) error {
 			// as we set the current segment to repaired file
 			// below.
 			if err := w.segment.Close(); err != nil {
-				return fmt.Errorf("close active segment: %w", err)
+				return errors.Wrap(err, "close active segment")
 			}
 		}
 		if s.index <= cerr.Segment {
 			continue
 		}
 		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
-			return fmt.Errorf("delete segment:%v: %w", s.index, err)
+			return errors.Wrapf(err, "delete segment:%v", s.index)
 		}
 	}
 	// Regardless of the corruption offset, no record reaches into the previous segment.
@@ -470,7 +472,7 @@ func (w *WL) Repair(origErr error) error {
 
 	f, err := os.Open(tmpfn)
 	if err != nil {
-		return fmt.Errorf("open segment: %w", err)
+		return errors.Wrap(err, "open segment")
 	}
 	defer f.Close()
 
@@ -482,24 +484,24 @@ func (w *WL) Repair(origErr error) error {
 			break
 		}
 		if err := w.Log(r.Record()); err != nil {
-			return fmt.Errorf("insert record: %w", err)
+			return errors.Wrap(err, "insert record")
 		}
 	}
 	// We expect an error here from r.Err(), so nothing to handle.
 
 	// We need to pad to the end of the last page in the repaired segment
 	if err := w.flushPage(true); err != nil {
-		return fmt.Errorf("flush page in repair: %w", err)
+		return errors.Wrap(err, "flush page in repair")
 	}
 
 	// We explicitly close even when there is a defer for Windows to be
 	// able to delete it. The defer is in place to close it in-case there
 	// are errors above.
 	if err := f.Close(); err != nil {
-		return fmt.Errorf("close corrupted file: %w", err)
+		return errors.Wrap(err, "close corrupted file")
 	}
 	if err := os.Remove(tmpfn); err != nil {
-		return fmt.Errorf("delete corrupted segment: %w", err)
+		return errors.Wrap(err, "delete corrupted segment")
 	}
 
 	// Explicitly close the segment we just repaired to avoid issues with Windows.
@@ -551,7 +553,7 @@ func (w *WL) nextSegment(async bool) (int, error) {
 	}
 	next, err := CreateSegment(w.Dir(), w.segment.Index()+1)
 	if err != nil {
-		return 0, fmt.Errorf("create new segment file: %w", err)
+		return 0, errors.Wrap(err, "create new segment file")
 	}
 	prev := w.segment
 	if err := w.setSegment(next); err != nil {
@@ -938,7 +940,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	for _, sgmRange := range sr {
 		refs, err := listSegments(sgmRange.Dir)
 		if err != nil {
-			return nil, fmt.Errorf("list segment in dir:%v: %w", sgmRange.Dir, err)
+			return nil, errors.Wrapf(err, "list segment in dir:%v", sgmRange.Dir)
 		}
 
 		for _, r := range refs {
@@ -950,7 +952,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			}
 			s, err := OpenReadSegment(filepath.Join(sgmRange.Dir, r.name))
 			if err != nil {
-				return nil, fmt.Errorf("open segment:%v in dir:%v: %w", r.name, sgmRange.Dir, err)
+				return nil, errors.Wrapf(err, "open segment:%v in dir:%v", r.name, sgmRange.Dir)
 			}
 			segs = append(segs, s)
 		}
@@ -1015,7 +1017,7 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	r.off += n
 
 	// If we succeeded, or hit a non-EOF, we can stop.
-	if err == nil || !errors.Is(err, io.EOF) {
+	if err == nil || err != io.EOF {
 		return n, err
 	}
 
