@@ -67,15 +67,6 @@ func (e LimitError) Error() string {
 	return string(e)
 }
 
-// LimitErrorFunc gets a limit as input and returns a LimitError stating that the given limit was hit.
-type LimitErrorFunc func(limit uint64) LimitError
-
-var ErrorFunc = func(format string) LimitErrorFunc {
-	return func(limit uint64) LimitError {
-		return LimitError(fmt.Sprintf(format, limit))
-	}
-}
-
 // Limits describe all the limits for users; can be used to describe global default
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {

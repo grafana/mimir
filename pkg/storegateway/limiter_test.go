@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -20,7 +21,9 @@ import (
 
 func TestLimiter(t *testing.T) {
 	c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-	l := NewLimiter(10, c, validation.ErrorFunc("limit of %v exceeded"))
+	l := NewLimiter(10, c, func(limit uint64) validation.LimitError {
+		return validation.LimitError(fmt.Sprintf("limit of %v exceeded", limit))
+	})
 
 	assert.NoError(t, l.Reserve(5))
 	assert.Equal(t, float64(0), prom_testutil.ToFloat64(c))

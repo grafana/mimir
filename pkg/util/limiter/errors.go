@@ -3,6 +3,8 @@
 package limiter
 
 import (
+	"fmt"
+
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -30,18 +32,24 @@ var (
 	)
 )
 
+func limitErrorFunc(format string) func(uint64) validation.LimitError {
+	return func(limit uint64) validation.LimitError {
+		return validation.LimitError(fmt.Sprintf(format, limit))
+	}
+}
+
 func NewMaxSeriesHitLimitError(maxSeriesPerQuery uint64) validation.LimitError {
-	return validation.ErrorFunc(maxSeriesHitMsgFormat)(maxSeriesPerQuery)
+	return limitErrorFunc(maxSeriesHitMsgFormat)(maxSeriesPerQuery)
 }
 
 func NewMaxChunkBytesHitLimitError(maxChunkBytesPerQuery uint64) validation.LimitError {
-	return validation.ErrorFunc(maxChunkBytesHitMsgFormat)(maxChunkBytesPerQuery)
+	return limitErrorFunc(maxChunkBytesHitMsgFormat)(maxChunkBytesPerQuery)
 }
 
 func NewMaxChunksPerQueryLimitError(maxChunksPerQuery uint64) validation.LimitError {
-	return validation.ErrorFunc(maxChunksPerQueryLimitMsgFormat)(maxChunksPerQuery)
+	return limitErrorFunc(maxChunksPerQueryLimitMsgFormat)(maxChunksPerQuery)
 }
 
 func NewMaxEstimatedChunksPerQueryLimitError(maxEstimatedChunksPerQuery uint64) validation.LimitError {
-	return validation.ErrorFunc(maxEstimatedChunksPerQueryLimitMsgFormat)(maxEstimatedChunksPerQuery)
+	return limitErrorFunc(maxEstimatedChunksPerQueryLimitMsgFormat)(maxEstimatedChunksPerQuery)
 }

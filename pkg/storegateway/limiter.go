@@ -40,9 +40,9 @@ type SeriesLimiterFactory func(failedCounter prometheus.Counter) SeriesLimiter
 
 // Limiter is a simple mechanism for checking if something has passed a certain threshold.
 type Limiter struct {
-	limit          uint64
-	reserved       atomic.Uint64
-	limitErrorFunc validation.LimitErrorFunc
+	limit         uint64
+	reserved      atomic.Uint64
+	limitErrorMsg string
 
 	// Counter metric which we will increase if limit is exceeded.
 	failedCounter prometheus.Counter
@@ -50,8 +50,12 @@ type Limiter struct {
 }
 
 // NewLimiter returns a new limiter with a specified limit. 0 disables the limit.
-func NewLimiter(limit uint64, ctr prometheus.Counter, limitErrorFunc validation.LimitErrorFunc) *Limiter {
-	return &Limiter{limit: limit, failedCounter: ctr, limitErrorFunc: limitErrorFunc}
+func NewLimiter(limit uint64, ctr prometheus.Counter, limitErrorFunc func(uint64) validation.LimitError) *Limiter {
+	var limitErrorMsg string
+	if limitErrorFunc != nil {
+		limitErrorMsg = limitErrorFunc(limit).Error()
+	}
+	return &Limiter{limit: limit, failedCounter: ctr, limitErrorMsg: limitErrorMsg}
 }
 
 // Reserve implements ChunksLimiter.
@@ -63,7 +67,7 @@ func (l *Limiter) Reserve(num uint64) error {
 		// We need to protect from the counter being incremented twice due to concurrency
 		// while calling Reserve().
 		l.failedOnce.Do(l.failedCounter.Inc)
-		return httpgrpc.Errorf(http.StatusUnprocessableEntity, l.limitErrorFunc(l.limit).Error())
+		return httpgrpc.Errorf(http.StatusUnprocessableEntity, l.limitErrorMsg)
 	}
 	return nil
 }
