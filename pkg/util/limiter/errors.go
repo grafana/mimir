@@ -32,24 +32,22 @@ var (
 	)
 )
 
-func limitErrorFunc(format string) func(uint64) validation.LimitError {
-	return func(limit uint64) validation.LimitError {
-		return validation.LimitError(fmt.Sprintf(format, limit))
-	}
+func limitError(format string, limit uint64) validation.LimitError {
+	return validation.LimitError(fmt.Sprintf(format, limit))
 }
 
 func NewMaxSeriesHitLimitError(maxSeriesPerQuery uint64) validation.LimitError {
-	return limitErrorFunc(maxSeriesHitMsgFormat)(maxSeriesPerQuery)
+	return limitError(maxSeriesHitMsgFormat, maxSeriesPerQuery)
 }
 
 func NewMaxChunkBytesHitLimitError(maxChunkBytesPerQuery uint64) validation.LimitError {
-	return limitErrorFunc(maxChunkBytesHitMsgFormat)(maxChunkBytesPerQuery)
+	return limitError(maxChunkBytesHitMsgFormat, maxChunkBytesPerQuery)
 }
 
 func NewMaxChunksPerQueryLimitError(maxChunksPerQuery uint64) validation.LimitError {
-	return limitErrorFunc(maxChunksPerQueryLimitMsgFormat)(maxChunksPerQuery)
+	return limitError(maxChunksPerQueryLimitMsgFormat, maxChunksPerQuery)
 }
 
 func NewMaxEstimatedChunksPerQueryLimitError(maxEstimatedChunksPerQuery uint64) validation.LimitError {
-	return limitErrorFunc(maxEstimatedChunksPerQueryLimitMsgFormat)(maxEstimatedChunksPerQuery)
+	return limitError(maxEstimatedChunksPerQueryLimitMsgFormat, maxEstimatedChunksPerQuery)
 }
