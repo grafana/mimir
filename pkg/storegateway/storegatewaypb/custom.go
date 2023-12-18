@@ -9,12 +9,12 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-// customStoreGatewayClient is a custom client which wraps the real gRPC client and re-maps well known
-// gRPC errors into standard golang errors.
+// customStoreGatewayClient is a custom StoreGatewayClient which wraps well known gRPC errors into standard golang errors.
 type customStoreGatewayClient struct {
 	wrapped StoreGatewayClient
 }
@@ -32,7 +32,7 @@ func (c *customStoreGatewayClient) Series(ctx context.Context, in *storepb.Serie
 		return client, wrapContextError(err)
 	}
 
-	return &customSeriesClient{client}, nil
+	return newCustomSeriesClient(client), nil
 }
 
 // LabelNames implements StoreGatewayClient.
@@ -47,13 +47,59 @@ func (c *customStoreGatewayClient) LabelValues(ctx context.Context, in *storepb.
 	return res, wrapContextError(err)
 }
 
+// customStoreGatewayClient is a custom StoreGateway_SeriesClient which wraps well known gRPC errors into standard golang errors.
 type customSeriesClient struct {
-	StoreGateway_SeriesClient
+	*customClientStream
+
+	wrapped StoreGateway_SeriesClient
+}
+
+func newCustomSeriesClient(client StoreGateway_SeriesClient) *customSeriesClient {
+	return &customSeriesClient{
+		customClientStream: &customClientStream{client},
+		wrapped:            client,
+	}
 }
 
 func (c *customSeriesClient) Recv() (*storepb.SeriesResponse, error) {
-	res, err := c.StoreGateway_SeriesClient.Recv()
+	res, err := c.wrapped.Recv()
 	return res, wrapContextError(err)
+}
+
+// customClientStream is a custom grpc.ClientStream which wraps well known gRPC errors into standard golang errors.
+type customClientStream struct {
+	wrapped grpc.ClientStream
+}
+
+// Header implements grpc.ClientStream.
+func (c *customClientStream) Header() (metadata.MD, error) {
+	md, err := c.wrapped.Header()
+	return md, wrapContextError(err)
+}
+
+// Trailer implements grpc.ClientStream.
+func (c *customClientStream) Trailer() metadata.MD {
+	return c.wrapped.Trailer()
+}
+
+// CloseSend implements grpc.ClientStream.
+func (c *customClientStream) CloseSend() error {
+	return wrapContextError(c.wrapped.CloseSend())
+}
+
+// Context implements grpc.ClientStream.
+func (c *customClientStream) Context() context.Context {
+	return c.wrapped.Context()
+}
+
+// SendMsg implements grpc.ClientStream.
+func (c *customClientStream) SendMsg(m any) error {
+	return wrapContextError(c.wrapped.SendMsg(m))
+}
+
+// RecvMsg implements grpc.ClientStream.
+func (c *customClientStream) RecvMsg(m any) error {
+	return wrapContextError(c.wrapped.RecvMsg(m))
 }
 
 func wrapContextError(err error) error {
