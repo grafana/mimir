@@ -182,7 +182,7 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 			break
 		}
 		level.Error(r.logger).Log(
-			"msg", "encountered error while consuming; will retry",
+			"msg", "encountered error while ingesting data from Kafka; will retry",
 			"err", err,
 			"record_min_offset", minOffset,
 			"record_max_offset", maxOffset,

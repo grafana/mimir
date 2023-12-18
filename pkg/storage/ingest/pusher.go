@@ -27,6 +27,8 @@ type pusherConsumer struct {
 	p Pusher
 
 	processingTimeSeconds prometheus.Observer
+	clientErrRequests     prometheus.Counter
+	totalRequests         prometheus.Counter
 	l                     log.Logger
 }
 
@@ -46,6 +48,14 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
+		}),
+		clientErrRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_client_error_requests_total",
+			Help: "Number of write requests which caused client errors (e.g. tenant limits, samples out of bounds).",
+		}),
+		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_requests_total",
+			Help: "Number of attempted write requests.",
 		}),
 	}
 }
@@ -78,11 +88,13 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		_, err := c.p.Push(ctx, wr.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+		c.totalRequests.Inc()
 		if err != nil {
 			if !isClientIngesterError(err) {
 				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
 			}
-			level.Warn(c.l).Log("msg", "consuming write request", "err", err, "user", wr.tenantID)
+			c.clientErrRequests.Inc()
+			level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
 		}
 	}
 	return nil
