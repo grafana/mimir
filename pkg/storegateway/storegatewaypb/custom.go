@@ -84,6 +84,7 @@ func (c *customClientStream) Trailer() metadata.MD {
 
 // CloseSend implements grpc.ClientStream.
 func (c *customClientStream) CloseSend() error {
+	//nolint:forbidigo // Here we're just wrapping CloseSend() so it's OK to call it.
 	return wrapContextError(c.wrapped.CloseSend())
 }
 
