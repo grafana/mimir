@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -536,8 +537,8 @@ type seriesChunks struct {
 	chks []storepb.AggrChunk
 }
 
-// Series implements the storepb.StoreServer interface.
-func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
+// Series implements the storegatewaypb.StoreGatewayServer interface.
+func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) (err error) {
 	if req.SkipChunks {
 		// We don't do the streaming call if we are not requesting the chunks.
 		req.StreamingChunksBatchSize = 0

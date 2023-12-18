@@ -36,34 +36,6 @@ type storeTestServer struct {
 	requestSeries func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error)
 }
 
-func newBucketStoreTestServer(t testing.TB, store storepb.StoreServer) *storeTestServer {
-	listener, err := net.Listen("tcp", "localhost:0")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = listener.Close()
-	})
-
-	s := &storeTestServer{
-		server:         grpc.NewServer(),
-		serverListener: listener,
-		requestSeries: func(ctx context.Context, conn *grpc.ClientConn, req *storepb.SeriesRequest) (storepb.Store_SeriesClient, error) {
-			client := storepb.NewStoreClient(conn)
-			return client.Series(ctx, req)
-		},
-	}
-
-	storepb.RegisterStoreServer(s.server, store)
-
-	go func() {
-		_ = s.server.Serve(listener)
-	}()
-
-	// Stop the gRPC server once the test has done.
-	t.Cleanup(s.server.GracefulStop)
-
-	return s
-}
-
 func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewayServer) *storeTestServer {
 	listener, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
