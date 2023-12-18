@@ -10,6 +10,7 @@ import (
 	"flag"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,7 +73,7 @@ type Scheduler struct {
 	cancelledRequests        *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
 	connectedFrontendClients prometheus.GaugeFunc
-	queueDuration            prometheus.Histogram
+	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
 }
 
@@ -145,11 +146,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	})
 	s.requestQueue = queue.NewRequestQueue(s.log, cfg.MaxOutstandingPerTenant, cfg.AdditionalQueryQueueDimensionsEnabled, cfg.QuerierForgetDelay, s.queueLength, s.discardedRequests, enqueueDuration)
 
-	s.queueDuration = promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+	s.queueDuration = promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_query_scheduler_queue_duration_seconds",
 		Help:    "Time spent by requests in queue before getting picked up by a querier.",
 		Buckets: prometheus.DefBuckets,
-	})
+	}, []string{"user", "additional_queue_dimensions"})
 	s.connectedQuerierClients = promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_query_scheduler_connected_querier_clients",
 		Help: "Number of querier worker clients currently connected to the query-scheduler.",
@@ -399,7 +400,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		r := req.(*queue.SchedulerRequest)
 
 		queueTime := time.Since(r.EnqueueTime)
-		s.queueDuration.Observe(queueTime.Seconds())
+		additionalQueueDimensionLabels := strings.Join(r.AdditionalQueueDimensions, ":")
+		s.queueDuration.WithLabelValues(r.UserID, additionalQueueDimensionLabels).Observe(queueTime.Seconds())
 		r.QueueSpan.Finish()
 
 		/*
