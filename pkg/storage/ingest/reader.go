@@ -178,18 +178,17 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 
 	for boff.Ongoing() {
 		err := r.consumer.consume(ctx, records)
-		if err != nil {
-			level.Error(r.logger).Log(
-				"msg", "encountered error while consuming; will retry",
-				"err", err,
-				"record_min_offset", minOffset,
-				"record_max_offset", maxOffset,
-				"num_retries", boff.NumRetries(),
-			)
-			boff.Wait()
-			continue
+		if err == nil {
+			break
 		}
-		break
+		level.Error(r.logger).Log(
+			"msg", "encountered error while consuming; will retry",
+			"err", err,
+			"record_min_offset", minOffset,
+			"record_max_offset", maxOffset,
+			"num_retries", boff.NumRetries(),
+		)
+		boff.Wait()
 	}
 
 }
