@@ -43,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -513,7 +512,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(1),
 		},
 		"max estimated chunks per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -531,7 +530,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxEstimatedChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxEstimatedChunksPerQueryLimitError(1),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -569,7 +568,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(3),
 		},
 		"max series per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -587,7 +586,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxSeriesHitLimitError(1),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -605,7 +604,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
+			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{

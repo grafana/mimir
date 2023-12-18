@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
@@ -879,4 +880,28 @@ func TestExtensionMarshalling(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
 	})
+}
+
+func TestLimitError(t *testing.T) {
+	const msg = "this is an error"
+	err := NewLimitError(msg)
+	require.Error(t, err)
+	var lErr1 LimitError
+	require.ErrorAs(t, err, &lErr1)
+
+	lErr2 := errors.Wrap(err, "wrapped")
+	require.Error(t, lErr2)
+	require.ErrorIs(t, lErr2, lErr1)
+}
+
+func TestLimitErrorFunc(t *testing.T) {
+	const (
+		msg   = "limit %d has been exceeded"
+		limit = 10
+	)
+
+	limitErrFn := ErrorFunc(msg)
+	limitErr := limitErrFn(10)
+	require.Error(t, limitErr)
+	require.Errorf(t, limitErr, "limit 10 has been exceeded")
 }

@@ -44,7 +44,7 @@ func TestApiStatusCodes(t *testing.T) {
 		},
 
 		{
-			err:            validation.LimitError("limit exceeded"),
+			err:            validation.NewLimitError("limit exceeded"),
 			expectedString: "limit exceeded",
 			expectedCode:   422,
 		},
