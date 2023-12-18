@@ -1,29 +1,5 @@
 # Changelog
 
-## main / unreleased
-
-### Grafana Mimir
-
-### Mixin
-
-### Jsonnet
-
-### Mimirtool
-
-### Mimir Continuous Test
-
-### Query-tee
-
-### Documentation
-
-### Tools
-
-## 2.11.0-rc.1
-
-### Grafana Mimir
-
-* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6884
-
 ## 2.11.0-rc.0
 
 ### Grafana Mimir
@@ -131,6 +107,7 @@
 * [BUGFIX] Querier: attempt to query ingesters in PENDING state, to reduce the likelihood that scaling up the number of ingesters in multiple zones simultaneously causes a read outage. #6726 #6727
 * [BUGFIX] Querier: don't cancel inflight queries from a query-scheduler if the stream between the querier and query-scheduler is broken. #6728
 * [BUGFIX] Store-gateway: Fix double-counting of some duration metrics. #6616
+* [BUGFIX] Fixed possible series matcher corruption leading to wrong series being included in query results. #6884
 
 ### Mixin
 
