@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -27,6 +29,8 @@ func TestPusherConsumer(t *testing.T) {
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1"), mockPreallocTimeseries("series_2")}},
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_3")}},
 		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_4")}},
+		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_5")}},
+		{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_6")}},
 	}
 
 	wrBytes := make([][]byte, len(writeReqs))
@@ -93,10 +97,9 @@ func TestPusherConsumer(t *testing.T) {
 			responses: []response{
 				okResponse,
 				{err: assert.AnError},
-				okResponse,
 			},
-			expectedWRs: writeReqs[0:3],
-			expErr:      "",
+			expectedWRs: writeReqs[0:2],
+			expErr:      assert.AnError.Error(),
 		},
 		"failed processing of last record": {
 			records: []record{
@@ -108,7 +111,7 @@ func TestPusherConsumer(t *testing.T) {
 				{err: assert.AnError},
 			},
 			expectedWRs: writeReqs[0:2],
-			expErr:      "",
+			expErr:      assert.AnError.Error(),
 		},
 		"failed processing & failed unmarshalling": {
 			records: []record{
@@ -121,9 +124,38 @@ func TestPusherConsumer(t *testing.T) {
 				{err: assert.AnError},
 			},
 			expectedWRs: writeReqs[0:2],
-			expErr:      "",
+			expErr:      assert.AnError.Error(),
 		},
 		"no records": {},
+		"ingester client error": {
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
+			},
+			responses: []response{
+				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
+				{err: ingesterError(mimirpb.BAD_DATA, codes.Unknown, "ingester test error")}, // status code doesn't matter
+				okResponse,
+			},
+			expectedWRs: writeReqs[0:3],
+			expErr:      "", // since all fof those were client errors, we don't return an error
+		},
+		"ingester server error": {
+			records: []record{
+				{content: wrBytes[0], tenantID: tenantID},
+				{content: wrBytes[1], tenantID: tenantID},
+				{content: wrBytes[2], tenantID: tenantID},
+				{content: wrBytes[3], tenantID: tenantID},
+				{content: wrBytes[4], tenantID: tenantID},
+			},
+			responses: []response{
+				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
+				{err: ingesterError(mimirpb.TSDB_UNAVAILABLE, codes.Unavailable, "ingester internal error")},
+			},
+			expectedWRs: writeReqs[0:2], // the rest of the requests are not attempted
+			expErr:      "ingester internal error",
+		},
 	}
 
 	for name, tc := range testCases {
@@ -154,4 +186,14 @@ func TestPusherConsumer(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ingesterError mimics how the ingester construct errors
+func ingesterError(cause mimirpb.ErrorCause, statusCode codes.Code, message string) error {
+	errorDetails := &mimirpb.ErrorDetails{Cause: cause}
+	statWithDetails, err := status.New(statusCode, message).WithDetails(errorDetails)
+	if err != nil {
+		panic(err)
+	}
+	return statWithDetails.Err()
 }

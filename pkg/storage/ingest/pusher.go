@@ -4,11 +4,13 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,6 +27,9 @@ type pusherConsumer struct {
 	p Pusher
 
 	processingTimeSeconds prometheus.Observer
+	clientErrRequests     prometheus.Counter
+	serverErrRequests     prometheus.Counter
+	totalRequests         prometheus.Counter
 	l                     log.Logger
 }
 
@@ -35,6 +40,11 @@ type parsedRecord struct {
 }
 
 func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pusherConsumer {
+	errRequestsCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_ingest_storage_reader_records_failed_total",
+		Help: "Number of records (write requests) which caused errors while processing. Client errors are errors such as tenant limits and samples out of bounds. Server errors indicate internal recoverable errors.",
+	}, []string{"cause"})
+
 	return &pusherConsumer{
 		p: p,
 		l: l,
@@ -44,6 +54,12 @@ func newPusherConsumer(p Pusher, reg prometheus.Registerer, l log.Logger) *pushe
 			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
+		}),
+		clientErrRequests: errRequestsCounter.WithLabelValues("client"),
+		serverErrRequests: errRequestsCounter.WithLabelValues("server"),
+		totalRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingest_storage_reader_records_total",
+			Help: "Number of attempted records (write requests).",
 		}),
 	}
 }
@@ -63,7 +79,9 @@ func (c pusherConsumer) consume(ctx context.Context, records []record) error {
 }
 
 func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedRecord) error {
+	recordIdx := -1
 	for wr := range reqC {
+		recordIdx++
 		if wr.err != nil {
 			level.Error(c.l).Log("msg", "failed to parse write request; skipping", "err", wr.err)
 			continue
@@ -74,13 +92,34 @@ func (c pusherConsumer) pushRequests(ctx context.Context, reqC <-chan parsedReco
 		_, err := c.p.Push(ctx, wr.WriteRequest)
 
 		c.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
+		c.totalRequests.Inc()
 		if err != nil {
-			level.Error(c.l).Log("msg", "failed to push write request; skipping", "err", err)
-			// TODO move distributor's isClientError to a separate package and use that here to swallow only client errors and abort on others
-			continue
+			if !isClientIngesterError(err) {
+				c.serverErrRequests.Inc()
+				return fmt.Errorf("consuming record at index %d for tenant %s: %w", recordIdx, wr.tenantID, err)
+			}
+			c.clientErrRequests.Inc()
+			level.Warn(c.l).Log("msg", "detected a client error while ingesting write request (the request may have been partially ingested)", "err", err, "user", wr.tenantID)
 		}
 	}
 	return nil
+}
+
+func isClientIngesterError(err error) bool {
+	stat, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		// This should not be reached but in case it is, fall back to assuming it's our fault.
+		return false
+	}
+
+	if details := stat.Details(); len(details) > 0 {
+		if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+			// This is usually the case.
+			return errDetails.Cause == mimirpb.BAD_DATA
+		}
+	}
+	// This should not be reached but in case it is, fall back to assuming it's our fault.
+	return false
 }
 
 func (c pusherConsumer) unmarshalRequests(ctx context.Context, records []record, recC chan<- parsedRecord) {

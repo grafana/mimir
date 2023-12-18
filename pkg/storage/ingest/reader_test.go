@@ -17,6 +17,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/atomic"
 )
 
 func TestReader(t *testing.T) {
@@ -45,7 +46,7 @@ func TestReader(t *testing.T) {
 	assert.Equal(t, [][]byte{content, content}, records)
 }
 
-func TestReader_IgnoredConsumerErrors(t *testing.T) {
+func TestReader_ConsumerError(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 1
@@ -56,24 +57,34 @@ func TestReader_IgnoredConsumerErrors(t *testing.T) {
 
 	_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
 
-	content := []byte("special content")
-	consumer := newTestConsumer(1)
+	invocations := atomic.NewInt64(0)
+	returnErrors := atomic.NewBool(true)
+	trackingConsumer := newTestConsumer(2)
+	consumer := consumerFunc(func(ctx context.Context, records []record) error {
+		invocations.Inc()
+		if !returnErrors.Load() {
+			return trackingConsumer.consume(ctx, records)
+		}
+		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
+		assert.Equal(t, "1", string(records[0].content))
+		return errors.New("consumer error")
+	})
 	startReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	// Write to Kafka.
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
 
-	records, err := consumer.waitRecords(1, time.Second, 0)
+	// There are more than one invocation because the reader will retry.
+	assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
+
+	returnErrors.Store(false)
+
+	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content}, records)
-
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
-
-	records, err = consumer.waitRecords(1, time.Second, 0)
-	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content}, records)
+	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
 }
 
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
@@ -325,4 +336,10 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 			return records, nil
 		}
 	}
+}
+
+type consumerFunc func(ctx context.Context, records []record) error
+
+func (c consumerFunc) consume(ctx context.Context, records []record) error {
+	return c(ctx, records)
 }

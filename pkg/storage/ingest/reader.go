@@ -32,6 +32,7 @@ type record struct {
 }
 
 type recordConsumer interface {
+	// consume should return an error only if there is a recoverable error. Returning an error will cause consumption to slow down.
 	consume(context.Context, []record) error
 }
 
@@ -154,7 +155,10 @@ func (r *PartitionReader) enqueueCommit(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetches) {
-	records := make([]record, 0, len(fetches.Records()))
+	if fetches.NumRecords() == 0 {
+		return
+	}
+	records := make([]record, 0, fetches.NumRecords())
 
 	var (
 		minOffset = math.MaxInt
@@ -169,11 +173,27 @@ func (r *PartitionReader) consumeFetches(ctx context.Context, fetches kgo.Fetche
 		})
 	})
 
-	err := r.consumer.consume(ctx, records)
-	if err != nil {
-		level.Error(r.logger).Log("msg", "encountered error processing records; skipping", "min_offset", minOffset, "max_offset", maxOffset, "err", err)
-		// TODO abort ingesting & back off if it's a server error, ignore error if it's a client error
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: 0, // retry forever
+	})
+
+	for boff.Ongoing() {
+		err := r.consumer.consume(ctx, records)
+		if err == nil {
+			break
+		}
+		level.Error(r.logger).Log(
+			"msg", "encountered error while ingesting data from Kafka; will retry",
+			"err", err,
+			"record_min_offset", minOffset,
+			"record_max_offset", maxOffset,
+			"num_retries", boff.NumRetries(),
+		)
+		boff.Wait()
 	}
+
 }
 
 func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
