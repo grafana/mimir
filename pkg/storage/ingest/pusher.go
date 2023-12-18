@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type Pusher interface {
@@ -94,11 +93,6 @@ func isClientIngesterError(err error) bool {
 	if !ok {
 		// This should not be reached but in case it is, fall back to assuming it's our fault.
 		return false
-	}
-	if util.IsHTTPStatusCode(stat.Code()) {
-		// This is needed for backwards compatibility and can be removed after Mimir 2.14
-		// when the ingester will return only mimirpb errors.
-		return stat.Code()/100 == 4
 	}
 
 	if details := stat.Details(); len(details) > 0 {

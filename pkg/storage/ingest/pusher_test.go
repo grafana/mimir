@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"context"
-	"net/http"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -133,15 +132,13 @@ func TestPusherConsumer(t *testing.T) {
 				{content: wrBytes[0], tenantID: tenantID},
 				{content: wrBytes[1], tenantID: tenantID},
 				{content: wrBytes[2], tenantID: tenantID},
-				{content: wrBytes[3], tenantID: tenantID},
 			},
 			responses: []response{
 				{err: ingesterError(mimirpb.BAD_DATA, codes.InvalidArgument, "ingester test error")},
-				{err: ingesterError(mimirpb.BAD_DATA, codes.Unknown, "ingester test error")},     // status code doesn't matter
-				{err: ingesterError(mimirpb.BAD_DATA, http.StatusTeapot, "ingester test error")}, // they might come with http status codes
+				{err: ingesterError(mimirpb.BAD_DATA, codes.Unknown, "ingester test error")}, // status code doesn't matter
 				okResponse,
 			},
-			expectedWRs: writeReqs[0:4],
+			expectedWRs: writeReqs[0:3],
 			expErr:      "", // since all fof those were client errors, we don't return an error
 		},
 		"ingester server error": {

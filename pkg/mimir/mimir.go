@@ -240,6 +240,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
+	if c.IngestStorage.Enabled && !c.Ingester.ReturnOnlyGRPCErrors {
+		return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
+	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
 	}
