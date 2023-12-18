@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/grafana/dskit/grpcutil"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
@@ -104,13 +104,22 @@ func (c *customClientStream) RecvMsg(m any) error {
 }
 
 func wrapContextError(err error) error {
-	switch {
-	case err == nil:
+	if err == nil {
 		return nil
-	case grpcutil.ErrorToStatusCode(err) == codes.Canceled:
-		return &grpcContextError{grpcErr: err, stdErr: context.Canceled}
-	case grpcutil.ErrorToStatusCode(err) == codes.DeadlineExceeded:
-		return &grpcContextError{grpcErr: err, stdErr: context.DeadlineExceeded}
+	}
+
+	// Get the gRPC status from the error.
+	type grpcErrorStatus interface{ GRPCStatus() *grpcstatus.Status }
+	var grpcError grpcErrorStatus
+	if !errors.As(err, &grpcError) {
+		return err
+	}
+
+	switch status := grpcError.GRPCStatus(); {
+	case status.Code() == codes.Canceled:
+		return &grpcContextError{grpcErr: err, grpcStatus: status, stdErr: context.Canceled}
+	case status.Code() == codes.DeadlineExceeded:
+		return &grpcContextError{grpcErr: err, grpcStatus: status, stdErr: context.DeadlineExceeded}
 	default:
 		return err
 	}
@@ -120,6 +129,9 @@ func wrapContextError(err error) error {
 type grpcContextError struct {
 	// grpcErr is the gRPC error wrapped by grpcContextError.
 	grpcErr error
+
+	// grpcStatus is the gRPC status associated with the gRPC error. It's guaranteed to be non-nil.
+	grpcStatus *grpcstatus.Status
 
 	// stdErr is the equivalent golang standard context error.
 	stdErr error
@@ -143,4 +155,8 @@ func (e *grpcContextError) As(target any) bool {
 	}
 
 	return errors.As(e.grpcErr, target)
+}
+
+func (e *grpcContextError) GRPCStatus() *grpcstatus.Status {
+	return e.grpcStatus
 }

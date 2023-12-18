@@ -7,14 +7,85 @@ import (
 	"io"
 	"testing"
 
-	"github.com/gogo/status"
+	gogostatus "github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 func TestWrapContextError(t *testing.T) {
+	t.Run("should wrap gRPC context errors", func(t *testing.T) {
+		tests := map[string]struct {
+			origErr            error
+			expectedGrpcCode   codes.Code
+			expectedContextErr error
+		}{
+			"gogo Canceled error": {
+				origErr:            gogostatus.Error(codes.Canceled, context.Canceled.Error()),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"gRPC Canceled error": {
+				origErr:            grpcstatus.Error(codes.Canceled, context.Canceled.Error()),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"wrapped gogo Canceled error": {
+				origErr:            errors.Wrap(gogostatus.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"wrapped gRPC Canceled error": {
+				origErr:            errors.Wrap(grpcstatus.Error(codes.Canceled, context.Canceled.Error()), "custom message"),
+				expectedGrpcCode:   codes.Canceled,
+				expectedContextErr: context.Canceled,
+			},
+			"gogo DeadlineExceeded error": {
+				origErr:            gogostatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
+			"gRPC DeadlineExceeded error": {
+				origErr:            grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
+			"wrapped gogo DeadlineExceeded error": {
+				origErr:            errors.Wrap(gogostatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
+			"wrapped gRPC DeadlineExceeded error": {
+				origErr:            errors.Wrap(grpcstatus.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()), "custom message"),
+				expectedGrpcCode:   codes.DeadlineExceeded,
+				expectedContextErr: context.DeadlineExceeded,
+			},
+		}
+
+		for testName, testData := range tests {
+			t.Run(testName, func(t *testing.T) {
+				wrapped := wrapContextError(testData.origErr)
+
+				assert.NotEqual(t, testData.origErr, wrapped)
+				assert.Equal(t, testData.origErr, errors.Unwrap(wrapped))
+
+				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
+				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
+
+				gogoStatus, ok := gogostatus.FromError(wrapped)
+				require.True(t, ok)
+				assert.Equal(t, testData.expectedGrpcCode, gogoStatus.Code())
+
+				grpcStatus, ok := grpcstatus.FromError(wrapped)
+				require.True(t, ok)
+				assert.Equal(t, testData.expectedGrpcCode, grpcStatus.Code())
+			})
+		}
+	})
+
 	t.Run("should return the input error on a non-gRPC error", func(t *testing.T) {
 		orig := errors.New("mock error")
 		assert.Equal(t, orig, wrapContextError(orig))
@@ -22,57 +93,5 @@ func TestWrapContextError(t *testing.T) {
 		assert.Equal(t, context.Canceled, wrapContextError(context.Canceled))
 		assert.Equal(t, context.DeadlineExceeded, wrapContextError(context.DeadlineExceeded))
 		assert.Equal(t, io.EOF, wrapContextError(io.EOF))
-	})
-
-	t.Run("should wrap gRPC Canceled error", func(t *testing.T) {
-		orig := status.Error(codes.Canceled, context.Canceled.Error())
-		wrapped := wrapContextError(orig)
-
-		assert.NotEqual(t, orig, wrapped)
-		assert.Equal(t, orig, errors.Unwrap(wrapped))
-
-		assert.True(t, errors.Is(wrapped, context.Canceled))
-		assert.False(t, errors.Is(wrapped, context.DeadlineExceeded))
-
-		assert.Equal(t, codes.Canceled, grpcutil.ErrorToStatusCode(wrapped))
-	})
-
-	t.Run("should wrap a wrapped gRPC Canceled error", func(t *testing.T) {
-		orig := errors.Wrap(status.Error(codes.Canceled, context.Canceled.Error()), "custom message")
-		wrapped := wrapContextError(orig)
-
-		assert.NotEqual(t, orig, wrapped)
-		assert.Equal(t, orig, errors.Unwrap(wrapped))
-
-		assert.True(t, errors.Is(wrapped, context.Canceled))
-		assert.False(t, errors.Is(wrapped, context.DeadlineExceeded))
-
-		assert.Equal(t, codes.Canceled, grpcutil.ErrorToStatusCode(wrapped))
-	})
-
-	t.Run("should wrap gRPC DeadlineExceeded error", func(t *testing.T) {
-		orig := status.Error(codes.DeadlineExceeded, context.Canceled.Error())
-		wrapped := wrapContextError(orig)
-
-		assert.NotEqual(t, orig, wrapped)
-		assert.Equal(t, orig, errors.Unwrap(wrapped))
-
-		assert.True(t, errors.Is(wrapped, context.DeadlineExceeded))
-		assert.False(t, errors.Is(wrapped, context.Canceled))
-
-		assert.Equal(t, codes.DeadlineExceeded, grpcutil.ErrorToStatusCode(wrapped))
-	})
-
-	t.Run("should wrap a wrapped gRPC DeadlineExceeded error", func(t *testing.T) {
-		orig := errors.Wrap(status.Error(codes.DeadlineExceeded, context.Canceled.Error()), "custom message")
-		wrapped := wrapContextError(orig)
-
-		assert.NotEqual(t, orig, wrapped)
-		assert.Equal(t, orig, errors.Unwrap(wrapped))
-
-		assert.True(t, errors.Is(wrapped, context.DeadlineExceeded))
-		assert.False(t, errors.Is(wrapped, context.Canceled))
-
-		assert.Equal(t, codes.DeadlineExceeded, grpcutil.ErrorToStatusCode(wrapped))
 	})
 }
