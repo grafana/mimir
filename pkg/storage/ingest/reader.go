@@ -118,11 +118,34 @@ func (r *PartitionReader) run(ctx context.Context) error {
 		fetches := r.client.PollFetches(ctx)
 		r.recordFetchesMetrics(fetches)
 		r.logFetchErrs(fetches)
+		fetches = filterOutErrFetches(fetches)
 		r.consumeFetches(consumeCtx, fetches)
 		r.enqueueCommit(fetches)
 	}
 
 	return nil
+}
+
+func filterOutErrFetches(fetches kgo.Fetches) kgo.Fetches {
+	filtered := make(kgo.Fetches, 0, len(fetches))
+	for i, fetch := range fetches {
+		if !isErrFetch(fetch) {
+			filtered = append(filtered, fetches[i])
+		}
+	}
+
+	return filtered
+}
+
+func isErrFetch(fetch kgo.Fetch) bool {
+	for _, t := range fetch.Topics {
+		for _, p := range t.Partitions {
+			if p.Err != nil {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *PartitionReader) logFetchErrs(fetches kgo.Fetches) {
