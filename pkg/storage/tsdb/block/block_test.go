@@ -334,7 +334,7 @@ func TestMarkForDeletion(t *testing.T) {
 			blocksMarked: 1,
 		},
 		{
-			name: "block with deletion mark already, expected log and no metric increment",
+			name: "block with deletion mark already, expected recoverable error and no metric increment",
 			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
 				deletionMark, err := json.Marshal(DeletionMark{
 					ID:           id,
@@ -372,18 +372,19 @@ func TestMarkForNoCompact(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	for _, tcase := range []struct {
-		name      string
-		preUpload func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
-
+		name         string
+		preUpload    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
 		blocksMarked int
+		expectedErr  func(id ulid.ULID) error
 	}{
 		{
 			name:         "block marked",
 			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
+			expectedErr:  func(_ ulid.ULID) error { return nil },
 		},
 		{
-			name: "block with no-compact mark already, expected log and no metric increment",
+			name: "block with no-compact mark already, expected error and no metric increment",
 			preUpload: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
 				m, err := json.Marshal(NoCompactMark{
 					ID:            id,
@@ -394,6 +395,10 @@ func TestMarkForNoCompact(t *testing.T) {
 				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), NoCompactMarkFilename), bytes.NewReader(m)))
 			},
 			blocksMarked: 0,
+			expectedErr: func(id ulid.ULID) error {
+				return &TSDBBlockRecoverableError{
+					Message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", path.Join(id.String(), NoCompactMarkFilename))}
+			},
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -408,8 +413,7 @@ func TestMarkForNoCompact(t *testing.T) {
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, ManualNoCompactReason, "", c)
-			require.NoError(t, err)
-			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+			require.Equal(t, tcase.expectedErr(id), err)
 		})
 	}
 }

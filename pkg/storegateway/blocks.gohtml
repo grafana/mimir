@@ -26,7 +26,7 @@
         <input type="checkbox" id="show-sources" name="show_sources" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
         <input type="checkbox" id="show-parents" name="show_parents" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
         <label for="split-count">Split count (non-zero value shows block split ID):</label>&nbsp;<input id="split-count" name="split_count" type="text" value="{{ .SplitCount }}" style="width: 6em;" />
-        <button type="submit" style="background-color: lightgrey;">
+        <button type="submit" style="background-color: lightgrey;" onclick="reloadWithoutAction()">
             <span style="padding: 0.5em 1em; font-size: 100%;">Reload</span>
         </button>
     </form>
@@ -122,7 +122,6 @@
     // Add an event listener to the dropdown
     dropdown.addEventListener("change", function () {
         var isVisible = dropdown.value !== "none";
-        console.log("Setting visibility to: " + isVisible + " for " + dropdown.value);
         toggleVisibility(isVisible);
     });
 
@@ -130,15 +129,24 @@
     var isVisible = dropdown.value !== "none";
     toggleVisibility(isVisible);
 
-    // Function to reload the page with the action
-    function reloadWithAction() {
+    function reloadWithoutAction() {
         var form = document.getElementById('configForm');
 
+        // Check if the input field already exists
+        var blockULIDsField = form.querySelector('input[name="block_ulids"]');
+        if (blockULIDsField) {
+            blockULIDsField.remove();
+        }
+        form.submit();
+    }
+
+    // Function to reload the page with the action
+    function reloadWithAction() {
         // Get the blocks uid from the table and add it to the form
         var table = document.getElementById('blocksInfo');
 
         // Create an array to hold the structured table data
-        var blockUIDs = [];
+        var blockULIDs = [];
 
         // Iterate through the table rows
         var rows = table.getElementsByTagName('tr');
@@ -151,30 +159,32 @@
                 continue;
             }
             // Add the uid to the array
-            blockUIDs.push(cells[1].textContent);
+            blockULIDs.push(cells[1].textContent);
         }
 
         // Check if the array is empty
-        if (blockUIDs.length === 0) {
+        if (blockULIDs.length === 0) {
             // Display an alert popup if the array is empty
-            alert("No block seleted for action!");
+            alert("Select at least one block and then perform the action");
         }
 
-        // Check if the input field already exists
-        var blockUIDsField = form.querySelector('input[name="block_uids"]');
+        var form = document.getElementById('configForm');
 
-        if (blockUIDsField) {
+        // Check if the input field already exists
+        var blockULIDsField = form.querySelector('input[name="block_ulids"]');
+
+        if (blockULIDsField) {
             // If it exists, update its value
-            blockUIDsField.value = encodeURIComponent(JSON.stringify(blockUIDs));
+            blockULIDsField.value = JSON.stringify(blockULIDs);
         } else {
             // If it doesn't exist, create a new input field
-            blockUIDsField = document.createElement('input');
-            blockUIDsField.type = 'hidden';
-            blockUIDsField.name = 'block_uids';
-            blockUIDsField.value = btoa(JSON.stringify(blockUIDs));
+            blockULIDsField = document.createElement('input');
+            blockULIDsField.type = 'hidden';
+            blockULIDsField.name = 'block_ulids';
+            blockULIDsField.value = JSON.stringify(blockULIDs);
 
             // Append the new input to the form
-            form.appendChild(blockUIDsField);
+            form.appendChild(blockULIDsField);
         }
 
         form.submit();

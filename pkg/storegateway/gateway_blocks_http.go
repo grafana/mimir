@@ -4,16 +4,17 @@ package storegateway
 
 import (
 	_ "embed" // Used to embed html template
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
-	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
@@ -103,64 +104,24 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if !isValidActionType(ActionType(actionType)) {
-		// Handle the case where the parsed value is not a valid action type
 		util.WriteTextResponse(w, fmt.Sprintf("Invalid Action Type: %s\n", actionType))
 		return
 	}
 	action := ActionType(actionType)
-	// When blockUids is set, and dropdown action is "no-compact" or "delete-no-compact",
-	// we will perform the action on the selected blocks
-	if (action == ActionTypeNoCompact || action == ActionTypeDeleteNoCompact) && req.Form.Get("block_uids") != "" {
-		var uids []string
-		// URL-decode the string
-		decodedString, err := url.QueryUnescape(req.Form.Get("block_uids"))
-		if err != nil {
-			util.WriteTextResponse(w, fmt.Sprintf("Error decoding URL: %s", err.Error()))
-			return
-		}
 
-		decodedBytes, err := base64.StdEncoding.DecodeString(decodedString)
+	blockUlidsString := req.Form.Get("block_ulids")
+	if action != ActionTypeNone && blockUlidsString != "" {
+		var uids []string
+
+		err := json.Unmarshal([]byte(blockUlidsString), &uids)
 		if err != nil {
 			util.WriteTextResponse(w, fmt.Sprintf("Can't decode base64 of selected blocks' uid: %s", err))
 			return
 		}
-		if err := json.Unmarshal(decodedBytes, &uids); err != nil {
-			util.WriteTextResponse(w, fmt.Sprintf("Can't parse block_uids: %s", err))
+		err = s.performActionsOnBlocks(tenantID, req, action, uids)
+		if err != nil {
+			util.WriteTextResponse(w, fmt.Sprintf("Failed to perform action on blocks: %s", err))
 			return
-		}
-		for _, uid := range uids {
-			ulid, err := ulid.Parse(uid)
-			if err != nil {
-				util.WriteTextResponse(w, fmt.Sprintf("Can't parse ULID %s: %s", uid, err))
-				return
-			}
-			bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
-			if action == ActionTypeNoCompact {
-				err = block.MarkForNoCompact(
-					req.Context(),
-					s.logger,
-					bkt,
-					ulid,
-					block.ManualNoCompactReason,
-					"Manual Operations from Admin UI: Mark for no compaction",
-					nil,
-				)
-				if err != nil {
-					util.WriteTextResponse(w, fmt.Sprintf("Can't mark for no compaction block uid %s: %s", ulid, err))
-					return
-				}
-			} else if action == ActionTypeDeleteNoCompact {
-				err = block.DeleteNoCompactMarker(
-					req.Context(),
-					s.logger,
-					bkt,
-					ulid,
-				)
-				if err != nil {
-					util.WriteTextResponse(w, fmt.Sprintf("Can't delete no compaction marker for block %s: %s", ulid, err))
-					return
-				}
-			}
 		}
 	}
 
@@ -248,6 +209,39 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowParents: showParents,
 		ActionType:  action,
 	}, blocksPageTemplate, req)
+}
+
+func (s *StoreGateway) performActionsOnBlocks(tenantID string, req *http.Request, action ActionType, blockUlids []string) error {
+	// When blockUlids is set, and dropdown action is "no-compact" or "delete-no-compact",
+	// we will perform the action on the selected blocks
+	if (action == ActionTypeNoCompact || action == ActionTypeDeleteNoCompact) && len(blockUlids) > 0 {
+		errs := multierror.MultiError{}
+		for _, uid := range blockUlids {
+			ulid, err := ulid.Parse(uid)
+			if err != nil {
+				return fmt.Errorf("can't parse ULID %s: %w", uid, err)
+			}
+			bkt := block.BucketWithGlobalMarkers(bucket.NewUserBucketClient(tenantID, s.stores.bucket, nil))
+			switch action {
+			case ActionTypeNoCompact:
+				errs.Add(block.MarkForNoCompact(req.Context(), s.logger, bkt, ulid, block.ManualNoCompactReason, "Manual Operations from Admin UI: Mark for no compaction", nil))
+			case ActionTypeDeleteNoCompact:
+				errs.Add(block.DeleteNoCompactMarker(req.Context(), s.logger, bkt, ulid))
+			default:
+				return nil
+			}
+		}
+		ip := req.Header.Get("X-Forwarded-For")
+		// If X-Forwarded-For is empty, fall back to RemoteAddr
+		if ip == "" {
+			ip = strings.Split(req.RemoteAddr, ":")[0]
+		}
+		level.Info(s.logger).Log("msg", "Performed action on blocks", "action", action, "blocks", blockUlids, "ip", ip)
+		if errs.Err() != nil {
+			return fmt.Errorf("failed to perform action on blocks: %w", errs.Err())
+		}
+	}
+	return nil
 }
 
 func formatTimeIfNotZero(t int64, format string) string {
