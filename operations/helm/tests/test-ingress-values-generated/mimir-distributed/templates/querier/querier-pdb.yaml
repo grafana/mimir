@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/querier/querier-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-ingress-values-mimir-querier
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ingress-values
+    app.kubernetes.io/component: querier
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-ingress-values
+      app.kubernetes.io/component: querier
+  maxUnavailable: 1
