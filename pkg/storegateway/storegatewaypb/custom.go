@@ -106,7 +106,7 @@ func wrapContextError(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case err != context.Canceled && grpcutil.IsCanceled(err):
+	case grpcutil.ErrorToStatusCode(err) == codes.Canceled:
 		return &grpcContextError{grpcErr: err, stdErr: context.Canceled}
 	case grpcutil.ErrorToStatusCode(err) == codes.DeadlineExceeded:
 		return &grpcContextError{grpcErr: err, stdErr: context.DeadlineExceeded}
