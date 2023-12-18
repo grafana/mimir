@@ -1286,7 +1286,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 	return blocks, indexReaders, chunkReaders
 }
 
-// LabelNames implements the storepb.StoreServer interface.
+// LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
@@ -1477,7 +1477,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 	indexCache.StoreLabelNames(userID, blockID, entry.MatchersKey, data)
 }
 
-// LabelValues implements the storepb.StoreServer interface.
+// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {

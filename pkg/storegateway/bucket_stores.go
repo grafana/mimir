@@ -310,7 +310,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	return errs.Err()
 }
 
-// Series implements the storepb.StoreServer interface, making a series request to the underlying user bucket store.
+// Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
 	defer spanLog.Span.Finish()
@@ -331,7 +331,7 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 	})
 }
 
-// LabelNames implements the storepb.StoreServer interface.
+// LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelNames")
 	defer spanLog.Span.Finish()
@@ -349,7 +349,7 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	return store.LabelNames(ctx, req)
 }
 
-// LabelValues implements the storepb.StoreServer interface.
+// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelValues")
 	defer spanLog.Span.Finish()
