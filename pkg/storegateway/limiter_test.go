@@ -14,11 +14,13 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestLimiter(t *testing.T) {
 	c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-	l := NewLimiter(10, c, "limit of %v exceeded")
+	l := NewLimiter(10, c, validation.ErrorFunc("limit of %v exceeded"))
 
 	assert.NoError(t, l.Reserve(5))
 	assert.Equal(t, float64(0), prom_testutil.ToFloat64(c))

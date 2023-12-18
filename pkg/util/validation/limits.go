@@ -42,9 +42,9 @@ const (
 	maxNativeHistogramBucketsFlag            = "validation.max-native-histogram-buckets"
 	ReduceNativeHistogramOverMaxBucketsFlag  = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                  = "validation.create-grace-period"
-	maxPartialQueryLengthFlag                = "querier.max-partial-query-length"
-	maxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
-	maxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
+	MaxPartialQueryLengthFlag                = "querier.max-partial-query-length"
+	MaxTotalQueryLengthFlag                  = "query-frontend.max-total-query-length"
+	MaxQueryExpressionSizeBytesFlag          = "query-frontend.max-query-expression-size-bytes"
 	RequestRateFlag                          = "distributor.request-rate-limit"
 	RequestBurstSizeFlag                     = "distributor.request-burst-size"
 	IngestionRateFlag                        = "distributor.ingestion-rate-limit"
@@ -65,6 +65,15 @@ type LimitError string
 
 func (e LimitError) Error() string {
 	return string(e)
+}
+
+// LimitErrorFunc gets a limit as input and returns a LimitError stating that the given limit was hit.
+type LimitErrorFunc func(limit uint64) LimitError
+
+var ErrorFunc = func(format string) LimitErrorFunc {
+	return func(limit uint64) LimitError {
+		return LimitError(fmt.Sprintf(format, limit))
+	}
 }
 
 // Limits describe all the limits for users; can be used to describe global default
@@ -236,7 +245,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and long-term storage, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	f.Var(&l.MaxPartialQueryLength, maxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
+	f.Var(&l.MaxPartialQueryLength, MaxPartialQueryLengthFlag, "Limit the time range for partial queries at the querier level.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
@@ -275,7 +284,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
 
 	// Query-frontend.
-	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
+	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.")
 	_ = l.ResultsCacheTTL.Set("7d")
 	f.Var(&l.ResultsCacheTTL, resultsCacheTTLFlag, fmt.Sprintf("Time to live duration for cached query results. If query falls into out-of-order time window, -%s is used instead.", resultsCacheTTLForOutOfOrderWindowFlag))
 	_ = l.ResultsCacheTTLForOutOfOrderTimeWindow.Set("10m")
@@ -283,7 +292,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ResultsCacheTTLForCardinalityQuery, "query-frontend.results-cache-ttl-for-cardinality-query", "Time to live duration for cached cardinality query results. The value 0 disables the cache.")
 	f.Var(&l.ResultsCacheTTLForLabelsQuery, "query-frontend.results-cache-ttl-for-labels-query", "Time to live duration for cached label names and label values query results. The value 0 disables the cache.")
 	f.BoolVar(&l.ResultsCacheForUnalignedQueryEnabled, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
-	f.IntVar(&l.MaxQueryExpressionSizeBytes, maxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
+	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 
 	// Store-gateway.

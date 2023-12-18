@@ -880,3 +880,15 @@ func TestExtensionMarshalling(t *testing.T) {
 		require.Contains(t, string(val), `{"user":{"test_extension_struct":{"foo":42},"test_extension_string":"default string extension value","request_rate":0,"request_burst_size":0,`)
 	})
 }
+
+func TestLimitErrorFunc(t *testing.T) {
+	const (
+		msg   = "limit %d has been exceeded"
+		limit = 10
+	)
+
+	limitErrFn := ErrorFunc(msg)
+	limitErr := limitErrFn(10)
+	require.Error(t, limitErr)
+	require.Errorf(t, limitErr, "limit 10 has been exceeded")
+}
