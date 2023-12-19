@@ -1294,23 +1294,6 @@
                         }
                      },
                      {
-                        "id": "calculateField",
-                        "options": {
-                           "alias": "Time range",
-                           "binary": {
-                              "left": "param_end",
-                              "operator": "-",
-                              "reducer": "sum",
-                              "right": "param_start"
-                           },
-                           "mode": "binary",
-                           "reduce": {
-                              "reducer": "sum"
-                           },
-                           "replaceFields": false
-                        }
-                     },
-                     {
                         "id": "organize",
                         "options": {
                            "excludeByName": {
@@ -1329,9 +1312,6 @@
                               "msg": true,
                               "name": true,
                               "namespace": true,
-                              "param_end": true,
-                              "param_start": true,
-                              "param_time": true,
                               "path": true,
                               "pod": true,
                               "pod_template_hash": true,
@@ -1341,10 +1321,13 @@
                               "tsNs": true
                            },
                            "indexByName": {
-                              "Time range": 3,
-                              "param_query": 2,
-                              "param_step": 4,
-                              "response_time": 5,
+                              "length": 2,
+                              "param_end": 4,
+                              "param_query": 7,
+                              "param_start": 3,
+                              "param_step": 6,
+                              "param_time": 5,
+                              "response_time": 8,
                               "ts": 0,
                               "user": 1
                            },
