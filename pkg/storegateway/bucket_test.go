@@ -1583,7 +1583,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			Hints:                    marshalledHints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
 		}
-		srv := newBucketStoreTestServer(t, store)
+		srv := newStoreGatewayTestServer(t, store)
 		seriesSet, warnings, _, _, err := srv.Series(context.Background(), req)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(warnings), "%v", warnings)
@@ -1792,7 +1792,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		maxSeriesPerBatch:    65536,
 	}
 
-	srv := newBucketStoreTestServer(t, store)
+	srv := newStoreGatewayTestServer(t, store)
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
 		seriesSet, warnings, _, _, err := srv.Series(context.Background(), &storepb.SeriesRequest{
@@ -1973,7 +1973,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
 	}
 
-	srv := newBucketStoreTestServer(t, store)
+	srv := newStoreGatewayTestServer(t, store)
 	_, _, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
@@ -2030,7 +2030,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newBucketStoreTestServer(t, store)
+	srv := newStoreGatewayTestServer(t, store)
 	_, _, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
@@ -2093,7 +2093,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 		},
 	}
 
-	srv := newBucketStoreTestServer(t, store)
+	srv := newStoreGatewayTestServer(t, store)
 	_, _, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
 	s, ok := status.FromError(err)
@@ -2212,7 +2212,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
-	srv := newBucketStoreTestServer(t, store)
+	srv := newStoreGatewayTestServer(t, store)
 
 	tests := map[string]struct {
 		reqMinTime int64
@@ -2376,7 +2376,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					assert.NoError(t, err)
 					assert.NoError(t, store.SyncBlocks(ctx))
 
-					srv := newBucketStoreTestServer(t, store)
+					srv := newStoreGatewayTestServer(t, store)
 					for _, streamingBatchSize := range []int{0, 1, 5} {
 						t.Run(fmt.Sprintf("streamingBatchSize: %d", streamingBatchSize), func(t *testing.T) {
 							req := &storepb.SeriesRequest{
@@ -2954,7 +2954,7 @@ type seriesCase struct {
 func runTestServerSeries(t test.TB, store *BucketStore, streamingBatchSize int, cases ...*seriesCase) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t test.TB) {
-			srv := newBucketStoreTestServer(t, store)
+			srv := newStoreGatewayTestServer(t, store)
 
 			c.Req.StreamingChunksBatchSize = uint64(streamingBatchSize)
 			t.ResetTimer()
