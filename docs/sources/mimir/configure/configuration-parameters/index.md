@@ -2981,6 +2981,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
+# (experimental) Enable metric relabeling for the tenant. This configuration
+# option can be used to forcefully disable metric relabeling on a per-tenant
+# basis.
+# CLI flag: -distributor.metric-relabeling-enabled
+[metric_relabeling_enabled: <boolean> | default = true]
+
 # (experimental) If enabled, rate limit errors will be reported to the client
 # with HTTP status code 529 (Service is overloaded). If disabled, status code
 # 429 (Too Many Requests) is used. Enabling
