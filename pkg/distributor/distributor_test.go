@@ -3227,40 +3227,53 @@ func TestRelabelMiddleware(t *testing.T) {
 	ctxWithUser := user.InjectOrgID(context.Background(), "user")
 
 	type testCase struct {
-		name           string
-		ctx            context.Context
-		relabelConfigs []*relabel.Config
-		dropLabels     []string
-		reqs           []*mimirpb.WriteRequest
-		expectedReqs   []*mimirpb.WriteRequest
-		expectErrs     []bool
+		name              string
+		ctx               context.Context
+		relabelConfigs    []*relabel.Config
+		dropLabels        []string
+		relabelingEnabled bool
+		reqs              []*mimirpb.WriteRequest
+		expectedReqs      []*mimirpb.WriteRequest
+		expectErrs        []bool
 	}
 	testCases := []testCase{
 		{
-			name:           "do nothing",
-			ctx:            ctxWithUser,
-			relabelConfigs: nil,
-			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:     []bool{false},
+			name:              "do nothing",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        nil,
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
-			name:           "no user in context",
-			ctx:            context.Background(),
-			relabelConfigs: nil,
-			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:   nil,
-			expectErrs:     []bool{true},
+			name:              "no user in context",
+			ctx:               context.Background(),
+			relabelConfigs:    nil,
+			dropLabels:        nil,
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:      nil,
+			expectErrs:        []bool{true},
 		}, {
-			name:           "apply a relabel rule",
-			ctx:            ctxWithUser,
-			relabelConfigs: nil,
-			dropLabels:     []string{"label1", "label3"},
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:     []bool{false},
+			name:              "apply a relabel rule",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        []string{"label1", "label3"},
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
+			name:              "relabeling disabled",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        []string{"label1", "label3"},
+			relabelingEnabled: false,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectErrs:        []bool{false},
+		}, {}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
 			relabelConfigs: []*relabel.Config{
@@ -3272,13 +3285,15 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "prefix_$1",
 				},
 			},
-			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
-			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:   []bool{false},
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
-			name:       "drop entire series if they have no labels",
-			ctx:        ctxWithUser,
-			dropLabels: []string{"__name__", "label2", "label3"},
+			name:              "drop entire series if they have no labels",
+			ctx:               ctxWithUser,
+			dropLabels:        []string{"__name__", "label2", "label3"},
+			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil),
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2"), nil, nil),
@@ -3304,6 +3319,7 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "$1",
 				},
 			},
+			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{{
 				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
 					[]mimirpb.LabelAdapter{
@@ -3349,6 +3365,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.MetricRelabelConfigs = tc.relabelConfigs
 			limits.DropLabels = tc.dropLabels
+			limits.MetricRelabelingEnabled = tc.relabelingEnabled
 			ds, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,

@@ -784,12 +784,16 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			}
 		}()
 
-		req, err := pushReq.WriteRequest()
+		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
 		}
 
-		userID, err := tenant.TenantID(ctx)
+		if !d.limits.MetricRelabelingEnabled(userID) {
+			return next(ctx, pushReq)
+		}
+
+		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
 		}
