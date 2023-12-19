@@ -171,17 +171,6 @@ The following features are currently experimental:
 Deprecated features are usable up until the release that indicates their removal.
 For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
 
-The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
-
-- Store-gateway
-  - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
-- Querier, ruler, store-gateway
-  - `-blocks-storage.bucket-store.bucket-index.enabled`
-- Querier
-  - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)
-
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
 
 - Logging
