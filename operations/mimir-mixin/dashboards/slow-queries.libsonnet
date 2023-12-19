@@ -46,7 +46,7 @@ local filename = 'mimir-slow-queries.json';
                 },
 
                 // Order fields.
-                local orderedFields = ['ts', 'user', 'length', 'param_start', 'param_end', 'parm_time', 'param_step', 'param_query', 'response_time'],
+                local orderedFields = ['ts', 'user', 'length', 'param_start', 'param_end', 'param_time', 'param_step', 'param_query', 'response_time'],
 
                 indexByName: {
                   [orderedFields[i]]: i
