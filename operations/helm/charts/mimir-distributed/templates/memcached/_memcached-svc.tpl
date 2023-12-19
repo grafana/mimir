@@ -23,6 +23,9 @@ spec:
     - name: memcached-client
       port: {{ .port }}
       targetPort: {{ .port }}
+      {{- if .appProtocol.client }}
+      appProtocol: {{ .appProtocol.client }}
+      {{- end }}
     {{ if $.ctx.Values.memcachedExporter.enabled }}
     - name: http-metrics
       port: 9150
