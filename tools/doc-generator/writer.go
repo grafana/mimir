@@ -22,25 +22,30 @@ type specWriter struct {
 	out strings.Builder
 }
 
-func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int) {
+func (w *specWriter) writeConfigBlock(b *parse.ConfigBlock, indent int, filter *filterFunc) {
 	if len(b.Entries) == 0 {
 		return
 	}
+	i := 0
+	for _, entry := range b.Entries {
+		// If we have a filter function and this entry doesn't match, skip it
+		if filter != nil && !(*filter)(entry) {
+			continue
+		}
 
-	for i, entry := range b.Entries {
 		// Add a new line to separate from the previous entry
 		if i > 0 {
 			w.out.WriteString("\n")
 		}
-
-		w.writeConfigEntry(entry, indent)
+		i++
+		w.writeConfigEntry(entry, indent, filter)
 	}
 }
 
-func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
+func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int, filter *filterFunc) {
 	if e.Kind == parse.KindBlock {
 		// If the block is a root block it will have its dedicated section in the doc,
-		// so here we've just to write down the reference without re-iterating on it.
+		// so here we've just to write down the reference without re-iterating on it
 		if e.Root {
 			// Description
 			w.writeComment(e.BlockDesc, indent, 0)
@@ -58,7 +63,7 @@ func (w *specWriter) writeConfigEntry(e *parse.ConfigEntry, indent int) {
 			w.out.WriteString(pad(indent) + e.Name + ":\n")
 
 			// Entries
-			w.writeConfigBlock(e.Block, indent+tabWidth)
+			w.writeConfigBlock(e.Block, indent+tabWidth, filter)
 		}
 	}
 
@@ -134,7 +139,7 @@ type markdownWriter struct {
 	out strings.Builder
 }
 
-func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
+func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock, filter *filterFunc) {
 	// Deduplicate root blocks.
 	uniqueBlocks := map[string]*parse.ConfigBlock{}
 	for _, block := range blocks {
@@ -143,7 +148,7 @@ func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
 
 	// Generate the markdown, honoring the root blocks order.
 	if topBlock, ok := uniqueBlocks[""]; ok {
-		w.writeConfigBlock(topBlock)
+		w.writeConfigBlock(topBlock, filter)
 	}
 
 	for _, rootBlock := range parse.RootBlocks {
@@ -152,18 +157,17 @@ func (w *markdownWriter) writeConfigDoc(blocks []*parse.ConfigBlock) {
 			blockToWrite := *block
 			blockToWrite.Desc = rootBlock.Desc
 
-			w.writeConfigBlock(&blockToWrite)
+			w.writeConfigBlock(&blockToWrite, filter)
 		}
 	}
 }
 
-func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
+func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock, filter *filterFunc) {
 	// Title
 	if block.Name != "" {
 		w.out.WriteString("### " + block.Name + "\n")
 		w.out.WriteString("\n")
 	}
-
 	// Description
 	if block.Desc != "" {
 		desc := block.Desc
@@ -208,7 +212,7 @@ func (w *markdownWriter) writeConfigBlock(block *parse.ConfigBlock) {
 
 	// Config specs
 	spec := &specWriter{}
-	spec.writeConfigBlock(block, 0)
+	spec.writeConfigBlock(block, 0, filter)
 
 	w.out.WriteString("```yaml\n")
 	w.out.WriteString(spec.string() + "\n")
