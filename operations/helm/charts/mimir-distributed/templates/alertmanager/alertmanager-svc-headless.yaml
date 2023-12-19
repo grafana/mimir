@@ -26,6 +26,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+      {{- if .Values.alertmanager.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.alertmanager.service.appProtocol.grpc }}
+      {{- end }}
     - port: {{ $clusterPort }}
       protocol: TCP
       name: cluster

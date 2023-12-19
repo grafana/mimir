@@ -30,6 +30,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+      {{- if .Values.ingester.service.appProtocol.grpc }}
+      appProtocol: {{ .Values.ingester.service.appProtocol.grpc }}
+      {{- end }}
   selector:
     {{- include "mimir.selectorLabels" $args | nindent 4 }}
 

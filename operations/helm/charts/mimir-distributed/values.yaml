@@ -472,6 +472,9 @@ alertmanager:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
@@ -710,6 +713,9 @@ distributor:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -791,6 +797,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1146,6 +1155,9 @@ querier:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1221,6 +1233,9 @@ query_frontend:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1296,6 +1311,9 @@ query_scheduler:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
@@ -1374,6 +1392,9 @@ store_gateway:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -1573,6 +1594,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
