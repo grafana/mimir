@@ -57,6 +57,7 @@ The following features are currently experimental:
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
 - Distributor
   - Metrics relabeling
+    - `-distributor.metric-relabeling-enabled`
   - OTLP ingestion path
   - OTLP metadata storage
     - `-distributor.enable-otlp-metadata-storage`
