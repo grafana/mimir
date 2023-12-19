@@ -297,12 +297,12 @@ func DecodeInstantQueryTimeParams(r *http.Request) (int64, error) {
 }
 
 func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
-	start, err = util.ParseTime(r.FormValue("start"))
+	start, err = util.ParseTimeParam(r, "start", v1.MinTime.UnixMilli())
 	if err != nil {
 		return 0, 0, decorateWithParamName(err, "start")
 	}
 
-	end, err = util.ParseTime(r.FormValue("end"))
+	end, err = util.ParseTimeParam(r, "end", v1.MaxTime.UnixMilli())
 	if err != nil {
 		return 0, 0, decorateWithParamName(err, "end")
 	}
