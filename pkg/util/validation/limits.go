@@ -60,11 +60,29 @@ const (
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
 )
 
-// LimitError are errors that do not comply with the limits specified.
-type LimitError string
+// LimitError is a marker interface for the errors that do not comply with the specified limits.
+type LimitError interface {
+	error
+	limitError()
+}
 
-func (e LimitError) Error() string {
+type limitErr string
+
+// limitErr implements error and LimitError interfaces
+func (e limitErr) Error() string {
 	return string(e)
+}
+
+// limitErr implements LimitError interface
+func (e limitErr) limitError() {}
+
+func NewLimitError(msg string) LimitError {
+	return limitErr(msg)
+}
+
+func IsLimitError(err error) bool {
+	var limitErr LimitError
+	return errors.As(err, &limitErr)
 }
 
 // Limits describe all the limits for users; can be used to describe global default

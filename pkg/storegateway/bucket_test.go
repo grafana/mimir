@@ -270,7 +270,7 @@ func TestBlockLabelNames(t *testing.T) {
 	slices.Sort(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}), func(limit uint64) validation.LimitError {
-		return validation.LimitError(fmt.Sprintf("exceeded unlimited limit of %v", limit))
+		return validation.NewLimitError(fmt.Sprintf("exceeded unlimited limit of %v", limit))
 	})
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
