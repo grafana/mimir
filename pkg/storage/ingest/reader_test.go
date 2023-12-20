@@ -249,7 +249,7 @@ func TestReader_Commit(t *testing.T) {
 
 		// Shut down without having consumed any records.
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		reader = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+		_ = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
 		// No new records since the last commit (2 shutdowns ago).
 		_, err = consumer.waitRecords(0, time.Second, 0)
