@@ -728,7 +728,12 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
 
-	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,
+	cfg.API.HTTPAuthMiddleware = noauth.SetupTenantMiddleware(
+		&cfg.Server,
+		cfg.MultitenancyEnabled,
+		cfg.NoAuthTenant,
+		cfg.TenantFederation.Enabled,
+		cfg.TenantFederation.MaxTenants,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",
@@ -738,7 +743,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
-		}, cfg.NoAuthTenant)
+		})
 
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg

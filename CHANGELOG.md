@@ -23,7 +23,7 @@
 * [BUGFIX] Fix issue where all incoming HTTP requests have duplicate trace spans. #6920
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
-* [BUGFIX] Query-frontend: Validate tenant IDs according to documented behavior even when tenant federation is not enabled. #6959
+* [BUGFIX] Query-frontend: Validate tenant IDs according to [documented behavior](https://grafana.com/docs/mimir/latest/configure/about-tenant-ids/) even when tenant federation is not enabled. #6959
 
 ### Mixin
 
