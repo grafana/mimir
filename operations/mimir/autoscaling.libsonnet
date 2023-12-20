@@ -166,7 +166,7 @@
         // to have enough querier workers to run the max observed inflight requests 50% of time.
         //
         // This metric covers the case queries are piling up in the query-scheduler queue.
-        query: 'sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container, $._config.namespace],
+        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container, $._config.namespace], weight),
 
         threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
