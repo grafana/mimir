@@ -1305,8 +1305,14 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// Get a subring if tenant has shuffle shard size configured.
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
-	// Use an independent context to make sure all ingesters get samples even if we return early
-	localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	// Use an independent context to make sure all ingesters get samples even if we return early.
+	// It will still take a while to calculate which ingester gets which series,
+	// so we'll start the remote timeout once the first callback is called.
+	localCtx := context.WithoutCancel(ctx)
+	var cancelPushContext context.CancelFunc = func() {}
+	startRemoteTimeout := sync.OnceFunc(func() {
+		localCtx, cancelPushContext = context.WithTimeout(localCtx, d.cfg.RemoteTimeout)
+	})
 
 	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
@@ -1325,6 +1331,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
+			startRemoteTimeout()
+
 			var timeseriesCount, metadataCount int
 			for _, i := range indexes {
 				if i >= initialMetadataIndex {
@@ -1358,7 +1366,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			return err
 		},
 		ring.DoBatchOptions{
-			Cleanup:       func() { pushReq.CleanUp(); cancel() },
+			Cleanup:       func() { pushReq.CleanUp(); cancelPushContext() },
 			IsClientError: isClientError,
 			Go:            d.ingesterDoBatchPushWorkers,
 		},
