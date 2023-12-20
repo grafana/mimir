@@ -17,7 +17,7 @@ func TestAllPrometheusErrorTypeValues(t *testing.T) {
 
 	for _, prometheusErrorTypeString := range prometheusErrorTypeStrings {
 		errorType := Type(prometheusErrorTypeString)
-		apiError := New(errorType, "")
+		apiError := New(errorType, "").(*apiError)
 
 		if errorType == TypeUnavailable {
 			require.Equal(t, http.StatusServiceUnavailable, apiError.statusCode())
