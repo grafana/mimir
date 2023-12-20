@@ -314,14 +314,12 @@ type partitionCommitter struct {
 	logger log.Logger
 }
 
-const noOffset = -100 // using 0, -1, or -2 would be ambiguous with the semantics of the Kafka offset
-
 func newConsumerCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitionID int32, commitInterval time.Duration, logger log.Logger) *partitionCommitter {
 	c := &partitionCommitter{
 		logger:         logger,
 		kafkaCfg:       kafkaCfg,
 		partitionID:    partitionID,
-		toCommit:       atomic.NewInt64(noOffset),
+		toCommit:       atomic.NewInt64(-1),
 		admClient:      admClient,
 		commitInterval: commitInterval,
 	}
@@ -371,12 +369,11 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
 
 func (r *partitionCommitter) stop(error) error {
 	offset := r.toCommit.Load()
-	if offset == noOffset {
+	if offset < 0 {
 		return nil
 	}
-	ctx, cancel := context.WithTimeoutCause(context.Background(), 10*time.Second, fmt.Errorf("timed out while doing final partition commit"))
-	defer cancel()
-	r.commit(ctx, offset)
+	// Commit has internal timeouts, so this call shouldn't block for too long.
+	r.commit(context.Background(), offset)
 	return nil
 }
 
