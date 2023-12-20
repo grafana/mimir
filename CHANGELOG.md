@@ -68,6 +68,7 @@
   * `store_gateway_zone_c_node_affinity_matchers`
 * [FEATURE] Ingester: Allow automated zone-by-zone downscaling, that can be enabled via the `ingester_automated_downscale_enabled` flag. It is disabled by default. #6850
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
+* [BUGFIX] Always generate query-frontend headless service (otherwise istio doesn't register the pod ip's for querier to report back the results) #6964
 
 ### Mimirtool
 
