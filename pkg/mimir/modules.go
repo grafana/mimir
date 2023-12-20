@@ -687,7 +687,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
-		t.Cfg.TenantFederation,
 		util_log.Logger,
 		t.Overrides,
 		t.QueryFrontendCodec,
