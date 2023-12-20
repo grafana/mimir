@@ -1849,7 +1849,7 @@ chunks-cache:
   service:
     annotations: {}
     labels: {}
-  
+
   appProtocol:
     # -- Set the optional service protocol. Ex: "tcp"
     client: null

@@ -40,6 +40,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
+* [BUGFIX] Allow Mimir to run injected (istio); optionally add appProtocol to memcached svc's and grpc ports and always generate query-frontend headless service (otherwise istio doesn't register the pod ip's for querier to report back the results) #6964
 
 ## 5.1.4
 
