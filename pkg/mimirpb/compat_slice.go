@@ -31,7 +31,7 @@ func FromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapte
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
 // Do NOT use unsafe to convert between data types because this function may
 // get in input labels whose data structure is reused.
-func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
+func FromLabelAdaptersToLabelsWithCopy(_ *labels.SymbolTable, input []LabelAdapter) labels.Labels {
 	return CopyLabels(FromLabelAdaptersToLabels(input))
 }
 
