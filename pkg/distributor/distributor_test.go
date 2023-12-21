@@ -5194,14 +5194,14 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		totalMetadata += len(ing[ix].metadata)
 
 		for _, ts := range ing[ix].timeseries {
-			token := distrib.tokenForLabels(userName, ts.Labels)
+			token := tokenForLabels(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ing)
 			assert.Equal(t, ix, ingIx)
 		}
 
 		for _, metadataMap := range ing[ix].metadata {
 			for m := range metadataMap {
-				token := distrib.tokenForMetadata(userName, m.MetricFamilyName)
+				token := tokenForMetadata(userName, m.MetricFamilyName)
 				ingIx := getIngesterIndexForToken(token, ing)
 				assert.Equal(t, ix, ingIx)
 			}
@@ -5210,7 +5210,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
-		token := distrib.tokenForLabels(userName, ts.Labels)
+		token := tokenForLabels(userName, ts.Labels)
 		ingIx := getIngesterIndexForToken(token, ing)
 
 		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
@@ -5578,7 +5578,7 @@ func TestSendMessageMetadata(t *testing.T) {
 		Source: mimirpb.API,
 	}
 
-	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
 	require.NoError(t, err)
 
 	// Verify that d.sendToIngester added message size to metadata.

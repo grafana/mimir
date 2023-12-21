@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -593,14 +594,6 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
-	return mimirpb.ShardByAllLabelAdapters(userID, labels)
-}
-
-func (d *Distributor) tokenForMetadata(userID string, metricName string) uint32 {
-	return mimirpb.ShardByMetricName(userID, metricName)
-}
-
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
@@ -730,7 +723,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
 		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = copyString(cluster), copyString(replica)
+		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
@@ -1295,16 +1288,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		span.SetTag("organization", userID)
 	}
 
-	seriesKeys := d.getTokensForSeries(userID, req.Timeseries)
-	metadataKeys := make([]uint32, 0, len(req.Metadata))
-
-	for _, m := range req.Metadata {
-		metadataKeys = append(metadataKeys, d.tokenForMetadata(userID, m.MetricFamilyName))
-	}
-
-	// Get a subring if tenant has shuffle shard size configured.
-	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
-
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
 		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
@@ -1317,46 +1300,26 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
 	})
 
-	// All tokens, stored in order: series, metadata.
-	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
-	initialMetadataIndex := len(seriesKeys)
-	copy(keys, seriesKeys)
-	copy(keys[initialMetadataIndex:], metadataKeys)
+	// Get both series and metadata keys in one slice.
+	keys, initialMetadataIndex := getSeriesAndMetadataTokensForBatchRequest(userID, req)
+	// Get a subring if tenant has shuffle shard size configured.
+	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
-
 	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
-			var timeseriesCount, metadataCount int
-			for _, i := range indexes {
-				if i >= initialMetadataIndex {
-					metadataCount++
-				} else {
-					timeseriesCount++
-				}
-			}
-
-			timeseries := preallocSliceIfNeeded[mimirpb.PreallocTimeseries](timeseriesCount)
-			metadata := preallocSliceIfNeeded[*mimirpb.MetricMetadata](metadataCount)
-
-			for _, i := range indexes {
-				if i >= initialMetadataIndex {
-					metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
-				} else {
-					timeseries = append(timeseries, req.Timeseries[i])
-				}
-			}
+			req := req.ForIndexes(indexes, initialMetadataIndex)
 
 			// Do not cancel the remoteRequestContext in this callback:
 			// there are more callbacks using it at the same time.
 			localCtx, _ := remoteRequestContext()
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, ingester, timeseries, metadata, req.Source)
+				err = d.sendToStorage(localCtx, userID, ingester, req)
 			} else {
-				err = d.sendToIngester(localCtx, ingester, timeseries, metadata, req.Source)
+				err = d.sendToIngester(localCtx, ingester, req)
 			}
 
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -1378,23 +1341,50 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	return err
 }
 
-func preallocSliceIfNeeded[T any](size int) []T {
-	if size > 0 {
-		return make([]T, 0, size)
-	}
-	return nil
+// getSeriesAndMetadataTokensForBatchRequest returns a slice of tokens for the series and metadata from the request in this specific order.
+// Metadata tokens start at initialMetadataIndex.
+func getSeriesAndMetadataTokensForBatchRequest(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
+	seriesKeys := getTokensForSeries(userID, req.Timeseries)
+	metadataKeys := getTokensForMetadata(userID, req.Metadata)
+
+	// All tokens, stored in order: series, metadata.
+	keys = make([]uint32, len(seriesKeys)+len(metadataKeys))
+	initialMetadataIndex = len(seriesKeys)
+	copy(keys, seriesKeys)
+	copy(keys[initialMetadataIndex:], metadataKeys)
+	return keys, initialMetadataIndex
 }
 
-func (d *Distributor) getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
+func getTokensForSeries(userID string, series []mimirpb.PreallocTimeseries) []uint32 {
 	if len(series) == 0 {
 		return nil
 	}
 
 	result := make([]uint32, 0, len(series))
 	for _, ts := range series {
-		result = append(result, d.tokenForLabels(userID, ts.Labels))
+		result = append(result, tokenForLabels(userID, ts.Labels))
 	}
 	return result
+}
+
+func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []uint32 {
+	if len(metadata) == 0 {
+		return nil
+	}
+	metadataKeys := make([]uint32, 0, len(metadata))
+
+	for _, m := range metadata {
+		metadataKeys = append(metadataKeys, tokenForMetadata(userID, m.MetricFamilyName))
+	}
+	return metadataKeys
+}
+
+func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+	return mimirpb.ShardByAllLabelAdapters(userID, labels)
+}
+
+func tokenForMetadata(userID string, metricName string) uint32 {
+	return mimirpb.ShardByMetricName(userID, metricName)
 }
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
@@ -1410,23 +1400,13 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
-func copyString(s string) string {
-	return string([]byte(s))
-}
-
 // sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
-func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
 	h, err := d.ingesterPool.GetClientForInstance(ingester)
 	if err != nil {
 		return err
 	}
 	c := h.(ingester_client.IngesterClient)
-
-	req := &mimirpb.WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     source,
-	}
 
 	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 	_, err = c.Push(ctx, req)
@@ -1435,13 +1415,13 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 
 // sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
 // This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
 	partitionID, err := ingest.IngesterPartition(ingester.Id)
 	if err != nil {
 		return err
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, timeseries, metadata, source)
+	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req.Timeseries, req.Metadata, req.Source)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
