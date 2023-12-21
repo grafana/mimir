@@ -1421,7 +1421,7 @@ func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester
 		return err
 	}
 
-	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req.Timeseries, req.Metadata, req.Source)
+	return d.ingestStorageWriter.WriteSync(ctx, partitionID, userID, req)
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
