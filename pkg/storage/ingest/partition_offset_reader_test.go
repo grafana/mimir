@@ -74,10 +74,10 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	)
 
 	var (
-		ctx     = context.Background()
-		logger  = log.NewNopLogger()
-		series1 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}
-		series2 = []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}
+		ctx        = context.Background()
+		logger     = log.NewNopLogger()
+		series1Req = &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}, Source: mimirpb.API}
+		series2Req = &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_2")}, Source: mimirpb.API}
 	)
 
 	t.Run("should return the last produced offset, or -1 if the partition is empty", func(t *testing.T) {
@@ -97,14 +97,14 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		assert.Equal(t, int64(-1), offset)
 
 		// Write the 1st message.
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series1, nil, mimirpb.API))
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series1Req))
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), offset)
 
 		// Write the 2nd message.
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series2, nil, mimirpb.API))
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series2Req))
 
 		offset, err = reader.getLastProducedOffset(ctx)
 		require.NoError(t, err)
@@ -139,8 +139,8 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		)
 
 		// Write some messages.
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series1, nil, mimirpb.API))
-		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series2, nil, mimirpb.API))
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series1Req))
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, series2Req))
 		expectedOffset := int64(1)
 
 		// Slow down the 1st ListOffsets request.
