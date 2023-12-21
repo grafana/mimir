@@ -153,7 +153,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container, querier_container, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -166,7 +166,7 @@
         // to have enough querier workers to run the max observed inflight requests 50% of time.
         //
         // This metric covers the case queries are piling up in the query-scheduler queue.
-        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container, $._config.namespace], weight),
+        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
 
         threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
@@ -177,7 +177,7 @@
         //
         // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
         // but queriers are busy.
-        query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container, $._config.namespace], weight),
+        query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
 
         threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
@@ -367,8 +367,8 @@
   querier_scaled_object: if !$._config.autoscaling_querier_enabled then null else
     self.newQuerierScaledObject(
       name='querier',
-      query_scheduler_container='query-scheduler',
-      querier_container='querier',
+      query_scheduler_container_name='query-scheduler',
+      querier_container_name='querier',
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_querier_min_replicas,
       max_replicas=$._config.autoscaling_querier_max_replicas,
