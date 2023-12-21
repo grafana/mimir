@@ -2161,6 +2161,7 @@ type UserIDStats struct {
 
 // AllUserStats returns statistics about all users.
 // Note it does not divide by the ReplicationFactor like UserStats()
+// TODO: Deprecated, remove in v2.14.
 func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 	// Add up by user, across all responses from ingesters
 	perUserTotals := make(map[string]UserStats)

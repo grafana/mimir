@@ -239,7 +239,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
-		{Desc: "Usage statistics", Path: "/distributor/all_user_stats"},
+		{Desc: "Usage statistics (deprecated)", Path: "/distributor/all_user_stats"},
 		{Desc: "HA tracker status", Path: "/distributor/ha_tracker"},
 	})
 

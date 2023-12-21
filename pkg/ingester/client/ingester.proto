@@ -23,8 +23,8 @@ service Ingester {
 
   rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
   rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};
-  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {};
-  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {};
+  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {}; // TODO: Deprecated, remove in v2.14.
+  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {}; // TODO: Deprecated, remove in v2.14.
   rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {};
   rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse) {};
 
