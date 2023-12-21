@@ -4,28 +4,21 @@
 // Provenance-includes-copyright: The Cortex Authors.
 
 // Package noauth provides middlewares that injects a tenant ID so the rest of the code
-// can continue to be multitenant and validates the number of tenant IDs if supplied.
+// can continue to be multitenant.
 package noauth
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"google.golang.org/grpc"
 )
 
-const (
-	tooManyTenantsTemplate = "too many tenant IDs present. max: %d actual: %d"
-	noTenantIDTemplate     = "no tenant ID present. set tenant ID using the %s header"
-)
-
-// SetupTenantMiddleware for the given server config.
-func SetupTenantMiddleware(config *server.Config, multitenancyEnabled bool, noMultitenancyTenant string, federationEnabled bool, federationMaxTenants int, noGRPCAuthOn []string) middleware.Interface {
+// SetupAuthMiddleware for the given server config.
+func SetupAuthMiddleware(config *server.Config, multitenancyEnabled bool, noMultitenancyTenant string, noGRPCAuthOn []string) middleware.Interface {
 	if multitenancyEnabled {
 		ignoredMethods := map[string]bool{}
 		for _, m := range noGRPCAuthOn {
@@ -48,7 +41,7 @@ func SetupTenantMiddleware(config *server.Config, multitenancyEnabled bool, noMu
 			},
 		)
 
-		return newTenantValidationMiddleware(federationEnabled, federationMaxTenants)
+		return middleware.AuthenticateUser
 	}
 
 	config.GRPCMiddleware = append(config.GRPCMiddleware,
@@ -74,37 +67,6 @@ func SetupTenantMiddleware(config *server.Config, multitenancyEnabled bool, noMu
 		})
 	})
 
-}
-
-func newTenantValidationMiddleware(federation bool, maxTenants int) middleware.Interface {
-	return middleware.Func(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, ctx, err := user.ExtractOrgIDFromHTTPRequest(r)
-			if err != nil {
-				http.Error(w, fmt.Sprintf(noTenantIDTemplate, user.OrgIDHeaderName), http.StatusUnauthorized)
-				return
-			}
-
-			ids, err := tenant.TenantIDs(ctx)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusUnauthorized)
-				return
-			}
-
-			numIds := len(ids)
-			if !federation && numIds > 1 {
-				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, 1, numIds), http.StatusUnprocessableEntity)
-				return
-			}
-
-			if federation && maxTenants > 0 && numIds > maxTenants {
-				http.Error(w, fmt.Sprintf(tooManyTenantsTemplate, maxTenants, numIds), http.StatusUnprocessableEntity)
-				return
-			}
-
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	})
 }
 
 type serverStream struct {

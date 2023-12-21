@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
-package noauth
+package api
 
 import (
 	"io"
@@ -9,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/require"
@@ -23,14 +22,6 @@ func TestNewTenantValidationMiddleware(t *testing.T) {
 		expectedHTTPStatus int
 		expectedBodyText   string
 	}{
-		{
-			name:               "federation disabled, missing tenant header",
-			federation:         false,
-			maxTenants:         0,
-			header:             "",
-			expectedHTTPStatus: 401,
-			expectedBodyText:   "no tenant ID present",
-		},
 		{
 			name:               "federation disabled, invalid tenant header",
 			federation:         false,
@@ -54,14 +45,6 @@ func TestNewTenantValidationMiddleware(t *testing.T) {
 			header:             "tenant-a|tenant-b",
 			expectedHTTPStatus: 422,
 			expectedBodyText:   "too many tenant IDs present",
-		},
-		{
-			name:               "federation enabled, missing tenant header",
-			federation:         true,
-			maxTenants:         0,
-			header:             "",
-			expectedHTTPStatus: 401,
-			expectedBodyText:   "no tenant ID present",
 		},
 		{
 			name:               "federation enabled, invalid tenant header",
@@ -106,7 +89,9 @@ func TestNewTenantValidationMiddleware(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			nop := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-			handler := newTenantValidationMiddleware(tc.federation, tc.maxTenants).Wrap(nop)
+			// Note that we add the authentication middleware since the tenant validation middleware relies
+			// on tenant ID being set in the context associated with the request.
+			handler := middleware.Merge(middleware.AuthenticateUser, NewTenantValidationMiddleware(tc.federation, tc.maxTenants)).Wrap(nop)
 
 			req := httptest.NewRequest("GET", "/", nil)
 			req.Header.Set(user.OrgIDHeaderName, tc.header)
