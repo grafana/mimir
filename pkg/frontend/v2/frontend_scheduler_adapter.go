@@ -74,7 +74,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
 	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
-		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest)
+		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest, time.Now)
 		if err != nil {
 			return nil, err
 		}
