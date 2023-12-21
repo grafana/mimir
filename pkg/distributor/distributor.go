@@ -1301,7 +1301,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	})
 
 	// Get both series and metadata keys in one slice.
-	keys, initialMetadataIndex := getSeriesAndMetadataTokensForBatchRequest(userID, req)
+	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 	// Get a subring if tenant has shuffle shard size configured.
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
@@ -1341,9 +1341,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	return err
 }
 
-// getSeriesAndMetadataTokensForBatchRequest returns a slice of tokens for the series and metadata from the request in this specific order.
+// getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
 // Metadata tokens start at initialMetadataIndex.
-func getSeriesAndMetadataTokensForBatchRequest(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
+func getSeriesAndMetadataTokens(userID string, req *mimirpb.WriteRequest) (keys []uint32, initialMetadataIndex int) {
 	seriesKeys := getTokensForSeries(userID, req.Timeseries)
 	metadataKeys := getTokensForMetadata(userID, req.Metadata)
 
