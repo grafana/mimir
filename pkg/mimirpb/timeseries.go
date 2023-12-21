@@ -593,7 +593,7 @@ func copyToYoloString(buf []byte, src string) (string, []byte) {
 
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
-func (req *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
 	var timeseriesCount, metadataCount int
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
@@ -608,16 +608,16 @@ func (req *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Wr
 
 	for _, i := range indexes {
 		if i >= initialMetadataIndex {
-			metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
 		} else {
-			timeseries = append(timeseries, req.Timeseries[i])
+			timeseries = append(timeseries, p.Timeseries[i])
 		}
 	}
 
 	return &WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
-		Source:     req.Source,
+		Source:     p.Source,
 	}
 }
 
