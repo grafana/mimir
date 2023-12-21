@@ -32,17 +32,31 @@ var (
 	DoNotLogErrorHeaderKey = http.CanonicalHeaderKey("X-DoNotLogError")
 )
 
+type Options func(*Server)
+
+var (
+	Return4XXErrorsOption Options = func(s *Server) {
+		s.return4XXErrors = true
+	}
+)
+
+func applyServerOptions(s *Server, opts ...Options) *Server {
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
 // Server implements HTTPServer.  HTTPServer is a generated interface that gRPC
 // servers must implement.
 type Server struct {
-	handler http.Handler
+	handler         http.Handler
+	return4XXErrors bool
 }
 
 // NewServer makes a new Server.
-func NewServer(handler http.Handler) *Server {
-	return &Server{
-		handler: handler,
-	}
+func NewServer(handler http.Handler, opts ...Options) *Server {
+	return applyServerOptions(&Server{handler: handler}, opts...)
 }
 
 // Handle implements HTTPServer.
@@ -67,7 +81,7 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		Headers: httpgrpc.FromHeader(header),
 		Body:    recorder.Body.Bytes(),
 	}
-	if recorder.Code/100 == 5 {
+	if s.shouldReturnError(resp) {
 		err := httpgrpc.ErrorFromHTTPResponse(resp)
 		if doNotLogError {
 			err = middleware.DoNotLogError{Err: err}
@@ -75,6 +89,11 @@ func (s Server) Handle(ctx context.Context, r *httpgrpc.HTTPRequest) (*httpgrpc.
 		return nil, err
 	}
 	return resp, nil
+}
+
+func (s Server) shouldReturnError(resp *httpgrpc.HTTPResponse) bool {
+	mask := resp.GetCode() / 100
+	return mask == 5 || (s.return4XXErrors && mask == 4)
 }
 
 // Client is a http.Handler that forwards the request over gRPC.

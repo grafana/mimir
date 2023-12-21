@@ -94,10 +94,11 @@ type Config struct {
 	HTTPTLSConfig TLSConfig `yaml:"http_tls_config"`
 	GRPCTLSConfig TLSConfig `yaml:"grpc_tls_config"`
 
-	RegisterInstrumentation               bool `yaml:"register_instrumentation"`
-	ReportGRPCCodesInInstrumentationLabel bool `yaml:"report_grpc_codes_in_instrumentation_label_enabled"`
-	ExcludeRequestInLog                   bool `yaml:"-"`
-	DisableRequestSuccessLog              bool `yaml:"-"`
+	RegisterInstrumentation                  bool `yaml:"register_instrumentation"`
+	ReportGRPCCodesInInstrumentationLabel    bool `yaml:"report_grpc_codes_in_instrumentation_label_enabled"`
+	ReportHTTP4XXCodesInInstrumentationLabel bool `yaml:"report_http_4xx_codes_in_instrumentation_label_enabled"`
+	ExcludeRequestInLog                      bool `yaml:"-"`
+	DisableRequestSuccessLog                 bool `yaml:"-"`
 
 	ServerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 	HTTPServerReadTimeout         time.Duration `yaml:"http_server_read_timeout"`
@@ -174,6 +175,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
 	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
 	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
+	f.BoolVar(&cfg.ReportHTTP4XXCodesInInstrumentationLabel, "server.report-http-4xx-codes-in-instrumentation-label-enabled", false, "If set to true, HTTP 4xx statuses will be reported in instrumentation labels as \"4xx\". Otherwise, they will be reported as \"success\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for entire HTTP request, including headers and body.")
 	f.DurationVar(&cfg.HTTPServerReadHeaderTimeout, "server.http-read-header-timeout", 0, "Read timeout for HTTP request headers. If set to 0, value of -server.http-read-timeout is used.")
@@ -550,9 +552,12 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	// Setup gRPC server
-	// for HTTP over gRPC, ensure we don't double-count the middleware
-	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP))
+	var serverOptions []httpgrpc_server.Options
+	if s.cfg.ReportHTTP4XXCodesInInstrumentationLabel {
+		serverOptions = []httpgrpc_server.Options{httpgrpc_server.Return4XXErrorsOption}
+	}
+	// Setup gRPC server for HTTP over gRPC, ensure we don't double-count the middleware
+	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))
 
 	go func() {
 		err := s.GRPC.Serve(s.grpcListener)

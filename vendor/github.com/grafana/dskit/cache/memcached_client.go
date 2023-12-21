@@ -37,11 +37,8 @@ var (
 	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
 	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
-	_ RemoteCacheClient = (*memcachedClient)(nil)
+	_ RemoteCacheClient = (*MemcachedClient)(nil)
 )
-
-// MemcachedClient for compatible.
-type MemcachedClient = RemoteCacheClient
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
@@ -159,7 +156,7 @@ func (c *MemcachedClientConfig) Validate() error {
 	return nil
 }
 
-type memcachedClient struct {
+type MemcachedClient struct {
 	*baseClient
 
 	logger   log.Logger
@@ -185,10 +182,10 @@ type memcachedClient struct {
 
 // AddressProvider performs node address resolution given a list of clusters.
 type AddressProvider interface {
-	// Resolves the provided list of memcached cluster to the actual nodes
+	// Resolve resolves the provided list of memcached cluster to the actual nodes
 	Resolve(context.Context, []string) error
 
-	// Returns the nodes
+	// Addresses returns the nodes
 	Addresses() []string
 }
 
@@ -197,8 +194,8 @@ type memcachedGetMultiResult struct {
 	err   error
 }
 
-// NewMemcachedClientWithConfig makes a new RemoteCacheClient.
-func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
+// NewMemcachedClientWithConfig makes a new MemcachedClient.
+func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (*MemcachedClient, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -242,7 +239,7 @@ func newMemcachedClient(
 	config MemcachedClientConfig,
 	reg prometheus.Registerer,
 	name string,
-) (*memcachedClient, error) {
+) (*MemcachedClient, error) {
 	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
@@ -258,7 +255,7 @@ func newMemcachedClient(
 
 	metrics := newClientMetrics(backwardCompatibleRegs)
 
-	c := &memcachedClient{
+	c := &MemcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		logger:          log.With(logger, "name", name),
 		config:          config,
@@ -305,7 +302,7 @@ func newMemcachedClient(
 	return c, nil
 }
 
-func (c *memcachedClient) Stop() {
+func (c *MemcachedClient) Stop() {
 	close(c.stop)
 
 	// Stop running async operations.
@@ -315,7 +312,7 @@ func (c *memcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *memcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
 	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
@@ -343,7 +340,7 @@ func toMemcacheOptions(opts ...Option) []memcache.Option {
 	return out
 }
 
-func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -375,7 +372,7 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 	return hits
 }
 
-func (c *memcachedClient) Delete(ctx context.Context, key string) error {
+func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
 	return c.delete(ctx, key, func(ctx context.Context, key string) error {
 		var err error
 		select {
@@ -388,7 +385,7 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 	})
 }
 
-func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
+func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
 	// Do not batch if the input keys are less than the max batch size.
 	if (c.config.MaxGetMultiBatchSize <= 0) || (len(keys) <= c.config.MaxGetMultiBatchSize) {
 		// Even if we're not splitting the input into batches, make sure that our single request
@@ -467,7 +464,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, op
 	return items, lastErr
 }
 
-func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, opts ...memcache.Option) (items map[string]*memcache.Item, err error) {
+func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opts ...memcache.Option) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
 	c.metrics.operations.WithLabelValues(opGetMulti).Inc()
 
@@ -502,7 +499,7 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 // they were supplied in). Note that output is not guaranteed to be any particular order
 // *except* that keys sharded to the same server will be together. The order of keys
 // returned may change from call to call.
-func (c *memcachedClient) sortKeysByServer(keys []string) []string {
+func (c *MemcachedClient) sortKeysByServer(keys []string) []string {
 	bucketed := make(map[string][]string)
 
 	for _, key := range keys {
@@ -524,7 +521,7 @@ func (c *memcachedClient) sortKeysByServer(keys []string) []string {
 	return out
 }
 
-func (c *memcachedClient) resolveAddrsLoop() {
+func (c *MemcachedClient) resolveAddrsLoop() {
 	ticker := time.NewTicker(dnsProviderUpdateInterval)
 	defer ticker.Stop()
 
@@ -541,7 +538,7 @@ func (c *memcachedClient) resolveAddrsLoop() {
 	}
 }
 
-func (c *memcachedClient) resolveAddrs() error {
+func (c *MemcachedClient) resolveAddrs() error {
 	// Resolve configured addresses with a reasonable timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
