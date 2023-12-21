@@ -1305,8 +1305,17 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// Get a subring if tenant has shuffle shard size configured.
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
-	// Use an independent context to make sure all ingesters get samples even if we return early
-	localCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	if d.cfg.WriteRequestsBufferPoolingEnabled {
+		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
+		ctx = ingester_client.WithSlabPool(ctx, slabPool)
+	}
+
+	// Use an independent context to make sure all ingesters get samples even if we return early.
+	// It will still take a while to calculate which ingester gets which series,
+	// so we'll start the remote timeout once the first callback is called.
+	remoteRequestContext := sync.OnceValues(func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	})
 
 	// All tokens, stored in order: series, metadata.
 	keys := make([]uint32, len(seriesKeys)+len(metadataKeys))
@@ -1317,11 +1326,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
-
-	if d.cfg.WriteRequestsBufferPoolingEnabled {
-		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)
-		localCtx = ingester_client.WithSlabPool(localCtx, slabPool)
-	}
 
 	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, subRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
@@ -1345,6 +1349,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 				}
 			}
 
+			// Do not cancel the remoteRequestContext in this callback:
+			// there are more callbacks using it at the same time.
+			localCtx, _ := remoteRequestContext()
 			var err error
 			if d.cfg.IngestStorageConfig.Enabled {
 				err = d.sendToStorage(localCtx, userID, ingester, timeseries, metadata, req.Source)
@@ -1358,7 +1365,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 			return err
 		},
 		ring.DoBatchOptions{
-			Cleanup:       func() { pushReq.CleanUp(); cancel() },
+			Cleanup: func() {
+				pushReq.CleanUp()
+				_, cancel := remoteRequestContext()
+				cancel()
+			},
 			IsClientError: isClientError,
 			Go:            d.ingesterDoBatchPushWorkers,
 		},
