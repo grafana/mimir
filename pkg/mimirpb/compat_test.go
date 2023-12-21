@@ -189,9 +189,10 @@ func TestFromLabelAdaptersToLabels(t *testing.T) {
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
+	st := labels.NewSymbolTable()
 	input := []LabelAdapter{{Name: "hello", Value: "world"}}
 	expected := labels.FromStrings("hello", "world")
-	actual := FromLabelAdaptersToLabelsWithCopy(input)
+	actual := FromLabelAdaptersToLabelsWithCopy(st, input)
 
 	assert.Equal(t, expected, actual)
 
@@ -203,13 +204,14 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
+	st := labels.NewSymbolTable()
 	input := []LabelAdapter{
 		{Name: "hello", Value: "world"},
 		{Name: "some label", Value: "and its value"},
 		{Name: "long long long long long label name", Value: "perhaps even longer label value, but who's counting anyway?"}}
 
 	for i := 0; i < b.N; i++ {
-		FromLabelAdaptersToLabelsWithCopy(input)
+		FromLabelAdaptersToLabelsWithCopy(st, input)
 	}
 }
 

@@ -87,6 +87,7 @@ var (
 
 type userTSDB struct {
 	db             *tsdb.DB
+	symbolTable    atomic.Pointer[labels.SymbolTable]
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -612,4 +613,8 @@ func (u *userTSDB) computeOwnedSeries() int {
 		}
 	})
 	return count
+}
+
+func (u *userTSDB) resetSymbolTable() {
+	u.symbolTable.Store(labels.NewSymbolTable())
 }
