@@ -87,6 +87,7 @@ type Config struct {
 	NativeAWSAuthEnabled bool           `yaml:"native_aws_auth_enabled" category:"experimental"`
 	PartSize             uint64         `yaml:"part_size" category:"experimental"`
 	SendContentMd5       bool           `yaml:"send_content_md5" category:"experimental"`
+	STSEndpoint          string         `yaml:"sts_endpoint"`
 
 	SSE  SSEConfig  `yaml:"sse"`
 	HTTP HTTPConfig `yaml:"http"`
@@ -111,6 +112,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.NativeAWSAuthEnabled, prefix+"s3.native-aws-auth-enabled", false, "If enabled, it will use the default authentication methods of the AWS SDK for go based on known environment variables and known AWS config files.")
 	f.Uint64Var(&cfg.PartSize, prefix+"s3.part-size", 0, "The minimum file size in bytes used for multipart uploads. If 0, the value is optimally computed for each object.")
 	f.BoolVar(&cfg.SendContentMd5, prefix+"s3.send-content-md5", false, "If enabled, a Content-MD5 header is sent with S3 Put Object requests. Consumes more resources to compute the MD5, but may improve compatibility with object storage services that do not support checksums.")
+	f.StringVar(&cfg.STSEndpoint, prefix+"s3.sts-endpoint", "", "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service")
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)
 }
