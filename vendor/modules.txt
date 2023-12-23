@@ -364,8 +364,8 @@ github.com/go-openapi/analysis/internal/flatten/operations
 github.com/go-openapi/analysis/internal/flatten/replace
 github.com/go-openapi/analysis/internal/flatten/schutils
 github.com/go-openapi/analysis/internal/flatten/sortref
-# github.com/go-openapi/errors v0.20.4
-## explicit; go 1.14
+# github.com/go-openapi/errors v0.21.0
+## explicit; go 1.19
 github.com/go-openapi/errors
 # github.com/go-openapi/jsonpointer v0.20.0
 ## explicit; go 1.18
@@ -390,11 +390,11 @@ github.com/go-openapi/runtime/security
 # github.com/go-openapi/spec v0.20.9
 ## explicit; go 1.13
 github.com/go-openapi/spec
-# github.com/go-openapi/strfmt v0.21.9
+# github.com/go-openapi/strfmt v0.21.10
 ## explicit; go 1.19
 github.com/go-openapi/strfmt
-# github.com/go-openapi/swag v0.22.4
-## explicit; go 1.18
+# github.com/go-openapi/swag v0.22.5
+## explicit; go 1.19
 github.com/go-openapi/swag
 # github.com/go-openapi/validate v0.22.1
 ## explicit; go 1.14
@@ -901,7 +901,7 @@ github.com/prometheus/exporter-toolkit/web
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v0.0.0-20231220125736-12d2c1038b96
 ## explicit; go 1.20
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1093,7 +1093,7 @@ go.etcd.io/etcd/client/v3
 go.etcd.io/etcd/client/v3/credentials
 go.etcd.io/etcd/client/v3/internal/endpoint
 go.etcd.io/etcd/client/v3/internal/resolver
-# go.mongodb.org/mongo-driver v1.13.0
+# go.mongodb.org/mongo-driver v1.13.1
 ## explicit; go 1.13
 go.mongodb.org/mongo-driver/bson
 go.mongodb.org/mongo-driver/bson/bsoncodec
@@ -1187,7 +1187,7 @@ go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-# golang.org/x/crypto v0.16.0
+# golang.org/x/crypto v0.17.0
 ## explicit; go 1.18
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -1210,7 +1210,7 @@ golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/pbkdf2
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-# golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb
+# golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
 ## explicit; go 1.20
 golang.org/x/exp/constraints
 golang.org/x/exp/slices
@@ -1503,7 +1503,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.3.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231220125736-12d2c1038b96
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6

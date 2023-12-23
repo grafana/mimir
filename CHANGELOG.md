@@ -12,6 +12,7 @@
 * [ENHANCEMENT] Query-Frontend and Query-Scheduler: split tenant query request queues by query component with `query-frontend.additional-query-queue-dimensions-enabled` and `query-scheduler.additional-query-queue-dimensions-enabled`. #6772
 * [ENHANCEMENT] Store-gateway: include more information about lazy index-header loading in traces. #6922
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
+* [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
 * [ENHANCEMENT] Store Provider: allow sts endpoint support for s3 storage provider #6172
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
@@ -34,7 +35,6 @@
 ### Jsonnet
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
-* [ENHANCEMENT] Alerts: Add `MimirStoreGatewayTooManyFailedOperations` warning  alert that triggers when Mimir store-gateway report error when interacting with the object storage. #6831
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`
@@ -69,11 +69,14 @@
   * `store_gateway_zone_b_node_affinity_matchers`
   * `store_gateway_zone_c_node_affinity_matchers`
 * [FEATURE] Ingester: Allow automated zone-by-zone downscaling, that can be enabled via the `ingester_automated_downscale_enabled` flag. It is disabled by default. #6850
+* [ENHANCEMENT] Alerts: Add `MimirStoreGatewayTooManyFailedOperations` warning alert that triggers when Mimir store-gateway report error when interacting with the object storage. #6831
+* [ENHANCEMENT] Querier HPA: improved scaling metric and scaling policies, in order to scale up and down more gradually. #6971
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mimirtool
 
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
+* [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load` #6760
 * [BUGFIX] Analyze rule-file: .metricsUsed field wasn't populated. #6953
 
 ### Mimir Continuous Test

@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryLimiterCtxKey struct{}
@@ -73,7 +74,7 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
+func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) validation.LimitError {
 	// If the max series is unlimited just return without managing map
 	if ql.maxSeriesPerQuery == 0 {
 		return nil
@@ -106,7 +107,7 @@ func (ql *QueryLimiter) uniqueSeriesCount() int {
 }
 
 // AddChunkBytes adds the input chunk size in bytes and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
+func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) validation.LimitError {
 	if ql.maxChunkBytesPerQuery == 0 {
 		return nil
 	}
@@ -124,7 +125,7 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 	return nil
 }
 
-func (ql *QueryLimiter) AddChunks(count int) error {
+func (ql *QueryLimiter) AddChunks(count int) validation.LimitError {
 	if ql.maxChunksPerQuery == 0 {
 		return nil
 	}
@@ -142,7 +143,7 @@ func (ql *QueryLimiter) AddChunks(count int) error {
 	return nil
 }
 
-func (ql *QueryLimiter) AddEstimatedChunks(count int) error {
+func (ql *QueryLimiter) AddEstimatedChunks(count int) validation.LimitError {
 	if ql.maxEstimatedChunksPerQuery == 0 {
 		return nil
 	}

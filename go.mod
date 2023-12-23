@@ -12,8 +12,8 @@ require (
 	github.com/failsafe-go/failsafe-go v0.4.2
 	github.com/felixge/fgprof v0.9.3
 	github.com/go-kit/log v0.2.1
-	github.com/go-openapi/strfmt v0.21.9
-	github.com/go-openapi/swag v0.22.4
+	github.com/go-openapi/strfmt v0.21.10
+	github.com/go-openapi/swag v0.22.5
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
 	github.com/golang/protobuf v1.5.3
@@ -43,7 +43,7 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.2.1
-	golang.org/x/crypto v0.16.0
+	golang.org/x/crypto v0.17.0
 	golang.org/x/net v0.19.0
 	golang.org/x/sync v0.5.0
 	golang.org/x/time v0.4.0
@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/otel v1.19.0
 	go.opentelemetry.io/otel/trace v1.19.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb
+	golang.org/x/exp v0.0.0-20231219180239-dc181d75b848
 	google.golang.org/api v0.150.0
 	google.golang.org/protobuf v1.31.0
 	sigs.k8s.io/kustomize/kyaml v0.14.3
@@ -154,7 +154,7 @@ require (
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.4 // indirect
-	github.com/go-openapi/errors v0.20.4 // indirect
+	github.com/go-openapi/errors v0.21.0 // indirect
 	github.com/go-openapi/jsonpointer v0.20.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/loads v0.21.2 // indirect
@@ -230,7 +230,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
-	go.mongodb.org/mongo-driver v1.13.0 // indirect
+	go.mongodb.org/mongo-driver v1.13.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/collector/featuregate v1.0.0-rcv0018 // indirect
 	go.opentelemetry.io/collector/semconv v0.89.0 // indirect
@@ -255,7 +255,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231207110551-060dc59065d8
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20231220125736-12d2c1038b96
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

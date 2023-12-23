@@ -161,6 +161,8 @@ func TestReader_Commit(t *testing.T) {
 	)
 
 	t.Run("resume at committed", func(t *testing.T) {
+		t.Parallel()
+
 		const commitInterval = 100 * time.Millisecond
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -189,8 +191,10 @@ func TestReader_Commit(t *testing.T) {
 		assert.Equal(t, [][]byte{recordsSentAfterShutdown}, records)
 	})
 
-	t.Run("respect commit interval", func(t *testing.T) {
-		// a very long commit interval effectively means no commits
+	t.Run("commit at shutdown", func(t *testing.T) {
+		t.Parallel()
+
+		// A very long commit interval effectively means no regular commits.
 		const commitInterval = time.Second * 15
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -211,7 +215,44 @@ func TestReader_Commit(t *testing.T) {
 		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("4"))
 		startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
 
-		_, err = consumer.waitRecords(4, time.Second, 0)
+		// There should be only one record - the one produced after the shutdown.
+		// The offset of record "3" should have been committed at shutdown and the reader should have resumed from there.
+		_, err = consumer.waitRecords(1, time.Second, time.Second)
+		assert.NoError(t, err)
+	})
+
+	t.Run("commit at shutdown doesn't persist if we haven't consumed any records since startup", func(t *testing.T) {
+		t.Parallel()
+		// A very long commit interval effectively means no regular commits.
+		const commitInterval = time.Second * 15
+		ctx, cancel := context.WithCancelCause(context.Background())
+		t.Cleanup(func() { cancel(errors.New("test done")) })
+
+		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+
+		consumer := newTestConsumer(4)
+		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("2"))
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("3"))
+
+		_, err := consumer.waitRecords(3, time.Second, 0)
+		require.NoError(t, err)
+
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		reader = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// No new records since the last commit.
+		_, err = consumer.waitRecords(0, time.Second, 0)
+		assert.NoError(t, err)
+
+		// Shut down without having consumed any records.
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		_ = startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
+
+		// No new records since the last commit (2 shutdowns ago).
+		_, err = consumer.waitRecords(0, time.Second, 0)
 		assert.NoError(t, err)
 	})
 }

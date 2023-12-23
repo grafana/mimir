@@ -319,11 +319,11 @@ func newConsumerCommitter(kafkaCfg KafkaConfig, admClient *kadm.Client, partitio
 		logger:         logger,
 		kafkaCfg:       kafkaCfg,
 		partitionID:    partitionID,
-		toCommit:       atomic.NewInt64(0),
+		toCommit:       atomic.NewInt64(-1),
 		admClient:      admClient,
 		commitInterval: commitInterval,
 	}
-	c.Service = services.NewBasicService(nil, c.run, nil)
+	c.Service = services.NewBasicService(nil, c.run, c.stop)
 	return c
 }
 
@@ -346,22 +346,35 @@ func (r *partitionCommitter) run(ctx context.Context) error {
 				continue
 			}
 			previousOffset = currOffset
-
-			toCommit := kadm.Offsets{}
-			// Commit the offset after the last record.
-			// The reason for this is that we resume consumption at this offset.
-			// Leader epoch is -1 because we don't know it. This lets Kafka figure it out.
-			toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, currOffset+1, -1)
-
-			committed, err := r.admClient.CommitOffsets(ctx, consumerGroup, toCommit)
-			if err != nil || !committed.Ok() {
-				level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", currOffset)
-			} else {
-				committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
-				level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
-			}
+			r.commit(ctx, currOffset)
 		}
 	}
+}
+
+func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
+	toCommit := kadm.Offsets{}
+	// Commit the offset after the last record.
+	// The reason for this is that we resume consumption at this offset.
+	// Leader epoch is -1 because we don't know it. This lets Kafka figure it out.
+	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
+
+	committed, err := r.admClient.CommitOffsets(ctx, consumerGroup, toCommit)
+	if err != nil || !committed.Ok() {
+		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", offset)
+	} else {
+		committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
+		level.Debug(r.logger).Log("msg", "committed offset", "offset", committedOffset.Offset.At)
+	}
+}
+
+func (r *partitionCommitter) stop(error) error {
+	offset := r.toCommit.Load()
+	if offset < 0 {
+		return nil
+	}
+	// Commit has internal timeouts, so this call shouldn't block for too long.
+	r.commit(context.Background(), offset)
+	return nil
 }
 
 type readerMetrics struct {

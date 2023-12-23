@@ -334,10 +334,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	}
 
 	quorumConfig := d.queryQuorumConfig(ctx, replicationSet)
-	quorumConfig.IsTerminalError = func(err error) bool {
-		_, isLimitError := err.(validation.LimitError)
-		return isLimitError
-	}
+	quorumConfig.IsTerminalError = validation.IsLimitError
 
 	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
 	if err != nil {
