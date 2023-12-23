@@ -117,6 +117,20 @@ func TestConfig_Validate(t *testing.T) {
 				}
 			},
 		},
+		"should pass with using sts endpoint": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+					StorageClass:     s3_service.StorageClassStandard,
+					STSEndpoint:      "sts.eu-central-1.amazonaws.com",
+				}
+				return cfg
+			},
+		},
 	}
 
 	for testName, testData := range tests {
