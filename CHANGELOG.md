@@ -22,6 +22,7 @@
 * [BUGFIX] Fix issue where all incoming HTTP requests have duplicate trace spans. #6920
 * [BUGFIX] Querier: do not retry requests to store-gateway when a query gets canceled. #6934
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
+* [BUGFIX] Distributor: distributor might start serving writes with an empty HA tracker state. #5796
 
 ### Mixin
 

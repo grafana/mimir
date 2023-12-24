@@ -202,8 +202,48 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		t.client = client
 	}
 
-	t.Service = services.NewBasicService(nil, t.loop, nil)
+	t.Service = services.NewBasicService(t.preLoadKVStore, t.loop, nil)
 	return t, nil
+}
+
+func (h *haTracker) preLoadKVStore(ctx context.Context) error {
+	if !h.cfg.EnableHATracker {
+		return nil
+	}
+
+	// haTracker holds HATrackerConfig with the prefix.
+	keys, err := h.client.List(ctx, "")
+	if err != nil {
+		level.Warn(h.logger).Log("msg", "preLoadKVStore: failed to list replica keys", "err", err)
+		return err
+	}
+
+	if len(keys) == 0 {
+		level.Warn(h.logger).Log("msg", "preLoadKVStore: no keys for HA tracker prefix", "err", err)
+		return nil
+	}
+
+	for i := 0; i < len(keys); i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		val, err := h.client.Get(ctx, keys[i])
+		if err != nil {
+			level.Warn(h.logger).Log("msg", "preLoadKVStore: failed to get replica value", "key", keys[i], "err", err)
+			return err
+		}
+
+		desc, ok := val.(*ReplicaDesc)
+		if !ok {
+			level.Error(h.logger).Log("msg", "preLoadKVStore: got invalid replica descriptor", "key", keys[i])
+			continue
+		}
+
+		h.processKVStoreEntry(keys[i], desc)
+	}
+
+	return nil
 }
 
 // Follows pattern used by ring for WatchKey.
@@ -227,38 +267,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 	// which would have given us a prefixed KVStore client. So, we can pass empty string here.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
 		replica := value.(*ReplicaDesc)
-		segments := strings.SplitN(key, "/", 2)
-
-		// Valid key would look like cluster/replica, and a key without a / such as `ring` would be invalid.
-		if len(segments) != 2 {
-			return true
-		}
-
-		user := segments[0]
-		cluster := segments[1]
-
-		if replica.DeletedAt > 0 {
-			h.electedReplicaChanges.DeleteLabelValues(user, cluster)
-			h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
-
-			h.electedLock.Lock()
-			defer h.electedLock.Unlock()
-			userClusters := h.clusters[user]
-			if userClusters != nil {
-				delete(userClusters, cluster)
-				if len(userClusters) == 0 {
-					delete(h.clusters, user)
-				}
-			}
-			return true
-		}
-
-		// Store the received information into our cache
-		h.electedLock.Lock()
-		h.updateCache(user, cluster, replica)
-		h.electedLock.Unlock()
-		h.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
-		return true
+		return h.processKVStoreEntry(key, replica)
 	})
 
 	wg.Wait()
@@ -274,6 +283,41 @@ const (
 	deletionTimeout = 30 * time.Minute
 )
 
+func (h *haTracker) processKVStoreEntry(key string, replica *ReplicaDesc) bool {
+	segments := strings.SplitN(key, "/", 2)
+
+	// Valid key would look like cluster/replica, and a key without a / such as `ring` would be invalid.
+	if len(segments) != 2 {
+		return true
+	}
+
+	user := segments[0]
+	cluster := segments[1]
+
+	if replica.DeletedAt > 0 {
+		h.electedReplicaChanges.DeleteLabelValues(user, cluster)
+		h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
+
+		h.electedLock.Lock()
+		defer h.electedLock.Unlock()
+		userClusters := h.clusters[user]
+		if userClusters != nil {
+			delete(userClusters, cluster)
+			if len(userClusters) == 0 {
+				delete(h.clusters, user)
+			}
+		}
+		return true
+	}
+
+	// Store the received information into our cache
+	h.electedLock.Lock()
+	h.updateCache(user, cluster, replica)
+	h.electedLock.Unlock()
+	h.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
+
+	return true
+}
 func (h *haTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()

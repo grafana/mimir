@@ -154,7 +154,6 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
-
 	// Write the first time.
 	now := time.Now()
 
@@ -869,4 +868,56 @@ func getSumOfHistogramSampleCount(families []*dto.MetricFamily, metricName strin
 	}
 
 	return sum
+}
+
+// TestStartingSync tests that values are synced to KVStore on startup
+func TestStartingSync(t *testing.T) {
+	t.Run("check that if a second replica is set up during preLoad that it does not write to it since its not the leader", func(t *testing.T) {
+		cluster := "c1"
+		replica := "r1"
+		var c *haTracker
+		var err error
+
+		codec := GetReplicaDescCodec()
+		kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+		t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+		mock := kv.PrefixClient(kvStore, "prefix")
+		c, err = newHATracker(HATrackerConfig{
+			EnableHATracker:        true,
+			KVStore:                kv.Config{Mock: mock},
+			UpdateTimeout:          15 * time.Second,
+			UpdateTimeoutJitterMax: 0,
+			FailoverTimeout:        time.Millisecond * 2,
+		}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+		now := time.Now()
+		err = c.checkReplica(context.Background(), "user", cluster, replica, now)
+		assert.NoError(t, err)
+
+		// Check to see if the value in the trackers cache is correct.
+		checkReplicaTimestamp(t, time.Second, c, "user", cluster, replica, now)
+		services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
+
+		replicaTwo := "r2"
+
+		c, err = newHATracker(HATrackerConfig{
+			EnableHATracker:        true,
+			KVStore:                kv.Config{Mock: mock},
+			UpdateTimeout:          15 * time.Second,
+			UpdateTimeoutJitterMax: 0,
+			FailoverTimeout:        time.Millisecond * 2,
+		}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+		defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
+
+		newNow := time.Now()
+		err = c.checkReplica(context.Background(), "user", cluster, replicaTwo, newNow)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, replicasDidNotMatchError{replica: "r2", elected: "r1"})
+	})
 }
