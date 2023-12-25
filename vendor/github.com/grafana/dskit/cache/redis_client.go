@@ -26,7 +26,7 @@ var (
 	ErrRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
 	ErrRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
-	_ RemoteCacheClient = (*redisClient)(nil)
+	_ RemoteCacheClient = (*RedisClient)(nil)
 )
 
 // RedisClientConfig is the config accepted by RedisClient.
@@ -141,10 +141,10 @@ func (c *RedisClientConfig) Validate() error {
 	return nil
 }
 
-type redisClient struct {
+type RedisClient struct {
 	*baseClient
-	redis.UniversalClient
 
+	client redis.UniversalClient
 	config RedisClientConfig
 
 	// getMultiGate used to enforce the max number of concurrent GetMulti() operations.
@@ -157,7 +157,7 @@ type redisClient struct {
 }
 
 // NewRedisClient makes a new RedisClient.
-func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
+func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, reg prometheus.Registerer) (*RedisClient, error) {
 	opts := &redis.UniversalOptions{
 		Addrs:        strings.Split(config.Endpoint.String(), ","),
 		Username:     config.Username,
@@ -188,11 +188,11 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 
 	metrics := newClientMetrics(reg)
 
-	c := &redisClient{
-		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
-		UniversalClient: redis.NewUniversalClient(opts),
-		config:          config,
-		logger:          log.With(logger, "name", name),
+	c := &RedisClient{
+		baseClient: newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
+		client:     redis.NewUniversalClient(opts),
+		config:     config,
+		logger:     log.With(logger, "name", name),
 	}
 	if config.MaxGetMultiConcurrency > 0 {
 		c.getMultiGate = gate.New(
@@ -223,15 +223,15 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 }
 
 // SetAsync implement RemoteCacheClient.
-func (c *redisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
+func (c *RedisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
 	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		_, err := c.Set(context.Background(), key, value, ttl).Result()
+		_, err := c.client.Set(context.Background(), key, value, ttl).Result()
 		return err
 	})
 }
 
 // GetMulti implement RemoteCacheClient.
-func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
+func (c *RedisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -245,7 +245,7 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 		var cacheHitBytes int
 
 		currentKeys := keys[startIndex:endIndex]
-		resp, err := c.MGet(ctx, currentKeys...).Result()
+		resp, err := c.client.MGet(ctx, currentKeys...).Result()
 		if err != nil {
 			level.Warn(c.logger).Log("msg", "failed to mget items from redis", "err", err, "items", len(resp))
 			return nil
@@ -276,19 +276,19 @@ func (c *redisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 }
 
 // Delete implement RemoteCacheClient.
-func (c *redisClient) Delete(ctx context.Context, key string) error {
+func (c *RedisClient) Delete(ctx context.Context, key string) error {
 	return c.delete(ctx, key, func(ctx context.Context, key string) error {
-		return c.Del(ctx, key).Err()
+		return c.client.Del(ctx, key).Err()
 	})
 }
 
 // Stop implement RemoteCacheClient.
-func (c *redisClient) Stop() {
+func (c *RedisClient) Stop() {
 	// Stop running async operations.
 	c.asyncQueue.stop()
 
-	if err := c.Close(); err != nil {
-		level.Error(c.logger).Log("msg", "redis close err")
+	if err := c.client.Close(); err != nil {
+		level.Error(c.logger).Log("msg", "failed to close redis client", "err", err)
 	}
 }
 
