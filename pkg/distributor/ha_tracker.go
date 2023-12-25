@@ -202,11 +202,12 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		t.client = client
 	}
 
-	t.Service = services.NewBasicService(t.preLoadKVStore, t.loop, nil)
+	t.Service = services.NewBasicService(t.syncHAStateOnStart, t.loop, nil)
 	return t, nil
 }
 
-func (h *haTracker) preLoadKVStore(ctx context.Context) error {
+// Will update the internal cache to be in sync with the KV Store
+func (h *haTracker) syncHAStateOnStart(ctx context.Context) error {
 	if !h.cfg.EnableHATracker {
 		return nil
 	}
@@ -266,7 +267,10 @@ func (h *haTracker) loop(ctx context.Context) error {
 	// The KVStore config we gave when creating h should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass empty string here.
 	h.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
-		replica := value.(*ReplicaDesc)
+		replica, ok := value.(*ReplicaDesc)
+		if !ok {
+			return false
+		}
 		return h.processKVStoreEntry(key, replica)
 	})
 
