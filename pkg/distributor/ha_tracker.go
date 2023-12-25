@@ -215,12 +215,12 @@ func (h *haTracker) syncHAStateOnStart(ctx context.Context) error {
 	// haTracker holds HATrackerConfig with the prefix.
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
-		level.Warn(h.logger).Log("msg", "preLoadKVStore: failed to list replica keys", "err", err)
+		level.Warn(h.logger).Log("msg", "syncHAStateOnStart: failed to list replica keys", "err", err)
 		return err
 	}
 
 	if len(keys) == 0 {
-		level.Warn(h.logger).Log("msg", "preLoadKVStore: no keys for HA tracker prefix", "err", err)
+		level.Warn(h.logger).Log("msg", "syncHAStateOnStart: no keys for HA tracker prefix", "err", err)
 		return nil
 	}
 
@@ -231,13 +231,13 @@ func (h *haTracker) syncHAStateOnStart(ctx context.Context) error {
 
 		val, err := h.client.Get(ctx, keys[i])
 		if err != nil {
-			level.Warn(h.logger).Log("msg", "preLoadKVStore: failed to get replica value", "key", keys[i], "err", err)
+			level.Warn(h.logger).Log("msg", "syncHAStateOnStart: failed to get replica value", "key", keys[i], "err", err)
 			return err
 		}
 
 		desc, ok := val.(*ReplicaDesc)
 		if !ok {
-			level.Error(h.logger).Log("msg", "preLoadKVStore: got invalid replica descriptor", "key", keys[i])
+			level.Error(h.logger).Log("msg", "syncHAStateOnStart: got invalid replica descriptor", "key", keys[i])
 			continue
 		}
 
