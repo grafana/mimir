@@ -70,7 +70,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 	github.com/prometheus/procfs v0.12.0
 	github.com/thanos-io/objstore v0.0.0-20231123170144-bffedaa58acb
-	github.com/twmb/franz-go v1.15.3
+	github.com/twmb/franz-go v1.15.4
 	github.com/twmb/franz-go/pkg/kadm v1.10.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20231206062516-c09dc92d2db1
 	github.com/twmb/franz-go/pkg/kmsg v1.7.0
@@ -104,7 +104,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.18 // indirect
+	github.com/pierrec/lz4/v4 v4.1.19 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 )
 
