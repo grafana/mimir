@@ -126,7 +126,7 @@ func TestConfig_Validate(t *testing.T) {
 					SSE:              *sseCfg,
 					SignatureVersion: SignatureVersionV4,
 					StorageClass:     s3_service.StorageClassStandard,
-					STSEndpoint:      "s3.eu-central-1.amazonaws.com",
+					STSEndpoint:      "sts.eu-central-1.amazonaws.com",
 				}
 				return cfg
 			},
