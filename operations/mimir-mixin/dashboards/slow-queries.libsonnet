@@ -236,20 +236,31 @@ local filename = 'mimir-slow-queries.json';
 
           fieldConfig: {
             // Configure overrides to nicely format field values.
-            overrides: [
-              {
-                matcher: { id: 'byName', options: 'Step' },
-                properties: [{ id: 'unit', value: 's' }],
-              },
-              {
-                matcher: { id: 'byName', options: 'Duration' },
-                properties: [{ id: 'unit', value: 's' }],
-              },
-              {
-                matcher: { id: 'byName', options: 'Time span' },
-                properties: [{ id: 'unit', value: 's' }],
-              },
-            ],
+            overrides:
+              local bytesFields = ['fetched_chunk_bytes', 'fetched_index_bytes', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes'];
+              [
+                {
+                  matcher: { id: 'byName', options: fieldName },
+                  properties: [{ id: 'unit', value: 'bytes' }],
+                }
+                for fieldName in bytesFields
+              ] +
+              local shortFields = ['estimated_series_count', 'fetched_chunks_count', 'fetched_series_count'];
+              [
+                {
+                  matcher: { id: 'byName', options: fieldName },
+                  properties: [{ id: 'unit', value: 'short' }],
+                }
+                for fieldName in shortFields
+              ] +
+              local secondsFields = ['Time span', 'Duration', 'Step', 'queue_time_seconds'];
+              [
+                {
+                  matcher: { id: 'byName', options: fieldName },
+                  properties: [{ id: 'unit', value: 's' }],
+                }
+                for fieldName in secondsFields
+              ],
           },
         },
       )

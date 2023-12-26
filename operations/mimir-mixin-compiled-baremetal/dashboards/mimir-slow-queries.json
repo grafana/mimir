@@ -1237,7 +1237,103 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Step"
+                              "options": "fetched_chunk_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_index_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "response_size_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "results_cache_hit_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "results_cache_miss_bytes"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "estimated_series_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_chunks_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "fetched_series_count"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time span"
                            },
                            "properties": [
                               {
@@ -1261,7 +1357,19 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Time span"
+                              "options": "Step"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "s"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "queue_time_seconds"
                            },
                            "properties": [
                               {
