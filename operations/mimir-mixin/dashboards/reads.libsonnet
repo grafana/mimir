@@ -266,33 +266,39 @@ local filename = 'mimir-reads.json';
         $.queryPanel(
           [
             |||
-              kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              sum by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
             |||
-              kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.
-              * on (%(cluster_labels)s, horizontalpodautoscaler)
-                kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              sum by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active.
+                * on (%(cluster_labels)s, horizontalpodautoscaler)
+                  kube_horizontalpodautoscaler_status_condition{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s", condition="ScalingActive", status="true"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
               hpa_name: $._config.autoscaling.querier.hpa_name,
             },
             |||
-              kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
-              # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
-              + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
-                0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              sum by (scaletargetref_name) (
+                kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+                # Add the scaletargetref_name label which is more readable than "kube-hpa-..."
+                + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
+                  0*kube_horizontalpodautoscaler_info{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
+              )
             ||| % {
               namespace_matcher: $.namespaceMatcher(),
               cluster_labels: std.join(', ', $._config.cluster_labels),
