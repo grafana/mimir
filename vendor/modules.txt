@@ -804,7 +804,7 @@ github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
 github.com/opentracing/opentracing-go/mocktracer
-# github.com/pierrec/lz4/v4 v4.1.18
+# github.com/pierrec/lz4/v4 v4.1.19
 ## explicit; go 1.14
 github.com/pierrec/lz4/v4
 github.com/pierrec/lz4/v4/internal/lz4block
@@ -1020,7 +1020,7 @@ github.com/thanos-io/objstore/providers/gcs
 github.com/thanos-io/objstore/providers/s3
 github.com/thanos-io/objstore/providers/swift
 github.com/thanos-io/objstore/tracing/opentracing
-# github.com/twmb/franz-go v1.15.3
+# github.com/twmb/franz-go v1.15.4
 ## explicit; go 1.18
 github.com/twmb/franz-go/pkg/kbin
 github.com/twmb/franz-go/pkg/kerr
