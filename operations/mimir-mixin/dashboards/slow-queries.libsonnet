@@ -160,8 +160,13 @@ local filename = 'mimir-slow-queries.json';
           // Query logs from Loki.
           targets: [
             {
+              local extraFields = [
+                'response_time_seconds="{{ duration .response_time }}"',
+                'param_step_seconds="{{ div .param_step 1000 }}"',
+                'length_seconds="{{ duration .length }}"',
+              ],
               // Filter out the remote read endpoint.
-              expr: '{%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | label_format response_time_seconds="{{duration(response_time)}}"' % [$._config.per_cluster_label, $._config.per_namespace_label],
+              expr: '{%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | label_format %s' % [$._config.per_cluster_label, $._config.per_namespace_label, std.join(',', extraFields)],
               instant: false,
               legendFormat: '',
               range: true,
@@ -182,7 +187,7 @@ local filename = 'mimir-slow-queries.json';
               id: 'organize',
               options: {
                 // Hide fields we don't care.
-                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time', 'gossip_ring_member', 'component'],
+                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time', 'gossip_ring_member', 'component', 'response_time', 'param_step', 'length'],
 
                 excludeByName: {
                   [field]: true
@@ -190,7 +195,7 @@ local filename = 'mimir-slow-queries.json';
                 },
 
                 // Order fields.
-                local orderedFields = ['ts', 'user', 'length', 'param_start', 'param_end', 'param_time', 'param_step', 'param_query', 'response_time', 'response_time_seconds', 'err'],
+                local orderedFields = ['ts', 'status', 'user', 'length_seconds', 'param_start', 'param_end', 'param_time', 'param_step_seconds', 'param_query', 'response_time_seconds', 'err'],
 
                 indexByName: {
                   [orderedFields[i]]: i
@@ -199,11 +204,15 @@ local filename = 'mimir-slow-queries.json';
 
                 // Rename fields.
                 renameByName: {
-                  org_id: 'Tenant ID',
+                  ts: 'Completion date',
+                  user: 'Tenant ID',
                   param_query: 'Query',
-                  param_step: 'Step',
-                  response_time: 'Duration',
-                  response_time_seconds: 'Duration (sec)',
+                  param_step_seconds: 'Step',
+                  param_start: 'Start',
+                  param_end: 'End',
+                  param_time: 'Time (instant query)',
+                  response_time_seconds: 'Duration',
+                  length_seconds: 'Time span',
                 },
               },
             },
@@ -211,7 +220,7 @@ local filename = 'mimir-slow-queries.json';
               // Transforma some fields into numbers so sorting in the table doesn't sort them lexicographically.
               id: 'convertFieldType',
               options: {
-                local numericFields = ['estimated_series_count', 'fetched_chunk_bytes', 'fetched_chunks_count', 'fetched_index_bytes', 'fetched_series_count', 'queue_time_seconds', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes', 'sharded_queries', 'split_queries', 'response_time_seconds'],
+                local numericFields = ['estimated_series_count', 'fetched_chunk_bytes', 'fetched_chunks_count', 'fetched_index_bytes', 'fetched_series_count', 'queue_time_seconds', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes', 'sharded_queries', 'split_queries'],
 
                 conversions: [
                   {
@@ -228,26 +237,15 @@ local filename = 'mimir-slow-queries.json';
             // Configure overrides to nicely format field values.
             overrides: [
               {
-                matcher: { id: 'byName', options: 'Time range' },
-                properties: [
-                  {
-                    id: 'mappings',
-                    value: [
-                      {
-                        from: '',
-                        id: 1,
-                        text: 'Instant query',
-                        to: '',
-                        type: 1,
-                        value: '0',
-                      },
-                    ],
-                  },
-                  { id: 'unit', value: 's' },
-                ],
+                matcher: { id: 'byName', options: 'Step' },
+                properties: [{ id: 'unit', value: 's' }],
               },
               {
-                matcher: { id: 'byName', options: 'Step' },
+                matcher: { id: 'byName', options: 'Duration' },
+                properties: [{ id: 'unit', value: 's' }],
+              },
+              {
+                matcher: { id: 'byName', options: 'Time span' },
                 properties: [{ id: 'unit', value: 's' }],
               },
             ],
