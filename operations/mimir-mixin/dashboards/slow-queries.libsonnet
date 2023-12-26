@@ -213,6 +213,7 @@ local filename = 'mimir-slow-queries.json';
                   param_time: 'Time (instant query)',
                   response_time_seconds: 'Duration',
                   length_seconds: 'Time span',
+                  err: 'Error',
                 },
               },
             },

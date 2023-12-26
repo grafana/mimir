@@ -33192,6 +33192,7 @@ data:
                                   "user": 2
                                },
                                "renameByName": {
+                                  "err": "Error",
                                   "length_seconds": "Time span",
                                   "param_end": "End",
                                   "param_query": "Query",
