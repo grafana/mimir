@@ -32,7 +32,6 @@ s3:
   access_key_id:     xxx
   secret_access_key: yyy
   insecure:          true
-  sts_endpoint:	     sts.localhost
 `
 
 	configWithGCSBackend = `

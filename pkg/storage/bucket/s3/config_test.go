@@ -8,7 +8,6 @@ package s3
 import (
 	"encoding/base64"
 	"net/http"
-	"net/url"
 	"testing"
 
 	s3_service "github.com/aws/aws-sdk-go/service/s3"
@@ -127,7 +126,7 @@ func TestConfig_Validate(t *testing.T) {
 					SSE:              *sseCfg,
 					SignatureVersion: SignatureVersionV4,
 					StorageClass:     s3_service.StorageClassStandard,
-					STSEndpoint:      mockMinoStsEndpoint(t),
+					STSEndpoint:      "s3.eu-central-1.amazonaws.com",
 				}
 				return cfg
 			},
@@ -195,22 +194,4 @@ func TestParseKMSEncryptionContext(t *testing.T) {
 	actual, err = parseKMSEncryptionContext(`{"department": "10103.0"}`)
 	assert.NoError(t, err)
 	assert.Equal(t, expected, actual)
-}
-
-func mockMinoStsEndpoint(t *testing.T) string {
-	baseUrl := "minio.mock"
-
-	u, err := url.Parse(baseUrl)
-	assert.NoError(t, err)
-
-	query := u.Query()
-	query.Set("Action", "AssumeRoleWithWebIdentity")
-	query.Set("WebIdentityToken", "TOKEN")
-	query.Set("Version", "2023-06-29")
-	query.Set("DurationSeconds", "86000")
-	query.Set("Policy", "{}")
-
-	u.RawQuery = query.Encode()
-
-	return u.String()
 }
