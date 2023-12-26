@@ -504,7 +504,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.queryPanel(
         [
           |||
-            sum by (scaletargetref_name) (
+            max by (scaletargetref_name) (
               kube_horizontalpodautoscaler_spec_max_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
               # Add the scaletargetref_name label for readability
               + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
@@ -516,7 +516,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
           |||
-            sum by (scaletargetref_name) (
+            max by (scaletargetref_name) (
               kube_horizontalpodautoscaler_status_current_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
               # HPA doesn't go to 0 replicas, so we multiply by 0 if the HPA is not active
               * on (%(cluster_labels)s, horizontalpodautoscaler)
@@ -531,7 +531,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             cluster_labels: std.join(', ', $._config.cluster_labels),
           },
           |||
-            sum by (scaletargetref_name) (
+            max by (scaletargetref_name) (
               kube_horizontalpodautoscaler_spec_min_replicas{%(namespace_matcher)s, horizontalpodautoscaler=~"%(hpa_name)s"}
               # Add the scaletargetref_name label for readability
               + on (%(cluster_labels)s, horizontalpodautoscaler) group_left (scaletargetref_name)
