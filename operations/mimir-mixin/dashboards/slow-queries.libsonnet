@@ -221,7 +221,7 @@ local filename = 'mimir-slow-queries.json';
               // Transforma some fields into numbers so sorting in the table doesn't sort them lexicographically.
               id: 'convertFieldType',
               options: {
-                local numericFields = ['estimated_series_count', 'fetched_chunk_bytes', 'fetched_chunks_count', 'fetched_index_bytes', 'fetched_series_count', 'queue_time_seconds', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes', 'sharded_queries', 'split_queries'],
+                local numericFields = ['estimated_series_count', 'fetched_chunk_bytes', 'fetched_chunks_count', 'fetched_index_bytes', 'fetched_series_count', 'queue_time_seconds', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes', 'sharded_queries', 'split_queries', 'Time span', 'Duration', 'Step', 'queue_time_seconds'],
 
                 conversions: [
                   {

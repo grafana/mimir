@@ -1506,6 +1506,22 @@
                               {
                                  "destinationType": "number",
                                  "targetField": "split_queries"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Time span"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Duration"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "Step"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "queue_time_seconds"
                               }
                            ]
                         }
