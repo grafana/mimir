@@ -33132,7 +33132,7 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration}",
+                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{duration(response_time)}}\"",
                             "instant": false,
                             "legendFormat": "",
                             "range": true,
@@ -33155,7 +33155,9 @@ data:
                                   "Time": true,
                                   "caller": true,
                                   "cluster": true,
+                                  "component": true,
                                   "container": true,
+                                  "gossip_ring_member": true,
                                   "host": true,
                                   "id": true,
                                   "job": true,
@@ -33175,6 +33177,7 @@ data:
                                   "tsNs": true
                                },
                                "indexByName": {
+                                  "err": 10,
                                   "length": 2,
                                   "param_end": 4,
                                   "param_query": 7,
@@ -33182,6 +33185,7 @@ data:
                                   "param_step": 6,
                                   "param_time": 5,
                                   "response_time": 8,
+                                  "response_time_seconds": 9,
                                   "ts": 0,
                                   "user": 1
                                },
@@ -33189,8 +33193,64 @@ data:
                                   "org_id": "Tenant ID",
                                   "param_query": "Query",
                                   "param_step": "Step",
-                                  "response_time": "Duration"
+                                  "response_time": "Duration",
+                                  "response_time_seconds": "Duration (sec)"
                                }
+                            }
+                         },
+                         {
+                            "id": "convertFieldType",
+                            "options": {
+                               "conversions": [
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "estimated_series_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_chunk_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_chunks_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_index_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_series_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "queue_time_seconds"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "response_size_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "results_cache_hit_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "results_cache_miss_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "sharded_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "split_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "response_time_seconds"
+                                  }
+                               ]
                             }
                          }
                       ],
