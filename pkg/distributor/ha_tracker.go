@@ -224,6 +224,8 @@ func (h *haTracker) syncHAStateOnStart(ctx context.Context) error {
 		return nil
 	}
 
+	// TODO what is the benefit to allowing an a concurrent/parallel process here
+	// What is the amount fo keys we are getting back? Is it inefficient to serially allow this behavior?
 	for i := 0; i < len(keys); i++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -241,7 +243,9 @@ func (h *haTracker) syncHAStateOnStart(ctx context.Context) error {
 			continue
 		}
 
-		h.processKVStoreEntry(keys[i], desc)
+		if notProcessed := h.processKVStoreEntry(keys[i], desc); !notProcessed {
+			level.Warn(h.logger).Log("msg", "syncHAStateOnStart: failed to processed replica value to cache", "key", keys[i], "err", err)
+		}
 	}
 
 	return nil
