@@ -1083,6 +1083,9 @@ ruler:
   service:
     annotations: {}
     labels: {}
+    appProtocol:
+      # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
+      grpc: null
 
   resources:
     requests:
