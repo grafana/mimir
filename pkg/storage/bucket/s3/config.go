@@ -129,10 +129,9 @@ func (cfg *Config) Validate() error {
 			return errInvalidEndpointPrefix
 		}
 	}
-	if !util.IsValidURL(cfg.STSEndpoint) {
+	if cfg.STSEndpoint != "" && !util.IsValidURL(cfg.STSEndpoint) {
 		return errInvalidSTSPrefix
 	}
-
 	if !util.StringsContain(supportedStorageClasses, cfg.StorageClass) && cfg.StorageClass != "" {
 		return errUnsupportedStorageClass
 	}
