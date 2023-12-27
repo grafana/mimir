@@ -5,12 +5,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
+
 func TestIsValidURL(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name           string
-		endpoint       string
+		name     string
+		endpoint string
 	}{
 		{
 			name:     "valid url",
