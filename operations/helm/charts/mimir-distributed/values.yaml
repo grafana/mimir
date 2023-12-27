@@ -473,6 +473,8 @@ alertmanager:
     annotations: {}
     labels: {}
     appProtocol:
+      # -- Set the optional http service protocol. Ex: "http" or "tcp"
+      httpMetrics: null
       # -- Set the optional grpc service protocol. Ex: "grpc" or "tcp"
       grpc: null
 
