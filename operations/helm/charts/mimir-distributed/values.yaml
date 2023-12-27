@@ -1852,7 +1852,7 @@ chunks-cache:
 
   appProtocol:
     # -- Set the optional service protocol. Ex: "tcp"
-    client: null
+    memcachedClient: null
 
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
@@ -1948,7 +1948,7 @@ index-cache:
 
   appProtocol:
     # -- Set the optional service protocol. Ex: "tcp"
-    client: null
+    memcachedClient: null
 
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
@@ -2044,7 +2044,7 @@ metadata-cache:
 
   appProtocol:
     # -- Set the optional service protocol. Ex: "tcp"
-    client: null
+    memcachedClient: null
 
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
@@ -2140,7 +2140,7 @@ results-cache:
 
   appProtocol:
     # -- Set the optional service protocol. Ex: "tcp"
-    client: null
+    memcachedClient: null
 
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:

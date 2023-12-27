@@ -23,8 +23,8 @@ spec:
     - name: memcached-client
       port: {{ .port }}
       targetPort: {{ .port }}
-      {{- if .appProtocol.client }}
-      appProtocol: {{ .appProtocol.client }}
+      {{- if .appProtocol.memcachedClient }}
+      appProtocol: {{ .appProtocol.memcachedClient }}
       {{- end }}
     {{ if $.ctx.Values.memcachedExporter.enabled }}
     - name: http-metrics
