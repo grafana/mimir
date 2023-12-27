@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -115,6 +116,80 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 		})
 	}
 
+}
+
+func TestRemoteQuerier_SendRequest(t *testing.T) {
+	const errMsg = "this is an error"
+	tests := map[string]struct {
+		err             error
+		expectedRetries bool
+	}{
+		"errors with code 5xx are retried": {
+			err:             httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
+			expectedRetries: true,
+		},
+		"context.Canceled error is retried": {
+			err:             context.Canceled,
+			expectedRetries: true,
+		},
+		"gRPC context.Canceled error is retried": {
+			err:             status.Error(codes.Canceled, context.Canceled.Error()),
+			expectedRetries: true,
+		},
+		"context.DeadlineExceeded error is retried": {
+			err:             context.DeadlineExceeded,
+			expectedRetries: true,
+		},
+		"gRPC context.DeadlineExceeded error is retried": {
+			err:             status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedRetries: true,
+		},
+		"errors with code 4xx are not retried": {
+			err:             httpgrpc.Errorf(http.StatusBadRequest, errMsg),
+			expectedRetries: false,
+		},
+		"no errors are not retried": {
+			err:             nil,
+			expectedRetries: false,
+		},
+	}
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var (
+				inReq *httpgrpc.HTTPRequest
+				count atomic.Int64
+			)
+
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				count.Add(1)
+				if testCase.err != nil {
+					return nil, testCase.err
+				}
+				return &httpgrpc.HTTPResponse{
+					Code: http.StatusOK,
+					Headers: []*httpgrpc.Header{
+						{Key: "Content-Type", Values: []string{"application/json"}},
+					},
+					Body: []byte(`{
+						"status": "success","data": {"resultType":"vector","result":[]}
+					}`),
+				}, nil
+			}
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+			require.Equal(t, int64(0), count.Load())
+			_, err := q.sendRequest(context.Background(), inReq, log.NewNopLogger())
+			if testCase.err == nil {
+				require.NoError(t, err)
+				require.Equal(t, int64(1), count.Load())
+			} else {
+				if testCase.expectedRetries {
+					require.Greater(t, count.Load(), int64(1))
+				} else {
+					require.Equal(t, int64(1), count.Load())
+				}
+			}
+		})
+	}
 }
 
 func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {

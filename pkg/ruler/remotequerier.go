@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -296,6 +297,9 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		resp, err := q.client.Handle(ctx, req)
 		if err == nil {
 			return resp, nil
+		}
+		if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
+			return nil, err
 		}
 		if !retry.Ongoing() {
 			return nil, err
