@@ -82,7 +82,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
 	google.golang.org/api v0.150.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.32.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
