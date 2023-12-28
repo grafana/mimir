@@ -33091,22 +33091,117 @@ data:
                             {
                                "matcher": {
                                   "id": "byName",
-                                  "options": "Time range"
+                                  "options": "fetched_chunk_bytes"
                                },
                                "properties": [
                                   {
-                                     "id": "mappings",
-                                     "value": [
-                                        {
-                                           "from": "",
-                                           "id": 1,
-                                           "text": "Instant query",
-                                           "to": "",
-                                           "type": 1,
-                                           "value": "0"
-                                        }
-                                     ]
-                                  },
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "fetched_index_bytes"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "response_size_bytes"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "results_cache_hit_bytes"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "results_cache_miss_bytes"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "estimated_series_count"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "fetched_chunks_count"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "fetched_series_count"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "short"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time span"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "s"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Duration"
+                               },
+                               "properties": [
                                   {
                                      "id": "unit",
                                      "value": "s"
@@ -33124,6 +33219,18 @@ data:
                                      "value": "s"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "queue_time_seconds"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "s"
+                                  }
+                               ]
                             }
                          ]
                       },
@@ -33132,7 +33239,7 @@ data:
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration}",
+                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ duration .response_time }}\",param_step_seconds=\"{{ div .param_step 1000 }}\",length_seconds=\"{{ duration .length }}\"",
                             "instant": false,
                             "legendFormat": "",
                             "range": true,
@@ -33155,42 +33262,122 @@ data:
                                   "Time": true,
                                   "caller": true,
                                   "cluster": true,
+                                  "component": true,
                                   "container": true,
+                                  "gossip_ring_member": true,
                                   "host": true,
                                   "id": true,
                                   "job": true,
                                   "labels": true,
+                                  "length": true,
                                   "level": true,
                                   "line": true,
                                   "method": true,
                                   "msg": true,
                                   "name": true,
                                   "namespace": true,
+                                  "param_step": true,
                                   "path": true,
                                   "pod": true,
                                   "pod_template_hash": true,
                                   "query_wall_time_seconds": true,
+                                  "response_time": true,
                                   "stream": true,
                                   "traceID": true,
                                   "tsNs": true
                                },
                                "indexByName": {
-                                  "length": 2,
-                                  "param_end": 4,
-                                  "param_query": 7,
-                                  "param_start": 3,
-                                  "param_step": 6,
-                                  "param_time": 5,
-                                  "response_time": 8,
+                                  "err": 10,
+                                  "length_seconds": 3,
+                                  "param_end": 5,
+                                  "param_query": 8,
+                                  "param_start": 4,
+                                  "param_step_seconds": 7,
+                                  "param_time": 6,
+                                  "response_time_seconds": 9,
+                                  "status": 1,
                                   "ts": 0,
-                                  "user": 1
+                                  "user": 2
                                },
                                "renameByName": {
-                                  "org_id": "Tenant ID",
+                                  "err": "Error",
+                                  "length_seconds": "Time span",
+                                  "param_end": "End",
                                   "param_query": "Query",
-                                  "param_step": "Step",
-                                  "response_time": "Duration"
+                                  "param_start": "Start",
+                                  "param_step_seconds": "Step",
+                                  "param_time": "Time (instant query)",
+                                  "response_time_seconds": "Duration",
+                                  "ts": "Completion date",
+                                  "user": "Tenant ID"
                                }
+                            }
+                         },
+                         {
+                            "id": "convertFieldType",
+                            "options": {
+                               "conversions": [
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "estimated_series_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_chunk_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_chunks_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_index_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_series_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "queue_time_seconds"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "response_size_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "results_cache_hit_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "results_cache_miss_bytes"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "sharded_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "split_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "Time span"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "Duration"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "Step"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "queue_time_seconds"
+                                  }
+                               ]
                             }
                          }
                       ],
