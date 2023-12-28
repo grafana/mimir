@@ -27,7 +27,7 @@
       <rule pattern="\b([\w\d.-])+\.($|\s)">
         <token type="NameProperty"/>
       </rule>
-      <rule pattern="^(@|[\w\d-]+)">
+      <rule pattern="([\w\d\.-]+\.[a-z-]{2,24}\.?|^(@|[\w\d-]+))">
         <token type="NameClass"/>
       </rule>
       <rule pattern="^\$(TTL|GENERATE|INCLUDE|ORIGIN)">
