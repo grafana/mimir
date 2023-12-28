@@ -94,7 +94,7 @@ github.com/AzureAD/microsoft-authentication-library-for-go/apps/public
 github.com/DmitriyVTitov/size
 # github.com/HdrHistogram/hdrhistogram-go v1.1.2
 ## explicit; go 1.14
-# github.com/alecthomas/chroma/v2 v2.11.1
+# github.com/alecthomas/chroma/v2 v2.12.0
 ## explicit; go 1.19
 github.com/alecthomas/chroma/v2
 github.com/alecthomas/chroma/v2/formatters

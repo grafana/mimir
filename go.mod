@@ -54,7 +54,7 @@ require (
 
 require (
 	cloud.google.com/go/storage v1.35.1
-	github.com/alecthomas/chroma/v2 v2.11.1
+	github.com/alecthomas/chroma/v2 v2.12.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.48.16
 	github.com/dennwc/varint v1.0.0
