@@ -322,7 +322,7 @@ jobs:
           key: integration-${{ matrix.test_group_id }}-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Docker Images
       - name: Extract Docker Images from Archive
@@ -333,7 +333,7 @@ jobs:
           # skopeo will by default load system-specific version of the image (linux/amd64).
           skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
       - name: Download Archive with Docker Images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Race-enabled Mimir
       - name: Load race-enabled mimir into Docker
@@ -376,7 +376,7 @@ jobs:
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Download Archive with Docker Images
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: Docker Images
       - name: Extract Docker Images from Archive
