@@ -83,7 +83,7 @@ require (
 	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
 	google.golang.org/api v0.150.0
 	google.golang.org/protobuf v1.31.0
-	sigs.k8s.io/kustomize/kyaml v0.14.3
+	sigs.k8s.io/kustomize/kyaml v0.16.0
 )
 
 require (
@@ -251,7 +251,7 @@ require (
 	gopkg.in/telebot.v3 v3.1.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
 	k8s.io/utils v0.0.0-20230711102312-30195339c3c7 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
