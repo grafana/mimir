@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -314,9 +313,7 @@ func newQueryTripperware(
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := defaultInstantQueryParamsRoundTripper(
-			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
-		)
+		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
@@ -417,23 +414,4 @@ func IsCardinalityQuery(path string) bool {
 
 func IsLabelsQuery(path string) bool {
 	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
-}
-
-func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
-	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if IsInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
-			nowUnixStr := strconv.FormatInt(time.Now().Unix(), 10)
-
-			q := r.URL.Query()
-			q.Add("time", nowUnixStr)
-			r.URL.RawQuery = q.Encode()
-
-			// If form was already parsed, add this param to the form too.
-			// (The form doesn't have "time", otherwise we'd not be here)
-			if r.Form != nil {
-				r.Form.Set("time", nowUnixStr)
-			}
-		}
-		return next.RoundTrip(r)
-	})
 }
