@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,6 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/plugin/kprom"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -361,6 +363,44 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 	}()
 }
 
+// runAsyncAndAssertCompletionOrder runs all executors functions concurrently and asserts that the functions
+// completes in the given order.
+func runAsyncAndAssertCompletionOrder(t *testing.T, executors ...func()) {
+	wg := sync.WaitGroup{}
+	wg.Add(len(executors))
+
+	// Keep track of the actual execution order.
+	var (
+		actualOrderMx = sync.Mutex{}
+		actualOrder   = make([]int, 0, len(executors))
+		expectedOrder = make([]int, 0, len(executors))
+	)
+
+	for i, executor := range executors {
+		i := i
+		executor := executor
+		expectedOrder = append(expectedOrder, i)
+
+		runAsync(&wg, func() {
+			executor()
+
+			actualOrderMx.Lock()
+			actualOrder = append(actualOrder, i)
+			actualOrderMx.Unlock()
+		})
+	}
+
+	wg.Wait()
+
+	assert.Equal(t, expectedOrder, actualOrder)
+}
+
+func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.Context {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	t.Cleanup(cancel)
+	return ctx
+}
+
 func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
@@ -396,4 +436,16 @@ func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gather
 	})
 
 	return writer, reg
+}
+
+func createTestKafkaClient(t *testing.T, cfg KafkaConfig) *kgo.Client {
+	metrics := kprom.NewMetrics("", kprom.Registerer(prometheus.NewPedanticRegistry()))
+
+	client, err := kgo.NewClient(commonKafkaClientOptions(cfg, metrics, log.NewNopLogger())...)
+	require.NoError(t, err)
+
+	// Automatically close it at the end of the test.
+	t.Cleanup(client.Close)
+
+	return client
 }
