@@ -264,3 +264,21 @@
 {{- if and .Values.ingress.enabled .Values.gateway.ingress.enabled -}}
 {{- fail "You have selected both ingress.enabled and gateway.ingress.enabled, you must select either ingress or gateway but not both" -}}
 {{- end -}}
+
+{{- range $i, $zone := .Values.ingester.zoneAwareReplication.zones -}}
+{{- if and $zone.noDownscale $zone.prepareDownscale  -}}
+{{- fail "You have selected both ingester.zoneAwareReplication.{{$zone}}.noDownscale and ingester.zoneAwareReplication.{{$zone}}.prepareDownscale, you must select either noDownscale or prepareDownscale but not both" -}}
+{{- end -}}
+{{- end -}}
+
+{{- range $i, $zone := .Values.alertmanager.zoneAwareReplication.zones -}}
+{{- if and $zone.noDownscale $zone.prepareDownscale  -}}
+{{- fail "You have selected both alertmanager.zoneAwareReplication.{{$zone}}.noDownscale and alertmanager.zoneAwareReplication.{{$zone}}.prepareDownscale, you must select either noDownscale or prepareDownscale but not both" -}}
+{{- end -}}
+{{- end -}}
+
+{{- range $i, $zone := .Values.store_gateway.zoneAwareReplication.zones -}}
+{{- if and $zone.noDownscale $zone.prepareDownscale  -}}
+{{- fail "You have selected both store_gateway.zoneAwareReplication.{{$zone}}.noDownscale and store_gateway.zoneAwareReplication.{{$zone}}.prepareDownscale, you must select either noDownscale or prepareDownscale but not both" -}}
+{{- end -}}
+{{- end -}}
