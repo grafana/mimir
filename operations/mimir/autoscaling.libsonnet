@@ -153,7 +153,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1):: self.newScaledObject(name, $._config.namespace, {
     min_replica_count: replicasWithWeight(min_replicas, weight),
     max_replica_count: replicasWithWeight(max_replicas, weight),
 
@@ -163,17 +163,75 @@
 
         // Each query scheduler tracks *at regular intervals* the number of inflight requests
         // (both enqueued and processing queries) as a summary. With the following query we target
-        // to have enough querier workers to run the max observed inflight requests 75% of time.
+        // to have enough querier workers to run the max observed inflight requests 50% of time.
         //
-        // Instead of measuring it as instant query, we look at the max 75th percentile over the last
-        // 5 minutes. This allows us to scale up quickly, but scale down slowly (and not too early
-        // if within the next 5 minutes after a scale up we have further spikes).
-        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.75"}[5m]))' % [query_scheduler_container, $._config.namespace], weight),
+        // This metric covers the case queries are piling up in the query-scheduler queue.
+        query: metricWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%s",namespace="%s",quantile="0.5"}[1m]))' % [query_scheduler_container_name, $._config.namespace], weight),
+
+        threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+      },
+      {
+        metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+        // The total requests duration / second is a good approximation of the number of querier workers used.
+        //
+        // This metric covers the case queries are not necessarily piling up in the query-scheduler queue,
+        // but queriers are busy.
+        query: metricWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%s",namespace="%s"}[1m]))' % [querier_container_name, $._config.namespace], weight),
 
         threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
       },
     ],
-  }),
+  }) + {
+    spec+: {
+      advanced: {
+        horizontalPodAutoscalerConfig: {
+          behavior: {
+            scaleUp: {
+              // When multiple policies are specified the policy which allows the highest amount of change is the
+              // policy which is selected by default.
+              policies: [
+                {
+                  // Allow to scale up at most 50% of pods every 2m. Why 2m? Because the metric looks back 1m and we
+                  // give another 1m to let new queriers to start and process some backlog.
+                  //
+                  // This policy covers the case we already have an high number of queriers running and adding +50%
+                  // in the span of 2m means adding a significative number of pods.
+                  type: 'Percent',
+                  value: 50,
+                  periodSeconds: 120,
+                },
+                {
+                  // Allow to scale up at most 15 pods every 2m. Why 2m? Because the metric looks back 1m and we
+                  // give another 1m to let new queriers to start and process some backlog.
+                  //
+                  // This policy covers the case we currently have an small number of queriers (e.g. < 10) and limiting
+                  // the scaling by percentage may be too slow when scaling up.
+                  type: 'Pods',
+                  value: 15,
+                  periodSeconds: 120,
+                },
+              ],
+              // Scaling metrics query the last 1m, so after a scale up we should wait at least 1m before we re-evaluate
+              // them for a further scale up.
+              stabilizationWindowSeconds: 60,
+            },
+            scaleDown: {
+              policies: [{
+                // Allow to scale down up to 10% of pods every 2m.
+                type: 'Percent',
+                value: 10,
+                periodSeconds: 120,
+              }],
+              // Reduce the likelihood of flapping replicas. When the metrics indicate that the target should be scaled
+              // down, HPA looks into previously computed desired states, and uses the highest value from the last 10m.
+              stabilizationWindowSeconds: 600,
+            },
+          },
+        },
+      },
+    },
+  },
 
   // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization
   // per replica over 5m (rolling window) and then we pick the highest value over the last 15m.
@@ -309,7 +367,8 @@
   querier_scaled_object: if !$._config.autoscaling_querier_enabled then null else
     self.newQuerierScaledObject(
       name='querier',
-      query_scheduler_container='query-scheduler',
+      query_scheduler_container_name='query-scheduler',
+      querier_container_name='querier',
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_querier_min_replicas,
       max_replicas=$._config.autoscaling_querier_max_replicas,

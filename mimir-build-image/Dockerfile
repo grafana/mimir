@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.2.1 as kustomize
+FROM registry.k8s.io/kustomize/kustomize:v5.3.0 as kustomize
 FROM alpine/helm:3.13.2 as helm
 FROM golang:1.21.5-bookworm
 ARG goproxyValue
