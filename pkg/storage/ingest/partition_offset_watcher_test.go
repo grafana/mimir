@@ -228,7 +228,12 @@ func TestPartitionOffsetWatcher_Concurrency(t *testing.T) {
 				// Notify an offset between the last notified offset and the last watched offset.
 				// The update to lastNotifiedOffset by multiple goroutines suffer a race condition
 				// but it's fine for the purpose of this test.
-				offset := lastNotifiedOffset.Load() + rand.Int63n(lastWatchedOffset.Load()-lastNotifiedOffset.Load())
+				maxOffsetRange := lastWatchedOffset.Load() - lastNotifiedOffset.Load()
+				if maxOffsetRange <= 0 {
+					continue
+				}
+
+				offset := lastNotifiedOffset.Load() + rand.Int63n(maxOffsetRange)
 				lastNotifiedOffset.Store(offset)
 
 				w.Notify(offset)
