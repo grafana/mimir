@@ -147,7 +147,8 @@ func (w *partitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) 
 		// waiting because context has been canceled or their deadline expired.
 		w.mx.Lock()
 
-		if actualWatchGroup, ok := w.watchGroups[waitForOffset]; ok && watchGroup == actualWatchGroup {
+		// We need to check the count again while holding the lock to avoid race conditions.
+		if actualWatchGroup, ok := w.watchGroups[waitForOffset]; ok && watchGroup == actualWatchGroup && actualWatchGroup.count.Load() == 0 {
 			delete(w.watchGroups, waitForOffset)
 		}
 
