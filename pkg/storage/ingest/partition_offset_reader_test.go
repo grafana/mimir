@@ -47,7 +47,7 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 		for i := 0; i < 2; i++ {
 			runAsync(&wg, func() {
-				_, err := reader.WaitLastProducedOffset(ctx)
+				_, err := reader.FetchLastProducedOffset(ctx)
 				assert.Equal(t, errPartitionOffsetReaderStopped, err)
 			})
 		}
@@ -58,8 +58,8 @@ func TestPartitionOffsetReader(t *testing.T) {
 		// At the point we expect the waiting goroutines to be unblocked.
 		wg.Wait()
 
-		// The next call to WaitLastProducedOffset() should return immediately.
-		_, err := reader.WaitLastProducedOffset(ctx)
+		// The next call to FetchLastProducedOffset() should return immediately.
+		_, err := reader.FetchLastProducedOffset(ctx)
 		assert.Equal(t, errPartitionOffsetReaderStopped, err)
 	})
 }
@@ -208,7 +208,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	})
 }
 
-func TestPartitionOffsetReader_WaitLastProducedOffset(t *testing.T) {
+func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 	const (
 		numPartitions = 1
 		topicName     = "test"
@@ -257,18 +257,18 @@ func TestPartitionOffsetReader_WaitLastProducedOffset(t *testing.T) {
 		wg := sync.WaitGroup{}
 		wg.Add(2)
 
-		// The 1st WaitLastProducedOffset() is called before the service start so it's expected
+		// The 1st FetchLastProducedOffset() is called before the service start so it's expected
 		// to wait the result of the 1st request.
 		runAsync(&wg, func() {
-			actual, err := reader.WaitLastProducedOffset(ctx)
+			actual, err := reader.FetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(1), actual)
 		})
 
-		// The 2nd WaitLastProducedOffset() is called while the 1st request is running, so it's expected
+		// The 2nd FetchLastProducedOffset() is called while the 1st request is running, so it's expected
 		// to wait the result of the 2nd request.
 		runAsyncAfter(&wg, firstRequestReceived, func() {
-			actual, err := reader.WaitLastProducedOffset(ctx)
+			actual, err := reader.FetchLastProducedOffset(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, int64(2), actual)
 		})
@@ -295,7 +295,7 @@ func TestPartitionOffsetReader_WaitLastProducedOffset(t *testing.T) {
 		canceledCtx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		_, err := reader.WaitLastProducedOffset(canceledCtx)
+		_, err := reader.FetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
 
 	})

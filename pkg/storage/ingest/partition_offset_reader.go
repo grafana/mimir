@@ -191,9 +191,9 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 	return listRes.Topics[0].Partitions[0].Offset - 1, nil
 }
 
-// WaitLastProducedOffset waits and returns the result of the *next* "last produced offset" request
+// FetchLastProducedOffset returns the result of the *next* "last produced offset" request
 // that will be issued.
-func (p *partitionOffsetReader) WaitLastProducedOffset(ctx context.Context) (int64, error) {
+func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (int64, error) {
 	// Get the promise for the result of the next request that will be issued.
 	p.nextResultPromiseMx.RLock()
 	promise := p.nextResultPromise

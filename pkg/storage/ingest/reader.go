@@ -362,7 +362,7 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 	}
 
 	// Get the last produced offset.
-	lastProducedOffset, err := r.offsetReader.WaitLastProducedOffset(ctx)
+	lastProducedOffset, err := r.offsetReader.FetchLastProducedOffset(ctx)
 	if err != nil {
 		return err
 	}
