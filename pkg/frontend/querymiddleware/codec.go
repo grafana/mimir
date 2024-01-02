@@ -390,6 +390,8 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		Header:     http.Header{},
 	}
 
+	setRequestHeadersFromOptions(req, r.GetOptions())
+
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
 		req.Header.Set("Accept", jsonMimeType)
@@ -400,6 +402,21 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 	}
 
 	return req.WithContext(ctx), nil
+}
+
+func setRequestHeadersFromOptions(req *http.Request, o Options) {
+	if o.ShardingDisabled {
+		req.Header.Set(totalShardsControlHeader, "0")
+	}
+	if totalShards := o.TotalShards; totalShards > 0 {
+		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(totalShards)))
+	}
+	if o.InstantSplitDisabled {
+		req.Header.Set(instantSplitControlHeader, "0")
+	}
+	if instantSplitInterval := o.InstantSplitInterval; instantSplitInterval > 0 {
+		req.Header.Set(instantSplitControlHeader, time.Duration(instantSplitInterval).String())
+	}
 }
 
 func (c prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
