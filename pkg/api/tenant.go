@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	tooManyTenantsTemplate = "too many tenant IDs present. max: %d actual: %d"
+	tooManyTenantsTemplate = "too many tenant IDs present in the request. max: %d actual: %d"
 )
 
 // NewTenantValidationMiddleware creates a new middleware that validates the number of tenants
