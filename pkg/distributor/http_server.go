@@ -21,6 +21,7 @@ type UserStats struct {
 }
 
 // UserStatsHandler handles user stats to the Distributor.
+// TODO: Deprecated, remove in v2.14.
 func (d *Distributor) UserStatsHandler(w http.ResponseWriter, r *http.Request) {
 	stats, err := d.UserStats(r.Context(), cardinality.InMemoryMethod)
 	if err != nil {

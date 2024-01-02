@@ -39,6 +39,7 @@ func (s userStatsByTimeseries) Less(i, j int) bool {
 }
 
 // AllUserStatsHandler shows stats for all users.
+// TODO: Deprecated, remove in v2.14.
 func (d *Distributor) AllUserStatsHandler(w http.ResponseWriter, r *http.Request) {
 	stats, err := d.AllUserStats(r.Context())
 	if err != nil {

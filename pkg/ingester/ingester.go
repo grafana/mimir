@@ -1539,6 +1539,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	return result, nil
 }
 
+// TODO: Deprecated, remove in v2.14.
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
@@ -1561,6 +1562,7 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	return createUserStats(db, req)
 }
 
+// TODO: Deprecated, remove in v2.14.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
