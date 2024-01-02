@@ -93,7 +93,7 @@ func TestNewTenantValidationMiddleware(t *testing.T) {
 			nop := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
 			// Note that we add the authentication middleware since the tenant validation middleware relies
 			// on tenant ID being set in the context associated with the request.
-			handler := middleware.Merge(middleware.AuthenticateUser, NewTenantValidationMiddleware(tc.federation, tc.maxTenants)).Wrap(nop)
+			handler := middleware.Merge(middleware.AuthenticateUser, newTenantValidationMiddleware(tc.federation, tc.maxTenants)).Wrap(nop)
 
 			req := httptest.NewRequest("GET", "/", nil)
 			req.Header.Set(user.OrgIDHeaderName, tc.header)

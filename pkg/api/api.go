@@ -121,7 +121,7 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	// Unconditionally add middleware that ensures we only accept requests with an expected number of tenants
 	// that is applied after any existing auth middleware has run. Only a single tenant is allowed when federation
 	// is disabled. If federation is enabled, there is optionally a max number of tenants that is supported.
-	api.AuthMiddleware = middleware.Merge(api.AuthMiddleware, NewTenantValidationMiddleware(federationCfg.Enabled, federationCfg.MaxTenants))
+	api.AuthMiddleware = middleware.Merge(api.AuthMiddleware, newTenantValidationMiddleware(federationCfg.Enabled, federationCfg.MaxTenants))
 
 	return api, nil
 }
