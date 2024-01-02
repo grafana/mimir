@@ -18,7 +18,6 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestMain(m *testing.M) {
@@ -51,7 +51,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
@@ -111,7 +111,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -171,7 +171,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
@@ -226,7 +226,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should return error on non existing partition", func(t *testing.T) {
 		t.Parallel()
 
-		_, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
@@ -237,7 +237,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
@@ -259,7 +259,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should fail all buffered records and close the connection on timeout while waiting for Produce response", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
@@ -410,19 +410,6 @@ func createTestKafkaConfig(clusterAddr, topicName string) KafkaConfig {
 	cfg.WriteTimeout = 2 * time.Second
 
 	return cfg
-}
-
-func createTestCluster(t *testing.T, numPartitions int32, topicName string) (*kfake.Cluster, string) {
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
-	require.NoError(t, err)
-	t.Cleanup(cluster.Close)
-
-	addrs := cluster.ListenAddrs()
-	require.Len(t, addrs, 1)
-
-	addSupportForConsumerGroups(t, cluster, topicName, numPartitions)
-
-	return cluster, addrs[0]
 }
 
 func createTestWriter(t *testing.T, cfg KafkaConfig) (*Writer, prometheus.Gatherer) {

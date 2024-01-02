@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -632,45 +633,82 @@ func TestCustomTrackerConfigDeserialize(t *testing.T) {
 	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
 }
 
-func TestUnmarshalInvalidMetricRelabelConfig(t *testing.T) {
-	t.Run("yaml", func(t *testing.T) {
-		limits := Limits{}
-		cfg := `
+func TestUnmarshalYAML_ShouldValidateConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg         string
+		expectedErr string
+	}{
+		"should fail on invalid metric_relabel_configs": {
+			cfg: `
 metric_relabel_configs:
   -
-`
-		err := yaml.Unmarshal([]byte(cfg), &limits)
-		require.ErrorContains(t, err, "invalid metric_relabel_configs")
-	})
-
-	t.Run("json", func(t *testing.T) {
-		limits := Limits{}
-		cfg := `{"metric_relabel_configs": [null]}`
-		err := json.Unmarshal([]byte(cfg), &limits)
-		require.ErrorContains(t, err, "invalid metric_relabel_configs")
-	})
-}
-
-func TestUnmarshalMaxEstimatedChunksPerQuery(t *testing.T) {
-	testCases := map[string]bool{
-		"-0.1": false,
-		"0":    true,
-		"0.1":  false,
-		"0.9":  false,
-		"1":    true,
-		"1.1":  true,
+`,
+			expectedErr: "invalid metric_relabel_configs",
+		},
+		"should fail on negative max_estimated_fetched_chunks_per_query_multiplier": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: -0.1`,
+			expectedErr: errInvalidMaxEstimatedChunksPerQueryMultiplier.Error(),
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier = 0": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 0`,
+			expectedErr: "",
+		},
+		"should fail on max_estimated_fetched_chunks_per_query_multiplier greater than 0 but less than 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 0.9`,
+			expectedErr: errInvalidMaxEstimatedChunksPerQueryMultiplier.Error(),
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier = 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 1`,
+			expectedErr: "",
+		},
+		"should pass on max_estimated_fetched_chunks_per_query_multiplier greater than 1": {
+			cfg:         `max_estimated_fetched_chunks_per_query_multiplier: 1.1`,
+			expectedErr: "",
+		},
+		"should fail on invalid ingest_storage_read_consistency": {
+			cfg:         `ingest_storage_read_consistency: xyz`,
+			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
+		},
 	}
 
-	for value, shouldBeValid := range testCases {
-		t.Run(value, func(t *testing.T) {
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
 			limits := Limits{}
-			cfg := "max_estimated_fetched_chunks_per_query_multiplier: " + value
-			err := yaml.Unmarshal([]byte(cfg), &limits)
+			flagext.DefaultValues(&limits)
 
-			if shouldBeValid {
-				require.NoError(t, err)
+			err := yaml.Unmarshal([]byte(testData.cfg), &limits)
+
+			if testData.expectedErr != "" {
+				require.ErrorContains(t, err, testData.expectedErr)
 			} else {
-				require.ErrorContains(t, err, "invalid value for -querier.max-estimated-fetched-chunks-per-query-multiplier: must be 0 or greater than or equal to 1")
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg         string
+		expectedErr string
+	}{
+		"should fail on invalid metric_relabel_configs": {
+			cfg:         `{"metric_relabel_configs": [null]}`,
+			expectedErr: "invalid metric_relabel_configs",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := Limits{}
+			flagext.DefaultValues(&limits)
+
+			err := json.Unmarshal([]byte(testData.cfg), &limits)
+
+			if testData.expectedErr != "" {
+				require.ErrorContains(t, err, testData.expectedErr)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}

@@ -38,6 +38,7 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)
+	flagext.DefaultValues(&cfg.IngestStorageConfig)
 	cfg.IngesterRing.KVStore.Mock = consul
 	cfg.IngesterRing.NumTokens = 1
 	cfg.IngesterRing.ListenPort = 0

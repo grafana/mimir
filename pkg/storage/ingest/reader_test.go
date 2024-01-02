@@ -16,10 +16,10 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestPartitionReader(t *testing.T) {
@@ -31,7 +31,7 @@ func TestPartitionReader(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
 
 	content := []byte("special content")
 	consumer := newTestConsumer(2)
@@ -57,7 +57,7 @@ func TestReader_ConsumerError(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
 
 	invocations := atomic.NewInt64(0)
 	returnErrors := atomic.NewBool(true)
@@ -102,7 +102,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	setup := func(t *testing.T) (testConsumer, *PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		_, clusterAddr := createTestCluster(t, 1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName, ConsumerGroup)
 
 		// Create a consumer with no buffer capacity.
 		consumer := newTestConsumer(0)
@@ -329,7 +329,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
 
 		consumer := newTestConsumer(3)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -361,7 +361,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
 
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -390,7 +390,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := createTestCluster(t, partitionID+1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
 
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -416,85 +416,6 @@ func TestPartitionReader_Commit(t *testing.T) {
 		// No new records since the last commit (2 shutdowns ago).
 		_, err = consumer.waitRecords(0, time.Second, 0)
 		assert.NoError(t, err)
-	})
-}
-
-// addSupportForConsumerGroups adds very bare-bones support for one consumer group.
-// It expects that only one partition is consumed at a time.
-func addSupportForConsumerGroups(t *testing.T, cluster *kfake.Cluster, topicName string, numPartitions int32) {
-	committedOffsets := make([]int64, numPartitions+1)
-
-	cluster.ControlKey(kmsg.OffsetCommit.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
-		cluster.KeepControl()
-		commitR := request.(*kmsg.OffsetCommitRequest)
-		assert.Equal(t, consumerGroup, commitR.Group)
-		assert.Len(t, commitR.Topics, 1, "test only has support for one topic per request")
-		topic := commitR.Topics[0]
-		assert.Equal(t, topicName, topic.Topic)
-		assert.Len(t, topic.Partitions, 1, "test only has support for one partition per request")
-
-		partitionID := topic.Partitions[0].Partition
-		committedOffsets[partitionID] = topic.Partitions[0].Offset
-
-		resp := request.ResponseKind().(*kmsg.OffsetCommitResponse)
-		resp.Default()
-		resp.Topics = []kmsg.OffsetCommitResponseTopic{
-			{
-				Topic:      topicName,
-				Partitions: []kmsg.OffsetCommitResponseTopicPartition{{Partition: partitionID}},
-			},
-		}
-
-		return resp, nil, true
-	})
-
-	cluster.ControlKey(kmsg.OffsetFetch.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
-		cluster.KeepControl()
-		commitR := request.(*kmsg.OffsetFetchRequest)
-		assert.Len(t, commitR.Groups, 1, "test only has support for one consumer group per request")
-		assert.Equal(t, commitR.Groups[0].Group, consumerGroup)
-
-		const allPartitions = -1
-		var partitionID int32
-
-		if len(commitR.Groups[0].Topics) == 0 {
-			// An empty request means fetch all topic-partitions for this group.
-			partitionID = allPartitions
-		} else {
-			partitionID = commitR.Groups[0].Topics[0].Partitions[0]
-			assert.Len(t, commitR.Groups[0], 1, "test only has support for one partition per request")
-			assert.Len(t, commitR.Groups[0].Topics[0].Partitions, 1, "test only has support for one partition per request")
-		}
-
-		var partitionsResp []kmsg.OffsetFetchResponseGroupTopicPartition
-		if partitionID == allPartitions {
-			for i := int32(1); i < numPartitions+1; i++ {
-				partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
-					Partition: i,
-					Offset:    committedOffsets[i],
-				})
-			}
-		} else {
-			partitionsResp = append(partitionsResp, kmsg.OffsetFetchResponseGroupTopicPartition{
-				Partition: partitionID,
-				Offset:    committedOffsets[partitionID],
-			})
-		}
-
-		resp := request.ResponseKind().(*kmsg.OffsetFetchResponse)
-		resp.Default()
-		resp.Groups = []kmsg.OffsetFetchResponseGroup{
-			{
-				Group: consumerGroup,
-				Topics: []kmsg.OffsetFetchResponseGroupTopic{
-					{
-						Topic:      topicName,
-						Partitions: partitionsResp,
-					},
-				},
-			},
-		}
-		return resp, nil, true
 	})
 }
 
