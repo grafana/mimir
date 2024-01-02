@@ -2733,6 +2733,8 @@ Usage of ./cmd/mimir/mimir:
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -tenant-federation.max-concurrent int
     	[experimental] The number of workers used for each tenant federated query. This setting limits the maximum number of per-tenant queries executed at a time for a tenant federated query. (default 16)
+  -tenant-federation.max-tenants int
+    	[experimental] The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -timeseries-unmarshal-caching-optimization-enabled
     	[experimental] Enables optimized marshaling of timeseries. (default true)
   -usage-stats.enabled
