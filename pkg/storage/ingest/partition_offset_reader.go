@@ -104,7 +104,7 @@ func (p *partitionOffsetReader) stopping(_ error) error {
 func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Context) {
 	// Swap the next promise with a new one.
 	p.nextResultPromiseMx.Lock()
-	wg := p.nextResultPromise
+	promise := p.nextResultPromise
 	p.nextResultPromise = newResultPromise[int64]()
 	p.nextResultPromiseMx.Unlock()
 
@@ -119,7 +119,7 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	}
 
 	// Notify whoever was waiting for it.
-	wg.notify(offset, err)
+	promise.notify(offset, err)
 }
 
 // getLastProducedOffset fetches and returns the last produced offset for a partition, or -1 if the
@@ -198,8 +198,8 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 func (p *partitionOffsetReader) WaitLastProducedOffset(ctx context.Context) (int64, error) {
 	// Get the promise for the result of the next request that will be issued.
 	p.nextResultPromiseMx.RLock()
-	wg := p.nextResultPromise
+	promise := p.nextResultPromise
 	p.nextResultPromiseMx.RUnlock()
 
-	return wg.wait(ctx)
+	return promise.wait(ctx)
 }
