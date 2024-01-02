@@ -1211,7 +1211,7 @@
             "height": "250px",
             "panels": [
                {
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fieldConfig": {
                      "overrides": [
                         {
@@ -1588,9 +1588,9 @@
             {
                "hide": 0,
                "includeAll": false,
-               "label": "Logs datasource",
+               "label": "Loki data source",
                "multi": false,
-               "name": "lokidatasource",
+               "name": "loki_datasource",
                "query": "loki",
                "type": "datasource"
             },
