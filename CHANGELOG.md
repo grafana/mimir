@@ -31,6 +31,7 @@
 * [ENHANCEMENT] Dashboards: Add graphs to "Slow Queries" dashboard. #6880
 * [ENHANCEMENT] Dashboards: remove legacy `graph` panel from Rollout Progress dashboard. #6864
 * [ENHANCEMENT] Dashboards: Make most columns in "Slow Queries" sortable. #7000
+* [ENHANCEMENT] Dashboards: Render graph panels at full resolution as opposed to at half resolution. #7027
 
 ### Jsonnet
 
