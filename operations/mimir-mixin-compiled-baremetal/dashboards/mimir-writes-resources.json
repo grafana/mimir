@@ -68,7 +68,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -143,7 +142,6 @@
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -218,7 +216,6 @@
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -318,7 +315,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -406,7 +402,6 @@
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -479,7 +474,6 @@
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -564,7 +558,6 @@
                      {
                         "expr": "sum by(instance) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -652,7 +645,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_cpu_seconds_total{mode=\"user\",cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -752,7 +744,6 @@
                      {
                         "expr": "node_memory_Active_anon_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n+ node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -840,7 +831,6 @@
                      {
                         "expr": "node_memory_MemTotal_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_MemFree_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Buffers_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Cached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_Slab_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_PageTables_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n- node_memory_SwapCached_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -913,7 +903,6 @@
                      {
                         "expr": "sum by(instance) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -998,7 +987,6 @@
                      {
                         "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_written_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
                      }
@@ -1073,7 +1061,6 @@
                      {
                         "expr": "sum by(instance, instance, device) (\n  rate(\n    node_disk_read_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}} - {{device}}",
                         "legendLink": null
                      }
@@ -1148,7 +1135,6 @@
                      {
                         "expr": "1 - ((node_filesystem_avail_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\", mountpoint=\"/\"})\n    / node_filesystem_size_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\", mountpoint=\"/\"})\n",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -1211,7 +1197,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",
