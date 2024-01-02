@@ -355,9 +355,9 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 		}
 	}()
 
-	// Ensure the service has been started. Some subservices used below are created when starting
+	// Ensure the service is running. Some subservices used below are created when starting
 	// so they're not available before that.
-	if state := r.Service.State(); state != services.Running && state != services.Stopping {
+	if state := r.Service.State(); state != services.Running {
 		return fmt.Errorf("partition reader service is not running (state: %s)", state.String())
 	}
 
