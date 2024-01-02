@@ -193,6 +193,9 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 
 // FetchLastProducedOffset returns the result of the *next* "last produced offset" request
 // that will be issued.
+//
+// The "last produced offset" is the offset of the last message written to the partition (starting from 0), or -1 if no
+// message has been written yet.
 func (p *partitionOffsetReader) FetchLastProducedOffset(ctx context.Context) (int64, error) {
 	// Get the promise for the result of the next request that will be issued.
 	p.nextResultPromiseMx.RLock()
