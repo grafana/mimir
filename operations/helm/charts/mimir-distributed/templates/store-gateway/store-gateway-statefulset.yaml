@@ -67,7 +67,7 @@ spec:
          {{- if $rolloutZone.prepareDownscale }}
         grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
         grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
-        {{- end-}}
+        {{- end }}
         {{- if $rolloutZone.downscaleLeader }}
         grafana.com/rollout-downscale-leader: $rolloutZone.downscaleLeader
         {{- end }}
