@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -404,7 +405,7 @@ func (l *Limits) validate() error {
 		return errInvalidMaxEstimatedChunksPerQueryMultiplier
 	}
 
-	if !api.IsValidReadConsistency(l.IngestStorageReadConsistency) {
+	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
 

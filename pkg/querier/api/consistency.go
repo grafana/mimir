@@ -2,10 +2,6 @@
 
 package api
 
-import (
-	"github.com/grafana/mimir/pkg/util"
-)
-
 const (
 	// ReadConsistencyStrong means that a query sent by the same client will always observe the writes
 	// that have completed before issuing the query.
@@ -17,7 +13,3 @@ const (
 )
 
 var ReadConsistencies = []string{ReadConsistencyStrong, ReadConsistencyEventual}
-
-func IsValidReadConsistency(lvl string) bool {
-	return util.StringsContain(ReadConsistencies, lvl)
-}
