@@ -114,8 +114,6 @@ func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Conte
 	offset, err := p.getLastProducedOffset(ctx)
 	if err != nil {
 		level.Warn(p.logger).Log("msg", "failed to fetch the last produced offset", "err", err)
-	} else {
-		level.Info(p.logger).Log("msg", "fetched the last produced offset", "offset", offset)
 	}
 
 	// Notify whoever was waiting for it.
