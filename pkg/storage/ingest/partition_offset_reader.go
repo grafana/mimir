@@ -47,7 +47,7 @@ type partitionOffsetReader struct {
 	lastProducedOffsetLatency       prometheus.Summary
 }
 
-func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollFrequency time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
+func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
 	p := &partitionOffsetReader{
 		client:            client,
 		topic:             topic,
@@ -75,7 +75,7 @@ func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int3
 		}),
 	}
 
-	p.Service = services.NewTimerService(pollFrequency, nil, p.onPollInterval, p.stopping)
+	p.Service = services.NewTimerService(pollInterval, nil, p.onPollInterval, p.stopping)
 
 	return p
 }
