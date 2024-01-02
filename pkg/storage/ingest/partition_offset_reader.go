@@ -36,10 +36,10 @@ type partitionOffsetReader struct {
 	topic       string
 	partitionID int32
 
-	// nextResultWaiter is the waiter that will be notified about the result of the *next* "last produced offset"
+	// nextResultPromise is the promise that will be notified about the result of the *next* "last produced offset"
 	// request that will be issued (not the current in-flight one, if any).
-	nextResultWaiterMx sync.RWMutex
-	nextResultWaiter   *resultWaiter[int64]
+	nextResultPromiseMx sync.RWMutex
+	nextResultPromise   *resultPromise[int64]
 
 	// Metrics.
 	lastProducedOffsetRequestsTotal prometheus.Counter
@@ -49,11 +49,11 @@ type partitionOffsetReader struct {
 
 func newPartitionOffsetReader(client *kgo.Client, topic string, partitionID int32, pollFrequency time.Duration, reg prometheus.Registerer, logger log.Logger) *partitionOffsetReader {
 	p := &partitionOffsetReader{
-		client:           client,
-		topic:            topic,
-		partitionID:      partitionID,
-		logger:           logger, // Do not wrap with partition ID because it's already done by the caller.
-		nextResultWaiter: newResultWaiter[int64](),
+		client:            client,
+		topic:             topic,
+		partitionID:       partitionID,
+		logger:            logger, // Do not wrap with partition ID because it's already done by the caller.
+		nextResultPromise: newResultPromise[int64](),
 
 		lastProducedOffsetRequestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_ingest_storage_reader_last_produced_offset_requests_total",
@@ -90,11 +90,11 @@ func (p *partitionOffsetReader) onPollInterval(ctx context.Context) error {
 }
 
 func (p *partitionOffsetReader) stopping(_ error) error {
-	// Release any waiting goroutine without swapping the result waiter so that if any other goroutine
+	// Release any waiting goroutine without swapping the result promise so that if any other goroutine
 	// will watch it after this point it will get immediately notified.
-	p.nextResultWaiterMx.Lock()
-	p.nextResultWaiter.notify(0, errPartitionOffsetReaderStopped)
-	p.nextResultWaiterMx.Unlock()
+	p.nextResultPromiseMx.Lock()
+	p.nextResultPromise.notify(0, errPartitionOffsetReaderStopped)
+	p.nextResultPromiseMx.Unlock()
 
 	return nil
 }
@@ -102,11 +102,11 @@ func (p *partitionOffsetReader) stopping(_ error) error {
 // getAndNotifyLastProducedOffset fetches the last produced offset for a partition and notifies all waiting
 // goroutines (if any).
 func (p *partitionOffsetReader) getAndNotifyLastProducedOffset(ctx context.Context) {
-	// Swap the next waiter with a new one.
-	p.nextResultWaiterMx.Lock()
-	wg := p.nextResultWaiter
-	p.nextResultWaiter = newResultWaiter[int64]()
-	p.nextResultWaiterMx.Unlock()
+	// Swap the next promise with a new one.
+	p.nextResultPromiseMx.Lock()
+	wg := p.nextResultPromise
+	p.nextResultPromise = newResultPromise[int64]()
+	p.nextResultPromiseMx.Unlock()
 
 	// We call getLastProducedOffset() even if there are no goroutines waiting on the result in order to get
 	// a constant load on the Kafka backend. In other words, the load produced on Kafka by this component is
@@ -196,10 +196,10 @@ func (p *partitionOffsetReader) getLastProducedOffset(ctx context.Context) (_ in
 // WaitLastProducedOffset waits and returns the result of the *next* "last produced offset" request
 // that will be issued.
 func (p *partitionOffsetReader) WaitLastProducedOffset(ctx context.Context) (int64, error) {
-	// Get the waiter for the result of the next request that will be issued.
-	p.nextResultWaiterMx.RLock()
-	wg := p.nextResultWaiter
-	p.nextResultWaiterMx.RUnlock()
+	// Get the promise for the result of the next request that will be issued.
+	p.nextResultPromiseMx.RLock()
+	wg := p.nextResultPromise
+	p.nextResultPromiseMx.RUnlock()
 
 	return wg.wait(ctx)
 }

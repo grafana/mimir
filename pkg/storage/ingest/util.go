@@ -107,8 +107,8 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 	}
 }
 
-// resultWaiter is a simple utility to have multiple goroutines waiting for a result from another one.
-type resultWaiter[T any] struct {
+// resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
+type resultPromise[T any] struct {
 	// done is a channel used to wait the result. Once the channel is closed
 	// it's safe to read resultValue and resultErr without any lock.
 	done chan struct{}
@@ -117,20 +117,20 @@ type resultWaiter[T any] struct {
 	resultErr   error
 }
 
-func newResultWaiter[T any]() *resultWaiter[T] {
-	return &resultWaiter[T]{
+func newResultPromise[T any]() *resultPromise[T] {
+	return &resultPromise[T]{
 		done: make(chan struct{}),
 	}
 }
 
 // notify the result to waiting goroutines. This function must be called exactly once.
-func (w *resultWaiter[T]) notify(value T, err error) {
+func (w *resultPromise[T]) notify(value T, err error) {
 	w.resultValue = value
 	w.resultErr = err
 	close(w.done)
 }
 
-func (w *resultWaiter[T]) wait(ctx context.Context) (T, error) {
+func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	select {
 	case <-ctx.Done():
 		var zero T

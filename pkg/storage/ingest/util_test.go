@@ -97,11 +97,11 @@ func TestIngesterPartition(t *testing.T) {
 	})
 }
 
-func TestResultWaiter(t *testing.T) {
+func TestResultPromise(t *testing.T) {
 	t.Run("wait() should block until a result has been notified", func(t *testing.T) {
 		var (
 			wg  = sync.WaitGroup{}
-			rw  = newResultWaiter[int]()
+			rw  = newResultPromise[int]()
 			ctx = context.Background()
 		)
 
@@ -126,7 +126,7 @@ func TestResultWaiter(t *testing.T) {
 	t.Run("wait() should block until an error has been notified", func(t *testing.T) {
 		var (
 			wg        = sync.WaitGroup{}
-			rw        = newResultWaiter[int]()
+			rw        = newResultPromise[int]()
 			ctx       = context.Background()
 			resultErr = errors.New("test error")
 		)
@@ -151,7 +151,7 @@ func TestResultWaiter(t *testing.T) {
 
 	t.Run("wait() should return when the input context timeout expires", func(t *testing.T) {
 		var (
-			rw  = newResultWaiter[int]()
+			rw  = newResultPromise[int]()
 			ctx = context.Background()
 		)
 
