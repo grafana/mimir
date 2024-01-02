@@ -341,7 +341,7 @@ func (r *PartitionReader) WaitReadConsistency(ctx context.Context) (returnErr er
 	r.metrics.strongConsistencyRequests.Inc()
 
 	defer func() {
-		// Do not track failure or latency if the request was canceled (because the tracking would be falsed).
+		// Do not track failure or latency if the request was canceled (because the tracking would be incorrect).
 		if errors.Is(returnErr, context.Canceled) {
 			return
 		}

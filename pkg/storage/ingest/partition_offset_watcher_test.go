@@ -21,6 +21,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	const shortSleep = 100 * time.Millisecond
 
 	t.Run("should support a single goroutine waiting for an offset", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			ctx       = context.Background()
 			w         = newPartitionOffsetWatcher()
@@ -50,6 +52,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("should support two goroutines waiting for the same offset", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			ctx        = context.Background()
 			w          = newPartitionOffsetWatcher()
@@ -88,6 +92,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("should support two goroutines waiting for a different offset", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			ctx        = context.Background()
 			w          = newPartitionOffsetWatcher()
@@ -125,6 +131,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("Wait() should immediately return if the input offset has already been consumed", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			ctx = context.Background()
 			w   = newPartitionOffsetWatcher()
@@ -137,6 +145,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("Wait() should immediately return if the input offset is -1, even if no consumed offset has been notified yet", func(t *testing.T) {
+		t.Parallel()
+
 		var (
 			ctx = context.Background()
 			w   = newPartitionOffsetWatcher()
@@ -148,6 +158,8 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 	})
 
 	t.Run("Wait() should return as soon as the watcher service is stopped", func(t *testing.T) {
+		t.Parallel()
+
 		ctx := context.Background()
 
 		w := newPartitionOffsetWatcher()
@@ -319,7 +331,8 @@ func BenchmarkPartitionOffsetWatcher(b *testing.B) {
 		for n := 0; n < b.N; n++ {
 			w.Notify(nextOffset.Inc())
 
-			// Small throttling.
+			// Give a short time to multiple watching goroutines to call Wait() so that the next Notify()
+			// will likely return the result for multiple waiting goroutines at the same time.
 			time.Sleep(10 * time.Nanosecond)
 		}
 	})

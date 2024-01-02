@@ -135,21 +135,23 @@ func (w *partitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) 
 	}
 
 	defer func() {
-		if watchGroup.count.Dec() == 0 {
-			// Garbage collection:
-			//
-			// If it was the last goroutine to wait in the group, then ensure the group is removed
-			// from the map. This garbage collection is important to avoid accumulating entries
-			// in the watchGroups map if consumption is stuck and Wait() goroutines stop
-			// waiting because context has been canceled or their deadline expired.
-			w.mx.Lock()
-
-			if actualWatchGroup, ok := w.watchGroups[waitForOffset]; ok && watchGroup == actualWatchGroup {
-				delete(w.watchGroups, waitForOffset)
-			}
-
-			w.mx.Unlock()
+		if watchGroup.count.Dec() != 0 {
+			return
 		}
+
+		// Garbage collection:
+		//
+		// If it was the last goroutine to wait in the group, then ensure the group is removed
+		// from the map. This garbage collection is important to avoid accumulating entries
+		// in the watchGroups map if consumption is stuck and Wait() goroutines stop
+		// waiting because context has been canceled or their deadline expired.
+		w.mx.Lock()
+
+		if actualWatchGroup, ok := w.watchGroups[waitForOffset]; ok && watchGroup == actualWatchGroup {
+			delete(w.watchGroups, waitForOffset)
+		}
+
+		w.mx.Unlock()
 	}()
 
 	select {
