@@ -296,8 +296,16 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	for {
 		resp, err := q.client.Handle(ctx, req)
 		if err == nil {
+			// Responses with status codes 4xx should always be considered erroneous.
+			// These errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if resp.Code/100 == 4 {
+				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+			}
 			return resp, nil
 		}
+		// 4xx errors shouldn't be retried because it is expected that
+		// running the same query gives rise to the same 4xx error.
 		if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
 			return nil, err
 		}

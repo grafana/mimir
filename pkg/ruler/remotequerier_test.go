@@ -120,36 +120,71 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 
 func TestRemoteQuerier_SendRequest(t *testing.T) {
 	const errMsg = "this is an error"
+	var (
+		successfulResponse = &httpgrpc.HTTPResponse{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte(`{
+						"status": "success","data": {"resultType":"vector","result":[]}
+					}`),
+		}
+		erroneousResponse = &httpgrpc.HTTPResponse{
+			Code: http.StatusBadRequest,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte("this is an error"),
+		}
+	)
+
 	tests := map[string]struct {
+		response        *httpgrpc.HTTPResponse
 		err             error
+		expectedError   error
 		expectedRetries bool
 	}{
 		"errors with code 5xx are retried": {
 			err:             httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
+			expectedError:   httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
 			expectedRetries: true,
 		},
 		"context.Canceled error is retried": {
 			err:             context.Canceled,
+			expectedError:   context.Canceled,
 			expectedRetries: true,
 		},
 		"gRPC context.Canceled error is retried": {
 			err:             status.Error(codes.Canceled, context.Canceled.Error()),
+			expectedError:   status.Error(codes.Canceled, context.Canceled.Error()),
 			expectedRetries: true,
 		},
 		"context.DeadlineExceeded error is retried": {
 			err:             context.DeadlineExceeded,
+			expectedError:   context.DeadlineExceeded,
 			expectedRetries: true,
 		},
 		"gRPC context.DeadlineExceeded error is retried": {
 			err:             status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedError:   status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
 			expectedRetries: true,
 		},
 		"errors with code 4xx are not retried": {
 			err:             httpgrpc.Errorf(http.StatusBadRequest, errMsg),
+			expectedError:   httpgrpc.Errorf(http.StatusBadRequest, errMsg),
 			expectedRetries: false,
 		},
-		"no errors are not retried": {
+		"non-erroneous responses with status code 4xx are not retried and are converted to errors": {
 			err:             nil,
+			response:        erroneousResponse,
+			expectedError:   httpgrpc.ErrorFromHTTPResponse(erroneousResponse),
+			expectedRetries: false,
+		},
+		"non-erroneous responses with status code different from 4xx are not retried and are not converted to errors": {
+			err:             nil,
+			response:        successfulResponse,
+			expectedError:   nil,
 			expectedRetries: false,
 		},
 	}
@@ -165,23 +200,22 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 				if testCase.err != nil {
 					return nil, testCase.err
 				}
-				return &httpgrpc.HTTPResponse{
-					Code: http.StatusOK,
-					Headers: []*httpgrpc.Header{
-						{Key: "Content-Type", Values: []string{"application/json"}},
-					},
-					Body: []byte(`{
-						"status": "success","data": {"resultType":"vector","result":[]}
-					}`),
-				}, nil
+				return testCase.response, nil
 			}
 			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
 			_, err := q.sendRequest(context.Background(), inReq, log.NewNopLogger())
 			if testCase.err == nil {
-				require.NoError(t, err)
+				if testCase.expectedError == nil {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err)
+					require.EqualError(t, err, testCase.expectedError.Error())
+				}
 				require.Equal(t, int64(1), count.Load())
 			} else {
+				require.Error(t, err)
+				require.EqualError(t, err, testCase.expectedError.Error())
 				if testCase.expectedRetries {
 					require.Greater(t, count.Load(), int64(1))
 				} else {

@@ -5,7 +5,9 @@
 ### Grafana Mimir
 
 * [CHANGE] Ingester: Increase default value of `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to 100 MiB (previous default value was 10 MiB). #6764
-* [CHANGE] Ruler: don't use backoff retry on remote evaluation in case of `4xx` errors. #7004
+* [CHANGE] Ruler: the following changes apply on remote evaluation: #7004
+  * Non-erroneous responses with status code `4xx` are treated as errors.
+  * In case of `4xx` errors backoff retry is not used anymore.
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
