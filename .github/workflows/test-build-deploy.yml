@@ -270,7 +270,7 @@ jobs:
         run: |
           tar cvf images.tar /tmp/images
       - name: Upload Archive with Docker Images
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Docker Images
           path: ./images.tar
@@ -281,7 +281,7 @@ jobs:
           make BUILD_IN_CONTAINER=false cmd/mimir/.uptodate_race
           docker save $MIMIR_IMAGE -o ./mimir_race_image
       - name: Upload archive with race-enabled Mimir
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Race-enabled Mimir
           path: ./mimir_race_image
