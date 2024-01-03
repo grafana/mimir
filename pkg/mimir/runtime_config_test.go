@@ -17,12 +17,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestMain(m *testing.M) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+	m.Run()
+}
+
 // Given limits are usually loaded via a config file, and that
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
 func TestRuntimeConfigLoader_ShouldLoadAnchoredYAML(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	yamlFile := strings.NewReader(`
 overrides:
   '1234': &id001
@@ -56,8 +60,6 @@ overrides:
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
@@ -69,8 +71,6 @@ func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
 }
 
 func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
@@ -86,8 +86,6 @@ func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
 }
 
 func TestRuntimeConfigLoader_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	cases := []string{
 		`
 ---
@@ -127,8 +125,6 @@ overrides:
 }
 
 func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	for _, tc := range []struct {
 		name     string
 		validate func(limits validation.Limits) error

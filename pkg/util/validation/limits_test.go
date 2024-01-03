@@ -25,6 +25,12 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
+func TestMain(m *testing.M) {
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
+	m.Run()
+}
+
 func TestOverridesManager_GetOverrides(t *testing.T) {
 	tenantLimits := map[string]*Limits{}
 
@@ -54,8 +60,6 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 }
 
 func TestLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	inp := `ingestion_rate: 0.5`
 
 	l := Limits{}
@@ -68,8 +72,6 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 }
 
 func TestLimitsLoadingFromJson(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	inp := `{"ingestion_rate": 0.5}`
 
 	l := Limits{}
@@ -145,8 +147,6 @@ func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
 }
 
 func TestMetricRelabelConfigLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	inp := `
 metric_relabel_configs:
 - action: drop
@@ -590,6 +590,11 @@ testuser:
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			// Reset the default limits at the end of the test.
+			t.Cleanup(func() {
+				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+			})
+
 			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 			var limitsYAML Limits
@@ -614,8 +619,6 @@ testuser:
 }
 
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
 	cfg := `
@@ -723,8 +726,6 @@ func (stringExtension) Default() stringExtension {
 }
 
 func TestExtensions(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	t.Cleanup(func() {
 		registeredExtensions = map[string]registeredExtension{}
 		limitsExtensionsFields = nil
@@ -791,9 +792,11 @@ func TestExtensions(t *testing.T) {
 	})
 
 	t.Run("empty value from empty yaml", func(t *testing.T) {
+		// Reset the default limits at the end of the test.
 		t.Cleanup(func() {
-			defaultLimits = nil
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 		})
+
 		SetDefaultLimitsForYAMLUnmarshalling(Limits{
 			RequestRate: 100,
 		})
@@ -810,6 +813,11 @@ func TestExtensions(t *testing.T) {
 	})
 
 	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
+		// Reset the default limits at the end of the test.
+		t.Cleanup(func() {
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+		})
+
 		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
 		// Since we assign l = *defaultLimits before unmarshaling,
 		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
@@ -844,8 +852,6 @@ func TestExtensions(t *testing.T) {
 }
 
 func TestExtensionMarshalling(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-
 	t.Cleanup(func() {
 		registeredExtensions = map[string]registeredExtension{}
 		limitsExtensionsFields = nil
