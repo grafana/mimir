@@ -51,7 +51,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
 	// Converted to IngesterClient to make sure we only use methods from the interface.
-	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewIngesterClient(conn), conn))
+	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewWrappedIngesterClient(conn), conn))
 
 	var requestsToSend []*mimirpb.WriteRequest
 	for i := 0; i < 10; i++ {
@@ -95,7 +95,7 @@ func TestWriteRequestBufferingClient_Push(t *testing.T) {
 func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
 	_, conn := setupGrpc(t)
 
-	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewIngesterClient(conn), conn))
+	bufferingClient := IngesterClient(newBufferPoolingIngesterClient(NewWrappedIngesterClient(conn), conn))
 
 	var requestsToSend []*mimirpb.WriteRequest
 	for i := 0; i < 100; i++ {
@@ -128,7 +128,7 @@ func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
 func TestWriteRequestBufferingClient_Push_WithMultipleMarshalCalls(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := newBufferPoolingIngesterClient(NewIngesterClient(conn), conn)
+	bufferingClient := newBufferPoolingIngesterClient(NewWrappedIngesterClient(conn), conn)
 	bufferingClient.pushRawFn = func(ctx context.Context, conn *grpc.ClientConn, msg interface{}, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 		// Call Marshal several times. We are testing if all buffers from the pool are returned.
 		_, _ = msg.(*wrappedRequest).Marshal()
@@ -188,7 +188,7 @@ func BenchmarkWriteRequestBufferingClient_Push(b *testing.B) {
 func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 	serv, conn := setupGrpc(t)
 
-	bufferingClient := newBufferPoolingIngesterClient(NewIngesterClient(conn), conn)
+	bufferingClient := newBufferPoolingIngesterClient(NewWrappedIngesterClient(conn), conn)
 	serv.trackSamples = true
 
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}

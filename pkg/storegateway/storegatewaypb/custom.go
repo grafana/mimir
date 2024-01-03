@@ -32,7 +32,7 @@ func (c *customStoreGatewayClient) Series(ctx context.Context, in *storepb.Serie
 		return client, wrapContextError(err)
 	}
 
-	return newCustomSeriesClient(client), nil
+	return wrapStoreGatewaySeriesClient(client), nil
 }
 
 // LabelNames implements StoreGatewayClient.
@@ -54,7 +54,7 @@ type customSeriesClient struct {
 	wrapped StoreGateway_SeriesClient
 }
 
-func newCustomSeriesClient(client StoreGateway_SeriesClient) *customSeriesClient {
+func wrapStoreGatewaySeriesClient(client StoreGateway_SeriesClient) *customSeriesClient {
 	return &customSeriesClient{
 		customClientStream: &customClientStream{client},
 		wrapped:            client,

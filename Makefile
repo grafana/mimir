@@ -365,7 +365,8 @@ lint: check-makefiles
 
 	# Ensure we use our custom gRPC clients.
 	faillint -paths \
-		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
+		"github.com/grafana/mimir/pkg/ingester/client.{NewIngesterClient}=github.com/grafana/mimir/pkg/ingester/client.NewWrappedIngesterClient, \
+		github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format: ## Run gofmt and goimports.

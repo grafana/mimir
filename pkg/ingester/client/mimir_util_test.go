@@ -72,7 +72,7 @@ func TestSendQueryStream(t *testing.T) {
 	}()
 	t.Cleanup(server.Stop)
 
-	client := NewIngesterClient(conn)
+	client := NewWrappedIngesterClient(conn)
 	stream, err := client.QueryStream(clientCtx, &QueryRequest{})
 	require.NoError(t, err)
 
