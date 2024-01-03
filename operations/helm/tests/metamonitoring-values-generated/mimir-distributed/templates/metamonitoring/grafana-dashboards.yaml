@@ -31329,7 +31329,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 1,
                       "legend": {
@@ -31409,7 +31409,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 2,
                       "legend": {
@@ -31489,7 +31489,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 3,
                       "legend": {
@@ -31569,7 +31569,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 4,
                       "legend": {
@@ -31649,7 +31649,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 5,
                       "legend": {
@@ -31741,7 +31741,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 6,
                       "legend": {
@@ -31815,7 +31815,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 7,
                       "legend": {
@@ -31889,7 +31889,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 8,
                       "legend": {
@@ -31963,7 +31963,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 9,
                       "legend": {
@@ -32037,7 +32037,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 10,
                       "legend": {
@@ -32123,7 +32123,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 11,
                       "legend": {
@@ -32197,7 +32197,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 12,
                       "legend": {
@@ -32271,7 +32271,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 13,
                       "legend": {
@@ -32345,7 +32345,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 14,
                       "legend": {
@@ -32419,7 +32419,7 @@ data:
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
-                      "datasource": "${lokidatasource}",
+                      "datasource": "${loki_datasource}",
                       "fill": 1,
                       "id": 15,
                       "legend": {
