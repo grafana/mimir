@@ -330,7 +330,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 
 func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.T) {
 	// This value needs to be set at least as large as the buffer size used by the
-	// actual code for this test to make sense.
+	// implementation for this test to make sense.
 	const bufferSize = 512
 	const shardCount = 2
 
@@ -350,7 +350,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.
 		require.NotNil(t, shard, "this test requires a shard to be requested")
 
 		// Make sure the response body is big enough to not be buffered entirely.
-		response := fmt.Sprintf(fmt.Sprintf(`{"data": [{"__name__": "metric-%%%dd"}]}`, bufferSize), shard.ShardIndex)
+		response := fmt.Sprintf(fmt.Sprintf(`{"data": [{"__name__": "metric-%%0%dd"}]}`, bufferSize), shard.ShardIndex)
 		body := &bodyReadBytesCounter{body: io.NopCloser(strings.NewReader(response))}
 		upstreamResponseBodies[shard.ShardIndex] = body
 		responseSize[shard.ShardIndex] = len(response)
