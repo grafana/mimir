@@ -75,7 +75,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Start the ingester (after the Kafka cluster has been mocked).
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-			defer t.Cleanup(func() {
+			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
 			})
 
@@ -87,7 +87,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// Create a Kafka writer and then write a series.
 			writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
-			defer t.Cleanup(func() {
+			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
 			})
 
