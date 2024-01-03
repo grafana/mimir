@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,7 +21,7 @@ import (
 // a configmap is limited to 1MB, we need to minimise the limits file.
 // One way to do it is via YAML anchors.
 func TestRuntimeConfigLoader_ShouldLoadAnchoredYAML(t *testing.T) {
-	validation.SetDefaultLimitsForYAMLUnmarshalling(validation.Limits{})
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 	yamlFile := strings.NewReader(`
 overrides:
@@ -39,24 +40,24 @@ overrides:
 	runtimeCfg, err := loader.load(yamlFile)
 	require.NoError(t, err)
 
-	limits := validation.Limits{
-		IngestionRate:                       1500,
-		IngestionBurstSize:                  15000,
-		MaxGlobalSeriesPerUser:              15000,
-		MaxGlobalSeriesPerMetric:            7000,
-		RulerMaxRulesPerRuleGroup:           20,
-		RulerMaxRuleGroupsPerTenant:         20,
-		NotificationRateLimitPerIntegration: validation.NotificationRateLimitMap{},
-	}
+	expected := getDefaultLimits()
+	expected.IngestionRate = 1500
+	expected.IngestionBurstSize = 15000
+	expected.MaxGlobalSeriesPerUser = 15000
+	expected.MaxGlobalSeriesPerMetric = 7000
+	expected.RulerMaxRulesPerRuleGroup = 20
+	expected.RulerMaxRuleGroupsPerTenant = 20
 
 	loadedLimits := runtimeCfg.(*runtimeConfigValues).TenantLimits
 	require.Equal(t, 3, len(loadedLimits))
-	require.Equal(t, limits, *loadedLimits["1234"])
-	require.Equal(t, limits, *loadedLimits["1235"])
-	require.Equal(t, limits, *loadedLimits["1236"])
+	require.Equal(t, expected, *loadedLimits["1234"])
+	require.Equal(t, expected, *loadedLimits["1235"])
+	require.Equal(t, expected, *loadedLimits["1236"])
 }
 
 func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
@@ -68,6 +69,8 @@ func TestRuntimeConfigLoader_ShouldLoadEmptyFile(t *testing.T) {
 }
 
 func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	yamlFile := strings.NewReader(`
 # This is an empty YAML.
 `)
@@ -83,6 +86,8 @@ func TestRuntimeConfigLoader_MissingPointerFieldsAreNil(t *testing.T) {
 }
 
 func TestRuntimeConfigLoader_ShouldReturnErrorOnMultipleDocumentsInTheConfig(t *testing.T) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	cases := []string{
 		`
 ---
@@ -122,6 +127,8 @@ overrides:
 }
 
 func TestRuntimeConfigLoader_RunsValidation(t *testing.T) {
+	validation.SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	for _, tc := range []struct {
 		name     string
 		validate func(limits validation.Limits) error
@@ -160,4 +167,10 @@ overrides:
 			}
 		})
 	}
+}
+
+func getDefaultLimits() validation.Limits {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
 }

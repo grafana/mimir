@@ -54,9 +54,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 }
 
 func TestLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{
-		MaxLabelNameLength: 100,
-	})
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 	inp := `ingestion_rate: 0.5`
 
@@ -66,13 +64,11 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 	require.NoError(t, dec.Decode(&l))
 
 	assert.Equal(t, 0.5, l.IngestionRate, "from yaml")
-	assert.Equal(t, 100, l.MaxLabelNameLength, "from defaults")
+	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
 }
 
 func TestLimitsLoadingFromJson(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{
-		MaxLabelNameLength: 100,
-	})
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 	inp := `{"ingestion_rate": 0.5}`
 
@@ -81,7 +77,7 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, 0.5, l.IngestionRate, "from json")
-	assert.Equal(t, 100, l.MaxLabelNameLength, "from defaults")
+	assert.Equal(t, 1024, l.MaxLabelNameLength, "from defaults")
 
 	// Unmarshal should fail if input contains unknown struct fields and
 	// the decoder flag `json.Decoder.DisallowUnknownFields()` is set
@@ -121,11 +117,11 @@ max_partial_query_length: 1s
 `
 	inputJSON := `{"max_query_lookback": "1s", "max_partial_query_length": "1s"}`
 
-	limitsYAML := Limits{}
+	limitsYAML := getDefaultLimits()
 	err := yaml.Unmarshal([]byte(inputYAML), &limitsYAML)
 	require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
-	limitsJSON := Limits{}
+	limitsJSON := getDefaultLimits()
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
@@ -149,7 +145,7 @@ func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
 }
 
 func TestMetricRelabelConfigLimitsLoadingFromYaml(t *testing.T) {
-	SetDefaultLimitsForYAMLUnmarshalling(Limits{})
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 	inp := `
 metric_relabel_configs:
@@ -594,9 +590,9 @@ testuser:
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			SetDefaultLimitsForYAMLUnmarshalling(Limits{})
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
-			limitsYAML := Limits{}
+			var limitsYAML Limits
 			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
@@ -618,6 +614,8 @@ testuser:
 }
 
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
 	cfg := `
@@ -673,9 +671,7 @@ metric_relabel_configs:
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := Limits{}
-			flagext.DefaultValues(&limits)
-
+			limits := getDefaultLimits()
 			err := yaml.Unmarshal([]byte(testData.cfg), &limits)
 
 			if testData.expectedErr != "" {
@@ -700,9 +696,7 @@ func TestUnmarshalJSON_ShouldValidateConfig(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limits := Limits{}
-			flagext.DefaultValues(&limits)
-
+			limits := getDefaultLimits()
 			err := json.Unmarshal([]byte(testData.cfg), &limits)
 
 			if testData.expectedErr != "" {
@@ -729,6 +723,8 @@ func (stringExtension) Default() stringExtension {
 }
 
 func TestExtensions(t *testing.T) {
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	t.Cleanup(func() {
 		registeredExtensions = map[string]registeredExtension{}
 		limitsExtensionsFields = nil
@@ -818,7 +814,7 @@ func TestExtensions(t *testing.T) {
 		// Since we assign l = *defaultLimits before unmarshaling,
 		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
 		// This shouldn't happen, but let's have a test to make sure that it doesnt.
-		var def Limits
+		def := getDefaultLimits()
 		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
 		require.Equal(t, stringExtension("default"), getExtensionString(&def))
 		SetDefaultLimitsForYAMLUnmarshalling(def)
@@ -848,6 +844,8 @@ func TestExtensions(t *testing.T) {
 }
 
 func TestExtensionMarshalling(t *testing.T) {
+	SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+
 	t.Cleanup(func() {
 		registeredExtensions = map[string]registeredExtension{}
 		limitsExtensionsFields = nil
@@ -944,4 +942,10 @@ func TestIsLimitError(t *testing.T) {
 			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
 		})
 	}
+}
+
+func getDefaultLimits() Limits {
+	limits := Limits{}
+	flagext.DefaultValues(&limits)
+	return limits
 }
