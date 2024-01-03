@@ -15,6 +15,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -150,15 +151,15 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 			expectedError:   httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
 			expectedRetries: true,
 		},
-		"context.Canceled error is retried": {
+		"context.Canceled error is not retried": {
 			err:             context.Canceled,
 			expectedError:   context.Canceled,
-			expectedRetries: true,
+			expectedRetries: false,
 		},
-		"gRPC context.Canceled error is retried": {
+		"gRPC context.Canceled error is not retried": {
 			err:             status.Error(codes.Canceled, context.Canceled.Error()),
 			expectedError:   status.Error(codes.Canceled, context.Canceled.Error()),
-			expectedRetries: true,
+			expectedRetries: false,
 		},
 		"context.DeadlineExceeded error is retried": {
 			err:             context.DeadlineExceeded,
@@ -175,13 +176,13 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 			expectedError:   httpgrpc.Errorf(http.StatusBadRequest, errMsg),
 			expectedRetries: false,
 		},
-		"non-erroneous responses with status code 4xx are not retried and are converted to errors": {
+		"responses with status code 4xx are not retried and are converted to errors": {
 			err:             nil,
 			response:        erroneousResponse,
 			expectedError:   httpgrpc.ErrorFromHTTPResponse(erroneousResponse),
 			expectedRetries: false,
 		},
-		"non-erroneous responses with status code different from 4xx are not retried and are not converted to errors": {
+		"responses with status code 2xx are not retried": {
 			err:             nil,
 			response:        successfulResponse,
 			expectedError:   nil,
@@ -195,16 +196,20 @@ func TestRemoteQuerier_SendRequest(t *testing.T) {
 				count atomic.Int64
 			)
 
+			ctx, cancel := context.WithCancel(context.Background())
 			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				count.Add(1)
 				if testCase.err != nil {
+					if grpcutil.IsCanceled(testCase.err) {
+						cancel()
+					}
 					return nil, testCase.err
 				}
 				return testCase.response, nil
 			}
 			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
-			_, err := q.sendRequest(context.Background(), inReq, log.NewNopLogger())
+			_, err := q.sendRequest(ctx, inReq, log.NewNopLogger())
 			if testCase.err == nil {
 				if testCase.expectedError == nil {
 					require.NoError(t, err)
