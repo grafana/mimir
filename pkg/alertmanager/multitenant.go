@@ -400,7 +400,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
 	}
 
-	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})
+	am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am}, []server.Option{server.WithReturn4XXErrors}...)
 
 	am.alertmanagerClientsPool = newAlertmanagerClientsPool(client.NewRingServiceDiscovery(am.ring), cfg.AlertmanagerClient, logger, am.registry)
 	am.distributor, err = NewDistributor(cfg.AlertmanagerClient, cfg.MaxRecvMsgSize, am.ring, am.alertmanagerClientsPool, log.With(logger, "component", "AlertmanagerDistributor"), am.registry)

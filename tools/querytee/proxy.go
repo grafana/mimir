@@ -177,6 +177,9 @@ func (p *Proxy) Start() error {
 		GRPCServerMinTimeBetweenPings:      10 * time.Second,
 		GRPCServerPingWithoutStreamAllowed: true,
 
+		// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
+		ReportHTTP4XXCodesInInstrumentationLabel: true,
+
 		// Use Proxy's prometheus registry
 		MetricsNamespace:        queryTeeMetricsNamespace,
 		Registerer:              p.registerer,
