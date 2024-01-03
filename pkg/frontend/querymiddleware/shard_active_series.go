@@ -106,10 +106,7 @@ func setShardCountFromHeader(origShardCount int, r *http.Request, spanLog *spanl
 			continue
 		}
 		if shards >= 0 {
-			spanLog.DebugLog(
-				"msg",
-				fmt.Sprintf("using shard count from header %s: %d", totalShardsControlHeader, shards),
-			)
+			spanLog.DebugLog("msg", fmt.Sprintf("using shard count from header %s: %d", totalShardsControlHeader, shards))
 			return int(shards)
 		}
 	}
