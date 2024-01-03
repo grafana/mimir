@@ -97,8 +97,9 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Run a query in a separate goroutine and collect the result.
 			var (
-				queryRes model.Matrix
-				queryWg  = sync.WaitGroup{}
+				queryRes    model.Matrix
+				queryWg     = sync.WaitGroup{}
+				queryIssued = make(chan struct{})
 			)
 
 			queryWg.Add(1)
@@ -109,12 +110,13 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				queryCtx, cancel := context.WithTimeout(user.InjectOrgID(ctx, userID), 5*time.Second)
 				defer cancel()
 
+				close(queryIssued)
 				queryRes, _, err = runTestQuery(queryCtx, t, ingester, labels.MatchEqual, labels.MetricName, metricName)
 				require.NoError(t, err)
 			}()
 
-			// Wait some time and then unblock the Fetch.
-			time.Sleep(time.Second)
+			// Wait until the query is issued in the dedicated goroutine and then unblock the Fetch.
+			<-queryIssued
 			failFetch.Store(false)
 
 			// Wait until the query returns.
