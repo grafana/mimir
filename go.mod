@@ -60,7 +60,7 @@ require (
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
-	github.com/google/go-github/v32 v32.1.0
+	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.5.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
