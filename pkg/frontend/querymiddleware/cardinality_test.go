@@ -39,7 +39,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				Time:  requestTime.UnixMilli(),
 				Query: "up",
 			},
-			expected: fmt.Sprintf("QS:tenant-a:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-a"), cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query",
@@ -49,7 +49,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				End:   requestTime.Add(2 * time.Hour).UnixMilli(),
 				Query: "up",
 			},
-			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 0),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 0),
 		},
 		{
 			name:   "range query with large range",
@@ -60,7 +60,7 @@ func Test_cardinalityEstimateBucket_QueryRequest_keyFormat(t *testing.T) {
 				End:   requestTime.Add(25 * time.Hour).UnixMilli(),
 				Query: "up",
 			},
-			expected: fmt.Sprintf("QS:tenant-b:%s:%d:%d", cacheHashKey("up"), daysSinceEpoch, 1),
+			expected: fmt.Sprintf("QS:%s:%s:%d:%d", cacheHashKey("tenant-b"), cacheHashKey("up"), daysSinceEpoch, 1),
 		},
 	}
 

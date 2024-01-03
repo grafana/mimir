@@ -171,6 +171,11 @@ func generateCardinalityEstimationCacheKey(userID string, r Request, bucketSize 
 	startBucket := (r.GetStart() + int64(offset)) / bucketSize.Milliseconds()
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
+	// Apply a hash function to user controlled input to make sure we don't exceed
+	// the max number of bytes for the cache key (250 bytes in Memcached).
+	queryHash := cacheHashKey(r.GetQuery())
+	userIDHash := cacheHashKey(userID)
+
 	// Prefix key with `QS` (short for "query statistics").
-	return fmt.Sprintf("QS:%s:%s:%d:%d", userID, cacheHashKey(r.GetQuery()), startBucket, rangeBucket)
+	return fmt.Sprintf("QS:%s:%s:%d:%d", userIDHash, queryHash, startBucket, rangeBucket)
 }
