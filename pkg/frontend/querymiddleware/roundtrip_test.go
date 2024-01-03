@@ -65,7 +65,8 @@ func TestRangeTripperware(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
-	tw, err := NewTripperware(Config{},
+	tw, err := NewTripperware(
+		Config{},
 		log.NewNopLogger(),
 		mockLimits{},
 		newTestPrometheusCodec(),
@@ -289,7 +290,8 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, err := NewTripperware(Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(
+				Config{DeprecatedAlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
 				newTestPrometheusCodec(),

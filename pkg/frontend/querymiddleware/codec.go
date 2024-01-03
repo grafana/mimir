@@ -244,7 +244,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusInstantQueryRequest
 	var err error
-	result.Time, err = DecodeInstantQueryTimeParams(r)
+	result.Time, err = DecodeInstantQueryTimeParams(r, time.Now)
 	if err != nil {
 		return nil, decorateWithParamName(err, "time")
 	}
@@ -255,6 +255,8 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	return &result, nil
 }
 
+// DecodeRangeQueryTimeParams encapsulates Prometheus instant query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.query_range.
 func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err error) {
 	start, err = util.ParseTime(r.FormValue("start"))
 	if err != nil {
@@ -288,14 +290,18 @@ func DecodeRangeQueryTimeParams(r *http.Request) (start, end, step int64, err er
 	return start, end, step, nil
 }
 
-func DecodeInstantQueryTimeParams(r *http.Request) (int64, error) {
-	time, err := util.ParseTime(r.FormValue("time"))
+// DecodeInstantQueryTimeParams encapsulates Prometheus instant query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.query.
+func DecodeInstantQueryTimeParams(r *http.Request, now func() time.Time) (int64, error) {
+	time, err := util.ParseTimeParam(r, "time", now().UnixMilli())
 	if err != nil {
 		return 0, decorateWithParamName(err, "time")
 	}
 	return time, nil
 }
 
+// DecodeLabelsQueryTimeParams encapsulates Prometheus label names query time param parsing,
+// emulating the logic in prometheus/prometheus/web/api/v1#API.labelNames and v1#API.labelValues.
 func DecodeLabelsQueryTimeParams(r *http.Request) (start, end int64, err error) {
 	start, err = util.ParseTimeParam(r, "start", v1.MinTime.UnixMilli())
 	if err != nil {

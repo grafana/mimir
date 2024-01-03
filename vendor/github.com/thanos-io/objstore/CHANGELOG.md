@@ -37,6 +37,7 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 - [#76](https://github.com/thanos-io/objstore/pull/76) GCS: Query for object names only in `Iter` to possibly improve performance when listing objects.
 - [#85](https://github.com/thanos-io/objstore/pull/85) S3: Allow checksum algorithm to be configured
 - [#92](https://github.com/thanos-io/objstore/pull/92) GCS: Allow using a gRPC client.
+- [#94](https://github.com/thanos-io/objstore/pull/94) Allow timingReadCloser to be seeker 
 
 ### Changed
 - [#38](https://github.com/thanos-io/objstore/pull/38) *: Upgrade minio-go version to `v7.0.45`.

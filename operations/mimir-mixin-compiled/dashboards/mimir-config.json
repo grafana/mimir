@@ -68,7 +68,6 @@
                      {
                         "expr": "count(cortex_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
                         "legendLink": null
                      }
@@ -155,7 +154,6 @@
                      {
                         "expr": "count(cortex_runtime_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
                         "legendLink": null
                      }
@@ -218,7 +216,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

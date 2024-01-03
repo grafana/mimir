@@ -220,7 +220,7 @@ func newQueryTripperware(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
-		newStepAlignMiddleware(limits, tenant.NewMultiResolver(), log, registerer),
+		newStepAlignMiddleware(limits, log, registerer),
 	}
 
 	var c cache.Cache
