@@ -51,7 +51,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should block until data has been committed to storage", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, reg := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		produceRequestProcessed := atomic.NewBool(false)
@@ -111,7 +111,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -171,7 +171,7 @@ func TestWriter_WriteSync(t *testing.T) {
 			receivedBatchesLength   []int
 		)
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Allow only 1 in-flight Produce request in this test, to easily reproduce the scenario.
@@ -226,7 +226,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should return error on non existing partition", func(t *testing.T) {
 		t.Parallel()
 
-		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		writer, _ := createTestWriter(t, createTestKafkaConfig(clusterAddr, topicName))
 
 		// Write to a non-existing partition.
@@ -237,7 +237,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should return an error and stop retrying sending a record once the write timeout expires", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 
@@ -259,7 +259,7 @@ func TestWriter_WriteSync(t *testing.T) {
 	t.Run("should fail all buffered records and close the connection on timeout while waiting for Produce response", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName, ConsumerGroup)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
 		writer, _ := createTestWriter(t, kafkaCfg)
 

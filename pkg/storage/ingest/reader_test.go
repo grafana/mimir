@@ -31,7 +31,7 @@ func TestPartitionReader(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 	content := []byte("special content")
 	consumer := newTestConsumer(2)
@@ -57,7 +57,7 @@ func TestReader_ConsumerError(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 	invocations := atomic.NewInt64(0)
 	returnErrors := atomic.NewBool(true)
@@ -102,7 +102,7 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	setup := func(t *testing.T) (testConsumer, *PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName, ConsumerGroup)
+		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
 
 		// Create a consumer with no buffer capacity.
 		consumer := newTestConsumer(0)
@@ -329,7 +329,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(3)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -361,7 +361,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))
@@ -390,7 +390,7 @@ func TestPartitionReader_Commit(t *testing.T) {
 		ctx, cancel := context.WithCancelCause(context.Background())
 		t.Cleanup(func() { cancel(errors.New("test done")) })
 
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName, ConsumerGroup)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		consumer := newTestConsumer(4)
 		reader := startReader(ctx, t, clusterAddr, topicName, partitionID, consumer, withCommitInterval(commitInterval))

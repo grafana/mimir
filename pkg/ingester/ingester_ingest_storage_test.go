@@ -144,7 +144,7 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	ingesterCfg.IngestStorageConfig.KafkaConfig.LastProducedOffsetPollInterval = 100 * time.Millisecond
 
 	// Create a fake Kafka cluster.
-	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic, ingest.ConsumerGroup)
+	kafkaCluster, kafkaAddr := testkafka.CreateCluster(t, 10, ingesterCfg.IngestStorageConfig.KafkaConfig.Topic)
 	ingesterCfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
 
 	// The ingest storage requires the ingester ID to have a well known format.

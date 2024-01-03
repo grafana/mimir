@@ -24,8 +24,8 @@ import (
 	"go.uber.org/atomic"
 )
 
-// ConsumerGroup is only used to store commit offsets, not for actual consuming.
-const ConsumerGroup = "mimir"
+// consumerGroup is only used to store commit offsets, not for actual consuming.
+const consumerGroup = "mimir"
 
 type record struct {
 	tenantID string
@@ -323,7 +323,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context) (int64, 
 	adm := kadm.NewClient(cl)
 	defer adm.Close()
 
-	offsets, err := adm.FetchOffsets(ctx, ConsumerGroup)
+	offsets, err := adm.FetchOffsets(ctx, consumerGroup)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		// In case we are booting up for the first time ever against this topic.
 		return endOffset, nil
@@ -428,7 +428,7 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) {
 	// Leader epoch is -1 because we don't know it. This lets Kafka figure it out.
 	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset+1, -1)
 
-	committed, err := r.admClient.CommitOffsets(ctx, ConsumerGroup, toCommit)
+	committed, err := r.admClient.CommitOffsets(ctx, consumerGroup, toCommit)
 	if err != nil || !committed.Ok() {
 		level.Error(r.logger).Log("msg", "encountered error while committing offsets", "err", err, "commit_err", committed.Error(), "offset", offset)
 	} else {

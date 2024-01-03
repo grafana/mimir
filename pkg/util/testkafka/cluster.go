@@ -12,7 +12,7 @@ import (
 )
 
 // CreateCluster returns a fake Kafka cluster for unit testing.
-func CreateCluster(t testing.TB, numPartitions int32, topicName, consumerGroup string) (*kfake.Cluster, string) {
+func CreateCluster(t testing.TB, numPartitions int32, topicName string) (*kfake.Cluster, string) {
 	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
@@ -20,6 +20,7 @@ func CreateCluster(t testing.TB, numPartitions int32, topicName, consumerGroup s
 	addrs := cluster.ListenAddrs()
 	require.Len(t, addrs, 1)
 
+	const consumerGroup = "mimir"
 	addSupportForConsumerGroups(t, cluster, topicName, numPartitions, consumerGroup)
 
 	return cluster, addrs[0]
