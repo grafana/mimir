@@ -240,8 +240,9 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		}
 		r := res
 		g.Go(func() error {
-			defer func(Body io.ReadCloser) {
-				_ = Body.Close()
+			defer func(body io.ReadCloser) {
+				_, _ = io.ReadAll(body)
+				_ = body.Close()
 			}(r.Body)
 
 			it := jsoniter.Parse(jsoniter.ConfigFastest, r.Body, 512)
