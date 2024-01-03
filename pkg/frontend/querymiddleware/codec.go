@@ -408,14 +408,14 @@ func setRequestHeadersFromOptions(req *http.Request, o Options) {
 	if o.ShardingDisabled {
 		req.Header.Set(totalShardsControlHeader, "0")
 	}
-	if totalShards := o.TotalShards; totalShards > 0 {
-		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(totalShards)))
+	if o.TotalShards > 0 {
+		req.Header.Set(totalShardsControlHeader, strconv.Itoa(int(o.TotalShards)))
 	}
 	if o.InstantSplitDisabled {
 		req.Header.Set(instantSplitControlHeader, "0")
 	}
-	if instantSplitInterval := o.InstantSplitInterval; instantSplitInterval > 0 {
-		req.Header.Set(instantSplitControlHeader, time.Duration(instantSplitInterval).String())
+	if o.InstantSplitInterval > 0 {
+		req.Header.Set(instantSplitControlHeader, time.Duration(o.InstantSplitInterval).String())
 	}
 }
 
