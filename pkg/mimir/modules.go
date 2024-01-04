@@ -612,7 +612,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, []httpgrpc_server.Option{httpgrpc_server.WithReturn4XXErrors}...), util_log.Logger, t.Registerer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
