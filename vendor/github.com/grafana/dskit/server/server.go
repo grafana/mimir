@@ -94,10 +94,11 @@ type Config struct {
 	HTTPTLSConfig TLSConfig `yaml:"http_tls_config"`
 	GRPCTLSConfig TLSConfig `yaml:"grpc_tls_config"`
 
-	RegisterInstrumentation               bool `yaml:"register_instrumentation"`
-	ReportGRPCCodesInInstrumentationLabel bool `yaml:"report_grpc_codes_in_instrumentation_label_enabled"`
-	ExcludeRequestInLog                   bool `yaml:"-"`
-	DisableRequestSuccessLog              bool `yaml:"-"`
+	RegisterInstrumentation                  bool `yaml:"register_instrumentation"`
+	ReportGRPCCodesInInstrumentationLabel    bool `yaml:"report_grpc_codes_in_instrumentation_label_enabled"`
+	ReportHTTP4XXCodesInInstrumentationLabel bool `yaml:"-"`
+	ExcludeRequestInLog                      bool `yaml:"-"`
+	DisableRequestSuccessLog                 bool `yaml:"-"`
 
 	ServerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 	HTTPServerReadTimeout         time.Duration `yaml:"http_server_read_timeout"`
@@ -550,9 +551,12 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	// Setup gRPC server
-	// for HTTP over gRPC, ensure we don't double-count the middleware
-	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP))
+	serverOptions := make([]httpgrpc_server.Option, 0, 1)
+	if s.cfg.ReportHTTP4XXCodesInInstrumentationLabel {
+		serverOptions = append(serverOptions, httpgrpc_server.WithReturn4XXErrors)
+	}
+	// Setup gRPC server for HTTP over gRPC, ensure we don't double-count the middleware
+	httpgrpc.RegisterHTTPServer(s.GRPC, httpgrpc_server.NewServer(s.HTTP, serverOptions...))
 
 	go func() {
 		err := s.GRPC.Serve(s.grpcListener)

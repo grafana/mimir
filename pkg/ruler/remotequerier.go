@@ -183,7 +183,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		}
 		return nil, err
 	}
 	if resp.Code/100 != 2 {
@@ -227,7 +229,9 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 
 	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		}
 		return promql.Vector{}, err
 	}
 	if resp.Code/100 != 2 {

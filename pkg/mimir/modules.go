@@ -301,6 +301,9 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// Installing this allows us to reject push requests received via gRPC early -- before they are fully read into memory.
 	t.Cfg.Server.GrpcMethodLimiter = newGrpcInflightMethodLimiter(ingFn, distFn)
 
+	// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
+	t.Cfg.Server.ReportHTTP4XXCodesInInstrumentationLabel = true
+
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
 	serv, err := server.New(t.Cfg.Server)
@@ -609,7 +612,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {

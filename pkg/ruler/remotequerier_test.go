@@ -709,8 +709,8 @@ func TestRemoteQuerier_BackoffRetry(t *testing.T) {
 }
 
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-		return &httpgrpc.HTTPResponse{
+	var (
+		errorResp = &httpgrpc.HTTPResponse{
 			Code: http.StatusUnprocessableEntity,
 			Headers: []*httpgrpc.Header{
 				{Key: "Content-Type", Values: []string{"application/json"}},
@@ -718,18 +718,82 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 			Body: []byte(`{
 				"status": "error","errorType": "execution"
 			}`),
-		}, nil
+		}
+		error4xx = status.Error(http.StatusUnprocessableEntity, "this is a 4xx error")
+		error5xx = status.Error(http.StatusInternalServerError, "this is a 5xx error")
+	)
+	testCases := map[string]struct {
+		resp         *httpgrpc.HTTPResponse
+		err          error
+		expectedCode int32
+		expectedLogs bool
+	}{
+		"HTTPResponse with code 4xx is translated to an error with the same code and not logged": {
+			resp:         errorResp,
+			err:          nil,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedLogs: false,
+		},
+		"error with code 4xx is returned but not logged": {
+			resp:         nil,
+			err:          error4xx,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedLogs: false,
+		},
+		"error with code 5xx is returned and logged": {
+			resp:         nil,
+			err:          error5xx,
+			expectedCode: http.StatusInternalServerError,
+			expectedLogs: true,
+		},
+		"an error without status code is returned and logged": {
+			resp:         nil,
+			err:          errors.New("this is an error"),
+			expectedCode: int32(codes.Unknown),
+			expectedLogs: true,
+		},
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				return testCase.resp, testCase.err
+			}
+			logger := newLoggerWithCounter()
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", logger)
 
-	tm := time.Unix(1649092025, 515834)
+			tm := time.Unix(1649092025, 515834)
 
-	_, err := q.Query(context.Background(), "qs", tm)
+			require.Equal(t, int64(0), logger.count())
+			_, err := q.Query(context.Background(), "qs", tm)
 
-	require.Error(t, err)
+			require.Error(t, err)
+			code := grpcutil.ErrorToStatusCode(err)
+			require.Equal(t, codes.Code(testCase.expectedCode), code)
+			if testCase.expectedLogs {
+				require.Greater(t, logger.count(), int64(0))
+			} else {
+				require.Equal(t, int64(0), logger.count())
+			}
+		})
+	}
+}
 
-	st, ok := status.FromError(err)
+type loggerWithCounter struct {
+	logger  log.Logger
+	counter atomic.Int64
+}
 
-	require.True(t, ok)
-	require.Equal(t, codes.Code(http.StatusUnprocessableEntity), st.Code())
+func newLoggerWithCounter() *loggerWithCounter {
+	return &loggerWithCounter{
+		logger: log.NewNopLogger(),
+	}
+}
+
+func (l *loggerWithCounter) Log(keyvals ...interface{}) error {
+	l.counter.Inc()
+	return l.logger.Log(keyvals...)
+}
+
+func (l *loggerWithCounter) count() int64 {
+	return l.counter.Load()
 }
