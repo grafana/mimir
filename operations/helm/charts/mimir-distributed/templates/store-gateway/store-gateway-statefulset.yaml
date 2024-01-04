@@ -64,7 +64,7 @@ spec:
         {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
-         {{- if $rolloutZone.prepareDownscale }}
+        {{- if $rolloutZone.prepareDownscale }}
         grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
         grafana.com/prepare-downscale-http-port: {{ include "mimir.serverHttpListenPort" . }}
         {{- end }}
