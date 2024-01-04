@@ -155,7 +155,7 @@ local filename = 'mimir-slow-queries.json';
           height: '500px',
           title: 'Slow queries',
           type: 'table',
-          datasource: '${lokidatasource}',
+          datasource: '${loki_datasource}',
 
           // Query logs from Loki.
           targets: [
@@ -271,8 +271,8 @@ local filename = 'mimir-slow-queries.json';
           // Add the Loki datasource.
           {
             type: 'datasource',
-            name: 'lokidatasource',
-            label: 'Logs datasource',
+            name: 'loki_datasource',
+            label: 'Loki data source',
             query: 'loki',
             hide: 0,
             includeAll: false,

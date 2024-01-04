@@ -2246,6 +2246,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 func TestDistributor_ActiveSeries(t *testing.T) {
 	const numIngesters = 5
+	const responseSizeLimitBytes = 1024
 
 	collision1, collision2 := labelsWithHashCollision()
 
@@ -2259,10 +2260,13 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
+		{labels.FromStrings(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
+
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
+		expectError                 error
 		expectedSeries              []labels.Labels
 		expectedNumQueriedIngesters int
 	}{
@@ -2287,24 +2291,32 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedSeries:              []labels.Labels{collision1, collision2},
 			expectedNumQueriedIngesters: numIngesters,
 		},
+		"aborts if response is too large": {
+			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
+			expectError:     ErrResponseTooLarge,
+		},
 	}
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor and ingesters.
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
 			distributors, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
 				shuffleShardSize: test.shuffleShardSize,
+				limits:           limits,
 			})
-			distributor := distributors[0]
+			d := distributors[0]
 
 			// Push test data.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			for _, series := range pushedData {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := distributor.Push(ctx, req)
+				_, err := d.Push(ctx, req)
 				require.NoError(t, err)
 			}
 
@@ -2312,7 +2324,12 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
 			// Query active series.
-			series, err := distributor.ActiveSeries(ctx, test.requestMatchers)
+			series, err := d.ActiveSeries(ctx, test.requestMatchers)
+			if test.expectError != nil {
+				require.ErrorIs(t, err, test.expectError)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.ElementsMatch(t, test.expectedSeries, series)
 
@@ -4400,7 +4417,8 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 		return nil, err
 	}
 
-	results := []*client.ActiveSeriesResponse{}
+	var results []*client.ActiveSeriesResponse
+
 	resp := &client.ActiveSeriesResponse{}
 
 	for _, series := range i.timeseries {

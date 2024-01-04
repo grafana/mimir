@@ -204,7 +204,6 @@
                         "expr": "sort_desc(\n  cluster_namespace_deployment_reason:required_replicas:count{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    > ignoring(reason) group_left\n  cluster_namespace_deployment:actual_replicas:count{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n)\n",
                         "format": "table",
                         "instant": true,
-                        "intervalFactor": 2,
                         "legendFormat": "",
                         "refId": "A"
                      }
@@ -268,7 +267,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

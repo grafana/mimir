@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	pkg_distributor "github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -793,25 +794,33 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 		name                 string
 		requestParams        map[string][]string
 		expectMatcherSetSize int
-		expectError          bool
+		returnedError        error
+		expectStatusCode     int
 	}{
 		{
-			name:        "should error on missing selector param",
-			expectError: true,
+			name:             "should error on missing selector param",
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "should error on invalid selector",
-			requestParams: map[string][]string{"selector": {"-not-valid-"}},
-			expectError:   true,
+			name:             "should error on invalid selector",
+			requestParams:    map[string][]string{"selector": {"-not-valid-"}},
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "should error on multiple selectors",
-			requestParams: map[string][]string{"selector": {"a", "b"}},
-			expectError:   true,
+			name:             "should error on multiple selectors",
+			requestParams:    map[string][]string{"selector": {"a", "b"}},
+			expectStatusCode: http.StatusBadRequest,
 		},
 		{
-			name:          "valid selector",
-			requestParams: map[string][]string{"selector": {`{job="prometheus"}`}},
+			name:             "valid selector",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			expectStatusCode: http.StatusOK,
+		},
+		{
+			name:             "upstream error: response too large",
+			requestParams:    map[string][]string{"selector": {`{job="prometheus"}`}},
+			returnedError:    pkg_distributor.ErrResponseTooLarge,
+			expectStatusCode: http.StatusRequestEntityTooLarge,
 		},
 	}
 
@@ -823,7 +832,7 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 				labels.FromStrings("__name__", "up", "job", "prometheus"),
 				labels.FromStrings("__name__", "process_start_time_seconds", "job", "prometheus"),
 			}
-			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, nil)
+			d.On("ActiveSeries", mock.Anything, mock.Anything).Return(series, test.returnedError)
 
 			handler := createEnabledHandler(t, ActiveSeriesCardinalityHandler, d)
 			ctx := user.InjectOrgID(context.Background(), "test")
@@ -841,8 +850,9 @@ func TestActiveSeriesCardinalityHandler(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 
-			if test.expectError {
-				require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+			assert.Equal(t, test.expectStatusCode, recorder.Result().StatusCode)
+
+			if test.expectStatusCode != http.StatusOK {
 				return
 			}
 

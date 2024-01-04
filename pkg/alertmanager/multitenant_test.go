@@ -574,6 +574,21 @@ receivers:
 `, backendURL)
 			},
 		},
+		"msteams": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: msteams
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: msteams
+    msteams_configs:
+      - webhook_url: %s
+`, backendURL)
+			},
+		},
 		// We expect requests against the HTTP proxy to be blocked too.
 		"HTTP proxy": {
 			getAlertmanagerConfig: func(backendURL string) string {

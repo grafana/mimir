@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -173,7 +172,6 @@ func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 				End:   util.TimeToMillis(now.Add(-time.Hour)),
 			}
 
-			tenant.WithDefaultResolver(tenant.NewMultiResolver())
 			limits := multiTenantMockLimits{
 				byTenant: map[string]mockLimits{
 					"test1": {maxQueryExpressionSizeBytes: testData.queryLimits["test1"]},

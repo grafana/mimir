@@ -39,7 +39,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 1,
                   "legend": {
@@ -68,14 +68,12 @@
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
@@ -121,7 +119,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 2,
                   "legend": {
@@ -150,14 +148,12 @@
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
@@ -203,7 +199,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 3,
                   "legend": {
@@ -232,14 +228,12 @@
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
@@ -285,7 +279,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 4,
                   "legend": {
@@ -314,14 +308,12 @@
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
@@ -367,7 +359,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 5,
                   "legend": {
@@ -396,14 +388,12 @@
                      {
                         "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p99",
                         "legendLink": null
                      },
                      {
                         "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by ()",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "p50",
                         "legendLink": null
                      }
@@ -461,7 +451,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 6,
                   "legend": {
@@ -490,7 +480,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
@@ -536,7 +525,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 7,
                   "legend": {
@@ -565,7 +554,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
@@ -611,7 +599,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 8,
                   "legend": {
@@ -640,7 +628,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
@@ -686,7 +673,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 9,
                   "legend": {
@@ -715,7 +702,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
@@ -761,7 +747,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 10,
                   "legend": {
@@ -790,7 +776,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user}}",
                         "legendLink": null
                      }
@@ -848,7 +833,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 11,
                   "legend": {
@@ -877,7 +862,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
@@ -923,7 +907,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 12,
                   "legend": {
@@ -952,7 +936,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
@@ -998,7 +981,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 13,
                   "legend": {
@@ -1027,7 +1010,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
@@ -1073,7 +1055,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 14,
                   "legend": {
@@ -1102,7 +1084,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
@@ -1148,7 +1129,7 @@
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fill": 1,
                   "id": 15,
                   "legend": {
@@ -1177,7 +1158,6 @@
                      {
                         "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user_agent))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{user_agent}}",
                         "legendLink": null
                      }
@@ -1231,7 +1211,7 @@
             "height": "250px",
             "panels": [
                {
-                  "datasource": "${lokidatasource}",
+                  "datasource": "${loki_datasource}",
                   "fieldConfig": {
                      "overrides": [
                         {
@@ -1551,7 +1531,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",
@@ -1608,9 +1588,9 @@
             {
                "hide": 0,
                "includeAll": false,
-               "label": "Logs datasource",
+               "label": "Loki data source",
                "multi": false,
-               "name": "lokidatasource",
+               "name": "loki_datasource",
                "query": "loki",
                "type": "datasource"
             },
