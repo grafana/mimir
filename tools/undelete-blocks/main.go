@@ -109,9 +109,10 @@ func getBlocks(ctx context.Context, cfg config, bucket objtools.Bucket) (map[str
 	tenantFilter := newTenantFilter(cfg)
 	blocksFrom := strings.ToLower(cfg.blocksFrom)
 
-	var r io.Reader
+	var r io.ReadCloser
 	if blocksFrom == "json" || blocksFrom == "lines" {
-		r, err := getInputFile(cfg.inputFile)
+		var err error
+		r, err = getInputFile(cfg.inputFile)
 		if err != nil {
 			return nil, err
 		}
@@ -359,7 +360,7 @@ func undeleteBlock(ctx context.Context, bkt objtools.Bucket, tenantID string, bl
 	 To undelete a block we are going to:
 	 1. Ensure all files within an existing or restorable meta.json are exiting or restorable with a matching size
 	 2. Restore objects as needed (if restoring the meta.json it goes last)
-	 3. Delete the local then global delete markers as needed
+	 3. Delete the delete markers (local then global) as needed
 	 4. Restore the no-compact markers (local then global) as needed
 	*/
 
