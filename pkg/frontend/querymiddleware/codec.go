@@ -405,6 +405,9 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 }
 
 func setRequestHeadersFromOptions(req *http.Request, o Options) {
+	if o.CacheDisabled {
+		req.Header.Set(cacheControlHeader, noStoreValue)
+	}
 	if o.ShardingDisabled {
 		req.Header.Set(totalShardsControlHeader, "0")
 	}

@@ -934,6 +934,10 @@ func TestPrometheusCodec_DecodeEncode(t *testing.T) {
 			name:    "split interval disabled via header",
 			headers: http.Header{instantSplitControlHeader: []string{"0"}},
 		},
+		{
+			name:    "cache disabled via header",
+			headers: http.Header{cacheControlHeader: []string{noStoreValue}},
+		},
 	} {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
