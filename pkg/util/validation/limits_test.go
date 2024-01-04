@@ -813,11 +813,6 @@ func TestExtensions(t *testing.T) {
 	})
 
 	t.Run("default limits does not interfere with tenants extensions", func(t *testing.T) {
-		// Reset the default limits at the end of the test.
-		t.Cleanup(func() {
-			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
-		})
-
 		// This test makes sure that sharing the default limits does not leak extensions values between tenants.
 		// Since we assign l = *defaultLimits before unmarshaling,
 		// there's a chance of unmarshaling on top of a reference that is already being used in different tenant's limits.
@@ -825,6 +820,12 @@ func TestExtensions(t *testing.T) {
 		def := getDefaultLimits()
 		require.NoError(t, json.Unmarshal([]byte(`{"test_extension_string": "default"}`), &def), "parsing overrides")
 		require.Equal(t, stringExtension("default"), getExtensionString(&def))
+
+		// Reset the default limits at the end of the test.
+		t.Cleanup(func() {
+			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
+		})
+
 		SetDefaultLimitsForYAMLUnmarshalling(def)
 
 		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
