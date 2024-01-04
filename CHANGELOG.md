@@ -100,6 +100,10 @@
 
 ### Tools
 
+* [CHANGE] copyblocks: The flags for copyblocks have been changed to align more closely with other tools. #6607
+* [CHANGE] undelete-blocks: undelete-blocks-gcs has been removed and replaced with undelete-blocks, which supports recovering deleted blocks in versioned buckets from ABS, GCS, and S3-compatible object storage. #6607
+* [FEATURE] copyprefix: Add tool to copy objects between prefixes. Supports ABS, GCS, and S3-compatible object storage. #6607
+
 ## 2.11.0
 
 ### Grafana Mimir
@@ -268,9 +272,6 @@
 ### Tools
 
 * [CHANGE] tsdb-index: Rename tool to tsdb-series. #6317
-* [CHANGE] copyblocks: The flags for copyblocks have been changed to align more closely with other tools. #6607
-* [CHANGE] undelete-blocks: undelete-blocks-gcs has been removed and replaced with undelete-blocks, which supports recovering deleted blocks in versioned buckets from ABS, GCS, and S3-compatible object storage. #6607
-* [FEATURE] copyprefix: Add tool to copy objects between prefixes. Supports ABS, GCS, and S3-compatible object storage. #6607
 * [FEATURE] tsdb-labels: Add tool to print label names and values of a TSDB block. #6317
 * [ENHANCEMENT] trafficdump: Trafficdump can now parse OTEL requests. Entire request is dumped to output, there's no filtering of fields or matching of series done. #6108
 
