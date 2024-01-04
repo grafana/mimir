@@ -23,7 +23,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -58,6 +60,11 @@ const (
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
+)
+
+var (
+	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
+	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 )
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -210,6 +217,9 @@ type Limits struct {
 	// OpenTelemetry
 	OTelMetricSuffixesEnabled bool `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
 
+	// Ingest storage.
+	IngestStorageReadConsistency string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental" doc:"hidden"`
+
 	extensions map[string]interface{}
 }
 
@@ -325,6 +335,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+
+	// Ingest storage.
+	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce to queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -389,7 +402,11 @@ func (l *Limits) validate() error {
 	}
 
 	if l.MaxEstimatedChunksPerQueryMultiplier < 1 && l.MaxEstimatedChunksPerQueryMultiplier != 0 {
-		return errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
+		return errInvalidMaxEstimatedChunksPerQueryMultiplier
+	}
+
+	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
+		return errInvalidIngestStorageReadConsistency
 	}
 
 	return nil
@@ -937,6 +954,10 @@ func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {
 	return o.getOverridesForUser(userID).AlignQueriesWithStep
+}
+
+func (o *Overrides) IngestStorageReadConsistency(userID string) string {
+	return o.getOverridesForUser(userID).IngestStorageReadConsistency
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

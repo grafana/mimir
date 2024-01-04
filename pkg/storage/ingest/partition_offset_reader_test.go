@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestPartitionOffsetReader(t *testing.T) {
@@ -33,7 +35,7 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 	t.Run("should notify waiting goroutines when stopped", func(t *testing.T) {
 		var (
-			_, clusterAddr = createTestCluster(t, numPartitions, topicName)
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 		)
 
@@ -82,7 +84,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		t.Parallel()
 
 		var (
-			_, clusterAddr = createTestCluster(t, numPartitions, topicName)
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 			reg            = prometheus.NewPedanticRegistry()
@@ -123,7 +125,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		t.Parallel()
 
 		var (
-			cluster, clusterAddr = createTestCluster(t, numPartitions, topicName)
+			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reg                  = prometheus.NewPedanticRegistry()
@@ -175,7 +177,7 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 	t.Run("should honor the configured retry timeout", func(t *testing.T) {
 		t.Parallel()
 
-		cluster, clusterAddr := createTestCluster(t, numPartitions, topicName)
+		cluster, clusterAddr := testkafka.CreateCluster(t, numPartitions, topicName)
 
 		// Configure a short retry timeout.
 		kafkaCfg := createTestKafkaConfig(clusterAddr, topicName)
@@ -223,7 +225,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 	t.Run("should wait the result of the next request issued", func(t *testing.T) {
 		var (
-			cluster, clusterAddr = createTestCluster(t, numPartitions, topicName)
+			cluster, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg             = createTestKafkaConfig(clusterAddr, topicName)
 			client               = createTestKafkaClient(t, kafkaCfg)
 			reader               = newPartitionOffsetReader(client, topicName, partitionID, pollInterval, nil, logger)
@@ -284,7 +286,7 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 	t.Run("should immediately return if the context gets canceled", func(t *testing.T) {
 		var (
-			_, clusterAddr = createTestCluster(t, numPartitions, topicName)
+			_, clusterAddr = testkafka.CreateCluster(t, numPartitions, topicName)
 			kafkaCfg       = createTestKafkaConfig(clusterAddr, topicName)
 			client         = createTestKafkaClient(t, kafkaCfg)
 		)
@@ -297,6 +299,5 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 
 		_, err := reader.FetchLastProducedOffset(canceledCtx)
 		assert.ErrorIs(t, err, context.Canceled)
-
 	})
 }
