@@ -1490,6 +1490,10 @@ results_cache:
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
 
+# (experimental) True to enable sharding of active series queries.
+# CLI flag: -query-frontend.shard-active-series-queries
+[shard_active_series_queries: <boolean> | default = false]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -3227,6 +3231,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # /api/v1/cardinality/label_values API call.
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
+
+# (experimental) Maximum size of an active series request result shard in bytes.
+# 0 to disable.
+# CLI flag: -querier.active-series-results-max-size-bytes
+[active_series_results_max_size_bytes: <int> | default = 419430400]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

@@ -125,6 +125,7 @@ The following features are currently experimental:
   - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
+  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -133,6 +134,7 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
+  - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

@@ -1819,7 +1819,16 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	res := newActiveSeriesResponse(d.hashCollisionCount)
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	maxResponseSize := math.MaxInt
+	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
+		maxResponseSize = limit
+	}
+	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
@@ -1847,7 +1856,10 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				return nil, err
 			}
 
-			res.add(msg.Metric)
+			err = res.add(msg.Metric)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return nil, nil
@@ -1878,17 +1890,25 @@ type activeSeriesResponse struct {
 	builder            labels.ScratchBuilder
 	lbls               labels.Labels
 	hashCollisionCount prometheus.Counter
+
+	buf     []byte
+	size    int
+	maxSize int
 }
 
-func newActiveSeriesResponse(hashCollisionCount prometheus.Counter) *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int) *activeSeriesResponse {
 	return &activeSeriesResponse{
 		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
+		maxSize:            maxSize,
 	}
 }
 
-func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
+var ErrResponseTooLarge = errors.New("response too large")
+
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
+
 	r.m.Lock()
 	defer r.m.Unlock()
 
@@ -1896,7 +1916,15 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
-			r.series[lblHash] = entry{first: r.lbls.Copy()}
+			l := r.lbls.Copy()
+
+			r.buf = l.Bytes(r.buf)
+			r.size += len(r.buf)
+			if r.size > r.maxSize {
+				return ErrResponseTooLarge
+			}
+
+			r.series[lblHash] = entry{first: l}
 		} else {
 			// A series with this hash is already present in the result set, we need to
 			// detect potential hash collisions by comparing the labels of the candidate to
@@ -1910,12 +1938,22 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) {
 			}
 
 			if !present {
-				e.collisions = append(e.collisions, r.lbls.Copy())
+				l := r.lbls.Copy()
+
+				r.buf = l.Bytes(r.buf)
+				r.size += len(r.buf)
+				if r.size > r.maxSize {
+					return ErrResponseTooLarge
+				}
+
+				e.collisions = append(e.collisions, l)
 				r.series[lblHash] = e
 				r.hashCollisionCount.Inc()
 			}
 		}
 	}
+
+	return nil
 }
 
 func (r *activeSeriesResponse) result() []labels.Labels {
