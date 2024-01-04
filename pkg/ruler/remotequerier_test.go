@@ -728,22 +728,28 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 		expectedCode int32
 		expectedLogs bool
 	}{
-		"HTTPResponse with code 4xx is translated to an error with the same code": {
+		"HTTPResponse with code 4xx is translated to an error with the same code and not logged": {
 			resp:         errorResp,
 			err:          nil,
 			expectedCode: http.StatusUnprocessableEntity,
 			expectedLogs: false,
 		},
-		"error with code 4xx is returned": {
+		"error with code 4xx is returned but not logged": {
 			resp:         nil,
 			err:          error4xx,
 			expectedCode: http.StatusUnprocessableEntity,
 			expectedLogs: false,
 		},
-		"error with code 5xx is returned": {
+		"error with code 5xx is returned and logged": {
 			resp:         nil,
 			err:          error5xx,
 			expectedCode: http.StatusInternalServerError,
+			expectedLogs: true,
+		},
+		"an error without status code is returned and logged": {
+			resp:         nil,
+			err:          errors.New("this is an error"),
+			expectedCode: int32(codes.Unknown),
 			expectedLogs: true,
 		},
 	}
