@@ -390,7 +390,7 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		Header:     http.Header{},
 	}
 
-	setRequestHeadersFromOptions(req, r.GetOptions())
+	encodeOptions(req, r.GetOptions())
 
 	switch c.preferredQueryResultResponseFormat {
 	case formatJSON:
@@ -404,7 +404,7 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 	return req.WithContext(ctx), nil
 }
 
-func setRequestHeadersFromOptions(req *http.Request, o Options) {
+func encodeOptions(req *http.Request, o Options) {
 	if o.CacheDisabled {
 		req.Header.Set(cacheControlHeader, noStoreValue)
 	}
