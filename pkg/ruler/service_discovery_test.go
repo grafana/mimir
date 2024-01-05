@@ -130,7 +130,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 				QType:           tc.qType,
 				Host:            tc.host,
 			}
-			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
+			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Registerer: prometheus.NewPedanticRegistry()})
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
