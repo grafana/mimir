@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
@@ -137,7 +138,12 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	engine := promql.NewEngine(engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg))
+	engineOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	engine := promql.NewEngine(engineOpts)
+
+	// Experimental functions can only be enabled globally, and not on a per-engine basis.
+	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+
 	return NewSampleAndChunkQueryable(lazyQueryable), exemplarQueryable, engine
 }
 

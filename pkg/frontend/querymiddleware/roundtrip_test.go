@@ -77,6 +77,7 @@ func TestRangeTripperware(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		true,
 		nil,
 	)
 	if err != nil {
@@ -128,6 +129,7 @@ func TestInstantTripperware(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
+		true,
 		nil,
 	)
 	require.NoError(t, err)
@@ -302,6 +304,7 @@ func TestTripperware_Metrics(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
+				true,
 				reg,
 			)
 			require.NoError(t, err)
