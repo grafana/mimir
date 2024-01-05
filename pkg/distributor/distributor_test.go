@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -2157,8 +2158,10 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
+		maxSeriesPerQuery int
 		expectedResult    []labels.Labels
 		expectedIngesters int
+		expectedError     error
 	}{
 		"should return an empty response if no metric match": {
 			matchers: []*labels.Matcher{
@@ -2208,6 +2211,13 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			},
 			expectedIngesters: 3,
 		},
+		"should error out if max series per query is reached": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			maxSeriesPerQuery: 1,
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -2231,7 +2241,15 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// Set up limiter
+			ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
 			metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+			if testData.expectedError != nil {
+				require.ErrorIs(t, err, testData.expectedError)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expectedResult, metrics)
 
