@@ -8,6 +8,14 @@
 * [CHANGE] Validate tenant IDs according to [documented behavior](https://grafana.com/docs/mimir/latest/configure/about-tenant-ids/) even when tenant federation is not enabled. Note that this will cause some previously accepted tenant IDs to be rejected such as those longer than 150 bytes or containing `|` characters. #6959
 * [CHANGE] Ruler: don't use backoff retry on remote evaluation in case of `4xx` errors. #7004
 * [CHANGE] Server: responses with HTTP 4xx status codes are now treated as errors and used in `status_code` label of request duration metric. #7045
+* [CHANGE] Ruler: the following metrics, exposed when the ruler is configured to discover Alertmanager instances via service discovery, have been renamed:
+  * `prometheus_sd_failed_configs` renamed to `cortex_prometheus_sd_failed_configs`
+  * `prometheus_sd_discovered_targets` renamed to `cortex_prometheus_sd_discovered_targets`
+  * `prometheus_sd_received_updates_total` renamed to `cortex_prometheus_sd_received_updates_total`
+  * `prometheus_sd_updates_delayed_total` renamed to `cortex_prometheus_sd_updates_delayed_total`
+  * `prometheus_sd_updates_total` renamed to `cortex_prometheus_sd_updates_total`
+  * `prometheus_sd_refresh_failures_total` renamed to `cortex_prometheus_sd_refresh_failures_total`
+  * `prometheus_sd_refresh_duration_seconds` renamed to `cortex_prometheus_sd_refresh_duration_seconds`
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785

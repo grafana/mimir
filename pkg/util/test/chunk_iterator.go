@@ -35,7 +35,7 @@ func RequireIteratorHistogram(t *testing.T, expectedTs int64, expectedV *histogr
 	// check auto type conversion for PromQL
 	ts2, fh := iter.AtFloatHistogram()
 	require.Equal(t, expectedTs, ts2)
-	RequireFloatHistogramEqual(t, expectedV.ToFloat(), fh)
+	RequireFloatHistogramEqual(t, expectedV.ToFloat(nil), fh)
 	require.NoError(t, iter.Err())
 }
 

@@ -53,7 +53,7 @@ func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, l),
 		sdCancel:  sdCancel,
-		sdManager: discovery.NewManager(sdCtx, l),
+		sdManager: discovery.NewManager(sdCtx, l, o.Registerer),
 		logger:    l,
 	}
 }

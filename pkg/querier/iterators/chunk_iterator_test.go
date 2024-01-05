@@ -53,7 +53,7 @@ func TestChunkIteratorCaching(t *testing.T) {
 				// auto convert
 				ts2, fh := iter.AtFloatHistogram()
 				require.Equal(t, i, ts2)
-				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(i)).ToFloat(), fh)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(i)).ToFloat(nil), fh)
 			},
 		},
 		"float histogram chunk": {

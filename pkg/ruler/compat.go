@@ -80,6 +80,10 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
+func (a *PusherAppender) AppendCTZeroSample(ref storage.SeriesRef, l labels.Labels, t, ct int64) (storage.SeriesRef, error) {
+	return 0, errors.New("CT zero samples are unsupported")
+}
+
 func (a *PusherAppender) Commit() error {
 	a.totalWrites.Inc()
 
