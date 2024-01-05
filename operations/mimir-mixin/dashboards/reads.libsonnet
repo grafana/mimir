@@ -162,6 +162,9 @@ local filename = 'mimir-reads.json';
           |||
         )
       )
+    )
+    .addRow(
+      $.row('')
       .addPanel(
         $.panel('Requests / sec') +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
@@ -169,6 +172,23 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.panel('Latency (Time in Queue)') +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+      )
+      .addPanel(
+        $.panel('Latency (Time in Queue) by Queue Dimension') +
+        $.latencyPanelLabelBreakout(
+          'cortex_query_scheduler_queue_duration_seconds',
+          '{%s}' % $.jobMatcher($._config.job_names.query_scheduler),
+          ['additional_queue_dimensions'],
+          [
+            {
+              dstLabel: 'additional_queue_dimensions',
+              replacement: 'none',
+              srcLabel:
+                'additional_queue_dimensions',
+              regex: '^$',
+            },
+          ]
+        )
       )
     )
     .addRow(

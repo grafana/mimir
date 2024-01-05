@@ -66,7 +66,7 @@ docker run \
   --rm \
   --name "$DOCKER_CONTAINER_NAME" \
   --env "GF_AUTH_ANONYMOUS_ENABLED=true" \
-  --env "GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1m" \
+  --env "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin" \
   --env "GF_USERS_DEFAULT_THEME=light" \
   --env "GF_LOG_LEVEL=warn" \
   --env "DATASOURCE_URL=${DATASOURCE_URL}" \

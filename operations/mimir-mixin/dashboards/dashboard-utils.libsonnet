@@ -1002,6 +1002,42 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') }
     ),
 
+  latencyPanelLabelBreakout(metricName, selector, labels=[], labelReplaceArgSets=[{}], multiplier='1e3')::
+    local averageExprTmpl = $.wrapMultiLabelReplace(
+      'sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
+      labelReplaceArgSets,
+    );
+    local histogramExprTmpl = $.wrapMultiLabelReplace(
+      'histogram_quantile(%s, sum(rate(%s_bucket%s[$__rate_interval])) by (%s)) * %s',
+      labelReplaceArgSets,
+    );
+    local labelBreakouts = '%s' % std.join(', ', labels);
+    local histogramLabelBreakouts = '%s' % std.join(', ', ['le'] + labels);
+    {
+      nullPointMode: 'null as zero',
+      targets: [
+        {
+          expr: histogramExprTmpl % ['0.99', metricName, selector, histogramLabelBreakouts, multiplier],
+          format: 'time_series',
+          legendFormat: '99th Percentile: {{ %s }}' % [labelBreakouts],
+          refId: 'A',
+        },
+        {
+          expr: histogramExprTmpl % ['0.50', metricName, selector, histogramLabelBreakouts, multiplier],
+          format: 'time_series',
+          legendFormat: '50th Percentile: {{ %s }}' % [labelBreakouts],
+          refId: 'B',
+        },
+        {
+          expr: averageExprTmpl % [metricName, selector, labelBreakouts, multiplier, metricName, selector, labelBreakouts],
+          format: 'time_series',
+          legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
+          refId: 'C',
+        },
+      ],
+      yaxes: $.yaxes('ms'),
+    },
+
   // Copy/paste of latencyPanel from grafana-builder so that we can migrate between two different
   // names for the same metric. When enough time has passed and we no longer care about the old
   // metric name, this method can be removed and replaced with $.latencyPanel
@@ -1205,6 +1241,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
       mode: 'binary',
       replaceFields: replaceFields,
     }),
+
+  wrapMultiLabelReplace(query, labelReplaceArgSets=[{}])::
+    std.foldl(
+      function(query, labelReplaceArgSet) $.wrapLabelReplace(query, labelReplaceArgSet),
+      labelReplaceArgSets,
+      query,
+    ),
+
+  wrapLabelReplace(query, labelReplaceArgSet={})::
+    |||
+      label_replace(%(query)s, "%(dstLabel)s", "%(replacement)s", "%(srcLabel)s", "%(regex)s")
+    ||| % {
+      query: query,
+      dstLabel: labelReplaceArgSet.dstLabel,
+      replacement: labelReplaceArgSet.replacement,
+      srcLabel: labelReplaceArgSet.srcLabel,
+      regex: labelReplaceArgSet.regex,
+    },
 
   lokiMetricsQueryPanel(queries, legends='', unit='short')::
     super.queryPanel(queries, legends) +
