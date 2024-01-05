@@ -144,7 +144,7 @@ func TestConfig_Validate(t *testing.T) {
 				}
 				return cfg
 			},
-			expected: errInvalidSTSPrefix,
+			expected: errInvalidSTSEndpoint,
 		},
 	}
 
