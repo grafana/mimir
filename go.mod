@@ -258,8 +258,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-// Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => /home/owilliams/src/grafana/mimir-prometheus
+// Using a fork of Prometheus with Mimir-specific changes (checked out in my local prom branch)
+replace github.com/prometheus/prometheus => /home/owilliams/src/grafana/prometheus
 
 replace github.com/prometheus/client_golang => /home/owilliams/src/grafana/client_golang
 

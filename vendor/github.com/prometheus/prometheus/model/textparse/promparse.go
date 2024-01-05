@@ -305,6 +305,9 @@ func (p *PromParser) Next() (Entry, error) {
 				mEnd--
 			}
 			p.offsets = append(p.offsets, mStart, mEnd)
+			if err := p.verifyMetricName(); err != nil {
+				return EntryInvalid, err
+			}
 		default:
 			return EntryInvalid, p.parseError("expected metric name after "+t.String(), t2)
 		}
@@ -316,7 +319,7 @@ func (p *PromParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			return EntryInvalid, fmt.Errorf("expected text in 2 %s, got %v", t.String(), t2)
+			return EntryInvalid, fmt.Errorf("expected text in %s, got %v", t.String(), t2.String())
 		}
 		switch t {
 		case tType:
@@ -369,6 +372,9 @@ func (p *PromParser) Next() (Entry, error) {
 		return p.parseMetricSuffix(p.nextToken())
 	case tMName:
 		p.offsets = append(p.offsets, p.start, p.l.i)
+		if err := p.verifyMetricName(); err != nil {
+			return EntryInvalid, err
+		}
 		p.series = p.l.b[p.start:p.l.i]
 		t2 := p.nextToken()
 		// If there's a brace, consume and parse the label values
@@ -436,6 +442,12 @@ func (p *PromParser) parseLVals() error {
 			}
 			p.offsets[0] = curTStart + 1
 			p.offsets[1] = curTI - 1
+			if err := p.verifyMetricName(); err != nil {
+				return err
+			}
+			if t == tBraceClose {
+				return nil
+			}
 			t = p.nextToken()
 			continue
 		}
@@ -455,7 +467,9 @@ func (p *PromParser) parseLVals() error {
 		// and last character.
 		p.offsets = append(p.offsets, p.l.start+1, p.l.i-1)
 
-		// Free trailing commas are allowed.
+		// Free trailing commas are allowed. NOTE: this allows spaces between label
+		// names, unlike in OpenMetrics. It is not clear if this is intended or an
+		// accidental bug.
 		if t = p.nextToken(); t == tComma {
 			t = p.nextToken()
 		}
@@ -465,6 +479,9 @@ func (p *PromParser) parseLVals() error {
 // parseMetricSuffix parses the end of the line after the metric name and
 // labels. It starts parsing with the provided token.
 func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
+	if p.offsets[0] == -1 {
+		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
+	}
 	if t != tValue {
 		return EntryInvalid, p.parseError("expected value after metric", t)
 	}
@@ -492,9 +509,6 @@ func (p *PromParser) parseMetricSuffix(t token) (Entry, error) {
 		return EntryInvalid, p.parseError("expected timestamp or new record", t)
 	}
 
-	if p.offsets[0] == -1 {
-		return EntryInvalid, fmt.Errorf("metric name not set while parsing: %q", p.l.b[p.start:p.l.i])
-	}
 	return EntrySeries, nil
 }
 
@@ -511,6 +525,14 @@ var helpReplacer = strings.NewReplacer(
 
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
+}
+
+func (p *PromParser) verifyMetricName() error {
+	m := yoloString(p.l.b[p.offsets[0]:p.offsets[1]])
+	if !model.IsValidMetricName(model.LabelValue(m)) {
+		return fmt.Errorf("metric name %q is not valid", m)
+	}
+	return nil
 }
 
 func parseFloat(s string) (float64, error) {

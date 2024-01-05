@@ -302,7 +302,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(cfg.ScrapeProtocols),
+				acceptHeader:         acceptHeader(cfg.ScrapeProtocols, cfg.AllowUTF8Names),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
@@ -429,7 +429,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 				client:               sp.client,
 				timeout:              timeout,
 				bodySizeLimit:        bodySizeLimit,
-				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols),
+				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, sp.config.AllowUTF8Names),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
 				metrics:              sp.metrics,
 			}
@@ -667,11 +667,16 @@ var errBodySizeLimit = errors.New("body size limit exceeded")
 // acceptHeader transforms preference from the options into specific header values as
 // https://www.rfc-editor.org/rfc/rfc9110.html#name-accept defines.
 // No validation is here, we expect scrape protocols to be validated already.
-func acceptHeader(sps []config.ScrapeProtocol) string {
+func acceptHeader(sps []config.ScrapeProtocol, allowUTF8Names bool) string {
 	var vals []string
 	weight := len(config.ScrapeProtocolsHeaders) + 1
 	for _, sp := range sps {
-		vals = append(vals, fmt.Sprintf("%s;q=0.%d", config.ScrapeProtocolsHeaders[sp], weight))
+		val := config.ScrapeProtocolsHeaders[sp]
+		if allowUTF8Names {
+			val += ";"+config.UTF8NamesHeader
+		}
+		val += fmt.Sprintf(";q=0.%d", weight)
+		vals = append(vals, val)
 		weight--
 	}
 	// Default match anything.
@@ -1298,7 +1303,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	if appErr != nil {
 		app.Rollback()
 		app = sl.appender(sl.appenderCtx)
-		level.Debug(sl.l).Log("msg", "Append failed (edited code)", "err", appErr)
+		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
@@ -1554,10 +1559,10 @@ loop:
 				err = errNameLabelMandatory
 				break loop
 			}
-			// if !lset.IsValid() {
-			// 	err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
-			// 	break loop
-			// }
+			if !lset.IsValid() {
+				err = fmt.Errorf("invalid metric name or label names: %s", lset.String())
+				break loop
+			}
 
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
