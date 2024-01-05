@@ -2,6 +2,7 @@ global:
   scrape_interval: 5s
   external_labels:
     scraped_by: prometheus
+  utf8_names: true
 
 scrape_configs:
   - job_name: mimir-1

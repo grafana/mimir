@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -198,6 +199,13 @@ func main() {
 		} else {
 			defer trace.Close()
 		}
+	}
+
+	// XXX this does not seem like the right place but we do want to set this
+	// global var early.
+	if cfg.API.UTF8Names {
+		model.NameValidationScheme = model.UTF8Validation
+		level.Info(util_log.Logger).Log("msg", "experimental utf8 support enabled")
 	}
 
 	t, err := mimir.New(cfg, reg)
