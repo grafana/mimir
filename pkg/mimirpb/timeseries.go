@@ -590,3 +590,40 @@ func copyToYoloString(buf []byte, src string) (string, []byte) {
 	copy(buf, *((*[]byte)(unsafe.Pointer(&src))))
 	return yoloString(buf), buf[len(buf):]
 }
+
+// ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
+// It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
+func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
+	var timeseriesCount, metadataCount int
+	for _, i := range indexes {
+		if i >= initialMetadataIndex {
+			metadataCount++
+		} else {
+			timeseriesCount++
+		}
+	}
+
+	timeseries := preallocSliceIfNeeded[PreallocTimeseries](timeseriesCount)
+	metadata := preallocSliceIfNeeded[*MetricMetadata](metadataCount)
+
+	for _, i := range indexes {
+		if i >= initialMetadataIndex {
+			metadata = append(metadata, p.Metadata[i-initialMetadataIndex])
+		} else {
+			timeseries = append(timeseries, p.Timeseries[i])
+		}
+	}
+
+	return &WriteRequest{
+		Timeseries: timeseries,
+		Metadata:   metadata,
+		Source:     p.Source,
+	}
+}
+
+func preallocSliceIfNeeded[T any](size int) []T {
+	if size > 0 {
+		return make([]T, 0, size)
+	}
+	return nil
+}

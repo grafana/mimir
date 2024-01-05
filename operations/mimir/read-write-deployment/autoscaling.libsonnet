@@ -16,7 +16,8 @@
     //                 be a sufficient indication of load on the read path.
     self.newQuerierScaledObject(
       name='mimir-read',
-      query_scheduler_container='mimir-backend',
+      query_scheduler_container_name='mimir-backend',
+      querier_container_name='mimir-read',
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
       min_replicas=$._config.autoscaling_mimir_read_min_replicas,
       max_replicas=$._config.autoscaling_mimir_read_max_replicas,

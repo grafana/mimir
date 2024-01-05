@@ -22,7 +22,7 @@ import (
 func TestLimiter(t *testing.T) {
 	c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 	l := NewLimiter(10, c, func(limit uint64) validation.LimitError {
-		return validation.LimitError(fmt.Sprintf("limit of %v exceeded", limit))
+		return validation.NewLimitError(fmt.Sprintf("limit of %v exceeded", limit))
 	})
 
 	assert.NoError(t, l.Reserve(5))

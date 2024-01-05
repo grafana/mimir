@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
-	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -725,16 +724,14 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	// Swap out the default resolver to support multiple tenant IDs separated by a '|'
-	if cfg.TenantFederation.Enabled {
-		tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
-		if cfg.Ruler.TenantFederation.Enabled {
-			util_log.WarnExperimentalUse("ruler.tenant-federation")
-		}
+	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
+		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
 
-	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(&cfg.Server, cfg.MultitenancyEnabled,
+	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
+		&cfg.Server,
+		cfg.MultitenancyEnabled,
+		cfg.NoAuthTenant,
 		// Also don't check auth for these gRPC methods, since single call is used for multiple users (or no user like health check).
 		[]string{
 			"/grpc.health.v1.Health/Check",
@@ -744,7 +741,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForFrontend/FrontendLoop",
 			"/schedulerpb.SchedulerForQuerier/QuerierLoop",
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
-		}, cfg.NoAuthTenant)
+		})
 
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg

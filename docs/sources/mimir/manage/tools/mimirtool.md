@@ -96,6 +96,17 @@ The following command shows the current Alertmanager configuration.
 mimirtool alertmanager get
 ```
 
+Alternatively, you can output the config and template files to a folder which can then be loaded back
+into alert manager at a later date. For example, the following command outputs the files to a folder called `am`
+
+```bash
+mimirtool alertmanager get --output-dir="am"
+```
+
+The config file is named `config.yaml` and the template files ends in `.tpl`, where each template is written
+out to its own file. Note that using the `--output-dir` flag only writes the output to files and no longer print
+the config to the console.
+
 #### Load Alertmanager configuration
 
 The following command loads an Alertmanager configuration to the Alertmanager instance.
@@ -127,6 +138,16 @@ receivers:
 {{ define "alert_customer_env_message" }}
   [{{ .CommonLabels.alertname }} | {{ .CommonLabels.customer }} | {{ .CommonLabels.environment }}]
 {{ end }}
+```
+
+The input to `[<template_files>...]` accepts wildcard, i.e. `*.tpl` will include all the template files ending
+in `.tpl`. If we have used the previous command of exporting the config and templates to a directory, they
+can be loaded
+
+```bash
+# assuming we have written the files out to the folder am
+# mimirtool alertmanager get --output-dir="am"
+mimirtool alertmanager load  am/config.yaml am/*.tpl
 ```
 
 #### Delete Alertmanager configuration

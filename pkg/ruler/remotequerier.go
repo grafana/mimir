@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
@@ -182,7 +183,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 
 	resp, err := q.client.Handle(ctx, &req)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(log).Log("msg", "failed to perform remote read", "err", err, "qs", query)
+		}
 		return nil, err
 	}
 	if resp.Code/100 != 2 {
@@ -226,7 +229,9 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 
 	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+		}
 		return promql.Vector{}, err
 	}
 	if resp.Code/100 != 2 {
@@ -295,7 +300,18 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	for {
 		resp, err := q.client.Handle(ctx, req)
 		if err == nil {
+			// Responses with status codes 4xx should always be considered erroneous.
+			// These errors shouldn't be retried because it is expected that
+			// running the same query gives rise to the same 4xx error.
+			if resp.Code/100 == 4 {
+				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
+			}
 			return resp, nil
+		}
+		// 4xx errors shouldn't be retried because it is expected that
+		// running the same query gives rise to the same 4xx error.
+		if code := grpcutil.ErrorToStatusCode(err); code/100 == 4 {
+			return nil, err
 		}
 		if !retry.Ongoing() {
 			return nil, err

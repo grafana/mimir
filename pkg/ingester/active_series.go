@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -93,10 +94,21 @@ func listActiveSeries(ctx context.Context, db *userTSDB, matchers []*labels.Matc
 		return nil, fmt.Errorf("active series tracker is not initialized")
 	}
 
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
+	if err != nil {
+		return nil, fmt.Errorf("error removing shard matcher: %w", err)
+	}
+
 	postings, err := tsdb.PostingsForMatchers(ctx, idx, matchers...)
 	if err != nil {
 		return nil, fmt.Errorf("error getting postings: %w", err)
 	}
 
-	return NewSeries(activeseries.NewPostings(db.activeSeries, postings), idx), nil
+	postings = activeseries.NewPostings(db.activeSeries, postings)
+
+	if shard != nil {
+		postings = idx.ShardedPostings(postings, shard.ShardIndex, shard.ShardCount)
+	}
+
+	return NewSeries(postings, idx), nil
 }

@@ -233,7 +233,7 @@ func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
 		select {
 		case err, haveError := <-s.errorChan:
 			if haveError {
-				if _, ok := err.(validation.LimitError); ok {
+				if validation.IsLimitError(err) {
 					return err
 				}
 				return fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)

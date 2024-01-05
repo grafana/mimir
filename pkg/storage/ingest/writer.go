@@ -58,14 +58,9 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name: "cortex_ingest_storage_writer_latency_seconds",
-			Help: "Latency to write an incoming request to the ingest storage.",
-			Objectives: map[float64]float64{
-				0.5:   0.05,
-				0.99:  0.001,
-				0.999: 0.001,
-				1:     0.001,
-			},
+			Name:       "cortex_ingest_storage_writer_latency_seconds",
+			Help:       "Latency to write an incoming request to the ingest storage.",
+			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
 		}),
@@ -94,22 +89,15 @@ func (w *Writer) stopping(_ error) error {
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
-	if len(timeseries) == 0 && len(metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
 	}
 
-	// Serialise the input data.
-	entry := &mimirpb.WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     source,
-	}
-
-	data, err := entry.Marshal()
+	data, err := req.Marshal()
 	if err != nil {
 		return errors.Wrap(err, "failed to serialise data")
 	}

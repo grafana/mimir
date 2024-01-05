@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -89,7 +90,7 @@ type API struct {
 	indexPage *IndexPageContent
 }
 
-func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
+func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
 	// Ensure the encoded path is used. Required for the rules API
 	s.HTTP.UseEncodedPath()
 
@@ -113,9 +114,14 @@ func New(cfg Config, serverCfg server.Config, s *server.Server, logger log.Logge
 	}
 
 	// If no authentication middleware is present in the config, use the default authentication middleware.
-	if cfg.HTTPAuthMiddleware == nil {
+	if api.AuthMiddleware == nil {
 		api.AuthMiddleware = middleware.AuthenticateUser
 	}
+
+	// Unconditionally add middleware that ensures we only accept requests with an expected number of tenants
+	// that is applied after any existing auth middleware has run. Only a single tenant is allowed when federation
+	// is disabled. If federation is enabled, there is optionally a max number of tenants that is supported.
+	api.AuthMiddleware = middleware.Merge(api.AuthMiddleware, newTenantValidationMiddleware(federationCfg.Enabled, federationCfg.MaxTenants))
 
 	return api, nil
 }
