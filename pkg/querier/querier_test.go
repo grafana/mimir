@@ -147,7 +147,7 @@ func TestQuerier(t *testing.T) {
 			valueType: func(_ model.Time) chunkenc.ValueType { return chunkenc.ValFloatHistogram },
 			assertHPoint: func(t testing.TB, ts int64, point promql.HPoint) {
 				require.Equal(t, ts, point.T)
-				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(), point.H)
+				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(ts)).ToFloat(nil), point.H)
 			},
 		},
 

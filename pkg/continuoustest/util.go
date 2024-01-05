@@ -50,7 +50,7 @@ var (
 				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat())
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat(nil))
 			},
 		},
 		{
@@ -72,7 +72,7 @@ var (
 				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
-				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat())
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, true), numSeries, true).ToFloat(nil))
 			},
 		},
 		{
