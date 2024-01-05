@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -2061,8 +2062,13 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 	}
 
+	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
+
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
+		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(m)); err != nil {
+			return nil, err
+		}
 		result = append(result, m)
 	}
 	return result, nil
