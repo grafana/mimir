@@ -147,7 +147,7 @@ local filename = 'mimir-reads.json';
       )
     )
     .addRow(
-      $.row('Query-scheduler')
+      ($.row('Query-scheduler') + { height: '50px' })
       .addPanel(
         $.textPanel(
           '',

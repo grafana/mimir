@@ -20722,7 +20722,7 @@ data:
              },
              {
                 "collapse": false,
-                "height": "250px",
+                "height": "50px",
                 "panels": [
                    {
                       "content": "<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n",
