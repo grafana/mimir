@@ -21,7 +21,7 @@ services:
 
   prometheus:
     build:
-      context:  /home/owilliams/src/grafana/mimir-prometheus
+      context:  /home/owilliams/src/grafana/prometheus
       dockerfile: Dockerfile
     image: mimir-prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms,utf8-names"]
