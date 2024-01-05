@@ -24,7 +24,7 @@ services:
       context:  /home/owilliams/src/grafana/mimir-prometheus
       dockerfile: Dockerfile
     image: mimir-prometheus
-    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
+    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms,utf8-names"]
     volumes:
       - ./config:/etc/prometheus
     ports:

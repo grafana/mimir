@@ -17,6 +17,18 @@ docker_compose() {
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
 
+# Optionally Build prometheus images
+if [ "$1"x == "fullx" ] ; then
+    shift
+    cd /home/owilliams/src/grafana/prometheus
+    go mod vendor
+    nice -n 10 make build
+    mkdir -p .build/linux-amd64/
+    cp promtool .build/linux-amd64/
+    cp prometheus .build/linux-amd64/
+    cd -
+fi
+
 PROFILES=()
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -38,26 +50,6 @@ done
 DEFAULT_PROFILES=("--profile" "prometheus" "--profile" "grafana-agent-static")
 if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
-fi
-
-# Optionally Build prometheus images
-if [ "$1"x == "fullx" ] ; then
-    shift
-    cd /home/owilliams/src/grafana/mimir-prometheus
-    go mod vendor
-    nice -n 10 make build
-    mkdir -p .build/linux-amd64/
-    cp promtool .build/linux-amd64/
-    cp prometheus .build/linux-amd64/
-    cd -
-
-    cd /home/owilliams/src/grafana/prometheus
-    go mod vendor
-    nice -n 10 make build
-    mkdir -p .build/linux-amd64/
-    cp promtool .build/linux-amd64/
-    cp prometheus .build/linux-amd64/
-    cd -
 fi
 
 cd /home/owilliams/src/grafana/agent
