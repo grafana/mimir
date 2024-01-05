@@ -274,7 +274,7 @@ func (s *Scalar) UnmarshalJSON(b []byte) error {
 
 	value, err := strconv.ParseFloat(f, 64)
 	if err != nil {
-		return fmt.Errorf("error parsing sample value: %s", err)
+		return fmt.Errorf("error parsing sample value: %w", err)
 	}
 	s.Value = SampleValue(value)
 	return nil

@@ -20,6 +20,7 @@ import (
 
 	"github.com/matttproud/golang_protobuf_extensions/v2/pbutil"
 	"github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg"
+	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	dto "github.com/prometheus/client_model/go"
@@ -60,23 +61,49 @@ func (ec encoderCloser) Close() error {
 // as the support is still experimental. To include the option to negotiate
 // FmtOpenMetrics, use NegotiateOpenMetrics.
 func Negotiate(h http.Header) Format {
+	escapingScheme := Format(fmt.Sprintf("; escaping=%s", EscapingSchemeToFormat(model.DefaultNameEscapingScheme)))
 	for _, ac := range goautoneg.ParseAccept(h.Get(hdrAccept)) {
-		ver := ac.Params["version"]
-		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
-			switch ac.Params["encoding"] {
-			case "delimited":
-				return FmtProtoDelim
-			case "text":
-				return FmtProtoText
-			case "compact-text":
-				return FmtProtoCompact
+		if escapeParam := ac.Params["escaping"]; escapeParam != "" {
+			switch Format(escapeParam) {
+				case FmtEscapeNone, FmtEscapeUnderscores, FmtEscapeDots, FmtEscapeValues:
+					escapingScheme = Format(fmt.Sprintf("; escaping=%s", escapeParam))
+				default:
+				// If the escaping parameter is unknown, ignore it.
 			}
 		}
-		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion || ver == "") {
-			return FmtText
+		ver := ac.Params["version"]
+		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
+			if ac.Params["validchars"] == UTF8Valid {
+				switch ac.Params["encoding"] {
+				case "delimited":
+					return FmtProtoDelim + FmtUTF8Param
+				case "text":
+					return FmtProtoText + FmtUTF8Param
+				case "compact-text":
+					return FmtProtoCompact + FmtUTF8Param
+				}
+			}
+
+			switch ac.Params["encoding"] {
+			case "delimited":
+				return FmtProtoDelim + escapingScheme
+			case "text":
+				return FmtProtoText + escapingScheme
+			case "compact-text":
+				return FmtProtoCompact + escapingScheme
+			}
+		}
+		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_0_0_4 || ver == TextVersion_1_0_0 || ver == "") {
+			if ver == TextVersion_1_0_0 {
+				if ac.Params["validchars"] == UTF8Valid {
+					return FmtText_1_0_0 + FmtUTF8Param
+				}
+				return FmtText_1_0_0 + escapingScheme
+			}
+			return FmtText_0_0_4 + escapingScheme
 		}
 	}
-	return FmtText
+	return FmtText_0_0_4 + escapingScheme
 }
 
 // NegotiateIncludingOpenMetrics works like Negotiate but includes
@@ -84,29 +111,62 @@ func Negotiate(h http.Header) Format {
 // temporary and will disappear once FmtOpenMetrics is fully supported and as
 // such may be negotiated by the normal Negotiate function.
 func NegotiateIncludingOpenMetrics(h http.Header) Format {
+	escapingScheme := Format(fmt.Sprintf("; escaping=%s", EscapingSchemeToFormat(model.DefaultNameEscapingScheme)))
 	for _, ac := range goautoneg.ParseAccept(h.Get(hdrAccept)) {
+		if escapeParam := ac.Params["escaping"]; escapeParam != "" {
+			switch Format(escapeParam) {
+				case FmtEscapeNone, FmtEscapeUnderscores, FmtEscapeDots, FmtEscapeValues:
+					escapingScheme = Format(fmt.Sprintf("; escaping=%s", escapeParam))
+				default:
+				// If the escaping parameter is unknown, ignore it.
+			}
+		}
 		ver := ac.Params["version"]
 		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
+			if ac.Params["validchars"] == UTF8Valid {
+				switch ac.Params["encoding"] {
+				case "delimited":
+					return FmtProtoDelim + FmtUTF8Param
+				case "text":
+					return FmtProtoText + FmtUTF8Param
+				case "compact-text":
+					return FmtProtoCompact + FmtUTF8Param
+				}
+			}
+
 			switch ac.Params["encoding"] {
 			case "delimited":
-				return FmtProtoDelim
+				return FmtProtoDelim + escapingScheme
 			case "text":
-				return FmtProtoText
+				return FmtProtoText + escapingScheme
 			case "compact-text":
-				return FmtProtoCompact
+				return FmtProtoCompact + escapingScheme
 			}
 		}
-		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion || ver == "") {
-			return FmtText
-		}
-		if ac.Type+"/"+ac.SubType == OpenMetricsType && (ver == OpenMetricsVersion_0_0_1 || ver == OpenMetricsVersion_1_0_0 || ver == "") {
-			if ver == OpenMetricsVersion_1_0_0 {
-				return FmtOpenMetrics_1_0_0
+		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_1_0_0 || ver == "") {
+			if ac.Params["validchars"] == UTF8Valid {
+				return FmtText_1_0_0 + FmtUTF8Param
 			}
-			return FmtOpenMetrics_0_0_1
+			return FmtText_0_0_4 + escapingScheme
+		}
+		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_0_0_4 || ver == "") {
+			return FmtText_0_0_4 + escapingScheme
+		}
+		if ac.Type+"/"+ac.SubType == OpenMetricsType && (ver == OpenMetricsVersion_0_0_1 || ver == OpenMetricsVersion_1_0_0 || ver == OpenMetricsVersion_2_0_0 || ver == "") {
+			switch ver {
+				case OpenMetricsVersion_2_0_0:
+					if ac.Params["validchars"] == UTF8Valid {
+						return FmtOpenMetrics_2_0_0 + FmtUTF8Param
+					}
+					return FmtOpenMetrics_2_0_0 + escapingScheme
+				case OpenMetricsVersion_1_0_0:
+					return FmtOpenMetrics_1_0_0 + escapingScheme
+				default:
+					return FmtOpenMetrics_0_0_1 + escapingScheme
+			}
 		}
 	}
-	return FmtText
+	return FmtText_0_0_4 + Format(fmt.Sprintf("; escaping=%s", FmtEscapeValues))
 }
 
 // NewEncoder returns a new encoder based on content type negotiation. All
@@ -116,43 +176,44 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 // to the Encoder interface directly. The current version of the Encoder
 // interface is kept for backwards compatibility.
 func NewEncoder(w io.Writer, format Format) Encoder {
-	switch format {
-	case FmtProtoDelim:
+	escapingScheme := format.ToEscapingScheme()
+	switch format.ContentType() {
+		case TypeProtoDelim:
+			return encoderCloser{
+				encode: func(v *dto.MetricFamily) error {
+					_, err := pbutil.WriteDelimited(w, model.EscapeMetricFamily(v, escapingScheme))
+					return err
+				},
+				close: func() error { return nil },
+			}
+	case TypeProtoCompact:
 		return encoderCloser{
 			encode: func(v *dto.MetricFamily) error {
-				_, err := pbutil.WriteDelimited(w, v)
+				_, err := fmt.Fprintln(w, model.EscapeMetricFamily(v, escapingScheme).String())
 				return err
 			},
 			close: func() error { return nil },
 		}
-	case FmtProtoCompact:
+	case TypeProtoText:
 		return encoderCloser{
 			encode: func(v *dto.MetricFamily) error {
-				_, err := fmt.Fprintln(w, v.String())
+				_, err := fmt.Fprintln(w, prototext.Format(model.EscapeMetricFamily(v, escapingScheme)))
 				return err
 			},
 			close: func() error { return nil },
 		}
-	case FmtProtoText:
+	case TypeTextPlain:
 		return encoderCloser{
 			encode: func(v *dto.MetricFamily) error {
-				_, err := fmt.Fprintln(w, prototext.Format(v))
+				_, err := MetricFamilyToText(w, model.EscapeMetricFamily(v, escapingScheme))
 				return err
 			},
 			close: func() error { return nil },
 		}
-	case FmtText:
+	case TypeOpenMetrics:
 		return encoderCloser{
 			encode: func(v *dto.MetricFamily) error {
-				_, err := MetricFamilyToText(w, v)
-				return err
-			},
-			close: func() error { return nil },
-		}
-	case FmtOpenMetrics_0_0_1, FmtOpenMetrics_1_0_0:
-		return encoderCloser{
-			encode: func(v *dto.MetricFamily) error {
-				_, err := MetricFamilyToOpenMetrics(w, v)
+				_, err := MetricFamilyToOpenMetrics(w, model.EscapeMetricFamily(v, escapingScheme))
 				return err
 			},
 			close: func() error {

@@ -60,10 +60,15 @@ func ResponseFormat(h http.Header) Format {
 		return FmtProtoDelim
 
 	case textType:
-		if v, ok := params["version"]; ok && v != TextVersion {
+		if v, ok := params["version"]; ok {
+			if v == TextVersion_0_0_4 {
+				return FmtText_0_0_4
+			} else if v == TextVersion_1_0_0 {
+				return FmtText_1_0_0
+			}
 			return FmtUnknown
 		}
-		return FmtText
+		return FmtText_0_0_4
 	}
 
 	return FmtUnknown
@@ -72,8 +77,8 @@ func ResponseFormat(h http.Header) Format {
 // NewDecoder returns a new decoder based on the given input format.
 // If the input format does not imply otherwise, a text format decoder is returned.
 func NewDecoder(r io.Reader, format Format) Decoder {
-	switch format {
-	case FmtProtoDelim:
+	switch format.ContentType() {
+	case TypeProtoDelim:
 		return &protoDecoder{r: r}
 	}
 	return &textDecoder{r: r}

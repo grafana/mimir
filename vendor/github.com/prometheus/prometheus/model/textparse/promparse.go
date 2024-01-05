@@ -385,32 +385,7 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
-		if t2 != tValue {
-			return EntryInvalid, p.parseError("expected value after metric", t2)
-		}
-		if p.val, err = parseFloat(yoloString(p.l.buf())); err != nil {
-			return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
-		}
-		// Ensure canonical NaN value.
-		if math.IsNaN(p.val) {
-			p.val = math.Float64frombits(value.NormalNaN)
-		}
-		p.hasTS = false
-		switch t := p.nextToken(); t {
-		case tLinebreak:
-			break
-		case tTimestamp:
-			p.hasTS = true
-			if p.ts, err = strconv.ParseInt(yoloString(p.l.buf()), 10, 64); err != nil {
-				return EntryInvalid, fmt.Errorf("%w while parsing: %q", err, p.l.b[p.start:p.l.i])
-			}
-			if t2 := p.nextToken(); t2 != tLinebreak {
-				return EntryInvalid, p.parseError("expected next entry after timestamp", t2)
-			}
-		default:
-			return EntryInvalid, p.parseError("expected timestamp or new record", t)
-		}
-		return EntrySeries, nil
+		return p.parseMetricSuffix(t2)
 
 	default:
 		err = p.parseError("expected a valid start token", t)

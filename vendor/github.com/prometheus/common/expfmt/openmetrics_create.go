@@ -90,9 +90,6 @@ func MetricFamilyToOpenMetrics(out io.Writer, in *dto.MetricFamily) (written int
 	if metricType == dto.MetricType_COUNTER && strings.HasSuffix(shortName, "_total") {
 		shortName = name[:len(name)-6]
 	}
-	if !model.IsValidMetricName(model.LabelValue(shortName)) {
-		shortName = fmt.Sprintf(`"%s"`, shortName)
-	}
 
 	// Comments, first HELP, then TYPE.
 	if in.Help != nil {
@@ -101,7 +98,7 @@ func MetricFamilyToOpenMetrics(out io.Writer, in *dto.MetricFamily) (written int
 		if err != nil {
 			return
 		}
-		n, err = w.WriteString(shortName)
+		n, err = writeName(w, shortName)
 		written += n
 		if err != nil {
 			return
@@ -127,7 +124,7 @@ func MetricFamilyToOpenMetrics(out io.Writer, in *dto.MetricFamily) (written int
 	if err != nil {
 		return
 	}
-	n, err = w.WriteString(shortName)
+	n, err = writeName(w, shortName)
 	written += n
 	if err != nil {
 		return
@@ -307,7 +304,7 @@ func writeOpenMetricsSample(
 	exemplar *dto.Exemplar,
 ) (int, error) {
 	written := 0
-	n, err := writeOpenMetricsLabelPairs(
+	n, err := writeOpenMetricsNameAndLabelPairs(
 		w, name+suffix, metric.Label, additionalLabelName, additionalLabelValue,
 	)
 	written += n
@@ -356,32 +353,34 @@ func writeOpenMetricsSample(
 	return written, nil
 }
 
-// writeOpenMetricsLabelPairs works like writeOpenMetrics but formats the float
-// in OpenMetrics style.
-func writeOpenMetricsLabelPairs(
+// writeOpenMetricsNameAndLabelPairs works like writeOpenMetricsSample but
+// formats the float in OpenMetrics style.
+func writeOpenMetricsNameAndLabelPairs(
 	w enhancedWriter,
 	name string,
 	in []*dto.LabelPair,
 	additionalLabelName string, additionalLabelValue float64,
 ) (int, error) {
 	var (
-		written   int
-		separator byte = '{'
-		metricInsideBraces = false
+		written            int
+		separator          byte = '{'
+		metricInsideBraces      = false
 	)
 
-	if name != "" { 
-		if !model.IsValidMetricName(model.LabelValue(name)) {
+	if name != "" {
+		// If the name does not pass the legacy validity check, we must put the
+		// metric name inside the braces, quoted.
+		if !model.IsValidLegacyMetricName(model.LabelValue(name)) {
 			metricInsideBraces = true
 			err := w.WriteByte(separator)
 			written++
 			if err != nil {
 				return written, err
 			}
-			name = fmt.Sprintf(`"%s"`, name)
 			separator = ','
 		}
-		n, err := w.WriteString(name)
+
+		n, err := writeName(w, name)
 		written += n
 		if err != nil {
 			return written, err
@@ -405,7 +404,7 @@ func writeOpenMetricsLabelPairs(
 		if err != nil {
 			return written, err
 		}
-		n, err := w.WriteString(lp.GetName())
+		n, err := writeName(w, lp.GetName())
 		written += n
 		if err != nil {
 			return written, err
@@ -471,7 +470,7 @@ func writeExemplar(w enhancedWriter, e *dto.Exemplar) (int, error) {
 	if err != nil {
 		return written, err
 	}
-	n, err = writeOpenMetricsLabelPairs(w, "", e.Label, "", 0)
+	n, err = writeOpenMetricsNameAndLabelPairs(w, "", e.Label, "", 0)
 	written += n
 	if err != nil {
 		return written, err
