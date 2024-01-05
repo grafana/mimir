@@ -58,14 +58,9 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name: "cortex_ingest_storage_writer_latency_seconds",
-			Help: "Latency to write an incoming request to the ingest storage.",
-			Objectives: map[float64]float64{
-				0.5:   0.05,
-				0.99:  0.001,
-				0.999: 0.001,
-				1:     0.001,
-			},
+			Name:       "cortex_ingest_storage_writer_latency_seconds",
+			Help:       "Latency to write an incoming request to the ingest storage.",
+			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
 		}),

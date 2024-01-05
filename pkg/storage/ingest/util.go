@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/plugin/kprom"
 )
 
@@ -92,5 +94,48 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 
 		kgo.WithHooks(metrics),
 		kgo.WithLogger(newKafkaLogger(logger)),
+
+		kgo.RetryTimeoutFn(func(key int16) time.Duration {
+			switch key {
+			case ((*kmsg.ListOffsetsRequest)(nil)).Key():
+				return cfg.LastProducedOffsetRetryTimeout
+			}
+
+			// 30s is the default timeout in the Kafka client.
+			return 30 * time.Second
+		}),
+	}
+}
+
+// resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
+type resultPromise[T any] struct {
+	// done is a channel used to wait the result. Once the channel is closed
+	// it's safe to read resultValue and resultErr without any lock.
+	done chan struct{}
+
+	resultValue T
+	resultErr   error
+}
+
+func newResultPromise[T any]() *resultPromise[T] {
+	return &resultPromise[T]{
+		done: make(chan struct{}),
+	}
+}
+
+// notify the result to waiting goroutines. This function must be called exactly once.
+func (w *resultPromise[T]) notify(value T, err error) {
+	w.resultValue = value
+	w.resultErr = err
+	close(w.done)
+}
+
+func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
+	select {
+	case <-ctx.Done():
+		var zero T
+		return zero, context.Cause(ctx)
+	case <-w.done:
+		return w.resultValue, w.resultErr
 	}
 }

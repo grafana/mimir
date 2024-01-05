@@ -68,7 +68,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -143,7 +142,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -218,14 +216,12 @@
                      {
                         "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      }
@@ -300,21 +296,18 @@
                      {
                         "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      },
                      {
                         "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null
                      }
@@ -401,7 +394,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -476,7 +468,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -551,14 +542,12 @@
                      {
                         "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      }
@@ -633,21 +622,18 @@
                      {
                         "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      },
                      {
                         "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null
                      }
@@ -734,7 +720,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -809,7 +794,6 @@
                      {
                         "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
                         "legendLink": null
                      }
@@ -884,14 +868,12 @@
                      {
                         "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      }
@@ -966,21 +948,18 @@
                      {
                         "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "avg",
                         "legendLink": null
                      },
                      {
                         "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}))",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "highest",
                         "legendLink": null
                      },
                      {
                         "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
-                        "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null
                      }
@@ -1043,7 +1022,7 @@
                   "value": "default"
                },
                "hide": 0,
-               "label": "Data Source",
+               "label": "Data source",
                "name": "datasource",
                "options": [ ],
                "query": "prometheus",

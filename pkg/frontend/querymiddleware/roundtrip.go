@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +59,7 @@ type Config struct {
 	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
 	DeprecatedCacheUnalignedRequests bool          `yaml:"cache_unaligned_requests" category:"advanced" doc:"hidden"` // Deprecated: Deprecated in Mimir 2.10.0, remove in Mimir 2.12.0 (https://github.com/grafana/mimir/issues/5253)
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -77,6 +77,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 
 	// The query-frontend.cache-unaligned-requests flag has been moved to the limits.go file
@@ -220,7 +221,7 @@ func newQueryTripperware(
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
-		newStepAlignMiddleware(limits, tenant.NewMultiResolver(), log, registerer),
+		newStepAlignMiddleware(limits, log, registerer),
 	}
 
 	var c cache.Cache
@@ -314,21 +315,24 @@ func newQueryTripperware(
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := defaultInstantQueryParamsRoundTripper(
-			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
-		)
+		instant := newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 
 		// Wrap next for cardinality, labels queries and all other queries.
 		// That attempts to parse "start" and "end" from the HTTP request and set them in the request's QueryDetails.
 		// range and instant queries have more accurate logic for query details.
 		next = newQueryDetailsStartEndRoundTripper(next)
 		cardinality := next
+		activeSeries := next
 		labels := next
 
 		// Inject the cardinality and labels query cache roundtripper only if the query results cache is enabled.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
+		}
+
+		if cfg.ShardActiveSeriesQueries {
+			activeSeries = newShardActiveSeriesMiddleware(activeSeries, limits, log)
 		}
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -339,6 +343,8 @@ func newQueryTripperware(
 				return instant.RoundTrip(r)
 			case IsCardinalityQuery(r.URL.Path):
 				return cardinality.RoundTrip(r)
+			case IsActiveSeriesQuery(r.URL.Path):
+				return activeSeries.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			default:
@@ -411,29 +417,13 @@ func IsInstantQuery(path string) bool {
 
 func IsCardinalityQuery(path string) bool {
 	return strings.HasSuffix(path, cardinalityLabelNamesPathSuffix) ||
-		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix) ||
-		strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
+		strings.HasSuffix(path, cardinalityLabelValuesPathSuffix)
 }
 
 func IsLabelsQuery(path string) bool {
 	return strings.HasSuffix(path, labelNamesPathSuffix) || labelValuesPathSuffix.MatchString(path)
 }
 
-func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
-	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if IsInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
-			nowUnixStr := strconv.FormatInt(time.Now().Unix(), 10)
-
-			q := r.URL.Query()
-			q.Add("time", nowUnixStr)
-			r.URL.RawQuery = q.Encode()
-
-			// If form was already parsed, add this param to the form too.
-			// (The form doesn't have "time", otherwise we'd not be here)
-			if r.Form != nil {
-				r.Form.Set("time", nowUnixStr)
-			}
-		}
-		return next.RoundTrip(r)
-	})
+func IsActiveSeriesQuery(path string) bool {
+	return strings.HasSuffix(path, cardinalityActiveSeriesPathSuffix)
 }

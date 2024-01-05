@@ -95,13 +95,7 @@ func (oss *ownedSeriesService) onPeriodicCheck(ctx context.Context) error {
 		return nil // If we returned error, service would stop.
 	}
 
-	start := time.Now()
-	updatedUsers := oss.updateAllTenants(ctx, ringChanged)
-	elapsed := time.Since(start)
-	if updatedUsers > 0 {
-		level.Info(oss.logger).Log("msg", "updated owned series for users", "updatedUsers", updatedUsers, "duration", elapsed, "ringChanged", ringChanged)
-	}
-	oss.ownedSeriesCheckDuration.Observe(elapsed.Seconds())
+	oss.updateAllTenants(ctx, ringChanged)
 	return nil
 }
 
@@ -122,6 +116,8 @@ func (oss *ownedSeriesService) checkRingForChanges() (bool, error) {
 // because of external trigger (new user, compaction), or because of changed token ranges.
 func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged bool) int {
 	updatedUsers := 0
+
+	start := time.Now()
 	for _, userID := range oss.getTSDBUsers() {
 		if ctx.Err() != nil {
 			return updatedUsers
@@ -136,6 +132,13 @@ func (oss *ownedSeriesService) updateAllTenants(ctx context.Context, ringChanged
 			updatedUsers++
 		}
 	}
+	elapsed := time.Since(start)
+
+	if updatedUsers > 0 {
+		level.Info(oss.logger).Log("msg", "updated owned series for users", "updatedUsers", updatedUsers, "duration", elapsed, "ringChanged", ringChanged)
+	}
+	oss.ownedSeriesCheckDuration.Observe(elapsed.Seconds())
+
 	return updatedUsers
 }
 
