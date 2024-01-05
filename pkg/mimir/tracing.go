@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 )
 
@@ -44,6 +45,11 @@ func (ss wrappedServerStream) Context() context.Context {
 }
 
 type OpenTelemetryProviderBridge struct {
+	// TracerProvider is the fallback trace.TracerProvider used for functions not implemented
+	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
+	// requires one (compilation fails without it).
+	noop.TracerProvider
+
 	tracer opentracing.Tracer
 }
 
@@ -66,6 +72,11 @@ func (p *OpenTelemetryProviderBridge) Tracer(_ string, _ ...trace.TracerOption) 
 }
 
 type OpenTelemetryTracerBridge struct {
+	// Tracer is the fallback trace.Tracer used for functions not implemented
+	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
+	// requires one (compilation fails without it).
+	noop.Tracer
+
 	tracer   opentracing.Tracer
 	provider trace.TracerProvider
 }
@@ -122,6 +133,11 @@ func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, 
 }
 
 type OpenTelemetrySpanBridge struct {
+	// Span is the fallback trace.Span used for functions not implemented
+	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
+	// requires one (compilation fails without it).
+	noop.Span
+
 	span     opentracing.Span
 	provider trace.TracerProvider
 }

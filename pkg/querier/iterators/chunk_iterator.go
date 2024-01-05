@@ -94,7 +94,7 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	if i.valType == chunkenc.ValHistogram {
 		var h *histogram.Histogram
 		t, h = i.AtHistogram()
-		fh = h.ToFloat()
+		fh = h.ToFloat(nil)
 	} else {
 		t, fh = i.it.AtFloatHistogram()
 	}
