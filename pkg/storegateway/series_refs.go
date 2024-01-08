@@ -1137,7 +1137,7 @@ func (s *loadingSeriesChunkRefsSetIterator) singlePassStringify(symbolizedSet sy
 	}
 	slices.Sort(allSymbols)
 
-	symReader, err := s.indexr.indexHeaderReader.SymbolsReader(s.ctx)
+	symReader, err := s.indexr.indexHeaderReader.SymbolsReader()
 	if err != nil {
 		return seriesChunkRefsSet{}, err
 	}
