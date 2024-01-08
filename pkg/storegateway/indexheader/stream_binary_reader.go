@@ -305,11 +305,11 @@ func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*Binary
 	}, nil
 }
 
-func (r *StreamBinaryReader) IndexVersion(_ context.Context) (int, error) {
+func (r *StreamBinaryReader) IndexVersion() (int, error) {
 	return r.indexVersion, nil
 }
 
-func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name, value string) (index.Range, error) {
+func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
 	rng, found, err := r.postingsOffsetTable.PostingsOffset(name, value)
 	if err != nil {
 		return index.Range{}, err
@@ -320,7 +320,7 @@ func (r *StreamBinaryReader) PostingsOffset(_ context.Context, name, value strin
 	return rng, nil
 }
 
-func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
+func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
 		// of the header length difference between two files.
@@ -369,18 +369,18 @@ func (c cachedLabelNamesSymbolsReader) Read(u uint32) (string, error) {
 	return c.r.Read(u)
 }
 
-func (r *StreamBinaryReader) SymbolsReader(_ context.Context) (streamindex.SymbolsReader, error) {
+func (r *StreamBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
 	return cachedLabelNamesSymbolsReader{
 		labelNames: r.nameSymbols,
 		r:          r.symbols.Reader(),
 	}, nil
 }
 
-func (r *StreamBinaryReader) LabelValuesOffsets(_ context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+func (r *StreamBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
 	return r.postingsOffsetTable.LabelValuesOffsets(name, prefix, filter)
 }
 
-func (r *StreamBinaryReader) LabelNames(_ context.Context) ([]string, error) {
+func (r *StreamBinaryReader) LabelNames() ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 

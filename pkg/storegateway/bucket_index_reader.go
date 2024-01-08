@@ -59,8 +59,8 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: func(ctx context.Context, o uint32) (string, error) {
-				return block.indexHeaderReader.LookupSymbol(ctx, o)
+			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(o)
 			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
@@ -189,7 +189,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
+	postingGroups, err := toPostingGroups(ms, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
@@ -236,7 +236,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
+	version, err := r.block.indexHeaderReader.IndexVersion()
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get index version")
 	}
@@ -314,7 +314,7 @@ var allPostingsKey = func() labels.Label {
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index.
-func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
+func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
 		allRequested     = false
@@ -354,7 +354,7 @@ func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexhe
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
 	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
+		pg, err := rawGroup.toPostingGroup(indexhdr)
 		if err != nil {
 			return nil, errors.Wrap(err, "filtering posting group")
 		}
@@ -400,7 +400,7 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
+	version, err := r.block.indexHeaderReader.IndexVersion()
 	if err != nil {
 		return nil, errors.Wrap(err, "get index version")
 	}
@@ -460,7 +460,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
+		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
 			output[ix] = index.EmptyPostings()
