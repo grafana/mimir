@@ -7840,23 +7840,43 @@ func TestIngesterActiveSeries(t *testing.T) {
 				series, err := listActiveSeries(context.Background(), ingester.getTSDB(userID), matchers)
 				require.NoError(t, err)
 
-				var labelSets []labels.Labels
-				labelSets = buildSeriesSet(t, series)
+				var labelSet []labels.Labels
+				labelSet = buildSeriesSet(t, series)
 				// Expect 2 series for team="a"
-				assert.Len(t, labelSets, 2)
-				for _, lbls := range labelSets {
+				assert.Len(t, labelSet, 2)
+				for _, lbls := range labelSet {
 					assert.Equal(t, "a", lbls.Get("team"))
 				}
+
+				// Query first shard of test_metric, expect one series.
+				shard1 := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
+					sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}.Matcher(),
+				}
+				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), shard1)
+				require.NoError(t, err)
+				labelSet = buildSeriesSet(t, series)
+				assert.Len(t, labelSet, 1)
+
+				// Query second shard of test_metric, expect remaining three series.
+				shard2 := []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
+					sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}.Matcher(),
+				}
+				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), shard2)
+				require.NoError(t, err)
+				labelSet = buildSeriesSet(t, series)
+				assert.Len(t, labelSet, 3)
 
 				// Fast-forward to make series stale.
 				ingester.updateActiveSeries(time.Now().Add(ingester.cfg.ActiveSeriesMetrics.IdleTimeout))
 
 				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), matchers)
 				require.NoError(t, err)
-				labelSets = buildSeriesSet(t, series)
+				labelSet = buildSeriesSet(t, series)
 
 				// No series should be active anymore.
-				assert.Empty(t, labelSets)
+				assert.Empty(t, labelSet)
 			},
 		},
 	}

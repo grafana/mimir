@@ -3302,6 +3302,17 @@
         },
         {
           "kind": "field",
+          "name": "metric_relabeling_enabled",
+          "required": false,
+          "desc": "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.metric-relabeling-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "service_overload_status_code_on_rate_limit_enabled",
           "required": false,
           "desc": "If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.",
@@ -3691,6 +3702,17 @@
           "fieldDefaultValue": 100,
           "fieldFlag": "querier.label-values-max-cardinality-label-names-per-request",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "active_series_results_max_size_bytes",
+          "required": false,
+          "desc": "Maximum size of an active series request result shard in bytes. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 419430400,
+          "fieldFlag": "querier.active-series-results-max-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -5616,6 +5638,17 @@
           "fieldFlag": "query-frontend.query-sharding-target-series-per-shard",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "shard_active_series_queries",
+          "required": false,
+          "desc": "True to enable sharding of active series queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.shard-active-series-queries",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -9940,6 +9973,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 16,
           "fieldFlag": "tenant-federation.max-concurrent",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_tenants",
+          "required": false,
+          "desc": "The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "tenant-federation.max-tenants",
           "fieldType": "int",
           "fieldCategory": "experimental"
         }

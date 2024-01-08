@@ -10,18 +10,24 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -30,6 +36,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -43,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -513,7 +519,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 1, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(1),
 		},
 		"max estimated chunks per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -531,7 +537,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 0, 1, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxEstimatedChunksPerQueryLimitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxEstimatedChunksPerQueryLimitError(1),
 		},
 		"max chunks per query limit hit while fetching chunks during subsequent attempts": {
 			finderResult: bucketindex.Blocks{
@@ -569,7 +575,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(0, 0, 3, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunksPerQueryLimitMsgFormat, 3)),
+			expectedErr:  limiter.NewMaxChunksPerQueryLimitError(3),
 		},
 		"max series per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -587,7 +593,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{},
 			queryLimiter: limiter.NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxSeriesHitMsgFormat, 1)),
+			expectedErr:  limiter.NewMaxSeriesHitLimitError(1),
 		},
 		"max chunk bytes per query limit hit while fetching chunks": {
 			finderResult: bucketindex.Blocks{
@@ -605,7 +611,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			},
 			limits:       &blocksStoreLimitsMock{maxChunksPerQuery: 1},
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())),
-			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.MaxChunkBytesHitMsgFormat, 8)),
+			expectedErr:  limiter.NewMaxChunkBytesHitLimitError(8),
 		},
 		"blocks with non-matching shard are filtered out": {
 			finderResult: bucketindex.Blocks{
@@ -941,6 +947,176 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhileRunningRequestOnStoreGateway(t *testing.T) {
+	const (
+		tenantID   = "user-1"
+		metricName = "test_metric"
+		minT       = int64(math.MinInt64)
+		maxT       = int64(math.MaxInt64)
+	)
+
+	var (
+		block1 = ulid.MustNew(1, nil)
+	)
+
+	// Create an utility to easily run each test case in isolation.
+	prepareTestCase := func(t *testing.T) (*mockStoreGatewayServer, *blocksStoreQuerier) {
+		// Create a GRPC server used to query the mocked service.
+		grpcServer := grpc.NewServer()
+		t.Cleanup(grpcServer.GracefulStop)
+
+		srv := &mockStoreGatewayServer{}
+		storegatewaypb.RegisterStoreGatewayServer(grpcServer, srv)
+
+		listener, err := net.Listen("tcp", "localhost:0")
+		require.NoError(t, err)
+
+		go func() {
+			require.NoError(t, grpcServer.Serve(listener))
+		}()
+
+		// Mock the blocks finder.
+		finder := &blocksFinderMock{}
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+
+		// Create a real gRPC client connecting to the gRPC server we control in this test.
+		clientCfg := grpcclient.Config{}
+		flagext.DefaultValues(&clientCfg)
+
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
+		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
+			map[BlocksStoreClient][]ulid.ULID{
+				client: {block1},
+			},
+		}}
+
+		q := &blocksStoreQuerier{
+			minT:        minT,
+			maxT:        maxT,
+			finder:      finder,
+			stores:      stores,
+			consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+			logger:      log.NewNopLogger(),
+			metrics:     newBlocksStoreQueryableMetrics(nil),
+			limits:      &blocksStoreLimitsMock{},
+		}
+
+		return srv, q
+	}
+
+	t.Run("Series()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of Series().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onSeries = func(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		sp := &storage.SelectHints{Start: minT, End: maxT}
+		set := q.Select(ctx, true, sp, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, set.Err(), context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
+
+	t.Run("LabelNames()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelNames().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onLabelNames = func(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelNamesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
+
+	t.Run("LabelValues()", func(t *testing.T) {
+		// Mock the gRPC server to control the execution of LabelValues().
+		var (
+			ctx, cancelCtx    = context.WithCancel(user.InjectOrgID(context.Background(), tenantID))
+			numExecutions     = atomic.NewInt64(0)
+			waitExecution     = make(chan struct{})
+			continueExecution = make(chan struct{})
+		)
+
+		srv, q := prepareTestCase(t)
+
+		srv.onLabelValues = func(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+			if numExecutions.Inc() == 1 {
+				close(waitExecution)
+				<-continueExecution
+			}
+			return &storepb.LabelValuesResponse{}, nil
+		}
+
+		go func() {
+			// Cancel the context while Series() is executing.
+			<-waitExecution
+			cancelCtx()
+			close(continueExecution)
+		}()
+
+		_, _, err := q.LabelValues(ctx, labels.MetricName)
+
+		// We expect the returned error to be context.Canceled and not a gRPC error.
+		assert.ErrorIs(t, err, context.Canceled)
+
+		// Ensure the blocks store querier didn't retry requests to store-gateways.
+		assert.Equal(t, int64(1), numExecutions.Load())
+	})
 }
 
 func generateStreamingResponses(seriesResponses []*storepb.SeriesResponse) []*storepb.SeriesResponse {

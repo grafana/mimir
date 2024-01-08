@@ -12,9 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
-
-	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type queryBlockerMiddleware struct {
@@ -53,7 +50,7 @@ func (qb *queryBlockerMiddleware) Do(ctx context.Context, req Request) (Response
 		isBlocked := qb.isBlocked(tenant, req)
 		if isBlocked {
 			qb.blockedQueriesCounter.WithLabelValues(tenant, "blocked").Inc()
-			return nil, apierror.New(apierror.TypeBadData, validation.NewQueryBlockedError().Error())
+			return nil, newQueryBlockedError()
 		}
 	}
 	return qb.next.Do(ctx, req)

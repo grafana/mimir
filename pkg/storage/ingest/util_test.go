@@ -3,7 +3,11 @@
 package ingest
 
 import (
+	"context"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,5 +94,72 @@ func TestIngesterPartition(t *testing.T) {
 
 		_, err = IngesterPartition("ingester-zone-a")
 		require.Error(t, err)
+	})
+}
+
+func TestResultPromise(t *testing.T) {
+	t.Run("wait() should block until a result has been notified", func(t *testing.T) {
+		var (
+			wg  = sync.WaitGroup{}
+			rw  = newResultPromise[int]()
+			ctx = context.Background()
+		)
+
+		// Spawn few goroutines waiting for the result.
+		wg.Add(3)
+
+		for i := 0; i < 3; i++ {
+			runAsync(&wg, func() {
+				actual, err := rw.wait(ctx)
+				require.NoError(t, err)
+				require.Equal(t, 12345, actual)
+			})
+		}
+
+		// Notify the result.
+		rw.notify(12345, nil)
+
+		// Wait until all goroutines have done.
+		wg.Wait()
+	})
+
+	t.Run("wait() should block until an error has been notified", func(t *testing.T) {
+		var (
+			wg        = sync.WaitGroup{}
+			rw        = newResultPromise[int]()
+			ctx       = context.Background()
+			resultErr = errors.New("test error")
+		)
+
+		// Spawn few goroutines waiting for the result.
+		wg.Add(3)
+
+		for i := 0; i < 3; i++ {
+			runAsync(&wg, func() {
+				actual, err := rw.wait(ctx)
+				require.Equal(t, resultErr, err)
+				require.Equal(t, 0, actual)
+			})
+		}
+
+		// Notify the result.
+		rw.notify(0, resultErr)
+
+		// Wait until all goroutines have done.
+		wg.Wait()
+	})
+
+	t.Run("wait() should return when the input context timeout expires", func(t *testing.T) {
+		var (
+			rw  = newResultPromise[int]()
+			ctx = context.Background()
+		)
+
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+
+		actual, err := rw.wait(ctxWithTimeout)
+		require.Equal(t, context.DeadlineExceeded, err)
+		require.Equal(t, 0, actual)
 	})
 }

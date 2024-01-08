@@ -27,9 +27,8 @@ const (
 	// number of chunks (across series).
 	seriesChunksSlabSize = 1000
 
-	// Selected so that many chunks fit within the slab size with low fragmentation, either when
-	// fine-grained chunks cache is enabled (byte slices have variable size and contain many chunks) or disabled (byte slices
-	// are at most 16KB each).
+	// Selected so that many chunks fit within the slab size with low fragmentation, because
+	// byte slices are at most 16KB each as received by the caching bucket.
 	chunkBytesSlabSize = 160 * 1024
 
 	// Selected so that most series fit it and at the same time it's not too large for requests with few series.

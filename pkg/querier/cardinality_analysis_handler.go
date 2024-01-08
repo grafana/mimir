@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/distributor"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
@@ -80,7 +81,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 	})
 }
 
-func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
+func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
@@ -101,8 +102,15 @@ func ActiveSeriesCardinalityHandler(distributor Distributor, limits *validation.
 			return
 		}
 
-		res, err := distributor.ActiveSeries(ctx, req.Matchers)
+		res, err := d.ActiveSeries(ctx, req.Matchers)
 		if err != nil {
+			if errors.Is(err, distributor.ErrResponseTooLarge) {
+				// http.StatusRequestEntityTooLarge (413) is about the request (not the response)
+				// body size, but it's the closest we have, and we're using the same status code
+				// in the query scheduler to express the same error condition.
+				http.Error(w, fmt.Errorf("%w: try increasing the requested shard count", err).Error(), http.StatusRequestEntityTooLarge)
+				return
+			}
 			respondFromError(err, w)
 			return
 		}

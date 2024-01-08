@@ -59,14 +59,6 @@ type Config struct {
 
 const (
 	queryStoreAfterFlag = "querier.query-store-after"
-
-	// DefaultQuerierCfgQueryIngestersWithin is the default value for the deprecated querier config QueryIngestersWithin (it has been moved to a per-tenant limit instead)
-	DefaultQuerierCfgQueryIngestersWithin = 13 * time.Hour
-)
-
-var (
-	errBadLookbackConfigs = fmt.Errorf("the -%s setting must be greater than -%s otherwise queries might return partial results", validation.QueryIngestersWithinFlag, queryStoreAfterFlag)
-	errEmptyTimeRange     = errors.New("empty time range")
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -318,7 +310,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 
 	// Validate query time range.
 	if maxQueryLength := mq.limits.MaxPartialQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
-		return storage.ErrSeriesSet(validation.NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
+		return storage.ErrSeriesSet(NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
 
 	if len(queriers) == 1 {

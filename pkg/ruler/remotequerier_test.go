@@ -15,12 +15,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -115,6 +117,118 @@ func TestRemoteQuerier_QueryReq(t *testing.T) {
 		})
 	}
 
+}
+
+func TestRemoteQuerier_SendRequest(t *testing.T) {
+	const errMsg = "this is an error"
+	var (
+		successfulResponse = &httpgrpc.HTTPResponse{
+			Code: http.StatusOK,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte(`{
+						"status": "success","data": {"resultType":"vector","result":[]}
+					}`),
+		}
+		erroneousResponse = &httpgrpc.HTTPResponse{
+			Code: http.StatusBadRequest,
+			Headers: []*httpgrpc.Header{
+				{Key: "Content-Type", Values: []string{"application/json"}},
+			},
+			Body: []byte("this is an error"),
+		}
+	)
+
+	tests := map[string]struct {
+		response        *httpgrpc.HTTPResponse
+		err             error
+		expectedError   error
+		expectedRetries bool
+	}{
+		"errors with code 5xx are retried": {
+			err:             httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
+			expectedError:   httpgrpc.Errorf(http.StatusInternalServerError, errMsg),
+			expectedRetries: true,
+		},
+		"context.Canceled error is not retried": {
+			err:             context.Canceled,
+			expectedError:   context.Canceled,
+			expectedRetries: false,
+		},
+		"gRPC context.Canceled error is not retried": {
+			err:             status.Error(codes.Canceled, context.Canceled.Error()),
+			expectedError:   status.Error(codes.Canceled, context.Canceled.Error()),
+			expectedRetries: false,
+		},
+		"context.DeadlineExceeded error is retried": {
+			err:             context.DeadlineExceeded,
+			expectedError:   context.DeadlineExceeded,
+			expectedRetries: true,
+		},
+		"gRPC context.DeadlineExceeded error is retried": {
+			err:             status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedError:   status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
+			expectedRetries: true,
+		},
+		"errors with code 4xx are not retried": {
+			err:             httpgrpc.Errorf(http.StatusBadRequest, errMsg),
+			expectedError:   httpgrpc.Errorf(http.StatusBadRequest, errMsg),
+			expectedRetries: false,
+		},
+		"responses with status code 4xx are not retried and are converted to errors": {
+			err:             nil,
+			response:        erroneousResponse,
+			expectedError:   httpgrpc.ErrorFromHTTPResponse(erroneousResponse),
+			expectedRetries: false,
+		},
+		"responses with status code 2xx are not retried": {
+			err:             nil,
+			response:        successfulResponse,
+			expectedError:   nil,
+			expectedRetries: false,
+		},
+	}
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var (
+				inReq *httpgrpc.HTTPRequest
+				count atomic.Int64
+			)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				count.Add(1)
+				if testCase.err != nil {
+					if grpcutil.IsCanceled(testCase.err) {
+						cancel()
+					}
+					return nil, testCase.err
+				}
+				return testCase.response, nil
+			}
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+			require.Equal(t, int64(0), count.Load())
+			_, err := q.sendRequest(ctx, inReq, log.NewNopLogger())
+			if testCase.err == nil {
+				if testCase.expectedError == nil {
+					require.NoError(t, err)
+				} else {
+					require.Error(t, err)
+					require.EqualError(t, err, testCase.expectedError.Error())
+				}
+				require.Equal(t, int64(1), count.Load())
+			} else {
+				require.Error(t, err)
+				require.EqualError(t, err, testCase.expectedError.Error())
+				if testCase.expectedRetries {
+					require.Greater(t, count.Load(), int64(1))
+				} else {
+					require.Equal(t, int64(1), count.Load())
+				}
+			}
+		})
+	}
 }
 
 func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
@@ -595,8 +709,8 @@ func TestRemoteQuerier_BackoffRetry(t *testing.T) {
 }
 
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-		return &httpgrpc.HTTPResponse{
+	var (
+		errorResp = &httpgrpc.HTTPResponse{
 			Code: http.StatusUnprocessableEntity,
 			Headers: []*httpgrpc.Header{
 				{Key: "Content-Type", Values: []string{"application/json"}},
@@ -604,18 +718,82 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 			Body: []byte(`{
 				"status": "error","errorType": "execution"
 			}`),
-		}, nil
+		}
+		error4xx = status.Error(http.StatusUnprocessableEntity, "this is a 4xx error")
+		error5xx = status.Error(http.StatusInternalServerError, "this is a 5xx error")
+	)
+	testCases := map[string]struct {
+		resp         *httpgrpc.HTTPResponse
+		err          error
+		expectedCode int32
+		expectedLogs bool
+	}{
+		"HTTPResponse with code 4xx is translated to an error with the same code and not logged": {
+			resp:         errorResp,
+			err:          nil,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedLogs: false,
+		},
+		"error with code 4xx is returned but not logged": {
+			resp:         nil,
+			err:          error4xx,
+			expectedCode: http.StatusUnprocessableEntity,
+			expectedLogs: false,
+		},
+		"error with code 5xx is returned and logged": {
+			resp:         nil,
+			err:          error5xx,
+			expectedCode: http.StatusInternalServerError,
+			expectedLogs: true,
+		},
+		"an error without status code is returned and logged": {
+			resp:         nil,
+			err:          errors.New("this is an error"),
+			expectedCode: int32(codes.Unknown),
+			expectedLogs: true,
+		},
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				return testCase.resp, testCase.err
+			}
+			logger := newLoggerWithCounter()
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", logger)
 
-	tm := time.Unix(1649092025, 515834)
+			tm := time.Unix(1649092025, 515834)
 
-	_, err := q.Query(context.Background(), "qs", tm)
+			require.Equal(t, int64(0), logger.count())
+			_, err := q.Query(context.Background(), "qs", tm)
 
-	require.Error(t, err)
+			require.Error(t, err)
+			code := grpcutil.ErrorToStatusCode(err)
+			require.Equal(t, codes.Code(testCase.expectedCode), code)
+			if testCase.expectedLogs {
+				require.Greater(t, logger.count(), int64(0))
+			} else {
+				require.Equal(t, int64(0), logger.count())
+			}
+		})
+	}
+}
 
-	st, ok := status.FromError(err)
+type loggerWithCounter struct {
+	logger  log.Logger
+	counter atomic.Int64
+}
 
-	require.True(t, ok)
-	require.Equal(t, codes.Code(http.StatusUnprocessableEntity), st.Code())
+func newLoggerWithCounter() *loggerWithCounter {
+	return &loggerWithCounter{
+		logger: log.NewNopLogger(),
+	}
+}
+
+func (l *loggerWithCounter) Log(keyvals ...interface{}) error {
+	l.counter.Inc()
+	return l.logger.Log(keyvals...)
+}
+
+func (l *loggerWithCounter) count() int64 {
+	return l.counter.Load()
 }

@@ -57,6 +57,7 @@ The following features are currently experimental:
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
 - Distributor
   - Metrics relabeling
+    - `-distributor.metric-relabeling-enabled`
   - OTLP ingestion path
   - OTLP metadata storage
     - `-distributor.enable-otlp-metadata-storage`
@@ -124,6 +125,7 @@ The following features are currently experimental:
   - Ingester query request minimisation (`-querier.minimize-ingester-requests`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
+  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
@@ -131,6 +133,8 @@ The following features are currently experimental:
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
+  - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
+  - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -170,17 +174,6 @@ The following features are currently experimental:
 
 Deprecated features are usable up until the release that indicates their removal.
 For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
-
-The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.11**:
-
-- Store-gateway
-  - `-blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes`
-  - `-blocks-storage.bucket-store.max-chunk-pool-bytes`
-- Querier, ruler, store-gateway
-  - `-blocks-storage.bucket-store.bucket-index.enabled`
-- Querier
-  - `-querier.iterators` and `-querier.batch-iterators` (Mimir 2.11 onwards will always use `-querier.batch-iterators=true`)
 
 The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.13**:
 

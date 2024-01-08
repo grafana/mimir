@@ -52,7 +52,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -596,8 +595,9 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check", "err", err)
-	return newStoreConsistencyCheckFailedError(remainingBlocks)
+	err = newStoreConsistencyCheckFailedError(remainingBlocks)
+	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
+	return err
 }
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) error {
@@ -831,9 +831,8 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if ss := resp.GetStreamingSeries(); ss != nil {
 					for _, s := range ss.Series {
 						// Add series fingerprint to query limiter; will return error if we are over the limit
-						limitErr := queryLimiter.AddSeries(s.Labels)
-						if limitErr != nil {
-							return validation.LimitError(limitErr.Error())
+						if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
+							return limitErr
 						}
 					}
 					myStreamingSeries = append(myStreamingSeries, ss.Series...)

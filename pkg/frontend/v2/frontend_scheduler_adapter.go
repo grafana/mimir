@@ -4,6 +4,7 @@ package v2
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -73,7 +74,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
 	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
-		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest)
+		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest, time.Now)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +90,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Warn(a.log).Log("msg", "unsupported request type", "query", httpRequest)
+		level.Warn(a.log).Log("msg", "unsupported request type", "query", fmt.Sprintf("%+v", httpRequest))
 		return nil, nil
 	}
 }

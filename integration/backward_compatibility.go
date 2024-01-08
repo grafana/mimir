@@ -18,4 +18,5 @@ var DefaultPreviousVersionImages = map[string]e2emimir.FlagMapper{
 	"grafana/mimir:2.8.0":  e2emimir.NoopFlagMapper,
 	"grafana/mimir:2.9.1":  e2emimir.NoopFlagMapper,
 	"grafana/mimir:2.10.0": e2emimir.NoopFlagMapper,
+	"grafana/mimir:2.11.0": e2emimir.NoopFlagMapper,
 }

@@ -185,7 +185,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	if maxQuerySize := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, l.MaxQueryExpressionSizeBytes); maxQuerySize > 0 {
 		querySize := len(r.GetQuery())
 		if querySize > maxQuerySize {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxQueryExpressionSizeBytesError(querySize, maxQuerySize).Error())
+			return nil, newMaxQueryExpressionSizeBytesError(querySize, maxQuerySize)
 		}
 	}
 
@@ -193,7 +193,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxTotalQueryLengthError(queryLen, maxQueryLength).Error())
+			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
 	}
 

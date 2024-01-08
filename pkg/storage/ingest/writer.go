@@ -58,14 +58,9 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 		// Metrics.
 		writeLatency: promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-			Name: "cortex_ingest_storage_writer_latency_seconds",
-			Help: "Latency to write an incoming request to the ingest storage.",
-			Objectives: map[float64]float64{
-				0.5:   0.05,
-				0.99:  0.001,
-				0.999: 0.001,
-				1:     0.001,
-			},
+			Name:       "cortex_ingest_storage_writer_latency_seconds",
+			Help:       "Latency to write an incoming request to the ingest storage.",
+			Objectives: latencySummaryObjectives,
 			MaxAge:     time.Minute,
 			AgeBuckets: 10,
 		}),
@@ -94,22 +89,15 @@ func (w *Writer) stopping(_ error) error {
 
 // WriteSync the input data to the ingest storage. The function blocks until the data has been successfully committed,
 // or an error occurred.
-func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
+func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string, req *mimirpb.WriteRequest) error {
 	startTime := time.Now()
 
 	// Nothing to do if the input data is empty.
-	if len(timeseries) == 0 && len(metadata) == 0 {
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
 		return nil
 	}
 
-	// Serialise the input data.
-	entry := &mimirpb.WriteRequest{
-		Timeseries: timeseries,
-		Metadata:   metadata,
-		Source:     source,
-	}
-
-	data, err := entry.Marshal()
+	data, err := req.Marshal()
 	if err != nil {
 		return errors.Wrap(err, "failed to serialise data")
 	}
@@ -193,42 +181,16 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.Itoa(int(partitionID))}, w.registerer)),
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
 
-	return kgo.NewClient(
-		kgo.ClientID(w.kafkaCfg.ClientID),
-		kgo.SeedBrokers(w.kafkaCfg.Address),
+	opts := append(
+		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
 		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.AllowAutoTopicCreation(),
 		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
-		kgo.DialTimeout(w.kafkaCfg.DialTimeout),
-		kgo.WithHooks(metrics),
-		kgo.WithLogger(newKafkaLogger(logger)),
 
 		// Use a static partitioner because we want to be in control of the partition.
 		kgo.RecordPartitioner(newKafkaStaticPartitioner(int(partitionID))),
 
 		// Set the upper bounds the size of a record batch.
 		kgo.ProducerBatchMaxBytes(16_000_000),
-
-		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
-		// the leader broker for each partition. The cluster metadata can be updated (a) periodically or
-		// (b) when some events occur (e.g. backoff due to errors).
-		//
-		// MetadataMinAge() sets the minimum time between two cluster metadata updates due to events.
-		// MetadataMaxAge() sets how frequently the periodic update should occur.
-		//
-		// It's important to note that the periodic update is also used to discover new brokers (e.g. during a
-		// rolling update or after a scale up). For this reason, it's important to run the update frequently.
-		//
-		// The other two side effects of frequently updating the cluster metadata:
-		// 1. The "metadata" request may be expensive to run on the Kafka backend.
-		// 2. If the backend returns each time a different authoritative owner for a partition, then each time
-		//    the cluster metadata is updated the Kafka client will create a new connection for each partition,
-		//    leading to a high connections churn rate.
-		//
-		// We currently set min and max age to the same value to have constant load on the Kafka backend: regardless
-		// there are errors or not, the metadata requests frequency doesn't change.
-		kgo.MetadataMinAge(10*time.Second),
-		kgo.MetadataMaxAge(10*time.Second),
 
 		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
 		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
@@ -261,6 +223,7 @@ func (w *Writer) newKafkaWriter(partitionID int32) (*kgo.Client, error) {
 		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
 		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
 	)
+	return kgo.NewClient(opts...)
 }
 
 type kafkaStaticPartitioner struct {

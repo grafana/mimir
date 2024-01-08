@@ -33,10 +33,24 @@ func makeInstantHTTPRequest(ctx context.Context, time time.Time) *http.Request {
 	return instantHTTPReq
 }
 
-const labelValuesURLFormat = "/prometheus/api/v1/label/__name__/values?end=%d&start=%d"
+const labelValuesURLFormat = "/prometheus/api/v1/label/__name__/values"
+const labelValuesURLFormatWithStartOnly = "/prometheus/api/v1/label/__name__/values?start=%d"
+const labelValuesURLFormatWithEndOnly = "/prometheus/api/v1/label/__name__/values?end=%d"
+const labelValuesURLFormatWithStartAndEnd = "/prometheus/api/v1/label/__name__/values?end=%d&start=%d"
 
-func makeLabelValuesHTTPRequest(ctx context.Context, start, end time.Time) *http.Request {
-	labelValuesURL := fmt.Sprintf(labelValuesURLFormat, end.Unix(), start.Unix())
+func makeLabelValuesHTTPRequest(ctx context.Context, start, end *time.Time) *http.Request {
+	var labelValuesURL string
+	switch {
+	case start == nil && end == nil:
+		labelValuesURL = labelValuesURLFormat
+	case start != nil && end == nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithStartOnly, start.Unix())
+	case start == nil && end != nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithEndOnly, end.Unix())
+	case start != nil && end != nil:
+		labelValuesURL = fmt.Sprintf(labelValuesURLFormatWithStartAndEnd, end.Unix(), start.Unix())
+	}
+
 	labelValuesHTTPReq, _ := http.NewRequestWithContext(ctx, "GET", labelValuesURL, bytes.NewReader([]byte{}))
 	labelValuesHTTPReq.RequestURI = labelValuesHTTPReq.URL.RequestURI()
 	return labelValuesHTTPReq
@@ -52,6 +66,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 
 	// range and label queries have `start` and `end` params,
 	// requiring different cases than instant queries with only a `time` param
+	// label query start and end params are optional; these tests are only for when both are present
 	rangeAndLabelQueryTests := map[string]struct {
 		start                       time.Time
 		end                         time.Time
@@ -101,8 +116,8 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			// query ingesters:                |------------------
 			// query store-gateways:   ------------------|
 			// query time range:                 |-----|
-			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(30 * time.Minute),
-			end:                         now,
+			start:                       now.Add(-adapter.limits.QueryIngestersWithin("")).Add(29 * time.Minute),
+			end:                         now.Add(-adapter.limits.QueryIngestersWithin("")).Add(31 * time.Minute),
 			expectedAddlQueueDimensions: []string{ShouldQueryIngestersAndStoreGatewayQueueDimension},
 		},
 	}
@@ -112,7 +127,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
 			rangeHTTPReq := makeRangeHTTPRequest(ctx, testData.start, testData.end, 60)
-			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, testData.start, testData.end)
+			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, &testData.start, &testData.end)
 
 			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
 
@@ -171,6 +186,56 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		})
 	}
 
+}
+
+func TestQueryDecoding(t *testing.T) {
+	adapter := &frontendToSchedulerAdapter{
+		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
+		limits: limits{queryIngestersWithin: 13 * time.Hour},
+	}
+
+	now := time.Now()
+
+	// these timestamps are arbitrary; these tests only check for successful decoding,
+	// not the logic of assigning additional queue dimensions
+	start := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(29 * time.Minute)
+	end := now.Add(-adapter.limits.QueryIngestersWithin("")).Add(31 * time.Minute)
+
+	labelQueryTimeParamTests := map[string]struct {
+		start *time.Time
+		end   *time.Time
+	}{
+		"labels query without end time param passes validation": {
+			start: &start,
+			end:   nil,
+		},
+		"labels query without start time param passes validation": {
+			start: nil,
+			end:   &end,
+		},
+		"labels query without start or end time param passes validation": {
+			start: nil,
+			end:   nil,
+		},
+	}
+
+	for testName, testData := range labelQueryTimeParamTests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "tenant-0")
+
+			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, testData.start, testData.end)
+			httpgrpcReq, err := httpgrpc.FromHTTPRequest(labelValuesHTTPReq)
+			require.NoError(t, err)
+
+			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
+				ctx, httpgrpcReq, now,
+			)
+			require.NoError(t, err)
+			require.Len(t, additionalQueueDimensions, 1)
+
+		})
+	}
+
 	t.Run("malformed httpgrpc requests fail decoding", func(t *testing.T) {
 		reqFailsHTTPDecode := &httpgrpc.HTTPRequest{Method: ";"}
 
@@ -178,5 +243,4 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 		require.Error(t, errHTTPDecode)
 		require.Contains(t, errHTTPDecode.Error(), "net/http")
 	})
-
 }

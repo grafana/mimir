@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -2157,8 +2158,10 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
+		maxSeriesPerQuery int
 		expectedResult    []labels.Labels
 		expectedIngesters int
+		expectedError     error
 	}{
 		"should return an empty response if no metric match": {
 			matchers: []*labels.Matcher{
@@ -2208,6 +2211,13 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			},
 			expectedIngesters: 3,
 		},
+		"should error out if max series per query is reached": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			maxSeriesPerQuery: 1,
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -2231,7 +2241,15 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// Set up limiter
+			ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
+
 			metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+			if testData.expectedError != nil {
+				require.ErrorIs(t, err, testData.expectedError)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expectedResult, metrics)
 
@@ -2246,6 +2264,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 func TestDistributor_ActiveSeries(t *testing.T) {
 	const numIngesters = 5
+	const responseSizeLimitBytes = 1024
 
 	collision1, collision2 := labelsWithHashCollision()
 
@@ -2259,10 +2278,13 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
 		{collision1, 3, 300000},
 		{collision2, 4, 300000},
+		{labels.FromStrings(labels.MetricName, "large_metric", "label", strings.Repeat("1", 2*responseSizeLimitBytes)), 5, 400000},
 	}
+
 	tests := map[string]struct {
 		shuffleShardSize            int
 		requestMatchers             []*labels.Matcher
+		expectError                 error
 		expectedSeries              []labels.Labels
 		expectedNumQueriedIngesters int
 	}{
@@ -2287,24 +2309,32 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			expectedSeries:              []labels.Labels{collision1, collision2},
 			expectedNumQueriedIngesters: numIngesters,
 		},
+		"aborts if response is too large": {
+			requestMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "large_metric")},
+			expectError:     ErrResponseTooLarge,
+		},
 	}
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
 			// Create distributor and ingesters.
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.ActiveSeriesResultsMaxSizeBytes = responseSizeLimitBytes
 			distributors, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
 				happyIngesters:   numIngesters,
 				numDistributors:  1,
 				shuffleShardSize: test.shuffleShardSize,
+				limits:           limits,
 			})
-			distributor := distributors[0]
+			d := distributors[0]
 
 			// Push test data.
 			ctx := user.InjectOrgID(context.Background(), "test")
 			for _, series := range pushedData {
 				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
-				_, err := distributor.Push(ctx, req)
+				_, err := d.Push(ctx, req)
 				require.NoError(t, err)
 			}
 
@@ -2312,7 +2342,12 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			qStats, ctx := stats.ContextWithEmptyStats(ctx)
 
 			// Query active series.
-			series, err := distributor.ActiveSeries(ctx, test.requestMatchers)
+			series, err := d.ActiveSeries(ctx, test.requestMatchers)
+			if test.expectError != nil {
+				require.ErrorIs(t, err, test.expectError)
+				return
+			}
+
 			require.NoError(t, err)
 			assert.ElementsMatch(t, test.expectedSeries, series)
 
@@ -3227,40 +3262,53 @@ func TestRelabelMiddleware(t *testing.T) {
 	ctxWithUser := user.InjectOrgID(context.Background(), "user")
 
 	type testCase struct {
-		name           string
-		ctx            context.Context
-		relabelConfigs []*relabel.Config
-		dropLabels     []string
-		reqs           []*mimirpb.WriteRequest
-		expectedReqs   []*mimirpb.WriteRequest
-		expectErrs     []bool
+		name              string
+		ctx               context.Context
+		relabelConfigs    []*relabel.Config
+		dropLabels        []string
+		relabelingEnabled bool
+		reqs              []*mimirpb.WriteRequest
+		expectedReqs      []*mimirpb.WriteRequest
+		expectErrs        []bool
 	}
 	testCases := []testCase{
 		{
-			name:           "do nothing",
-			ctx:            ctxWithUser,
-			relabelConfigs: nil,
-			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectErrs:     []bool{false},
+			name:              "do nothing",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        nil,
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
-			name:           "no user in context",
-			ctx:            context.Background(),
-			relabelConfigs: nil,
-			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
-			expectedReqs:   nil,
-			expectErrs:     []bool{true},
+			name:              "no user in context",
+			ctx:               context.Background(),
+			relabelConfigs:    nil,
+			dropLabels:        nil,
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:      nil,
+			expectErrs:        []bool{true},
 		}, {
-			name:           "apply a relabel rule",
-			ctx:            ctxWithUser,
-			relabelConfigs: nil,
-			dropLabels:     []string{"label1", "label3"},
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
-			expectErrs:     []bool{false},
+			name:              "apply a relabel rule",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        []string{"label1", "label3"},
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
+			name:              "relabeling disabled",
+			ctx:               ctxWithUser,
+			relabelConfigs:    nil,
+			dropLabels:        []string{"label1", "label3"},
+			relabelingEnabled: false,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectErrs:        []bool{false},
+		}, {}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
 			relabelConfigs: []*relabel.Config{
@@ -3272,13 +3320,15 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "prefix_$1",
 				},
 			},
-			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
-			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
-			expectErrs:   []bool{false},
+			relabelingEnabled: true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
+			expectErrs:        []bool{false},
 		}, {
-			name:       "drop entire series if they have no labels",
-			ctx:        ctxWithUser,
-			dropLabels: []string{"__name__", "label2", "label3"},
+			name:              "drop entire series if they have no labels",
+			ctx:               ctxWithUser,
+			dropLabels:        []string{"__name__", "label2", "label3"},
+			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil),
 				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2"), nil, nil),
@@ -3304,6 +3354,7 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "$1",
 				},
 			},
+			relabelingEnabled: true,
 			reqs: []*mimirpb.WriteRequest{{
 				Timeseries: []mimirpb.PreallocTimeseries{makeWriteRequestTimeseries(
 					[]mimirpb.LabelAdapter{
@@ -3349,6 +3400,7 @@ func TestRelabelMiddleware(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.MetricRelabelConfigs = tc.relabelConfigs
 			limits.DropLabels = tc.dropLabels
+			limits.MetricRelabelingEnabled = tc.relabelingEnabled
 			ds, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
 				limits:          &limits,
@@ -4383,7 +4435,8 @@ func (i *mockIngester) ActiveSeries(_ context.Context, req *client.ActiveSeriesR
 		return nil, err
 	}
 
-	results := []*client.ActiveSeriesResponse{}
+	var results []*client.ActiveSeriesResponse
+
 	resp := &client.ActiveSeriesResponse{}
 
 	for _, series := range i.timeseries {
@@ -5177,14 +5230,14 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		totalMetadata += len(ing[ix].metadata)
 
 		for _, ts := range ing[ix].timeseries {
-			token := distrib.tokenForLabels(userName, ts.Labels)
+			token := tokenForLabels(userName, ts.Labels)
 			ingIx := getIngesterIndexForToken(token, ing)
 			assert.Equal(t, ix, ingIx)
 		}
 
 		for _, metadataMap := range ing[ix].metadata {
 			for m := range metadataMap {
-				token := distrib.tokenForMetadata(userName, m.MetricFamilyName)
+				token := tokenForMetadata(userName, m.MetricFamilyName)
 				ingIx := getIngesterIndexForToken(token, ing)
 				assert.Equal(t, ix, ingIx)
 			}
@@ -5193,7 +5246,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
-		token := distrib.tokenForLabels(userName, ts.Labels)
+		token := tokenForLabels(userName, ts.Labels)
 		ingIx := getIngesterIndexForToken(token, ing)
 
 		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
@@ -5561,7 +5614,7 @@ func TestSendMessageMetadata(t *testing.T) {
 		Source: mimirpb.API,
 	}
 
-	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req.Timeseries, nil, req.Source)
+	err = d.sendToIngester(ctx, ring.InstanceDesc{Addr: "1.2.3.4:5555", Id: "test"}, req)
 	require.NoError(t, err)
 
 	// Verify that d.sendToIngester added message size to metadata.

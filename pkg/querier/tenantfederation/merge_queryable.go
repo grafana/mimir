@@ -89,9 +89,9 @@ func (q *tenantQuerier) Close() error {
 	return q.upstream.Close()
 }
 
-// NewMergeQueryable returns a queryable that merges results for all involved federation IDs.
-// The underlying querier is returned by a callback in MergeQueryableCallbacks. The IDs are returned
-// by a tenant.Resolver implementation.
+// NewMergeQueryable returns a queryable that merges results for all involved
+// federation IDs. The underlying querier is returned by a callback in
+// MergeQueryableCallbacks.
 //
 // By setting bypassWithSingleID to true the mergeQuerier gets bypassed,
 // and results for requests with a single ID will not contain the ID label.
@@ -103,6 +103,9 @@ func (q *tenantQuerier) Close() error {
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
 func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
+	// Note that we allow tenant.Resolver to be injected instead of using the
+	// tenant.TenantIDs() method because GEM needs to inject different behavior
+	// here for the cluster federation feature.
 	return &mergeQueryable{
 		logger:             logger,
 		idLabelName:        idLabelName,
@@ -139,8 +142,8 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 		logger:             m.logger,
 		idLabelName:        m.idLabelName,
 		callbacks:          m.callbacks,
-		upstream:           upstream,
 		resolver:           m.resolver,
+		upstream:           upstream,
 		maxConcurrency:     m.maxConcurrency,
 		bypassWithSingleID: m.bypassWithSingleID,
 		tenantsQueried:     m.tenantsQueried,
@@ -155,8 +158,8 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 type mergeQuerier struct {
 	logger             log.Logger
 	callbacks          MergeQueryableCallbacks
-	upstream           MergeQuerierUpstream
 	resolver           tenant.Resolver
+	upstream           MergeQuerierUpstream
 	idLabelName        string
 	maxConcurrency     int
 	bypassWithSingleID bool

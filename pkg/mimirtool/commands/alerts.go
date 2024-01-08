@@ -40,6 +40,7 @@ type AlertmanagerCommand struct {
 	TemplateFiles          []string
 	DisableColor           bool
 	ValidateOnly           bool
+	OutputDir              string
 
 	cli *client.MimirClient
 }
@@ -73,6 +74,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	getAlertsCmd.Flag("output-dir", "The directory where the config and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
 
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
 
@@ -110,9 +112,36 @@ func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	p := printer.New(a.DisableColor)
+	if a.OutputDir == "" {
+		p := printer.New(a.DisableColor)
+		return p.PrintAlertmanagerConfig(cfg, templates)
+	}
+	return a.outputAlertManagerConfigTemplates(cfg, templates)
+}
 
-	return p.PrintAlertmanagerConfig(cfg, templates)
+func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, templates map[string]string) error {
+	var baseDir string
+	var fileOutputLocation string
+	baseDir, err := filepath.Abs(a.OutputDir)
+	if err != nil {
+		return err
+	}
+	fileOutputLocation = filepath.Join(baseDir, "config.yaml")
+	log.Debugf("writing the config file to %s", fileOutputLocation)
+	err = os.WriteFile(fileOutputLocation, []byte(config), os.FileMode(0o600))
+	if err != nil {
+		return err
+	}
+
+	for fn, template := range templates {
+		fileOutputLocation = filepath.Join(baseDir, fn)
+		log.Debugf("writing the template file to %s", fileOutputLocation)
+		err = os.WriteFile(fileOutputLocation, []byte(template), os.FileMode(0o600))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *AlertmanagerCommand) readAlertManagerConfig() (string, map[string]string, error) {

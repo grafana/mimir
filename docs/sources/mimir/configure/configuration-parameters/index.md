@@ -210,6 +210,11 @@ tenant_federation:
   # CLI flag: -tenant-federation.max-concurrent
   [max_concurrent: <int> | default = 16]
 
+  # (experimental) The max number of tenant IDs that may be supplied for a
+  # federated query if enabled. 0 to disable the limit.
+  # CLI flag: -tenant-federation.max-tenants
+  [max_tenants: <int> | default = 0]
+
 activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.
@@ -1484,6 +1489,10 @@ results_cache:
 # planned. 0 to disable cardinality-based hints.
 # CLI flag: -query-frontend.query-sharding-target-series-per-shard
 [query_sharding_target_series_per_shard: <int> | default = 0]
+
+# (experimental) True to enable sharding of active series queries.
+# CLI flag: -query-frontend.shard-active-series-queries
+[shard_active_series_queries: <boolean> | default = false]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -2981,6 +2990,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # during the relabeling phase and cleaned afterwards: __meta_tenant_id
 [metric_relabel_configs: <relabel_config...> | default = ]
 
+# (experimental) Enable metric relabeling for the tenant. This configuration
+# option can be used to forcefully disable metric relabeling on a per-tenant
+# basis.
+# CLI flag: -distributor.metric-relabeling-enabled
+[metric_relabeling_enabled: <boolean> | default = true]
+
 # (experimental) If enabled, rate limit errors will be reported to the client
 # with HTTP status code 529 (Service is overloaded). If disabled, status code
 # 429 (Too Many Requests) is used. Enabling
@@ -3216,6 +3231,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # /api/v1/cardinality/label_values API call.
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
+
+# (experimental) Maximum size of an active series request result shard in bytes.
+# 0 to disable.
+# CLI flag: -querier.active-series-results-max-size-bytes
+[active_series_results_max_size_bytes: <int> | default = 419430400]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

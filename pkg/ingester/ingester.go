@@ -53,7 +53,9 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -179,6 +181,9 @@ type Config struct {
 	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
+
+	// This config is dynamically injected because defined outside the ingester config.
+	IngestStorageConfig ingest.Config `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -298,6 +303,8 @@ type Ingester struct {
 	utilizationBasedLimiter utilizationBasedLimiter
 
 	errorSamplers ingesterErrSamplers
+
+	ingestReader *ingest.PartitionReader
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -399,6 +406,19 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
+	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
+		kafkaCfg := ingestCfg.KafkaConfig
+
+		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		if err != nil {
+			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
+		}
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating ingest storage reader")
+		}
+	}
+
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
 }
@@ -482,6 +502,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.ownedSeriesService != nil {
 		servs = append(servs, i.ownedSeriesService)
+	}
+
+	if i.ingestReader != nil {
+		servs = append(servs, i.ingestReader)
 	}
 
 	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
@@ -1330,6 +1354,12 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 	i.metrics.queries.Inc()
 
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return nil, err
+	}
+
 	db := i.getTSDB(userID)
 	if db == nil {
 		return &client.ExemplarQueryResponse{}, nil
@@ -1383,6 +1413,12 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return nil, err
 	}
 
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return nil, err
+	}
+
 	db := i.getTSDB(userID)
 	if db == nil {
 		return &client.LabelValuesResponse{}, nil
@@ -1415,6 +1451,12 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		return nil, err
 	}
 
@@ -1456,6 +1498,12 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
 		return nil, err
 	}
 
@@ -1530,6 +1578,12 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 		return nil, err
 	}
 
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return nil, err
+	}
+
 	db := i.getTSDB(userID)
 	if db == nil {
 		return &client.UserStatsResponse{}, nil
@@ -1538,6 +1592,10 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 	return createUserStats(db, req)
 }
 
+// AllUserStats returns some per-tenant statistics about the data ingested in this ingester.
+//
+// When using the experimental ingest storage, this function doesn't support the read consistency setting
+// because the purpose of this function is to show a snapshot of the live ingester's state.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	if err := i.checkAvailable(); err != nil {
@@ -1582,6 +1640,13 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
+
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(stream.Context(), userID); err != nil {
+		return err
+	}
+
 	db := i.getTSDB(userID)
 	if db == nil {
 		return nil
@@ -1613,6 +1678,12 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
+		return err
+	}
+
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(srv.Context(), userID); err != nil {
 		return err
 	}
 
@@ -1713,6 +1784,12 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	i.metrics.queries.Inc()
+
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return err
+	}
 
 	db := i.getTSDB(userID)
 	if db == nil {
@@ -3478,4 +3555,17 @@ type utilizationBasedLimiter interface {
 	services.Service
 
 	LimitingReason() string
+}
+
+func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) error {
+	// Read consistency is enforced by design in Mimir, unless using the ingest storage.
+	if i.ingestReader == nil {
+		return nil
+	}
+
+	if i.limits.IngestStorageReadConsistency(tenantID) != api.ReadConsistencyStrong {
+		return nil
+	}
+
+	return errors.Wrap(i.ingestReader.WaitReadConsistency(ctx), "wait for read consistency")
 }
