@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
@@ -1795,11 +1796,11 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 				cfgProvider:  cfgProvider,
 			}
 			userBkt := bucket.NewUserBucketClient(tenantID, injectedBkt, cfgProvider)
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancelCause(context.Background())
 
 			heartbeatInterval := heartbeatInterval
 			if tc.cancelContext {
-				cancel()
+				cancel(cancellation.NewErrorf("testing context cancellation behaviour"))
 				heartbeatInterval = 1 * time.Hour // to avoid racing a heartbeat
 			}
 
@@ -1816,7 +1817,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 
 			tc.assertions(t, ctx, bkt)
 
-			cancel()
+			cancel(cancellation.NewErrorf("test finished"))
 			wg.Wait()
 		})
 	}

@@ -41,6 +41,9 @@ import (
 
 const maxNotifyFrontendRetries = 5
 
+var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
+var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
+
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:            log,
@@ -106,7 +109,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 	// Run the querier loop (and so all the queries) in a dedicated context that we call the "execution context".
 	// The execution context is cancelled once the workerCtx is cancelled AND there's no inflight query executing.
 	execCtx, execCancel, inflightQuery := newExecutionContext(workerCtx, sp.log)
-	defer execCancel()
+	defer execCancel(errQuerierQuerySchedulerProcessingLoopTerminated)
 
 	backoff := backoff.New(execCtx, processorBackoffConfig)
 	for backoff.Ongoing() {
@@ -168,10 +171,10 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 		if err != nil {
 			schedulerStreamError.Store(err)
 
-			// If the query was cancelled, we don't want to wait for it to complete: we want to cancel it, which will be
-			// handled by the deferred context cancellation above.
-			// If we got another kind of error (eg. scheduler crashed), continue processing the query.
-			if !grpcutil.IsCanceled(err) {
+			if grpcutil.IsCanceled(err) {
+				cancel(cancellation.NewErrorf("query cancelled: %w", err))
+			} else {
+				// If we got another kind of error (eg. scheduler crashed), continue processing the query.
 				waitForQuery(err)
 			}
 
@@ -196,7 +199,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			// go direct to a querier's HTTP API have a context created and cancelled in a similar way by the Go runtime's
 			// net/http package.
 			ctx, cancel := context.WithCancelCause(ctx)
-			defer cancel(cancellation.NewErrorf("query evaluation finished"))
+			defer cancel(errQueryEvaluationFinished)
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)

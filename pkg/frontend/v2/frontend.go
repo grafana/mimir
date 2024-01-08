@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
@@ -36,6 +37,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query round trip finished")
 
 // Config for a Frontend.
 type Config struct {
@@ -112,8 +115,7 @@ type frontendRequest struct {
 	userID       string
 	statsEnabled bool
 
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx context.Context
 
 	enqueue  chan enqueueResult
 	response chan *frontendv2pb.QueryResultRequest
@@ -222,8 +224,8 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	}
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errExecutingQueryRoundTripFinished)
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
@@ -231,8 +233,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		userID:       userID,
 		statsEnabled: stats.IsEnabled(ctx),
 
-		ctx:    ctx,
-		cancel: cancel,
+		ctx: ctx,
 
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
