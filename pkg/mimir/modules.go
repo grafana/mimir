@@ -44,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -587,6 +588,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		// the external HTTP server. This will allow the querier to consolidate query metrics both external
 		// and internal using the default instrumentation when running as a standalone service.
 		internalQuerierRouter = t.Server.HTTPServer.Handler
+
+		// We need to propagate the consistency setting to upstream components regardless of how the querier is deployed.
+		internalQuerierRouter = querierapi.ConsistencyMiddleware().Wrap(internalQuerierRouter)
 	} else {
 		// Monolithic mode requires a query-frontend endpoint for the worker. If no frontend and scheduler endpoint
 		// is configured, Mimir will default to using frontend on localhost on it's own gRPC listening port.

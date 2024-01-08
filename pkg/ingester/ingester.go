@@ -3563,7 +3563,13 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 		return nil
 	}
 
-	if i.limits.IngestStorageReadConsistency(tenantID) != api.ReadConsistencyStrong {
+	var cLevel string
+	if c, ok := api.ReadConsistencyFromContext(ctx); ok {
+		cLevel = c
+	} else {
+		cLevel = i.limits.IngestStorageReadConsistency(tenantID)
+	}
+	if cLevel == api.ReadConsistencyEventual {
 		return nil
 	}
 

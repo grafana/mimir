@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 )
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
@@ -43,6 +44,8 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}
+	unary = append(unary, querierapi.ReadConsistencyClientInterceptor)
+	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
 	if err != nil {

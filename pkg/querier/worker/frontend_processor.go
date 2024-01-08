@@ -157,6 +157,7 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 		stats, ctx = querier_stats.ContextWithEmptyStats(ctx)
 		stats.AddQueueTime(queueTime)
 	}
+	ctx = contexWithConsistencyLevel(ctx, request.GetHeaders())
 
 	response, err := fp.handler.Handle(ctx, request)
 	if err != nil {
