@@ -1980,6 +1980,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2120,6 +2122,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2258,6 +2262,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
