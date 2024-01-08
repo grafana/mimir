@@ -66,7 +66,7 @@ docker run \
   --rm \
   --name "$DOCKER_CONTAINER_NAME" \
   --env "GF_AUTH_ANONYMOUS_ENABLED=true" \
-  --env "GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1m" \
+  --env "GF_AUTH_ANONYMOUS_ORG_ROLE=Admin" \
   --env "GF_USERS_DEFAULT_THEME=light" \
   --env "GF_LOG_LEVEL=warn" \
   --env "DATASOURCE_URL=${DATASOURCE_URL}" \
@@ -75,6 +75,7 @@ docker run \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
+  --network=host \
   --expose 3000 \
   --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
   grafana/grafana:latest

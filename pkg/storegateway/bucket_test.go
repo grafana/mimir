@@ -876,31 +876,31 @@ type interceptedIndexReader struct {
 	onIndexVersionCalled       func() error
 }
 
-func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
+func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	if iir.onLabelNamesCalled != nil {
 		if err := iir.onLabelNamesCalled(); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelNames(ctx)
+	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
+func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
-func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error) {
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
 	if iir.onIndexVersionCalled != nil {
 		if err := iir.onIndexVersionCalled(); err != nil {
 			return 0, err
 		}
 	}
-	return iir.Reader.IndexVersion(ctx)
+	return iir.Reader.IndexVersion()
 }
 
 func deadlineExceededIndexHeader() *interceptedIndexReader {

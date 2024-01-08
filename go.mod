@@ -45,7 +45,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.17.0
 	golang.org/x/net v0.19.0
-	golang.org/x/sync v0.5.0
+	golang.org/x/sync v0.6.0
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.59.0
 	gopkg.in/yaml.v2 v2.4.0 // indirect
@@ -56,7 +56,7 @@ require (
 	cloud.google.com/go/storage v1.36.0
 	github.com/alecthomas/chroma/v2 v2.12.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go v1.49.13
+	github.com/aws/aws-sdk-go v1.49.16
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.6.0
@@ -80,7 +80,7 @@ require (
 	go.opentelemetry.io/otel v1.19.0
 	go.opentelemetry.io/otel/trace v1.19.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b
+	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc
 	google.golang.org/api v0.152.0
 	google.golang.org/protobuf v1.32.0
 	sigs.k8s.io/kustomize/kyaml v0.16.0

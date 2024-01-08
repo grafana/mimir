@@ -70,14 +70,46 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
     )
     .addRow(
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
+        local title = 'Requests / sec';
+        $.panel(title) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler)) +
+        $.panelDescription(title, description),
       )
       .addPanel(
-        $.panel('Latency (time in queue)') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
+        local title = 'Latency (Time in Queue)';
+        $.panel(title) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler)) +
+        $.panelDescription(title, description),
+      )
+      .addPanel(
+        local title = 'Latency (Time in Queue) by Queue Dimension';
+        $.panel(title) +
+        $.latencyPanelLabelBreakout(
+          metricName='cortex_query_scheduler_queue_duration_seconds',
+          selector='{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler),
+          labels=['additional_queue_dimensions'],
+          labelReplaceArgSets=[
+            {
+              dstLabel: 'additional_queue_dimensions',
+              replacement: 'none',
+              srcLabel:
+                'additional_queue_dimensions',
+              regex: '^$',
+            },
+          ]
+        ) +
+        $.panelDescription(title, description),
       )
     )
     .addRow(

@@ -25,7 +25,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var (
@@ -77,6 +76,7 @@ type LazyBinaryReader struct {
 	metrics         *LazyBinaryReaderMetrics
 	onClosed        func(*LazyBinaryReader)
 	lazyLoadingGate gate.Gate
+	ctx             context.Context
 
 	readerMx      sync.RWMutex
 	reader        Reader
@@ -132,6 +132,7 @@ func NewLazyBinaryReader(
 		readerFactory:   readerFactory,
 		blockID:         id,
 		lazyLoadingGate: lazyLoadingGate,
+		ctx:             ctx,
 	}, nil
 }
 
@@ -147,46 +148,46 @@ func (r *LazyBinaryReader) Close() error {
 }
 
 // IndexVersion implements Reader.
-func (r *LazyBinaryReader) IndexVersion(ctx context.Context) (int, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) IndexVersion() (int, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return 0, err
 	}
 	defer wg.Done()
 
-	return reader.IndexVersion(ctx)
+	return reader.IndexVersion()
 }
 
 // PostingsOffset implements Reader.
-func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name, value string) (index.Range, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) PostingsOffset(name, value string) (index.Range, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return index.Range{}, err
 	}
 	defer wg.Done()
 
-	return reader.PostingsOffset(ctx, name, value)
+	return reader.PostingsOffset(name, value)
 }
 
 // LookupSymbol implements Reader.
-func (r *LazyBinaryReader) LookupSymbol(ctx context.Context, o uint32) (string, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return "", err
 	}
 	defer wg.Done()
 
-	return reader.LookupSymbol(ctx, o)
+	return reader.LookupSymbol(o)
 }
 
 // SymbolsReader implements Reader.
-func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.SymbolsReader, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) SymbolsReader() (streamindex.SymbolsReader, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return nil, err
 	}
 
-	sr, err := reader.SymbolsReader(ctx)
+	sr, err := reader.SymbolsReader()
 	if err != nil {
 		wg.Done()
 		return nil, err
@@ -195,30 +196,30 @@ func (r *LazyBinaryReader) SymbolsReader(ctx context.Context) (streamindex.Symbo
 }
 
 // LabelValuesOffsets implements Reader.
-func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]streamindex.PostingListOffset, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return nil, err
 	}
 	defer wg.Done()
 
-	return reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return reader.LabelValuesOffsets(name, prefix, filter)
 }
 
 // LabelNames implements Reader.
-func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
-	reader, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) LabelNames() ([]string, error) {
+	reader, wg, err := r.getOrLoadReader()
 	if err != nil {
 		return nil, err
 	}
 	defer wg.Done()
 
-	return reader.LabelNames(ctx)
+	return reader.LabelNames()
 }
 
 // EagerLoad attempts to eagerly load this index header.
-func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
-	_, wg, err := r.getOrLoadReader(ctx)
+func (r *LazyBinaryReader) EagerLoad() {
+	_, wg, err := r.getOrLoadReader()
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", err)
 		return
@@ -229,7 +230,7 @@ func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
-func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.WaitGroup, error) {
+func (r *LazyBinaryReader) getOrLoadReader() (Reader, *sync.WaitGroup, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
@@ -246,7 +247,7 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.W
 
 	// Release the read lock, so that loadReader can take write lock. Take the read lock again once done.
 	r.readerMx.RUnlock()
-	err := r.loadReader(ctx)
+	err := r.loadReader()
 	// Re-acquire read lock.
 	r.readerMx.RLock()
 
@@ -265,15 +266,12 @@ func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) (Reader, *sync.W
 }
 
 // loadReader is called from getOrLoadReader, without any locks.
-func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
-	logger, ctx := spanlogger.NewWithLogger(ctx, r.logger, "LazyBinaryReader.loadReader")
-	defer logger.Finish()
-
+func (r *LazyBinaryReader) loadReader() error {
 	// lazyLoadingGate implementation: blocks load if too many are happening at once.
 	// It's important to get permit from the Gate when NOT holding the read-lock, otherwise we risk that multiple goroutines
 	// that enter `load()` will deadlock themselves. (If Start() allows one goroutine to continue, but blocks another one,
 	// then goroutine that continues would not be able to get Write lock.)
-	err := r.lazyLoadingGate.Start(ctx)
+	err := r.lazyLoadingGate.Start(r.ctx)
 	if err != nil {
 		return errors.Wrapf(err, "failed to wait for turn")
 	}
@@ -290,7 +288,7 @@ func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
 		return r.readerErr
 	}
 
-	logger.DebugLog("msg", "lazy loading index-header file", "path", r.filepath)
+	level.Debug(r.logger).Log("msg", "lazy loading index-header file", "path", r.filepath)
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
@@ -304,7 +302,7 @@ func (r *LazyBinaryReader) loadReader(ctx context.Context) error {
 	r.reader = reader
 	elapsed := time.Since(startTime)
 
-	logger.DebugLog("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
+	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
 	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
 	return nil

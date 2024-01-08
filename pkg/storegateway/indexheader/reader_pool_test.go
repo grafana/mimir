@@ -138,7 +138,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 			require.Equal(t, float64(testData.expectedLoadCountMetricBeforeLabelNamesCall), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
 
 			// Ensure it can read data.
-			labelNames, err := r.LabelNames(ctx)
+			labelNames, err := r.LabelNames()
 			require.NoError(t, err)
 			require.Equal(t, []string{"a"}, labelNames)
 
@@ -168,7 +168,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	defer func() { require.NoError(t, r.Close()) }()
 
 	// Ensure it can read data.
-	labelNames, err := r.LabelNames(ctx)
+	labelNames, err := r.LabelNames()
 	require.NoError(t, err)
 	require.Equal(t, []string{"a"}, labelNames)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
@@ -184,7 +184,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.unloadCount))
 
 	// Ensure it can still read data (will be re-opened).
-	labelNames, err = r.LabelNames(ctx)
+	labelNames, err = r.LabelNames()
 	require.NoError(t, err)
 	require.Equal(t, []string{"a"}, labelNames)
 	require.True(t, pool.isTracking(r.(*LazyBinaryReader)))
@@ -235,7 +235,7 @@ func TestReaderPool_PersistLazyLoadedBlock(t *testing.T) {
 	defer func() { require.NoError(t, r.Close()) }()
 
 	// Ensure it can read data.
-	labelNames, err := r.LabelNames(ctx)
+	labelNames, err := r.LabelNames()
 	require.NoError(t, err)
 	require.Equal(t, []string{"a"}, labelNames)
 	require.Equal(t, float64(1), promtestutil.ToFloat64(metrics.lazyReader.loadCount))
