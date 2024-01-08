@@ -684,17 +684,6 @@
             "height": "250px",
             "panels": [
                {
-                  "content": "<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n",
-                  "datasource": null,
-                  "description": "",
-                  "id": 10,
-                  "mode": "markdown",
-                  "span": 4,
-                  "title": "",
-                  "transparent": true,
-                  "type": "text"
-               },
-               {
                   "aliasColors": {
                      "1xx": "#EAB839",
                      "2xx": "#7EB26D",
@@ -710,8 +699,9 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "description": "### Requests / sec\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
                   "fill": 10,
-                  "id": 11,
+                  "id": 10,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -784,8 +774,9 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "description": "### Latency (Time in Queue)\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
                   "fill": 1,
-                  "id": 12,
+                  "id": 11,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -832,6 +823,93 @@
                   "timeFrom": null,
                   "timeShift": null,
                   "title": "Latency (Time in Queue)",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Latency (Time in Queue) by Queue Dimension\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                  "fill": 1,
+                  "id": 12,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
+                        "refId": "A"
+                     },
+                     {
+                        "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "format": "time_series",
+                        "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
+                        "refId": "B"
+                     },
+                     {
+                        "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "format": "time_series",
+                        "legendFormat": "Average: {{ additional_queue_dimensions }}",
+                        "refId": "C"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Latency (Time in Queue) by Queue Dimension",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
