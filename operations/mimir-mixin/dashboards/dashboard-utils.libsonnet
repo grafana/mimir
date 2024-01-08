@@ -1004,12 +1004,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   latencyPanelLabelBreakout(metricName, selector, labels=[], labelReplaceArgSets=[{}], multiplier='1e3')::
     local averageExprTmpl = $.wrapMultiLabelReplace(
-      'sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
-      labelReplaceArgSets,
+      query='sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
+      labelReplaceArgSets=labelReplaceArgSets,
     );
     local histogramExprTmpl = $.wrapMultiLabelReplace(
-      'histogram_quantile(%s, sum(rate(%s_bucket%s[$__rate_interval])) by (%s)) * %s',
-      labelReplaceArgSets,
+      query='histogram_quantile(%s, sum(rate(%s_bucket%s[$__rate_interval])) by (%s)) * %s',
+      labelReplaceArgSets=labelReplaceArgSets,
     );
     local labelBreakouts = '%s' % std.join(', ', labels);
     local histogramLabelBreakouts = '%s' % std.join(', ', ['le'] + labels);
@@ -1252,13 +1252,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   wrapLabelReplace(query, labelReplaceArgSet={})::
     |||
       label_replace(%(query)s, "%(dstLabel)s", "%(replacement)s", "%(srcLabel)s", "%(regex)s")
-    ||| % {
-      query: query,
-      dstLabel: labelReplaceArgSet.dstLabel,
-      replacement: labelReplaceArgSet.replacement,
-      srcLabel: labelReplaceArgSet.srcLabel,
-      regex: labelReplaceArgSet.regex,
-    },
+    ||| % labelReplaceArgSet { query: query },
 
   lokiMetricsQueryPanel(queries, legends='', unit='short')::
     super.queryPanel(queries, legends) +

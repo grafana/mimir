@@ -75,6 +75,7 @@ docker run \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
+  --network=host \
   --expose 3000 \
   --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
   grafana/grafana:latest

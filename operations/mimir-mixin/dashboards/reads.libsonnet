@@ -147,39 +147,36 @@ local filename = 'mimir-reads.json';
       )
     )
     .addRow(
-      ($.row('Query-scheduler') + { height: '50px' })
+      local description = |||
+        <p>
+          The query scheduler is an optional service that moves
+          the internal queue from the query-frontend into a
+          separate component.
+          If this service is not deployed,
+          these panels will show "No data."
+        </p>
+      |||;
+      $.row('Query-scheduler')
       .addPanel(
-        $.textPanel(
-          '',
-          |||
-            <p>
-              The query scheduler is an optional service that moves
-              the internal queue from the query-frontend into a
-              separate component.
-              If this service is not deployed,
-              these panels will show "No data."
-            </p>
-          |||
-        )
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+        local title = 'Requests / sec';
+        $.panel(title) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
+        $.panelDescription(title, description),
       )
       .addPanel(
-        $.panel('Latency (Time in Queue)') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+        local title = 'Latency (Time in Queue)';
+        $.panel(title) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
+        $.panelDescription(title, description),
       )
       .addPanel(
-        $.panel('Latency (Time in Queue) by Queue Dimension') +
+        local title = 'Latency (Time in Queue) by Queue Dimension';
+        $.panel(title) +
         $.latencyPanelLabelBreakout(
-          'cortex_query_scheduler_queue_duration_seconds',
-          '{%s}' % $.jobMatcher($._config.job_names.query_scheduler),
-          ['additional_queue_dimensions'],
-          [
+          metricName='cortex_query_scheduler_queue_duration_seconds',
+          selector='{%s}' % $.jobMatcher($._config.job_names.query_scheduler),
+          labels=['additional_queue_dimensions'],
+          labelReplaceArgSets=[
             {
               dstLabel: 'additional_queue_dimensions',
               replacement: 'none',
@@ -188,7 +185,8 @@ local filename = 'mimir-reads.json';
               regex: '^$',
             },
           ]
-        )
+        ) +
+        $.panelDescription(title, description),
       )
     )
     .addRow(
