@@ -1211,10 +1211,9 @@ querier:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
-  env:
-    - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-      value: "5000"
+  env: []
   extraEnvFrom: []
+  jaegerReporterMaxQueueSize: 5000
 
 query_frontend:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
@@ -1491,10 +1490,9 @@ store_gateway:
   extraContainers: []
   extraVolumes: []
   extraVolumeMounts: []
-  env:
-    - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
-      value: "1000"
+  env: []
   extraEnvFrom: []
+  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
