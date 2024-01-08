@@ -4,7 +4,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/grafana/dskit/middleware"
@@ -56,9 +55,6 @@ func ConsistencyMiddleware() middleware.Interface {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if c := r.Header.Get(ReadConsistencyHeader); IsValidReadConsistency(c) {
 				r = r.WithContext(ContextWithReadConsistency(r.Context(), c))
-				fmt.Println("ConsistencyMiddleware", c)
-			} else {
-				fmt.Println("ConsistencyMiddleware", c, "invalid/not set")
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -69,10 +65,7 @@ const consistencyLevelGrpcMdKey = "__consistency_level__"
 
 func ReadConsistencyClientInterceptor(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	if c, ok := ReadConsistencyFromContext(ctx); ok {
-		fmt.Println("ReadConsistencyClientInterceptor", c)
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyLevelGrpcMdKey, c)
-	} else {
-		fmt.Println("ReadConsistencyClientInterceptor", c, "invalid/not set")
 	}
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
@@ -81,10 +74,7 @@ func ReadConsistencyServerInterceptor(ctx context.Context, req interface{}, _ *g
 	md, _ := metadata.FromIncomingContext(ctx)
 	consistencies := md.Get(consistencyLevelGrpcMdKey)
 	if len(consistencies) > 0 && IsValidReadConsistency(consistencies[0]) {
-		fmt.Println("ReadConsistencyServerInterceptor", consistencies[0])
 		ctx = ContextWithReadConsistency(ctx, consistencies[0])
-	} else {
-		fmt.Println("ReadConsistencyServerInterceptor", consistencies, "invalid/not set")
 	}
 	return handler(ctx, req)
 }

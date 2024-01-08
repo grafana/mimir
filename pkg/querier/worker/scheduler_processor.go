@@ -315,10 +315,8 @@ func contexWithConsistencyLevel(ctx context.Context, headers []*httpgrpc.Header)
 		if !api.IsValidReadConsistency(lvl) {
 			continue
 		}
-		fmt.Println("contexWithConsistencyLevel", lvl)
 		return api.ContextWithReadConsistency(ctx, lvl)
 	}
-	fmt.Println("contexWithConsistencyLevel", "invalid/not set")
 	return ctx
 }
 
