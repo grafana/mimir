@@ -14296,7 +14296,7 @@
           "required": false,
           "desc": "The timeout for establishing a connection with a remote node, and for read/write operations.",
           "fieldValue": null,
-          "fieldDefaultValue": 10000000000,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "memberlist.stream-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"

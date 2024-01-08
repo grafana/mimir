@@ -2700,7 +2700,7 @@ The `memberlist` block configures the Gossip memberlist.
 # (advanced) The timeout for establishing a connection with a remote node, and
 # for read/write operations.
 # CLI flag: -memberlist.stream-timeout
-[stream_timeout: <duration> | default = 10s]
+[stream_timeout: <duration> | default = 2s]
 
 # (advanced) Multiplication factor used when sending out messages (factor *
 # log(N+1)).
