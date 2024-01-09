@@ -61,6 +61,8 @@
     ),
     // Dynamically set GOMEMLIMIT based on memory request.
     GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory))),
+
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
   },
 
   store_gateway_node_affinity_matchers:: [],

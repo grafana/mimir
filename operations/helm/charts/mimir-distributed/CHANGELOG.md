@@ -34,6 +34,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500 for ingester and to 100 for all components. #5666
 * [CHANGE] Changed default `clusterDomain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [CHANGE] Change the default timeout used for index-queries caches from `200ms` to `450ms`. #6786
+* [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 5000, to avoid dropping tracing spans. #7068
+* [CHANGE] Store-gateway: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 1000, to avoid dropping tracing spans. #7068
 * [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets for compactor, ingester, store-gateway, and alertmanager via `*.persistance.enableRetentionPolicy`, `*.persistance.whenDeleted`, and `*.persistance.whenScaled`. #6106
 * [FEATURE] Add pure Ingress option instead of the gateway service. #6932
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.10.0`. #6022 #6110 #6558 #6681
