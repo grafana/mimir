@@ -40,7 +40,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers)
+		response, err := d.LabelNamesAndValues(ctx, cardinalityRequest.Matchers, cardinalityRequest.CountMethod)
 		if err != nil {
 			respondFromError(err, w)
 			return

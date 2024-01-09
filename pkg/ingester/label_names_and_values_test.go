@@ -56,7 +56,10 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	}
 	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
-	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream))
+	var valueFilter = func(name, value string) (bool, error) {
+		return true, nil
+	}
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -258,6 +261,9 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 		opDelay:        idxOpDelay,
 	}
 
+	var valueFilter = func(name, value string) (bool, error) {
+		return true, nil
+	}
 	doneCh := make(chan error, 1)
 	go func() {
 		err := labelNamesAndValues(
@@ -265,6 +271,7 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 			[]*labels.Matcher{},
 			1*1024*1024, // 1MB
 			stream,
+			valueFilter,
 		)
 		doneCh <- err // Signal request completion.
 	}()

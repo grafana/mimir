@@ -31,6 +31,7 @@ func labelNamesAndValues(
 	matchers []*labels.Matcher,
 	messageSizeThreshold int,
 	stream client.Ingester_LabelNamesAndValuesServer,
+	filter func(name, value string) (bool, error),
 ) error {
 	ctx := stream.Context()
 
@@ -63,6 +64,12 @@ func labelNamesAndValues(
 
 		lastAddedValueIndex := -1
 		for i, val := range values {
+			if ok, err := filter(labelName, val); err != nil {
+				return err
+			} else if !ok {
+				continue
+			}
+
 			// sum up label values length until response size reached the threshold and after that add all values to the response
 			// starting from last sent value or from the first element and up to the current element (including).
 			responseSizeBytes += len(val)
