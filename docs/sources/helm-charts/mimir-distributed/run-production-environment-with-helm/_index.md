@@ -241,11 +241,11 @@ a Prometheus-compatible server and logs to a Loki or GEL (Grafana Enterprise
 Metrics) server.
 
 1. Download the Grafana Agent Operator Custom Resource Definitions (CRDs) from
-   https://github.com/grafana/agent/tree/main/production/operator/crds
+   https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
 2. Install the CRDs on your cluster:
 
    ```bash
-   kubectl apply -f production/operator/crds/
+   kubectl apply -f operations/agent-static-operator/crds/
    ```
 
 3. Add the following YAML snippet to your
