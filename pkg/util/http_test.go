@@ -314,15 +314,16 @@ func TestIsValidURL(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			validUrl := util.IsValidURL(test.endpoint)
+			isValid := util.IsValidURL(test.endpoint)
 			if test.valid {
-				assert.True(t, validUrl)
+				assert.True(t, isValid)
 			} else {
-				assert.False(t, validUrl)
+				assert.False(t, isValid)
 			}
 		})
 	}
 }
+
 type readCloserObserver struct {
 	io.ReadCloser
 	closeCalled bool
