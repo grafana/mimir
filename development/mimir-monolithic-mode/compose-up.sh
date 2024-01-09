@@ -27,6 +27,7 @@ if [ "$1"x == "fullx" ] ; then
     cp promtool .build/linux-amd64/
     cp prometheus .build/linux-amd64/
     cd -
+    go mod vendor
 fi
 
 PROFILES=()
@@ -51,6 +52,10 @@ DEFAULT_PROFILES=("--profile" "prometheus" "--profile" "grafana-agent-static")
 if [ ${#PROFILES[@]} -eq 0 ]; then
     PROFILES=("${DEFAULT_PROFILES[@]}")
 fi
+
+cd /home/owilliams/src/grafana/prom-for-agent
+go mod vendor
+cd -
 
 cd /home/owilliams/src/grafana/agent
 go mod vendor

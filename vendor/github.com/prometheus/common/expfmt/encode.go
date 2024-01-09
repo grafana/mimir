@@ -61,16 +61,8 @@ func (ec encoderCloser) Close() error {
 // as the support is still experimental. To include the option to negotiate
 // FmtOpenMetrics, use NegotiateOpenMetrics.
 func Negotiate(h http.Header) Format {
-	escapingScheme := Format(fmt.Sprintf("; escaping=%s", EscapingSchemeToFormat(model.DefaultNameEscapingScheme)))
+	fmt.Println("NEGOTIATE 2", h)
 	for _, ac := range goautoneg.ParseAccept(h.Get(hdrAccept)) {
-		if escapeParam := ac.Params["escaping"]; escapeParam != "" {
-			switch Format(escapeParam) {
-				case FmtEscapeNone, FmtEscapeUnderscores, FmtEscapeDots, FmtEscapeValues:
-					escapingScheme = Format(fmt.Sprintf("; escaping=%s", escapeParam))
-				default:
-				// If the escaping parameter is unknown, ignore it.
-			}
-		}
 		ver := ac.Params["version"]
 		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
 			if ac.Params["validchars"] == UTF8Valid {
@@ -86,11 +78,11 @@ func Negotiate(h http.Header) Format {
 
 			switch ac.Params["encoding"] {
 			case "delimited":
-				return FmtProtoDelim + escapingScheme
+				return FmtProtoDelim
 			case "text":
-				return FmtProtoText + escapingScheme
+				return FmtProtoText
 			case "compact-text":
-				return FmtProtoCompact + escapingScheme
+				return FmtProtoCompact
 			}
 		}
 		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_0_0_4 || ver == TextVersion_1_0_0 || ver == "") {
@@ -98,12 +90,12 @@ func Negotiate(h http.Header) Format {
 				if ac.Params["validchars"] == UTF8Valid {
 					return FmtText_1_0_0 + FmtUTF8Param
 				}
-				return FmtText_1_0_0 + escapingScheme
+				return FmtText_1_0_0
 			}
-			return FmtText_0_0_4 + escapingScheme
+			return FmtText_0_0_4
 		}
 	}
-	return FmtText_0_0_4 + escapingScheme
+	return FmtText_0_0_4
 }
 
 // NegotiateIncludingOpenMetrics works like Negotiate but includes
@@ -111,16 +103,8 @@ func Negotiate(h http.Header) Format {
 // temporary and will disappear once FmtOpenMetrics is fully supported and as
 // such may be negotiated by the normal Negotiate function.
 func NegotiateIncludingOpenMetrics(h http.Header) Format {
-	escapingScheme := Format(fmt.Sprintf("; escaping=%s", EscapingSchemeToFormat(model.DefaultNameEscapingScheme)))
+	fmt.Println("NEGOTIATE 1", h)
 	for _, ac := range goautoneg.ParseAccept(h.Get(hdrAccept)) {
-		if escapeParam := ac.Params["escaping"]; escapeParam != "" {
-			switch Format(escapeParam) {
-				case FmtEscapeNone, FmtEscapeUnderscores, FmtEscapeDots, FmtEscapeValues:
-					escapingScheme = Format(fmt.Sprintf("; escaping=%s", escapeParam))
-				default:
-				// If the escaping parameter is unknown, ignore it.
-			}
-		}
 		ver := ac.Params["version"]
 		if ac.Type+"/"+ac.SubType == ProtoType && ac.Params["proto"] == ProtoProtocol {
 			if ac.Params["validchars"] == UTF8Valid {
@@ -136,21 +120,21 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 
 			switch ac.Params["encoding"] {
 			case "delimited":
-				return FmtProtoDelim + escapingScheme
+				return FmtProtoDelim
 			case "text":
-				return FmtProtoText + escapingScheme
+				return FmtProtoText
 			case "compact-text":
-				return FmtProtoCompact + escapingScheme
+				return FmtProtoCompact
 			}
 		}
 		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_1_0_0 || ver == "") {
 			if ac.Params["validchars"] == UTF8Valid {
 				return FmtText_1_0_0 + FmtUTF8Param
 			}
-			return FmtText_0_0_4 + escapingScheme
+			return FmtText_0_0_4
 		}
 		if ac.Type == "text" && ac.SubType == "plain" && (ver == TextVersion_0_0_4 || ver == "") {
-			return FmtText_0_0_4 + escapingScheme
+			return FmtText_0_0_4
 		}
 		if ac.Type+"/"+ac.SubType == OpenMetricsType && (ver == OpenMetricsVersion_0_0_1 || ver == OpenMetricsVersion_1_0_0 || ver == OpenMetricsVersion_2_0_0 || ver == "") {
 			switch ver {
@@ -158,15 +142,16 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 					if ac.Params["validchars"] == UTF8Valid {
 						return FmtOpenMetrics_2_0_0 + FmtUTF8Param
 					}
-					return FmtOpenMetrics_2_0_0 + escapingScheme
+					return FmtOpenMetrics_2_0_0
 				case OpenMetricsVersion_1_0_0:
-					return FmtOpenMetrics_1_0_0 + escapingScheme
+					fmt.Println("NEGOTIATE result open", FmtOpenMetrics_1_0_0)
+					return FmtOpenMetrics_1_0_0
 				default:
-					return FmtOpenMetrics_0_0_1 + escapingScheme
+					return FmtOpenMetrics_0_0_1
 			}
 		}
 	}
-	return FmtText_0_0_4 + Format(fmt.Sprintf("; escaping=%s", FmtEscapeValues))
+	return FmtText_0_0_4
 }
 
 // NewEncoder returns a new encoder based on content type negotiation. All
@@ -176,7 +161,10 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 // to the Encoder interface directly. The current version of the Encoder
 // interface is kept for backwards compatibility.
 func NewEncoder(w io.Writer, format Format) Encoder {
-	escapingScheme := format.ToEscapingScheme()
+	escapingScheme := model.DefaultNameEscapingScheme
+	if format.SupportsUTF8() {
+		escapingScheme = model.NoEscaping
+	}
 	switch format.ContentType() {
 		case TypeProtoDelim:
 			return encoderCloser{

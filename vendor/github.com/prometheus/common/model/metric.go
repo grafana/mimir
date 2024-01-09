@@ -50,6 +50,13 @@ const (
 	ValueEncodingEscaping
 )
 
+const (
+	EscapeNone         = "none"
+	EscapeUnderscores  = "underscores"
+	EscapeDots         = "dots"
+	EscapeValues       = "values"
+)
+
 var (
 	// MetricNameRE is a regular expression matching valid metric
 	// names. Note that the IsValidMetricName function performs the same
@@ -300,6 +307,8 @@ func EscapeName(name string, scheme EscapingScheme) string {
 				escaped.WriteRune('_')
 			}
 		}
+		// this is useless because the negotiation happens elsewhere
+		// debug.PrintStack()
 		return escaped.String()
 	default:
 		panic(fmt.Sprintf("invalid escaping scheme %d", scheme))
@@ -389,4 +398,34 @@ func UnescapeName(name string, scheme EscapingScheme) string {
 
 func isValidLegacyRune(b rune, i int) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_' || b == ':' || (b >= '0' && b <= '9' && i > 0)
+}
+
+func (e EscapingScheme) String() string {
+	switch e {
+	case NoEscaping:
+		return EscapeNone
+	case UnderscoreEscaping:
+		return EscapeUnderscores
+	case DotsEscaping:
+		return EscapeDots
+	case ValueEncodingEscaping:
+		return EscapeValues
+	default:
+		panic(fmt.Sprintf("unknown format scheme %d", e))
+	}
+}
+
+func ToEscapingScheme(s string) (EscapingScheme, error) {
+	switch s {
+	case EscapeNone:
+		return NoEscaping, nil
+	case EscapeUnderscores:
+		return UnderscoreEscaping, nil
+	case EscapeDots:
+		return DotsEscaping, nil
+	case EscapeValues:
+		return ValueEncodingEscaping, nil
+	default:
+	  return NoEscaping, fmt.Errorf("unknown format scheme " + s)
+	}
 }

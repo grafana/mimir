@@ -15,10 +15,7 @@
 package expfmt
 
 import (
-	"fmt"
 	"strings"
-
-	"github.com/prometheus/common/model"
 )
 
 // Format specifies the HTTP content type of the different wire protocols.
@@ -51,10 +48,6 @@ const (
 
 	// UTF8 and Escaping Formats
 	FmtUTF8Param         Format = `; validchars=utf8`
-	FmtEscapeNone        Format = "none"
-	FmtEscapeUnderscores Format = "underscores"
-	FmtEscapeDots        Format = "dots"
-	FmtEscapeValues      Format = "values"
 )
 
 const (
@@ -125,22 +118,7 @@ func (f Format) ContentType() FormatType {
 	}
 }
 
-func EscapingSchemeToFormat(s model.EscapingScheme) Format {
-	switch s {
-	case model.NoEscaping:
-		return FmtEscapeNone
-	case model.UnderscoreEscaping:
-		return FmtEscapeUnderscores
-	case model.DotsEscaping:
-		return FmtEscapeDots
-	case model.ValueEncodingEscaping:
-		return FmtEscapeValues
-	default:
-		panic(fmt.Sprintf("unknown escaping scheme %d", s))
-	}
-}
-
-func (format Format) ToEscapingScheme() model.EscapingScheme {
+func (format Format) SupportsUTF8() bool {
 	for _, p := range strings.Split(string(format), ";") {
 		toks := strings.Split(p, "=")
 		if len(toks) != 2 {
@@ -149,22 +127,8 @@ func (format Format) ToEscapingScheme() model.EscapingScheme {
 		key, value := strings.TrimSpace(toks[0]), strings.TrimSpace(toks[1])
 		// By definition, if utf8 is allowed then names are not escaped.
 		if key == "validchars" && value == "utf8" {
-			return model.NoEscaping
-		}
-		if key == "escaping" {
-			switch f := Format(value); f {
-			case FmtEscapeNone:
-				return model.NoEscaping
-			case FmtEscapeUnderscores:
-				return model.UnderscoreEscaping
-			case FmtEscapeDots:
-				return model.DotsEscaping
-			case FmtEscapeValues:
-				return model.ValueEncodingEscaping
-			default:
-				panic("unknown format scheme " + f)
-			}
+			return true
 		}
 	}
-	return model.DefaultNameEscapingScheme
+	return false
 }
