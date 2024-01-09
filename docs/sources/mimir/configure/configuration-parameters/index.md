@@ -2700,7 +2700,7 @@ The `memberlist` block configures the Gossip memberlist.
 # (advanced) The timeout for establishing a connection with a remote node, and
 # for read/write operations.
 # CLI flag: -memberlist.stream-timeout
-[stream_timeout: <duration> | default = 10s]
+[stream_timeout: <duration> | default = 2s]
 
 # (advanced) Multiplication factor used when sending out messages (factor *
 # log(N+1)).
@@ -4609,6 +4609,11 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # compatibility with object storage services that do not support checksums.
 # CLI flag: -<prefix>.s3.send-content-md5
 [send_content_md5: <boolean> | default = false]
+
+# Accessing S3 resources using temporary, secure credentials provided by AWS
+# Security Token Service.
+# CLI flag: -<prefix>.s3.sts-endpoint
+[sts_endpoint: <string> | default = ""]
 
 sse:
   # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.

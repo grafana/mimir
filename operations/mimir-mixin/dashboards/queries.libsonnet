@@ -80,17 +80,17 @@ local filename = 'mimir-queries.json';
             or
             (
               label_replace(
-                # Query metrics before and after migration to new memcached backend.
+                # Query metrics before and after dskit cache refactor.
                 sum (
-                  rate(cortex_cache_hits{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-                  or
                   rate(thanos_cache_memcached_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
+                  or ignoring(backend)
+                  rate(thanos_cache_hits_total{name="frontend-cache", %(frontend)s}[$__rate_interval])
                 )
                 /
                 sum (
-                  rate(cortex_cache_fetched_keys{name=~"frontend.+", %(frontend)s}[$__rate_interval])
-                  or
                   rate(thanos_cache_memcached_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
+                  or ignoring(backend)
+                  rate(thanos_cache_requests_total{name=~"frontend-cache", %(frontend)s}[$__rate_interval])
                 ),
                 "request_type", "query_range", "", "")
             )

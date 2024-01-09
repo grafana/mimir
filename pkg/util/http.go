@@ -383,3 +383,11 @@ func copyValues(src url.Values) url.Values {
 func IsHTTPStatusCode(code codes.Code) bool {
 	return int(code) >= 100 && int(code) < 600
 }
+func IsValidURL(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return false
+	}
+
+	return u.Scheme != "" && u.Host != ""
+}
