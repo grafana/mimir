@@ -17,6 +17,7 @@
 * [ENHANCEMENT] Query-Frontend and Query-Scheduler: split tenant query request queues by query component with `query-frontend.additional-query-queue-dimensions-enabled` and `query-scheduler.additional-query-queue-dimensions-enabled`. #6772
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
+* [ENHANCEMENT] Storage Provider: allow aws sts support for s3 storage provider #6172
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451

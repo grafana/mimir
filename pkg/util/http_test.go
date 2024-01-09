@@ -282,6 +282,47 @@ func TestParseRequestFormWithoutConsumingBody(t *testing.T) {
 		assert.Equal(t, expected, req.Form)
 	})
 }
+func TestIsValidURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		endpoint string
+		valid    bool
+	}{
+		{
+			name:     "valid url",
+			endpoint: "https://sts.eu-central-1.amazonaws.com",
+			valid:    true,
+		},
+		{
+			name:     "invalid url no scheme",
+			endpoint: "sts.eu-central-1.amazonaws.com",
+			valid:    false,
+		},
+		{
+			name:     "invalid url invalid scheme setup",
+			endpoint: "https:///sts.eu-central-1.amazonaws.com",
+			valid:    false,
+		},
+		{
+			name:     "invalid url no host",
+			endpoint: "https://",
+			valid:    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			isValid := util.IsValidURL(test.endpoint)
+			if test.valid {
+				assert.True(t, isValid)
+			} else {
+				assert.False(t, isValid)
+			}
+		})
+	}
+}
 
 type readCloserObserver struct {
 	io.ReadCloser

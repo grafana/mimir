@@ -5825,6 +5825,16 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.sts-endpoint",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -11689,6 +11699,16 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.sts-endpoint",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -13729,6 +13749,16 @@
               "fieldFlag": "alertmanager-storage.s3.send-content-md5",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.sts-endpoint",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -16026,6 +16056,16 @@
                   "fieldFlag": "common.storage.s3.send-content-md5",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sts_endpoint",
+                  "required": false,
+                  "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.sts-endpoint",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "block",
