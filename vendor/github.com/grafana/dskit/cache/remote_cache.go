@@ -8,8 +8,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	"github.com/grafana/dskit/promregistry"
 )
 
 var (
@@ -24,7 +22,6 @@ const (
 	backendValueMemcached    = "memcached"
 	cacheMetricNamePrefix    = "cache_"
 	getMultiMetricNamePrefix = "getmulti_"
-	legacyMemcachedPrefix    = "memcached_"
 	clientInfoMetricName     = "client_info"
 )
 
@@ -40,12 +37,9 @@ func NewMemcachedCache(name string, logger log.Logger, memcachedClient RemoteCac
 			name,
 			logger,
 			memcachedClient,
-			promregistry.TeeRegisterer{
-				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix+legacyMemcachedPrefix, reg),
-				prometheus.WrapRegistererWith(
-					prometheus.Labels{labelCacheBackend: backendValueMemcached},
-					prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
-			},
+			prometheus.WrapRegistererWith(
+				prometheus.Labels{labelCacheBackend: backendValueMemcached},
+				prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg)),
 		),
 	}
 }

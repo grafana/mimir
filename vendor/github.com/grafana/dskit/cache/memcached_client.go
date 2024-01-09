@@ -24,7 +24,6 @@ import (
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/gate"
-	"github.com/grafana/dskit/promregistry"
 )
 
 const (
@@ -240,20 +239,17 @@ func newMemcachedClient(
 	reg prometheus.Registerer,
 	name string,
 ) (*MemcachedClient, error) {
-	legacyRegister := prometheus.WrapRegistererWithPrefix(legacyMemcachedPrefix, reg)
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
 
-	backwardCompatibleRegs := promregistry.TeeRegisterer{legacyRegister, reg}
-
 	addressProvider := dns.NewProvider(
 		logger,
-		backwardCompatibleRegs,
+		reg,
 		dns.MiekgdnsResolverType,
 	)
 
-	metrics := newClientMetrics(backwardCompatibleRegs)
+	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
 		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
@@ -264,15 +260,12 @@ func newMemcachedClient(
 		addressProvider: addressProvider,
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			promregistry.TeeRegisterer{
-				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, legacyRegister),
-				prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
-			},
+			prometheus.WrapRegistererWithPrefix(getMultiMetricNamePrefix, reg),
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
-	c.clientInfo = promauto.With(backwardCompatibleRegs).NewGaugeFunc(prometheus.GaugeOpts{
+	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
