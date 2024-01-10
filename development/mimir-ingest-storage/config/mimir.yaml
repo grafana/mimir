@@ -15,6 +15,9 @@ ingest_storage:
     address: kafka:9092
     topic:   mimir-ingest
 
+ingester:
+  return_only_grpc_errors: true
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
