@@ -34,7 +34,7 @@ by using the [Grafana Agent operator](/docs/agent/latest/operator/).
 The Helm chart can install and use the Grafana Agent operator.
 
 > **Note:** Before the Helm chart can use the operator,
-> you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/production/operator/crds).
+> you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds).
 
 It’s best to use the Grafana Agent operator for metrics and logs collection.
 However, if you prefer not to use it or you already have an existing Grafana Agent that you want to use, see _Collect metrics and logs via Grafana Agent_ documentation in Grafana Mimir version 2.5.0.
