@@ -8,13 +8,10 @@ package transport
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 
 	"github.com/grafana/dskit/httpgrpc"
-
-	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 // GrpcRoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
@@ -45,8 +42,6 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("READ_CONSISTENCY", "grpcRoundTripperAdapter", r.Header.Get(api.ReadConsistencyHeader))
 
 	resp, err := a.roundTripper.RoundTripGRPC(r.Context(), req)
 	if err != nil {

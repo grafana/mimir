@@ -32,7 +32,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -223,8 +222,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 			return nil, err
 		}
 	}
-	c, ok := querierapi.ReadConsistencyFromContext(ctx)
-	fmt.Println("READ_CONSISTENCY", "Frontend.RoundTripGRPC", c, ok)
+
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errExecutingQueryRoundTripFinished)
