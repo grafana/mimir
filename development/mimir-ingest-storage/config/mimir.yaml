@@ -13,7 +13,7 @@ ingest_storage:
   enabled:       true
   kafka:
     address: kafka:9092
-    topic:   mimir-ingester
+    topic:   mimir-ingest
 
 blocks_storage:
   s3:
