@@ -96,6 +96,8 @@ std.manifestYamlDoc({
       environment: [
         'ZOOKEEPER_CLIENT_PORT=2181',
         'ZOOKEEPER_TICK_TIME=2000',
+        'ZOOKEEPER_AUTOPURGE_SNAPRETAINCOUNT=5',
+        'ZOOKEEPER_AUTOPURGE_PURGEINTERVAL=1',
       ],
       ports: [
         '22181:22181',
