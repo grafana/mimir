@@ -102,9 +102,9 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 	testGenericQueryCacheRoundTrip(t, newCardinalityQueryCacheRoundTripper, "cardinality", map[string]testGenericQueryCacheRequestType{
 		"label names request": {
 			reqPath:        "/prometheus/api/v1/cardinality/label_names",
-			reqData:        url.Values{"selector": []string{`{job="test"}`}, "limit": []string{"100"}},
-			cacheKey:       "user-1:job=\"test\"\x00100",
-			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00100"),
+			reqData:        url.Values{"selector": []string{`{job="test"}`}, "limit": []string{"100"}, "count_method": []string{"active"}},
+			cacheKey:       "user-1:job=\"test\"\x00active\x00100",
+			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00active\x00100"),
 		},
 		"label values request": {
 			reqPath:        "/prometheus/api/v1/cardinality/label_values",
