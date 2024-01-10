@@ -28,6 +28,11 @@
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
+      writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      writeRequestsPerSecondSelector: '{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
+      readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      readRequestsPerSecondSelector: '{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+
       // Write failures rate as percentage of total requests.
       writeFailuresRate: |||
         (
@@ -55,6 +60,8 @@
 
     distributor: {
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+      writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
+      writeRequestsPerSecondSelector: '{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
