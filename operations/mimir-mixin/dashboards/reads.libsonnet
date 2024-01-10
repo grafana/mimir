@@ -193,7 +193,7 @@ local filename = 'mimir-reads.json';
           regex: '^$',
         },
       ];
-      $.row('Query-scheduler Latency (Time in Queue) Breakout by Queue Dimension')
+      $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
       .addPanel(
         local title = '99th Percentile Latency by Queue Dimension';
         $.panel(title) +

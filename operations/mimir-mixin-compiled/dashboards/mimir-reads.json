@@ -1097,7 +1097,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-scheduler Latency (Time in Queue) Breakout by Queue Dimension",
+            "title": "Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
             "titleSize": "h6"
          },
          {
