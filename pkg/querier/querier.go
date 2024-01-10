@@ -10,6 +10,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,13 +23,16 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -314,7 +319,12 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 
 	if len(queriers) == 1 {
-		return queriers[0].Select(ctx, true, sp, matchers...)
+		result := queriers[0].Select(ctx, true, sp, matchers...)
+		temp, err := debugSelectResult(spanLog, result, matchers, sp.End-sp.Start)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+		return temp
 	}
 
 	sets := make(chan storage.SeriesSet, len(queriers))
@@ -337,7 +347,89 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
 	// mergeSeriesSets will return sorted set.
-	return mq.mergeSeriesSets(result)
+	temp, err := debugSelectResult(spanLog, mq.mergeSeriesSets(result), matchers, sp.End-sp.Start)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	return temp
+}
+
+func debugSelectResult(spanLog *spanlogger.SpanLogger, result storage.SeriesSet, matchers []*labels.Matcher, window int64) (storage.SeriesSet, error) {
+	if window > 20*60*1000 { // do nothing if window is more than 20 minutes
+		return result, nil
+	}
+	filter := os.Getenv("QUERY_SAMPLE_DUMP_FILTER")
+	if len(filter) == 0 {
+		return result, nil
+	}
+	filters := map[string]string{}
+	for _, f := range strings.Split(filter, ",") {
+		kv := strings.Split(f, "=")
+		if len(kv) != 2 {
+			continue
+		}
+		filters[kv[0]] = kv[1]
+	}
+
+	if len(filters) == 0 || len(matchers) != len(filters) {
+		return result, nil
+	}
+
+	for _, matcher := range matchers {
+		if v, ok := filters[matcher.Name]; ok && v == matcher.Value {
+			delete(filters, matcher.Name)
+		}
+	}
+	if len(filters) > 0 {
+		return result, nil
+	}
+
+	samplesStr := []string{}
+
+	unwrappedSeries := []storage.Series{}
+
+	firstSeries := true
+	for result.Next() {
+		ser := result.At()
+		if !firstSeries {
+			unwrappedSeries = append(unwrappedSeries, ser)
+			continue
+		}
+		firstSeries = false
+
+		it := ser.Iterator(nil)
+		samples := []model.SamplePair{}
+		histograms := []mimirpb.Histogram{}
+		for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+			switch vt {
+			case chunkenc.ValFloat:
+				ts, v := it.At()
+				samplesStr = append(samplesStr, fmt.Sprintf("(%d, %f)", ts, v))
+				samples = append(samples, model.SamplePair{Timestamp: model.Time(ts), Value: model.SampleValue(v)})
+			case chunkenc.ValHistogram:
+				samplesStr = append(samplesStr, "(h)")
+				ts, h := it.AtHistogram()
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
+			case chunkenc.ValFloatHistogram:
+				samplesStr = append(samplesStr, "(fh)")
+				ts, h := it.AtFloatHistogram()
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
+			}
+		}
+		if err := it.Err(); err != nil {
+			return nil, err
+		}
+		newSeries := series.NewConcreteSeries(ser.Labels(), samples, histograms)
+		unwrappedSeries = append(unwrappedSeries, newSeries)
+	}
+	if err := result.Err(); err != nil {
+		return nil, err
+	}
+
+	level.Debug(spanLog).Log("selected_samples", strings.Join(samplesStr, ","))
+	// fmt.Printf("KRAJO: filter: %s selected samples: %s\n", filter, strings.Join(samplesStr, ","))
+
+	return series.NewConcreteSeriesSetFromSortedSeries(unwrappedSeries), nil
 }
 
 // LabelValues implements storage.Querier.
