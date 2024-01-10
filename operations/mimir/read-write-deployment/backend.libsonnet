@@ -5,6 +5,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // Utils.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -61,7 +62,10 @@
     $.util.resourcesRequests(1, '12Gi') +
     $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.jaeger_mixin +
+    container.withEnvMixin([
+      envVar.new('JAEGER_REPORTER_MAX_QUEUE_SIZE', '1000'),
+    ]),
 
   local mimir_backend_data_pvc =
     pvc.new() +
