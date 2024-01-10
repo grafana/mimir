@@ -32,7 +32,9 @@
       'server.http-listen-port': $._config.server_http_port,
     },
 
-  ruler_env_map:: {},
+  ruler_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
+  },
 
   ruler_node_affinity_matchers:: [],
 
