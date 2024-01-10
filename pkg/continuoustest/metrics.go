@@ -16,6 +16,10 @@ type TestMetrics struct {
 	queriesFailedTotal           *prometheus.CounterVec
 	queryResultChecksTotal       *prometheus.CounterVec
 	queryResultChecksFailedTotal *prometheus.CounterVec
+	oooWritesTotal               *prometheus.CounterVec
+	oooWritesFailedTotal         *prometheus.CounterVec
+	oooQueriesTotal              *prometheus.CounterVec
+	oooQueriesFailedTotal        *prometheus.CounterVec
 }
 
 func NewTestMetrics(testName string, reg prometheus.Registerer) *TestMetrics {
@@ -48,6 +52,26 @@ func NewTestMetrics(testName string, reg prometheus.Registerer) *TestMetrics {
 		queryResultChecksFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name:        "mimir_continuous_test_query_result_checks_failed_total",
 			Help:        "Total number of query results failed when checking for correctness.",
+			ConstLabels: map[string]string{"test": testName},
+		}, []string{"type"}),
+		oooWritesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "mimir_continuous_test_ooo_writes_total",
+			Help:        "Total number of attempted OOO write requests.",
+			ConstLabels: map[string]string{"test": testName},
+		}, []string{"type"}),
+		oooWritesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "mimir_continuous_test_ooo_writes_failed_total",
+			Help:        "Total number of failed OOO write requests.",
+			ConstLabels: map[string]string{"test": testName},
+		}, []string{"status_code", "type"}),
+		oooQueriesTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "mimir_continuous_test_ooo_queries_total",
+			Help:        "Total number of attempted OOO query requests.",
+			ConstLabels: map[string]string{"test": testName},
+		}, []string{"type"}),
+		oooQueriesFailedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "mimir_continuous_test_ooo_queries_failed_total",
+			Help:        "Total number of failed OOO query requests.",
 			ConstLabels: map[string]string{"test": testName},
 		}, []string{"type"}),
 	}

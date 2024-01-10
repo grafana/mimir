@@ -74,6 +74,7 @@ ruler_storage:
 limits:
   native_histograms_ingestion_enabled: true
   max_global_exemplars_per_user: 100000
+  out_of_order_time_window: 30m
 
 runtime_config:
   file: ./config/runtime.yaml

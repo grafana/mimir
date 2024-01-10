@@ -21,22 +21,27 @@ import (
 )
 
 const (
-	writeInterval = 20 * time.Second
-	writeMaxAge   = 50 * time.Minute
+	writeInterval    = 20 * time.Second
+	writeMaxAge      = 50 * time.Minute
+	oooWriteInterval = 10 * time.Second
 )
 
 type WriteReadSeriesTestConfig struct {
-	NumSeries      int
-	MaxQueryAge    time.Duration
-	WithFloats     bool
-	WithHistograms bool
+	NumSeries         int
+	NumOOOSeries      int
+	MaxQueryAge       time.Duration
+	WithFloats        bool
+	WithHistograms    bool
+	OOOSamplesEnabled bool
 }
 
 func (cfg *WriteReadSeriesTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.NumSeries, "tests.write-read-series-test.num-series", 10000, "Number of series used for the test.")
+	f.IntVar(&cfg.NumOOOSeries, "tests.write-read-series-test.num-ooo-series", 10000, "Number of OOO series used for the test.")
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-series-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
 	f.BoolVar(&cfg.WithFloats, "tests.write-read-series-test.float-samples-enabled", true, "Set to true to use float samples")
 	f.BoolVar(&cfg.WithHistograms, "tests.write-read-series-test.histogram-samples-enabled", false, "Set to true to use native histogram samples")
+	f.BoolVar(&cfg.OOOSamplesEnabled, "tests.write-read-series-test.ooo-samples-enabled", true, "Set to true to include out-of-order samples")
 }
 
 type WriteReadSeriesTest struct {
@@ -51,9 +56,10 @@ type WriteReadSeriesTest struct {
 }
 
 type MetricHistory struct {
-	lastWrittenTimestamp time.Time
-	queryMinTime         time.Time
-	queryMaxTime         time.Time
+	earliestWrittenTimestamp time.Time
+	lastWrittenTimestamp     time.Time
+	queryMinTime             time.Time
+	queryMaxTime             time.Time
 }
 
 func NewWriteReadSeriesTest(cfg WriteReadSeriesTestConfig, client MimirClient, logger log.Logger, reg prometheus.Registerer) *WriteReadSeriesTest {
@@ -140,6 +146,12 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 
 func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
+	level.Info(t.logger).Log("msg", "In RunInner")
+
+	if records.earliestWrittenTimestamp.IsZero() || now.Before(records.earliestWrittenTimestamp) {
+		records.earliestWrittenTimestamp = now
+	}
+
 	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
@@ -151,6 +163,29 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
+		} else {
+			level.Info(t.logger).Log("msg", "Successfully wrote in-order series", "ts", timestamp)
+		}
+	}
+
+	// If OOO is enabled, write an OOO sample now - oooWriteInterval
+	if t.cfg.OOOSamplesEnabled {
+		timestamp := now.Add(-oooWriteInterval)
+		timestamp = alignTimestampToInterval(timestamp, oooWriteInterval)
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			// Context has been canceled, so we should interrupt.
+			errs.Add(err)
+			return
+		}
+
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
+		if err := t.writeOOOSamples(ctx, typeLabel, timestamp, series, records); err != nil {
+			errs.Add(err)
+		} else {
+			level.Info(t.logger).Log("msg", "Successfully wrote OOO series", "ts", timestamp)
+		}
+		if records.earliestWrittenTimestamp.IsZero() || now.Before(records.earliestWrittenTimestamp) {
+			records.earliestWrittenTimestamp = now
 		}
 	}
 
@@ -211,8 +246,54 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 
 	// The write request succeeded.
 	records.lastWrittenTimestamp = timestamp
-	records.queryMaxTime = timestamp
+	records.queryMaxTime = records.lastWrittenTimestamp
 	if records.queryMinTime.IsZero() {
+		records.queryMinTime = timestamp
+	}
+
+	return nil
+}
+
+func (t *WriteReadSeriesTest) writeOOOSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
+	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.writeSamples")
+	defer sp.Finish()
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
+
+	statusCode, err := t.client.WriteSeries(ctx, series)
+
+	t.metrics.oooWritesTotal.WithLabelValues(typeLabel).Inc()
+	if statusCode/100 != 2 {
+		t.metrics.oooWritesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
+		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
+	} else {
+		level.Debug(logger).Log("msg", "Remote write series succeeded")
+	}
+
+	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
+	// The series may have been not written at all or partially written (eg. we hit some limit).
+	// We keep writing the next interval, but we reset the query timestamp because we can't reliably
+	// assert on query results due to possible gaps.
+	if statusCode/100 == 4 {
+		records.lastWrittenTimestamp = timestamp
+		records.queryMinTime = time.Time{}
+		records.queryMaxTime = time.Time{}
+		return nil
+	}
+
+	// If the write request failed because of a network or 5xx error, we'll retry to write series
+	// in the next test run.
+	if err != nil {
+		return errors.Wrap(err, "failed to remote write series")
+	}
+	if statusCode/100 != 2 {
+		return errors.Wrapf(err, "remote write series failed with status code %d", statusCode)
+	}
+
+	// The write request succeeded.
+	if records.queryMinTime.IsZero() {
+		records.queryMinTime = timestamp // Change this to set new min query for OOO samples?
+	}
+	if timestamp.Before(records.queryMinTime) {
 		records.queryMinTime = timestamp
 	}
 
