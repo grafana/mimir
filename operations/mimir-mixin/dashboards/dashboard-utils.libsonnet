@@ -1008,7 +1008,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') }
     ),
 
-  latencyPanelLabelBreakout(metricName, selector, labels=[], labelReplaceArgSets=[{}], multiplier='1e3')::
+  latencyPanelLabelBreakout(
+    metricName,
+    selector,
+    percentiles=['0.99', '0.50'],
+    includeAverage=true,
+    labels=[],
+    labelReplaceArgSets=[{}],
+    multiplier='1e3',
+  )::
     local averageExprTmpl = $.wrapMultiLabelReplace(
       query='sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
       labelReplaceArgSets=labelReplaceArgSets,
@@ -1019,28 +1027,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
     );
     local labelBreakouts = '%s' % std.join(', ', labels);
     local histogramLabelBreakouts = '%s' % std.join(', ', ['le'] + labels);
+
+    local percentileTargets = [
+      {
+        expr: histogramExprTmpl % [percentile, metricName, selector, histogramLabelBreakouts, multiplier],
+        format: 'time_series',
+        legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
+        refId: 'A',
+      }
+      for percentile in percentiles
+    ];
+    local averageTargets = [
+      {
+        expr: averageExprTmpl % [metricName, selector, labelBreakouts, multiplier, metricName, selector, labelBreakouts],
+        format: 'time_series',
+        legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
+        refId: 'C',
+      },
+    ];
+
+    local targets = if includeAverage then percentileTargets + averageTargets else percentileTargets;
+
     {
       nullPointMode: 'null as zero',
-      targets: [
-        {
-          expr: histogramExprTmpl % ['0.99', metricName, selector, histogramLabelBreakouts, multiplier],
-          format: 'time_series',
-          legendFormat: '99th Percentile: {{ %s }}' % [labelBreakouts],
-          refId: 'A',
-        },
-        {
-          expr: histogramExprTmpl % ['0.50', metricName, selector, histogramLabelBreakouts, multiplier],
-          format: 'time_series',
-          legendFormat: '50th Percentile: {{ %s }}' % [labelBreakouts],
-          refId: 'B',
-        },
-        {
-          expr: averageExprTmpl % [metricName, selector, labelBreakouts, multiplier, metricName, selector, labelBreakouts],
-          format: 'time_series',
-          legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
-          refId: 'C',
-        },
-      ],
+      targets: targets,
       yaxes: $.yaxes('ms'),
     },
 

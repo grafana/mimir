@@ -593,7 +593,7 @@
                         "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
                         "format": "time_series",
                         "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
-                        "refId": "B"
+                        "refId": "A"
                      },
                      {
                         "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
