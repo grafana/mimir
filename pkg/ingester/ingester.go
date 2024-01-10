@@ -1669,13 +1669,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		}
 	case client.ACTIVE:
 		valueFilter = func(name, value string) (bool, error) {
-			valuePostings, err := index.Postings(stream.Context(), name, value)
-			if err != nil {
-				return false, err
-			}
-
-			activePostings := activeseries.NewPostings(db.activeSeries, valuePostings)
-			return activePostings.Next(), nil
+			return activeseries.IsLabelValueActive(index, db.activeSeries, name, value)
 		}
 	default:
 		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
