@@ -721,7 +721,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 6,
+                  "span": 4,
                   "stack": true,
                   "steppedLine": false,
                   "targets": [
@@ -796,7 +796,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 6,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -854,6 +854,56 @@
                         "show": false
                      }
                   ]
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Queue length\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "queries"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "displayMode": "hidden",
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "exemplar": true,
+                        "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Queue length",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Queue length",
+                  "type": "timeseries"
                }
             ],
             "repeat": null,
@@ -875,7 +925,7 @@
                   "datasource": "$datasource",
                   "description": "### 99th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
                   "fill": 1,
-                  "id": 12,
+                  "id": 13,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -950,7 +1000,7 @@
                   "datasource": "$datasource",
                   "description": "### 50th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
                   "fill": 1,
-                  "id": 13,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1025,7 +1075,7 @@
                   "datasource": "$datasource",
                   "description": "### Average Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
                   "fill": 1,
-                  "id": 14,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1111,7 +1161,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 15,
+                  "id": 16,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1185,7 +1235,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 16,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1299,7 +1349,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 17,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1373,7 +1423,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 18,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1479,7 +1529,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1533,7 +1583,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 20,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1607,7 +1657,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 21,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1713,7 +1763,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1767,7 +1817,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 23,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1841,7 +1891,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 24,
+                  "id": 25,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1947,7 +1997,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1992,7 +2042,7 @@
                   "datasource": "$datasource",
                   "description": "### Replicas\nThe maximum, and current number of querier replicas.\nPlease note that the current number of replicas can still show 1 replica even when scaled to 0.\nSince HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                   "fill": 1,
-                  "id": 26,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2094,7 +2144,7 @@
                   "datasource": "$datasource",
                   "description": "### Scaling metric (desired replicas)\nThis panel shows the result scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints which are applied later.\n\n",
                   "fill": 1,
-                  "id": 27,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2174,7 +2224,7 @@
                   "datasource": "$datasource",
                   "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
                   "fill": 1,
-                  "id": 28,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2270,7 +2320,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 29,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2344,7 +2394,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 30,
+                  "id": 31,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2442,7 +2492,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 31,
+                  "id": 32,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2516,7 +2566,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 32,
+                  "id": 33,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2609,7 +2659,7 @@
                   "datasource": "$datasource",
                   "description": "### Hit ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an\nin-memory blocks index cache.\n\n",
                   "fill": 1,
-                  "id": 33,
+                  "id": 34,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2695,7 +2745,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 34,
+                  "id": 35,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2769,7 +2819,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 35,
+                  "id": 36,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2861,7 +2911,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 36,
+                  "id": 37,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2947,7 +2997,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 37,
+                  "id": 38,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3021,7 +3071,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 38,
+                  "id": 39,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3113,7 +3163,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 39,
+                  "id": 40,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3199,7 +3249,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 40,
+                  "id": 41,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3273,7 +3323,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 41,
+                  "id": 42,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3365,7 +3415,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 42,
+                  "id": 43,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3451,7 +3501,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 43,
+                  "id": 44,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3528,7 +3578,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 44,
+                  "id": 45,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3558,7 +3608,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 45,
+                  "id": 46,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3644,7 +3694,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 46,
+                  "id": 47,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3742,7 +3792,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 47,
+                  "id": 48,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3828,7 +3878,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 48,
+                  "id": 49,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3914,7 +3964,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 49,
+                  "id": 50,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4000,7 +4050,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 50,
+                  "id": 51,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4098,7 +4148,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 51,
+                  "id": 52,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4175,7 +4225,7 @@
                         "unit": "percentunit"
                      }
                   },
-                  "id": 52,
+                  "id": 53,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -4205,7 +4255,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 53,
+                  "id": 54,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4291,7 +4341,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 54,
+                  "id": 55,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4389,7 +4439,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 55,
+                  "id": 56,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4475,7 +4525,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 56,
+                  "id": 57,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4561,7 +4611,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 57,
+                  "id": 58,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -4647,7 +4697,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 58,
+                  "id": 59,
                   "legend": {
                      "avg": false,
                      "current": false,
