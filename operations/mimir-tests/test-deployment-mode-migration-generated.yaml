@@ -1266,6 +1266,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
@@ -1480,6 +1483,9 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ruler
@@ -1772,6 +1778,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1890,6 +1899,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -2008,6 +2020,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester

@@ -29,7 +29,9 @@
     $.util.resourcesRequests('2', '600Mi') +
     $.util.resourcesLimits(null, '1200Mi'),
 
-  query_frontend_env_map:: {},
+  query_frontend_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
+  },
 
   query_frontend_node_affinity_matchers:: [],
 
