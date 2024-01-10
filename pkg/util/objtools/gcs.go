@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"cloud.google.com/go/storage"
-  "github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"google.golang.org/api/iterator"
 )
@@ -152,7 +152,7 @@ func (bkt *gcsBucket) RestoreVersion(ctx context.Context, objectName string, ver
 }
 
 func (bkt *gcsBucket) Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error {
-  ctx, cancel := context.WithCancelCause(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(errUploadTerminated)
 
 	obj := bkt.client.Object(objectName)
