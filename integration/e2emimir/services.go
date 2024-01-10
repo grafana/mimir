@@ -162,6 +162,8 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-ingester.ring.min-ready-duration": "0s",
 			// Enable native histograms
 			"-ingester.native-histograms-ingestion-enabled": "true",
+			// Enable owned series tracking
+			"-ingester.track-ingester-owned-series": "true",
 		},
 		flags,
 		options...,
