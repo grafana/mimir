@@ -204,7 +204,7 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 
 			// We need to inject user into context for sending response back.
 			ctx = user.InjectOrgID(ctx, request.UserID)
-			ctx = contexWithConsistencyLevel(ctx, request.GetHttpRequest().GetHeaders())
+			//ctx = contexWithConsistencyLevel(ctx, request.GetHttpRequest().GetHeaders())
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
