@@ -5,12 +5,11 @@ package api
 import (
 	"context"
 	"net/http"
+	"slices"
 
 	"github.com/grafana/dskit/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -28,7 +27,7 @@ const (
 var ReadConsistencies = []string{ReadConsistencyStrong, ReadConsistencyEventual}
 
 func IsValidReadConsistency(lvl string) bool {
-	return util.StringsContain(ReadConsistencies, lvl)
+	return slices.Contains(ReadConsistencies, lvl)
 }
 
 type contextKey int
