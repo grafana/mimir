@@ -5,7 +5,6 @@ package ingester
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -65,25 +64,8 @@ func newOwnedSeriesService(interval time.Duration, instanceID string, ingesterRi
 		}),
 	}
 
-	oss.Service = services.NewTimerService(interval, oss.starting, oss.onPeriodicCheck, nil)
+	oss.Service = services.NewTimerService(interval, nil, oss.onPeriodicCheck, nil)
 	return oss
-}
-
-// This is Starting function for ownedSeries service. Service is only started after all TSDBs are opened.
-// Pushes are not allowed yet when this function runs.
-func (oss *ownedSeriesService) starting(ctx context.Context) error {
-	err := ring.WaitInstanceState(ctx, oss.ingestersRing, oss.instanceID, ring.ACTIVE)
-	if err != nil {
-		return err
-	}
-
-	if _, err := oss.checkRingForChanges(); err != nil {
-		return fmt.Errorf("can't read ring: %v", err)
-	}
-
-	// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
-	oss.updateAllTenants(ctx, true)
-	return nil
 }
 
 // This function runs periodically. It checks if ring has changed, and updates number of owned series for any
