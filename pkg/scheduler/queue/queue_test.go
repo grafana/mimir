@@ -67,6 +67,72 @@ func makeSchedulerRequest(tenantID string) *SchedulerRequest {
 	}
 }
 
+func BenchmarkConcurrentQueueOperations(b *testing.B) {
+	maxQueriersPerTenant := 0 // disable shuffle sharding
+	forgetQuerierDelay := time.Duration(0)
+	maxOutstandingRequestsPerTenant := 100
+
+	for _, numTenants := range []int{1, 10, 1000} {
+		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
+
+			// Query-frontends run 5 parallel streams per scheduler by default,
+			// and we typically see 2-5 frontends running at any one time.
+			for _, numProducers := range []int{10, 25} {
+				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
+
+					// Queriers run with parallelism of 16 when query sharding is enabled.
+					for _, numConsumers := range []int{16, 160, 1600} {
+						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
+							queue := NewRequestQueue(
+								log.NewNopLogger(),
+								maxOutstandingRequestsPerTenant,
+								true,
+								forgetQuerierDelay,
+								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"}),
+								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+							)
+
+							startSignalChan := make(chan struct{})
+							queueActorsErrGroup, ctx := errgroup.WithContext(context.Background())
+
+							require.NoError(b, queue.starting(ctx))
+							b.Cleanup(func() {
+								require.NoError(b, queue.stop(nil))
+							})
+
+							runProducer := runQueueProducerForBenchmark(b, numProducers, numTenants, startSignalChan, queue, maxQueriersPerTenant)
+
+							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
+								producerIdx := producerIdx
+								queueActorsErrGroup.Go(func() error {
+									return runProducer(producerIdx)
+								})
+							}
+
+							runConsumer := runQueueConsumerForBenchmark(b, numConsumers, queue, startSignalChan, ctx)
+
+							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
+								consumerIdx := consumerIdx
+								queueActorsErrGroup.Go(func() error {
+									return runConsumer(consumerIdx)
+								})
+							}
+
+							b.ResetTimer()
+							close(startSignalChan)
+							err := queueActorsErrGroup.Wait()
+							if err != nil {
+								require.NoError(b, err)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
 func queueActorIterationCount(benchmarkIters int, numActors int, actorIdx int) int {
 	actorIters := benchmarkIters / numActors
 	remainderIters := benchmarkIters % numActors
@@ -86,111 +152,60 @@ func queueActorIterationCount(benchmarkIters int, numActors int, actorIdx int) i
 	return actorIters
 }
 
-func BenchmarkConcurrentQueueOperations(b *testing.B) {
-	maxQueriersPerTenant := 0 // disable shuffle sharding
-	maxOutstandingRequestsPerTenant := 100
+func runQueueProducerForBenchmark(b *testing.B, numProducers int, numTenants int, start chan struct{}, queue *RequestQueue, maxQueriersPerTenant int) func(producerIdx int) error {
+	return func(producerIdx int) error {
+		producerIters := queueActorIterationCount(b.N, numProducers, producerIdx)
+		tenantID := producerIdx % numTenants
+		tenantIDStr := strconv.Itoa(tenantID)
+		<-start
 
-	for _, numTenants := range []int{1, 10, 1000} {
-		b.Run(fmt.Sprintf("%v tenants", numTenants), func(b *testing.B) {
+		for i := 0; i < producerIters; i++ {
+			for {
+				// when running this benchmark for memory usage comparison,
+				// we want to have a relatively representative size of request
+				// in order not to skew the % delta between queue implementations.
+				// Unless the request starts to get copied, the size of the requests in the queue
+				// should significantly outweigh the memory used to implement the queue mechanics.
+				req := makeSchedulerRequest(tenantIDStr)
+				//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
+				err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriersPerTenant, func() {})
+				if err == nil {
+					break
+				}
 
-			// Query-frontends run 5 parallel streams per scheduler by default,
-			// and we typically see 2-5 frontends running at any one time.
-			for _, numProducers := range []int{10, 25} {
-				b.Run(fmt.Sprintf("%v concurrent producers", numProducers), func(b *testing.B) {
-
-					// Queriers run with parallelism of 16 when query sharding is enabled.
-					for _, numConsumers := range []int{16, 160, 1600} {
-						b.Run(fmt.Sprintf("%v concurrent consumers", numConsumers), func(b *testing.B) {
-							queueLength := promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"tenant"})
-							discardedRequests := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"tenant"})
-							enqueueDuration := promauto.With(nil).NewHistogram(prometheus.HistogramOpts{})
-							queue := NewRequestQueue(log.NewNopLogger(), maxOutstandingRequestsPerTenant, true, 0, queueLength, discardedRequests, enqueueDuration)
-
-							start := make(chan struct{})
-							producersAndConsumersWaitGroup, ctx := errgroup.WithContext(context.Background())
-							require.NoError(b, queue.starting(ctx))
-							b.Cleanup(func() {
-								require.NoError(b, queue.stop(nil))
-							})
-
-							runProducer := func(producerIdx int) error {
-								producerIters := queueActorIterationCount(b.N, numProducers, producerIdx)
-								tenantID := producerIdx % numTenants
-								tenantIDStr := strconv.Itoa(tenantID)
-								<-start
-
-								for i := 0; i < producerIters; i++ {
-									for {
-										// when running this benchmark for memory usage comparison,
-										// we want to have a relatively representative size of request
-										// in order not to skew the % delta between queue implementations.
-										// Unless the request starts to get copied, the size of the requests in the queue
-										// should significantly outweigh the memory used to implement the queue mechanics.
-										req := makeSchedulerRequest(tenantIDStr)
-										//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
-										err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriersPerTenant, func() {})
-										if err == nil {
-											break
-										}
-
-										// Keep retrying if we've hit the max queue length, otherwise give up immediately.
-										if !errors.Is(err, ErrTooManyRequests) {
-											return err
-										}
-									}
-
-									tenantID = (tenantID + 1) % numTenants
-								}
-
-								return nil
-							}
-
-							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
-								producerIdx := producerIdx
-								producersAndConsumersWaitGroup.Go(func() error {
-									return runProducer(producerIdx)
-								})
-							}
-
-							runConsumer := func(consumerIdx int) error {
-								consumerIters := queueActorIterationCount(b.N, numConsumers, consumerIdx)
-								lastTenantIndex := FirstUser()
-								querierID := fmt.Sprintf("consumer-%v", consumerIdx)
-								queue.RegisterQuerierConnection(querierID)
-								defer queue.UnregisterQuerierConnection(querierID)
-
-								<-start
-
-								for i := 0; i < consumerIters; i++ {
-									_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
-									if err != nil {
-										return err
-									}
-
-									lastTenantIndex = idx
-								}
-
-								return nil
-							}
-
-							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
-								consumerIdx := consumerIdx
-								producersAndConsumersWaitGroup.Go(func() error {
-									return runConsumer(consumerIdx)
-								})
-							}
-
-							b.ResetTimer()
-							close(start)
-							err := producersAndConsumersWaitGroup.Wait()
-							if err != nil {
-								require.NoError(b, err)
-							}
-						})
-					}
-				})
+				// Keep retrying if we've hit the max queue length, otherwise give up immediately.
+				if !errors.Is(err, ErrTooManyRequests) {
+					return err
+				}
 			}
-		})
+
+			tenantID = (tenantID + 1) % numTenants
+		}
+
+		return nil
+	}
+}
+
+func runQueueConsumerForBenchmark(b *testing.B, numConsumers int, queue *RequestQueue, start chan struct{}, ctx context.Context) func(consumerIdx int) error {
+	return func(consumerIdx int) error {
+		consumerIters := queueActorIterationCount(b.N, numConsumers, consumerIdx)
+		lastTenantIndex := FirstUser()
+		querierID := fmt.Sprintf("consumer-%v", consumerIdx)
+		queue.RegisterQuerierConnection(querierID)
+		defer queue.UnregisterQuerierConnection(querierID)
+
+		<-start
+
+		for i := 0; i < consumerIters; i++ {
+			_, idx, err := queue.GetNextRequestForQuerier(ctx, lastTenantIndex, querierID)
+			if err != nil {
+				return err
+			}
+
+			lastTenantIndex = idx
+		}
+
+		return nil
 	}
 }
 
