@@ -914,7 +914,7 @@ ingester:
 
   # -- Jaeger reporter queue size
   # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
+  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
@@ -1158,7 +1158,7 @@ ruler:
 
   # -- Jaeger reporter queue size
   # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
+  jaegerReporterMaxQueueSize: 1000
 
 querier:
   replicas: 2
@@ -1315,7 +1315,7 @@ query_frontend:
 
   # -- Jaeger reporter queue size
   # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
+  jaegerReporterMaxQueueSize: 5000
 
 query_scheduler:
   enabled: true
