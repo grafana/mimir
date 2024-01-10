@@ -101,7 +101,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								require.NoError(b, queue.stop(nil))
 							})
 
-							runProducer := runQueueProducerForBenchmark(b, numProducers, numTenants, startSignalChan, queue, maxQueriersPerTenant)
+							runProducer := runQueueProducerForBenchmark(b, queue, maxQueriersPerTenant, numProducers, numTenants, startSignalChan)
 
 							for producerIdx := 0; producerIdx < numProducers; producerIdx++ {
 								producerIdx := producerIdx
@@ -110,7 +110,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								})
 							}
 
-							runConsumer := runQueueConsumerForBenchmark(b, numConsumers, queue, startSignalChan, ctx)
+							runConsumer := runQueueConsumerForBenchmark(ctx, b, queue, numConsumers, startSignalChan)
 
 							for consumerIdx := 0; consumerIdx < numConsumers; consumerIdx++ {
 								consumerIdx := consumerIdx
@@ -152,7 +152,7 @@ func queueActorIterationCount(benchmarkIters int, numActors int, actorIdx int) i
 	return actorIters
 }
 
-func runQueueProducerForBenchmark(b *testing.B, numProducers int, numTenants int, start chan struct{}, queue *RequestQueue, maxQueriersPerTenant int) func(producerIdx int) error {
+func runQueueProducerForBenchmark(b *testing.B, queue *RequestQueue, maxQueriersPerTenant int, numProducers int, numTenants int, start chan struct{}) func(producerIdx int) error {
 	return func(producerIdx int) error {
 		producerIters := queueActorIterationCount(b.N, numProducers, producerIdx)
 		tenantID := producerIdx % numTenants
@@ -168,7 +168,7 @@ func runQueueProducerForBenchmark(b *testing.B, numProducers int, numTenants int
 				// should significantly outweigh the memory used to implement the queue mechanics.
 				req := makeSchedulerRequest(tenantIDStr)
 				//req.AdditionalQueueDimensions = randAdditionalQueueDimension()
-				err := queue.EnqueueRequestToDispatcher(strconv.Itoa(tenantID), req, maxQueriersPerTenant, func() {})
+				err := queue.EnqueueRequestToDispatcher(tenantIDStr, req, maxQueriersPerTenant, func() {})
 				if err == nil {
 					break
 				}
@@ -186,7 +186,7 @@ func runQueueProducerForBenchmark(b *testing.B, numProducers int, numTenants int
 	}
 }
 
-func runQueueConsumerForBenchmark(b *testing.B, numConsumers int, queue *RequestQueue, start chan struct{}, ctx context.Context) func(consumerIdx int) error {
+func runQueueConsumerForBenchmark(ctx context.Context, b *testing.B, queue *RequestQueue, numConsumers int, start chan struct{}) func(consumerIdx int) error {
 	return func(consumerIdx int) error {
 		consumerIters := queueActorIterationCount(b.N, numConsumers, consumerIdx)
 		lastTenantIndex := FirstUser()
