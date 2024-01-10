@@ -86,6 +86,31 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 		mockServer.SentResponses[6].Items)
 }
 
+func TestLabelNamesAndValues_FilteredValues(t *testing.T) {
+
+	existingLabels := map[string][]string{
+		"label-aa": {"a0000000", "a1111111", "a2222222"},
+		"label-bb": {"b0000000", "b1111111", "b2222222", "b3333333"},
+		"label-cc": {"c0000000"},
+	}
+	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
+	var stream client.Ingester_LabelNamesAndValuesServer = &mockServer
+	var valueFilter = func(name, value string) (bool, error) {
+		return strings.Contains(value, "0"), nil
+	}
+	require.NoError(t, labelNamesAndValues(&mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, stream, valueFilter))
+
+	require.Len(t, mockServer.SentResponses, 2)
+
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-aa", Values: []string{"a0000000"}},
+		{LabelName: "label-bb", Values: []string{"b0000000"}},
+	}, mockServer.SentResponses[0].Items)
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-cc", Values: []string{"c0000000"}},
+	}, mockServer.SentResponses[1].Items)
+}
+
 func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	const labelValueSize = 1024 // make labelValueSize bigger to make test run faster, smaller to make the results more readable.
 	const maxBatchLabelValues = queryStreamBatchMessageSize / labelValueSize

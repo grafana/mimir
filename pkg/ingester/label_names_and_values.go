@@ -62,14 +62,19 @@ func labelNamesAndValues(
 			return err
 		}
 
-		lastAddedValueIndex := -1
-		for i, val := range values {
+		filteredValues := values[:0]
+		for _, val := range values {
 			if ok, err := filter(labelName, val); err != nil {
 				return err
-			} else if !ok {
-				continue
+			} else if ok {
+				// This append is safe because filteredValues is strictly smaller than values.
+				filteredValues = append(filteredValues, val)
 			}
+		}
+		values = filteredValues
 
+		lastAddedValueIndex := -1
+		for i, val := range values {
 			// sum up label values length until response size reached the threshold and after that add all values to the response
 			// starting from last sent value or from the first element and up to the current element (including).
 			responseSizeBytes += len(val)
