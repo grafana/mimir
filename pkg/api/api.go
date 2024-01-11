@@ -118,7 +118,6 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	if api.AuthMiddleware == nil {
 		api.AuthMiddleware = middleware.AuthenticateUser
 	}
-	api.AuthMiddleware = middleware.Merge(querierapi.ConsistencyMiddleware(), api.AuthMiddleware)
 
 	// Unconditionally add middleware that ensures we only accept requests with an expected number of tenants
 	// that is applied after any existing auth middleware has run. Only a single tenant is allowed when federation
@@ -162,6 +161,10 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
+
+		// Assuming that we only need consistency controls when the request is for a specific tenant.
+		// Not all requests that require a tenant also support consistency, but it doesn't hurt if we propagate it anyway.
+		handler = querierapi.ConsistencyMiddleware().Wrap(handler)
 	}
 	if gzip {
 		handler = gziphandler.GzipHandler(handler)
