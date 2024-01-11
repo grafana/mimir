@@ -57,9 +57,9 @@ func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 		}, []string{"reason"}),
 		QueriesExecutedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
-			Name:      "querier_queries_executed_total",
-			Help:      "Number of queries that were executed against a particular source.",
-		}, []string{"source"}),
+			Name:      "querier_queries_storage_type_total",
+			Help:      "Number of PromQL queries that were executed against a particular storage type.",
+		}, []string{"storage"}),
 	}
 
 	// Ensure the reject metric is initialised (so that we export the value "0" before a limit is reached for the first time).
