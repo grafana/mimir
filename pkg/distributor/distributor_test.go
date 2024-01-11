@@ -2087,7 +2087,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			require.NoError(b, err)
 
 			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, nil, log.NewNopLogger())
+			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
@@ -2528,7 +2528,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
 			replicationSet, err := ds[0].GetIngesters(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
+			assert.Equal(t, testData.expectedIngesters, len(replicationSet[0].Instances))
 
 			// Assert on metric metadata
 			metadata, err := ds[0].MetricsMetadata(ctx, client.DefaultMetricsMetadataRequest())
@@ -3756,7 +3756,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
@@ -5788,7 +5788,7 @@ func TestSendMessageMetadata(t *testing.T) {
 		return mock, nil
 	})
 
-	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, false, nil, log.NewNopLogger())
+	d, err := New(distributorCfg, clientConfig, validation.MockDefaultOverrides(), nil, ingestersRing, nil, false, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NotNil(t, d)
 
