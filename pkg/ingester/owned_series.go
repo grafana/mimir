@@ -106,8 +106,8 @@ func (oss *ownedSeriesService) checkRingForChanges() (bool, error) {
 		return false, err
 	}
 
-	// Since token ranges computation doesn't care about state, we don't need to either.
-	ringChanged := ring.HasReplicationSetChangedWithoutState(oss.previousRing, rs)
+	// Ignore state and IP address changes, since they have no impact on token distribution
+	ringChanged := ring.HasReplicationSetChangedWithoutStateOrAddr(oss.previousRing, rs)
 	oss.previousRing = rs
 	return ringChanged, nil
 }
