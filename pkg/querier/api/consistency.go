@@ -62,7 +62,7 @@ func ConsistencyMiddleware() middleware.Interface {
 
 const consistencyLevelGrpcMdKey = "__consistency_level__"
 
-func ReadConsistencyClientInterceptor(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	if c, ok := ReadConsistencyFromContext(ctx); ok {
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyLevelGrpcMdKey, c)
 	}
