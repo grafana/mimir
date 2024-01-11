@@ -126,6 +126,10 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	return api, nil
 }
 
+func (a *API) MuxRouter() *mux.Router {
+	return a.server.HTTP
+}
+
 // RegisterDeprecatedRoute behaves in a similar way to RegisterRoute. RegisterDeprecatedRoute also logs warnings on
 // invocations of the deprecated endpoints.
 func (a *API) RegisterDeprecatedRoute(path string, handler http.Handler, auth, gzipEnabled bool, method string, methods ...string) {
