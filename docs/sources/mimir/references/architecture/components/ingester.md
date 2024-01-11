@@ -95,3 +95,20 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
 For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../../configure/configure-out-of-order-samples-ingestion" >}}).
+
+## Resource utilization based ingester read path limiting
+
+Resource utilization based ingester read path limiting means the ingester can be configured to limit read requests based
+on resource (CPU/memory) utilization, to maintain a minimum of headroom for the write path to function.
+The idea is to prevent intensive queries from interrupting the write path.
+
+The process' CPU utilization and Go memory heap size are sampled every second, and a sliding window average taken of
+the CPU utilization. If either is greater than or equal to the corresponding configured limit, ingester read requests
+get rejected with HTTP status code 503 (Service Unavailable), until utilization levels are again below respective limits.
+
+Whenever the ingester rejects a read request due to utilization based limiting, it increments the
+`cortex_ingester_utilization_limited_read_requests_total` counter metric.
+CPU and memory utilization are also tracked, via respectively the `utilization_limiter_current_cpu_load` and
+`utilization_limiter_current_memory_usage_bytes` gauge metrics.
+
+For more information, refer to [Configuring resource utilization based ingester read path limiting]({{< relref "../../../configure/configure-resource-utilization-based-ingester-read-path-limiting" >}}).

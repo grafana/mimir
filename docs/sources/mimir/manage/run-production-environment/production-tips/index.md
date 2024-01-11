@@ -41,6 +41,16 @@ On the read path, the ingester reads from the series whose chunks have already b
 
 For these reasons, run the ingesters on disks such as SSDs that have fast disk speed.
 
+### Resource utilization based ingester read path limiting
+
+The ingester supports limiting read requests based on resource (CPU/memory) utilization, in order to protect the write path.
+The ingester write path is generally considered more important than the read path in production, so it's (often) better to
+limit read requests when ingesters are under pressure than to fail writes (or even crash).
+
+While it is still an **experimental** feature, we can tentatively recommend enabling resource utilization based ingester read path limiting,
+to protect ingesters from potentially getting overwhelmed by intensive queries.
+For more information on its configuration, refer to [ingester]({{< relref "../../../references/architecture/components/ingester" >}}).
+
 ## Querier
 
 ### Ensure caching is enabled
