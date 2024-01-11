@@ -13,14 +13,14 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 ## Flags
 
 - `--blocks-from` (required) Accepted values are `json`, `lines`, or `listing`. When `listing` is provided `--input-file` is ignored and object storage listings are used to discover tenants and blocks.
-- `--input-file` (optional) The file path to read when `--blocks-from` is `json` or `lines`, otherwise ignored. The default (`""`) assumes reading from standard input.
+- `--input-file` (optional) The file path to read when `--blocks-from` is `json` or `lines`, otherwise ignored. The default (`"-"`) assumes reading from standard input.
 - `--include-tenants` (optional) A comma separated list of what tenants to target.
 - `--exclude-tenants` (optional) A comma separated list of what tenants to ignore. Has precedence over `--include-tenants`.
 - `--dry-run` (optional) When set the changes that would be made to object storage are only logged rather than performed.
 
 Each supported object storage service also has an additional set of flags (see examples in [Running](##Running)).
 
-## Input formats
+## Input formats (`--blocks-from`)
 
 The `json` format is a map of tenants to a list of blocks:
 
