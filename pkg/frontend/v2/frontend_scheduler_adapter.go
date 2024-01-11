@@ -85,7 +85,7 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 			return nil, err
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path):
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:

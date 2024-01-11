@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
@@ -149,6 +150,7 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 
 		reqs[i].Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		reqs[i].Header.Del(totalShardsControlHeader)
+		reqs[i].Header.Del("Accept-Encoding")
 		reqs[i].Body = io.NopCloser(strings.NewReader(vals.Encode()))
 	}
 
@@ -261,9 +263,8 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 				// If the field is neither data nor error, we skip it.
 				it.ReadAny()
 			}
-
 			if !foundDataField {
-				return errors.New("expected data field at top level")
+				return fmt.Errorf("expected data field at top level, found %s", it.CurrentBuffer())
 			}
 
 			if it.WhatIsNext() != jsoniter.ArrayValue {
@@ -350,6 +351,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteArrayEnd()
 
 	if err := check(); err != nil {
+		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
 		span.LogFields(otlog.Error(err))
 		stream.WriteMore()
 		stream.WriteObjectField("status")
