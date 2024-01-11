@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humamux"
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -88,6 +90,12 @@ type API struct {
 	logger    log.Logger
 	sourceIPs *middleware.SourceIPExtractor
 	indexPage *IndexPageContent
+
+	// Expose a huma.API as an alternate way to register routes. Routes registered this
+	// way can have OpenAPI specifications automatically generated for them.
+	//
+	// See: https://github.com/danielgtaylor/huma
+	Huma huma.API
 }
 
 func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Config, s *server.Server, logger log.Logger) (*API, error) {
@@ -111,6 +119,7 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 		logger:         logger,
 		sourceIPs:      sourceIPs,
 		indexPage:      newIndexPageContent(),
+		Huma:           humamux.New(s.HTTP, huma.DefaultConfig("Mimir API", "TODO")),
 	}
 
 	// If no authentication middleware is present in the config, use the default authentication middleware.

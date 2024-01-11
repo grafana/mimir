@@ -1,0 +1,4 @@
+ignore:
+  - benchmark
+  - examples
+  - adapters
