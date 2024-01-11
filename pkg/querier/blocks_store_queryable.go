@@ -486,10 +486,6 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	if len(resSeriesSets) == 0 {
-		storage.EmptySeriesSet()
-	}
-
 	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, storage.ChainedSeriesMerge),
 		resWarnings)
