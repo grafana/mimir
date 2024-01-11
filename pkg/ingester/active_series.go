@@ -44,6 +44,12 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		return fmt.Errorf("error parsing label matchers: %w", err)
 	}
 
+	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
+	// in this ingester yet, but there's some to ingest in the backlog).
+	if err := i.enforceReadConsistency(ctx, userID); err != nil {
+		return err
+	}
+
 	db := i.getTSDB(userID)
 	if db == nil {
 		level.Debug(i.logger).Log("msg", "no TSDB for user", "userID", userID)
