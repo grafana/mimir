@@ -320,7 +320,7 @@ type Ingester struct {
 	errorSamplers ingesterErrSamplers
 
 	ingestReader    *ingest.PartitionReader
-	partitionID     ring.PartitionID
+	partitionID     int32
 	partitionRingKV kv.Client
 }
 
@@ -435,7 +435,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
-		i.partitionID = ring.PartitionID(partitionID)
+		i.partitionID = partitionID
 		i.partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, "partitions-ring-ingester-lifecycler"), logger)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating KV store for partition ring")
@@ -3662,17 +3662,17 @@ func (i *Ingester) partitionRingStarting(ctx context.Context) error {
 
 		// Create partition, or make it active, if necessary.
 		changed := false
-		pd, ok := pr.Partition(ring.PartitionID(i.partitionID))
+		pd, ok := pr.Partition(i.partitionID)
 		if !ok {
-			pr.AddActivePartition(ring.PartitionID(i.partitionID), time.Now())
+			pr.AddActivePartition(i.partitionID, time.Now())
 			changed = true
 		} else if !pd.IsActive() {
-			pr.ActivatePartition(ring.PartitionID(i.partitionID), time.Now())
+			pr.ActivatePartition(i.partitionID, time.Now())
 			changed = true
 		}
 
 		// Also add partition owner (ingester) to the ring.
-		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, []int32{i.partitionID}, i.lifecycler.GetState(), time.Now()) {
 			changed = true
 		}
 
@@ -3709,7 +3709,7 @@ func (i *Ingester) partitionRingRunning(ctx context.Context) error {
 		}
 
 		// Update entry in the ring with current state and heartbeat.
-		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, []int32{i.partitionID}, i.lifecycler.GetState(), time.Now()) {
 			return pr, true, nil
 		}
 		return nil, false, nil
