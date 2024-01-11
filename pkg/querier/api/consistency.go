@@ -69,7 +69,7 @@ func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, r
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
 
-func ReadConsistencyServerInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func ReadConsistencyServerUnaryInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	consistencies := md.Get(consistencyLevelGrpcMdKey)
 	if len(consistencies) > 0 && IsValidReadConsistency(consistencies[0]) {
