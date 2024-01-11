@@ -679,7 +679,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "sum(max_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__interval]))",
+                        "expr": "sum(min_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__interval]))",
                         "format": "time_series",
                         "legendFormat": "Queue length",
                         "legendLink": null

@@ -175,7 +175,7 @@ local filename = 'mimir-reads.json';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.hiddenLegendQueryPanel(
-          'sum(max_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.query_scheduler)],
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.query_scheduler)],
           'Queue length'
         ) +
         {
