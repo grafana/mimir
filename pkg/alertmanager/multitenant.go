@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"golang.org/x/time/rate"
@@ -91,6 +92,11 @@ type MultitenantAlertmanagerConfig struct {
 
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
+
+	// Enable UTF-8 strict mode. This means Alertmanager uses the matchers/parse parser
+	// to parse configurations and API requests, instead of pkg/labels. Use this mode
+	// once you are confident that your configuration is forwards compatible.
+	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"advanced"`
 }
 
 const (
@@ -120,6 +126,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	cfg.ShardingRing.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
+
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode", false, "Enable UTF-8 strict mode. Allows UTF-8 in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree and alertmanager_matchers_incompatible metrics before using this mode as otherwise some tenant configurations might fail to load.")
 }
 
 // Validate config and returns error on failure
@@ -669,6 +677,13 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var hasTemplateChanges bool
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
 	var pathsToRemove = make(map[string]struct{})
+
+	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+	// The reason for this that the config.Load function uses the origin "config",
+	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
+	// configurations. This means metrics from API requests are confused with metrics from
+	// tenant configurations. To avoid this confusion, we use a different origin.
+	validateMatchersInConfigDesc(am.logger, compat.RegisteredMetrics, "tenant", cfg)
 
 	// List existing files to keep track of the ones to be removed
 	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
