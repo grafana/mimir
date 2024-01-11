@@ -159,12 +159,12 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 }
 
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
+	// Propagate the consistency level on all HTTP routes.
+	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
+	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
+
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
-
-		// Assuming that we only need consistency controls when the request is for a specific tenant.
-		// Not all requests that require a tenant also support consistency, but it doesn't hurt if we propagate it anyway.
-		handler = querierapi.ConsistencyMiddleware().Wrap(handler)
 	}
 	if gzip {
 		handler = gziphandler.GzipHandler(handler)
