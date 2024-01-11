@@ -890,7 +890,7 @@ alertmanager_config: |
 			limits.maxTemplatesCount = tc.maxTemplates
 			limits.maxSizeOfTemplate = tc.maxTemplateSize
 
-			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v1/alerts", bytes.NewReader([]byte(tc.cfg)))
+			req := httptest.NewRequest(http.MethodPost, "http://alertmanager/api/v2/alerts", bytes.NewReader([]byte(tc.cfg)))
 			ctx := user.InjectOrgID(req.Context(), "testing")
 			w := httptest.NewRecorder()
 			am.SetUserConfig(w, req.WithContext(ctx))

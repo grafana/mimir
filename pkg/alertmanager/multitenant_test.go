@@ -678,7 +678,7 @@ receivers:
 				require.NoError(t, err)
 
 				// Push an alert.
-				req := httptest.NewRequest(http.MethodPost, cfg.ExternalURL.String()+"/api/v1/alerts", bytes.NewReader(alertsPayload))
+				req := httptest.NewRequest(http.MethodPost, cfg.ExternalURL.String()+"/api/v2/alerts", bytes.NewReader(alertsPayload))
 				req.Header.Set("content-type", "application/json")
 				reqCtx := user.InjectOrgID(req.Context(), userID)
 				{
@@ -1168,7 +1168,7 @@ receivers:
 	am.fallbackConfig = fallbackCfg
 
 	// Request when no user configuration is present.
-	req := httptest.NewRequest("GET", externalURL.String()+"/api/v1/status", nil)
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
@@ -1245,7 +1245,7 @@ receivers:
 	}))
 
 	// Request before the user configuration loaded by polling loop.
-	req := httptest.NewRequest("GET", externalURL.String()+"/api/v1/status", nil)
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v2/status", nil)
 	w := httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
 	resp := w.Result()

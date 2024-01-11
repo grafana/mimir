@@ -13,6 +13,10 @@ import (
 	v2_models "github.com/prometheus/alertmanager/api/v2/models"
 )
 
+const (
+	statusSuccess = "success"
+)
+
 // V1Silences implements the Merger interface for GET /v1/silences. This re-uses the logic for
 // merging /v2/silences, with additional handling for the enclosing status/data fields. Unlike for
 // alerts, the API definitions for silences are almost identical between v1 and v2. The differences

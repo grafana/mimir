@@ -85,16 +85,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 3,
 			route:              "/alerts",
 		}, {
-			name:               "Read /v1/alerts is sent to 3 AMs",
-			numAM:              5,
-			numHappyAM:         5,
-			replicationFactor:  3,
-			isRead:             true,
-			expStatusCode:      http.StatusOK,
-			expectedTotalCalls: 3,
-			route:              "/v1/alerts",
-			responseBody:       []byte(`{"status":"success","data":[]}`),
-		}, {
 			name:               "Read /v2/alerts is sent to 3 AMs",
 			numAM:              5,
 			numHappyAM:         5,
