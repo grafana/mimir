@@ -59,6 +59,19 @@ func (m *PartitionRingDesc) TokensAndTokenPartitions() (Tokens, map[Token]int32)
 	return allTokens, out
 }
 
+func (m *PartitionRingDesc) NumberOfPartitionOwners(partitionID int32) int {
+	owners := 0
+	for _, o := range m.Owners {
+		for _, p := range o.OwnedPartitions {
+			if p == partitionID {
+				owners++
+				break // stop iterating other partitions for this owner
+			}
+		}
+	}
+	return owners
+}
+
 func (m *PartitionRingDesc) PartitionOwners() map[int32][]string {
 	out := make(map[int32][]string, len(m.Partitions))
 	for id, o := range m.Owners {
@@ -69,7 +82,7 @@ func (m *PartitionRingDesc) PartitionOwners() map[int32][]string {
 	return out
 }
 
-func (m *PartitionRingDesc) AddActivePartition(id int32, now time.Time) {
+func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now time.Time) {
 	// Spread-minimizing token generator is deterministic unique-token generator for given id and zone.
 	// Partitions don't use zones.
 	tg := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
@@ -78,32 +91,34 @@ func (m *PartitionRingDesc) AddActivePartition(id int32, now time.Time) {
 
 	m.Partitions[id] = PartitionDesc{
 		Tokens:         tokens,
-		State:          PartitionActive,
+		State:          state,
 		StateTimestamp: now.Unix(),
 	}
 }
 
-func (m *PartitionRingDesc) DisablePartition(id int32, now time.Time) {
+func (m *PartitionRingDesc) UpdatePartitionState(id int32, state PartitionState, now time.Time) bool {
 	d, ok := m.Partition(id)
-	if ok {
-		d.State = PartitionInactive
-		d.StateTimestamp = now.Unix()
-		m.Partitions[id] = d
+	if !ok {
+		return false
 	}
-}
 
-func (m *PartitionRingDesc) ActivatePartition(id int32, now time.Time) {
-	d, ok := m.Partition(id)
-	if ok {
-		d.State = PartitionActive
-		d.StateTimestamp = now.Unix()
-		m.Partitions[id] = d
+	if d.State == state {
+		return false
 	}
+
+	d.State = state
+	d.StateTimestamp = now.Unix()
+	m.Partitions[id] = d
+	return true
 }
 
 func (m *PartitionRingDesc) Partition(id int32) (PartitionDesc, bool) {
 	p, ok := m.Partitions[id]
 	return p, ok
+}
+
+func (m *PartitionRingDesc) RemovePartition(id int32) {
+	delete(m.Partitions, id)
 }
 
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
@@ -154,6 +169,10 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPart
 		return true
 	}
 	return false
+}
+
+func (m *PartitionRingDesc) RemoveOwner(id string) {
+	delete(m.Owners, id)
 }
 
 func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {

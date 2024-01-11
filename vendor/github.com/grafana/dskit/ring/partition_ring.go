@@ -124,7 +124,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 				return nil, ErrInconsistentTokensInfo
 			}
 
-			// If this partition is inactive, or became active recently (based on lookback), we need to include more partitions.
+			// If this partition is inactive (read-only), or became active recently (based on lookback), we need to include more partitions.
 			if !p.IsActive() || (lookbackPeriod > 0 && p.BecameActiveAfter(lookbackUntil)) {
 				size++
 

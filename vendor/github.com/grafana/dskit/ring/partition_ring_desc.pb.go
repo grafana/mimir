@@ -30,8 +30,10 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type PartitionState int32
 
 const (
-	PartitionUnknown  PartitionState = 0
-	PartitionActive   PartitionState = 1
+	PartitionUnknown PartitionState = 0
+	// Active partition that can accept more data.
+	PartitionActive PartitionState = 1
+	// Inactive partition that is read-only. This partition will be deleted after grace period.
 	PartitionInactive PartitionState = 2
 	// This state is not visible to ring clients, it's only used for gossiping, and partitions in this state are removed before client can see them.
 	PartitionDeleted PartitionState = 3
