@@ -1837,7 +1837,11 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
-			return nil, err
+			if errors.Is(err, context.Canceled) {
+				return nil, nil
+			}
+			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
+			ext.Error.Set(log.Span, true)
 		}
 
 		defer func() {
@@ -1851,7 +1855,11 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 			msg, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
 				break
-			} else if err != nil {
+			}
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil, nil
+				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
 				ext.Error.Set(log.Span, true)
 				return nil, err
