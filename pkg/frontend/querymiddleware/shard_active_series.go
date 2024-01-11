@@ -262,9 +262,8 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 				// If the field is neither data nor error, we skip it.
 				it.ReadAny()
 			}
-
 			if !foundDataField {
-				return errors.New("expected data field at top level")
+				return fmt.Errorf("expected data field at top level, found %s", it.CurrentBuffer())
 			}
 
 			if it.WhatIsNext() != jsoniter.ArrayValue {
