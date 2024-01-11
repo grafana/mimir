@@ -29,6 +29,8 @@ const (
 )
 
 type clientMetrics struct {
+	requests   prometheus.Counter
+	hits       prometheus.Counter
 	operations *prometheus.CounterVec
 	failures   *prometheus.CounterVec
 	skipped    *prometheus.CounterVec
@@ -36,9 +38,21 @@ type clientMetrics struct {
 	dataSize   *prometheus.HistogramVec
 }
 
+// newClientMetrics creates a new bundle of metrics about an instance of a cache client. Note
+// that there may be multiple cache clients at any given time so the prometheus.Registerer passed
+// to this method should include labels unique to this particular client (e.g. a name for each
+// different cache being used).
 func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm := &clientMetrics{}
 
+	cm.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "requests_total",
+		Help: "Total number of items requests to cache.",
+	})
+	cm.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "hits_total",
+		Help: "Total number of items requests to the cache that were a hit.",
+	})
 	cm.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",
 		Help: "Total number of operations against cache.",
