@@ -63,14 +63,14 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 		s.nonAlignedQueries.Inc()
 	}
 
-	s.regexpCounters(req)
-	s.consistencyCounters(ctx)
+	s.trackRegexpMatchers(req)
+	s.trackReadConsistency(ctx)
 	s.populateQueryDetails(ctx, req)
 
 	return s.next.Do(ctx, req)
 }
 
-func (s queryStatsMiddleware) regexpCounters(req Request) {
+func (s queryStatsMiddleware) trackRegexpMatchers(req Request) {
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
 		return
@@ -121,7 +121,7 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Requ
 	}
 }
 
-func (s queryStatsMiddleware) consistencyCounters(ctx context.Context) {
+func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
 	consistency, ok := api.ReadConsistencyFromContext(ctx)
 	if !ok {
 		return
