@@ -149,6 +149,7 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 
 		reqs[i].Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		reqs[i].Header.Del(totalShardsControlHeader)
+		reqs[i].Header.Del("Accept-Encoding")
 		reqs[i].Body = io.NopCloser(strings.NewReader(vals.Encode()))
 	}
 
