@@ -1842,6 +1842,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
 			ext.Error.Set(log.Span, true)
+			return nil, err
 		}
 
 		defer func() {
@@ -1853,10 +1854,10 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		for {
 			msg, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			}
 			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
 				if errors.Is(err, context.Canceled) {
 					return nil, nil
 				}
