@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
@@ -350,6 +351,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	stream.WriteArrayEnd()
 
 	if err := check(); err != nil {
+		level.Error(s.logger).Log("msg", "error merging partial responses", "err", err.Error())
 		span.LogFields(otlog.Error(err))
 		stream.WriteMore()
 		stream.WriteObjectField("status")
