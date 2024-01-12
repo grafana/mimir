@@ -38,6 +38,7 @@ type histogramProfile struct {
 	generateSampleHistogram generateSampleHistogramFunc
 	generateValue           generateValueFunc
 	generateSeries          generateSeriesFunc
+	enableCounterResets     bool
 }
 
 var (
@@ -84,6 +85,28 @@ var (
 			},
 			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
 				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, true), numSeries, true))
+			},
+		},
+		{
+			metricName: "mimir_continuous_test_histogram_int_counter_with_counter_reset",
+			typeLabel:  "histogram_int_counter_reset",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.HistogramToHistogramProto(ts, generateIntHistogram(1, 1, false))
+			},
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateIntHistogram(generateHistogramIntValue(t, false), numSeries, false).ToFloat(nil))
+			},
+		},
+		{
+			metricName: "mimir_continuous_test_histogram_float_counter_with_counter_reset",
+			typeLabel:  "histogram_float_counter_reset",
+			generateHistogram: func(t time.Time) prompb.Histogram {
+				ts := t.UnixMilli()
+				return remote.FloatHistogramToHistogramProto(ts, generateFloatHistogram(1, 1, false))
+			},
+			generateSampleHistogram: func(t time.Time, numSeries int) *model.SampleHistogram {
+				return mimirpb.FromFloatHistogramToPromHistogram(generateFloatHistogram(generateHistogramFloatValue(t, false), numSeries, false))
 			},
 		},
 	}
