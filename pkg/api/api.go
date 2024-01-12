@@ -118,7 +118,6 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	if api.AuthMiddleware == nil {
 		api.AuthMiddleware = middleware.AuthenticateUser
 	}
-	api.AuthMiddleware = middleware.Merge(querierapi.ConsistencyMiddleware(), api.AuthMiddleware)
 
 	// Unconditionally add middleware that ensures we only accept requests with an expected number of tenants
 	// that is applied after any existing auth middleware has run. Only a single tenant is allowed when federation
