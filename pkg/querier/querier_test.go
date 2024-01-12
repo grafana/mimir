@@ -1015,7 +1015,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 type errDistributor struct{}
 
-func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
 	return nil, errors.New("method is not implemented")
 }
 
@@ -1051,7 +1051,7 @@ func (m *errDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]lab
 
 type emptyDistributor struct{}
 
-func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
 	return nil, errors.New("method is not implemented")
 }
 

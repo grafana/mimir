@@ -1660,7 +1660,22 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream)
+
+	var valueFilter func(name, value string) (bool, error)
+	switch request.GetCountMethod() {
+	case client.IN_MEMORY:
+		valueFilter = func(name, value string) (bool, error) {
+			return true, nil
+		}
+	case client.ACTIVE:
+		valueFilter = func(name, value string) (bool, error) {
+			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeSeries, name, value)
+		}
+	default:
+		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
+	}
+
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream, valueFilter)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
