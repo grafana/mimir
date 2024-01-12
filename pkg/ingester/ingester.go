@@ -478,8 +478,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
 		// ACTIVE once we finish.
 
-		// TODO: move logic to owned_series.go?
-
 		oss := i.ownedSeriesService
 
 		// Fetch and cache current ring state
@@ -493,18 +491,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
 			oss.updateAllTenants(ctx, true)
 		}
-
-		// scenarios:
-		// - no users, empty ring (first ingester)
-		//   - skip updateAllTenants -- they'll get calculated as they're added
-		// - no users, non-empty ring (new ingester)
-		//   - call updateAllTenants -- it will range over the empty set and return quickly
-		// - users, empty ring (first ingester after consul restart or with a recycled volume)
-		//   - skip updateAllTenants -- they'll get calculated on the next iteration
-		// - users, non-empty ring (ingester restart)
-		//   - call updateAllTenants
-		// - users, non-empty ring, this ingester not in ring (new ingester with recycled volume)
-		//   - call updateAllTenants -- it will error???
 	}
 
 	// Important: we want to keep lifecycler running until we ask it to stop, so we need to give it independent context
