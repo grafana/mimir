@@ -184,6 +184,11 @@ spec:
             - name: "GOMEMLIMIT"
               value: {{include "mimir.siToBytes" (dict "value" $mem_request) | toString | toYaml }}
             {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.store_gateway }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
+            {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}

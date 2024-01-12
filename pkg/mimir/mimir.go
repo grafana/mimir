@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -239,7 +240,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.IngestStorage.Enabled && !c.Ingester.ReturnOnlyGRPCErrors {
+	if c.isAnyModuleEnabled(Ingester, Write, All) && c.IngestStorage.Enabled && !c.Ingester.ReturnOnlyGRPCErrors {
 		return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
@@ -727,6 +728,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
+	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
+	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
 
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
 		&cfg.Server,

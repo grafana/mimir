@@ -20,6 +20,7 @@
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
 * [ENHANCEMENT] Storage Provider: allow aws sts support for s3 storage provider #6172
+* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
@@ -46,6 +47,8 @@
 
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
 * [CHANGE] rollout-operator: remove default CPU limit. #7066
+* [CHANGE] Store-gateway: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 1000, to avoid dropping tracing spans. #7068
+* [CHANGE] Query-frontend, ingester, ruler, backend and write instances: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100), to avoid dropping tracing spans. #7086
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`
@@ -99,6 +102,10 @@
 ### Documentation
 
 ### Tools
+
+* [CHANGE] copyblocks: The flags for copyblocks have been changed to align more closely with other tools. #6607
+* [CHANGE] undelete-blocks: undelete-blocks-gcs has been removed and replaced with undelete-blocks, which supports recovering deleted blocks in versioned buckets from ABS, GCS, and S3-compatible object storage. #6607
+* [FEATURE] copyprefix: Add tool to copy objects between prefixes. Supports ABS, GCS, and S3-compatible object storage. #6607
 
 ## 2.11.0
 

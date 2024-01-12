@@ -160,33 +160,78 @@ local filename = 'mimir-reads.json';
       .addPanel(
         local title = 'Requests / sec';
         $.panel(title) +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
-        $.panelDescription(title, description),
+        $.panelDescription(title, description) +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.panel(title) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
-        $.panelDescription(title, description),
+        $.panelDescription(title, description) +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+      )
+    )
+    .addRow(
+      local description = |||
+        <p>
+          The query scheduler can optionally create subqueues
+          in order to enforce round-robin query queuing fairness
+          across additional queue dimensions beyond the default.
+
+          By default, query queuing fairness is only applied by tenant ID.
+          Queries without additional queue dimensions are labeled 'none'.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_queue_duration_seconds';
+      local selector = '{%s}' % $.jobMatcher($._config.job_names.query_scheduler);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row('Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions')
+      .addPanel(
+        local title = '99th Percentile Latency by Queue Dimension';
+        $.panel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.99'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
       )
       .addPanel(
-        local title = 'Latency (Time in Queue) by Queue Dimension';
+        local title = '50th Percentile Latency by Queue Dimension';
         $.panel(title) +
+        $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
-          metricName='cortex_query_scheduler_queue_duration_seconds',
-          selector='{%s}' % $.jobMatcher($._config.job_names.query_scheduler),
-          labels=['additional_queue_dimensions'],
-          labelReplaceArgSets=[
-            {
-              dstLabel: 'additional_queue_dimensions',
-              replacement: 'none',
-              srcLabel:
-                'additional_queue_dimensions',
-              regex: '^$',
-            },
-          ]
-        ) +
-        $.panelDescription(title, description),
+          metricName=metricName,
+          selector=selector,
+          percentiles=['0.50'],
+          includeAverage=false,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
+      )
+      .addPanel(
+        local title = 'Average Latency by Queue Dimension';
+        $.panel(title) +
+        $.panelDescription(title, description) +
+        $.latencyPanelLabelBreakout(
+          metricName=metricName,
+          selector=selector,
+          percentiles=[],
+          includeAverage=true,
+          labels=labels,
+          labelReplaceArgSets=labelReplaceArgSets,
+        )
       )
     )
     .addRow(

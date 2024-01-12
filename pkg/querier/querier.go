@@ -239,6 +239,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
 	if mq.blockStore != nil && ShouldQueryBlockStore(mq.cfg.QueryStoreAfter, now, mq.minT) {
@@ -247,6 +248,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 			return nil, nil, err
 		}
 		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("store-gateway").Inc()
 	}
 
 	return ctx, queriers, nil

@@ -32,6 +32,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -399,6 +400,10 @@ func (c prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Re
 		req.Header.Set("Accept", mimirpb.QueryResponseMimeType+","+jsonMimeType)
 	default:
 		return nil, fmt.Errorf("unknown query result response format '%s'", c.preferredQueryResultResponseFormat)
+	}
+
+	if consistency, ok := api.ReadConsistencyFromContext(ctx); ok {
+		req.Header.Add(api.ReadConsistencyHeader, consistency)
 	}
 
 	return req.WithContext(ctx), nil

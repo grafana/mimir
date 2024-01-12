@@ -33,6 +33,9 @@ type QueryMetrics struct {
 
 	// The total number of queries that were rejected for some reason.
 	QueriesRejectedTotal *prometheus.CounterVec
+
+	// The total number of queries executed against a particular source
+	QueriesExecutedTotal *prometheus.CounterVec
 }
 
 func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
@@ -52,6 +55,11 @@ func NewQueryMetrics(reg prometheus.Registerer) *QueryMetrics {
 			Name:      "querier_queries_rejected_total",
 			Help:      "Number of queries that were rejected, for example because they exceeded a limit.",
 		}, []string{"reason"}),
+		QueriesExecutedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "querier_queries_storage_type_total",
+			Help:      "Number of PromQL queries that were executed against a particular storage type.",
+		}, []string{"storage"}),
 	}
 
 	// Ensure the reject metric is initialised (so that we export the value "0" before a limit is reached for the first time).

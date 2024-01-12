@@ -121,13 +121,13 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return NewMemcachedCache(cacheName, logger, client, reg), nil
+		return NewMemcachedCache(cacheName, logger, client), nil
 	case BackendRedis:
 		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create redis client")
 		}
-		return NewRedisCache(cacheName, logger, client, reg), nil
+		return NewRedisCache(cacheName, logger, client), nil
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

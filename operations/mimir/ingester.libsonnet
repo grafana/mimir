@@ -51,7 +51,9 @@
 
   local name = 'ingester',
 
-  ingester_env_map:: {},
+  ingester_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
+  },
 
   ingester_node_affinity_matchers:: [],
 

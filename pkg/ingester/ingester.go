@@ -374,7 +374,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}, i.maxTsdbHeadTimestamp)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(logger), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -3578,7 +3578,13 @@ func (i *Ingester) enforceReadConsistency(ctx context.Context, tenantID string) 
 		return nil
 	}
 
-	if i.limits.IngestStorageReadConsistency(tenantID) != api.ReadConsistencyStrong {
+	var cLevel string
+	if c, ok := api.ReadConsistencyFromContext(ctx); ok {
+		cLevel = c
+	} else {
+		cLevel = i.limits.IngestStorageReadConsistency(tenantID)
+	}
+	if cLevel == api.ReadConsistencyEventual {
 		return nil
 	}
 

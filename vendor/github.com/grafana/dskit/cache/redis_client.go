@@ -237,6 +237,7 @@ func (c *RedisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 	}
 	var mu sync.Mutex
 	results := make(map[string][]byte, len(keys))
+	c.metrics.requests.Add(float64(len(keys)))
 
 	err := doWithBatch(ctx, len(keys), c.config.MaxGetMultiBatchSize, c.getMultiGate, func(startIndex, endIndex int) error {
 		start := time.Now()
@@ -272,6 +273,8 @@ func (c *RedisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) 
 		level.Warn(c.logger).Log("msg", "failed to mget items from redis", "err", err, "items", len(keys))
 		return nil
 	}
+
+	c.metrics.hits.Add(float64(len(results)))
 	return results
 }
 

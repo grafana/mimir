@@ -5,6 +5,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
+  local envVar = $.core.v1.envVar,
 
   // Utils.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
@@ -53,7 +54,10 @@
     $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('mimir-write-data', '/data'),
     ]) +
-    $.jaeger_mixin,
+    $.jaeger_mixin +
+    container.withEnvMixin([
+      envVar.new('JAEGER_REPORTER_MAX_QUEUE_SIZE', '1000'),
+    ]),
 
   local mimir_write_data_pvc =
     pvc.new() +
