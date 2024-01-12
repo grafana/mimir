@@ -28,6 +28,7 @@ func (m *mockPostingsReader) Postings(ctx context.Context, name string, values .
 }
 
 func TestIsLabelValueActive(t *testing.T) {
+	ctx := context.Background()
 	ttl := 3
 	mockedTime := time.Unix(int64(ttl), 0)
 	series := []labels.Labels{
@@ -54,23 +55,23 @@ func TestIsLabelValueActive(t *testing.T) {
 	valid := activeSeries.Purge(mockedTime)
 	require.True(t, valid)
 
-	result, err := IsLabelValueActive(reader, activeSeries, "a", "1")
+	result, err := IsLabelValueActive(ctx, reader, activeSeries, "a", "1")
 	require.NoError(t, err)
 	require.False(t, result)
 
-	result, err = IsLabelValueActive(reader, activeSeries, "a", "2")
+	result, err = IsLabelValueActive(ctx, reader, activeSeries, "a", "2")
 	require.NoError(t, err)
 	require.False(t, result)
 
-	result, err = IsLabelValueActive(reader, activeSeries, "a", "3")
+	result, err = IsLabelValueActive(ctx, reader, activeSeries, "a", "3")
 	require.NoError(t, err)
 	require.False(t, result)
 
-	result, err = IsLabelValueActive(reader, activeSeries, "a", "4")
+	result, err = IsLabelValueActive(ctx, reader, activeSeries, "a", "4")
 	require.NoError(t, err)
 	require.True(t, result)
 
-	result, err = IsLabelValueActive(reader, activeSeries, "a", "5")
+	result, err = IsLabelValueActive(ctx, reader, activeSeries, "a", "5")
 	require.NoError(t, err)
 	require.True(t, result)
 }
