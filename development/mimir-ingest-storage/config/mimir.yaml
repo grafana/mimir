@@ -17,6 +17,7 @@ ingest_storage:
 
 ingester:
   return_only_grpc_errors: true
+  remove_inactive_partitions_after_interval: 1m
 
 blocks_storage:
   s3:
