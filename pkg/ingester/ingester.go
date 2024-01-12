@@ -189,8 +189,9 @@ type Config struct {
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
 	// This config is dynamically injected because defined outside the ingester config.
-	IngestStorageConfig                   ingest.Config `yaml:"-"`
-	RemoveInactivePartitionsAfterInterval time.Duration
+	IngestStorageConfig ingest.Config `yaml:"-"`
+
+	RemoveInactivePartitionsAfterInterval time.Duration `yaml:"remove_inactive_partitions_after_interval"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -3761,10 +3762,13 @@ outer:
 // This method is called after lifecycler has been stopped. If this ingester is shutting down, and partition is INACTIVE for enough,
 // we can remove the partition (and also the owner) from the partitions ring.
 func (i *Ingester) partitionRingStopping(_ error) error {
+	var removingPartition bool
+
 	err := i.partitionRingKV.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		removingPartition = false // set back to false. We can get here multiple times, if CAS function failed. We need to capture last state -- that got applied.
+
 		// We can always remove the owner from partitions ring.
 		// If ingester is shutting down, and partition is inactive for enough time, we can remove the partition as well, if there are no other owners.
-
 		var pr *ring.PartitionRingDesc
 		if in != nil {
 			if r, ok := in.(*ring.PartitionRingDesc); ok {
@@ -3781,13 +3785,21 @@ func (i *Ingester) partitionRingStopping(_ error) error {
 			p, ok := pr.Partition(i.partitionID)
 			graceTime := time.Now().Add(-i.cfg.RemoveInactivePartitionsAfterInterval)
 			if ok && p.State == ring.PartitionInactive && time.Unix(p.StateTimestamp, 0).Before(graceTime) && pr.NumberOfPartitionOwners(i.partitionID) == 0 {
+				removingPartition = true
 				pr.RemovePartition(i.partitionID)
 			}
 		}
 
 		return pr, true, nil
 	})
-	return errors.Wrap(err, "removing owner from the partitions ring")
+
+	if err != nil {
+		return errors.Wrap(err, "removing owner from the partitions ring")
+	}
+	if removingPartition {
+		level.Info(i.logger).Log("msg", "removed inactive partition from partition ring", "partition", i.partitionID)
+	}
+	return nil
 }
 
 func (i *Ingester) updateIngesterPartitionState(state ring.PartitionState) {
@@ -3795,7 +3807,11 @@ func (i *Ingester) updateIngesterPartitionState(state ring.PartitionState) {
 		return
 	}
 
+	var updatedState bool
+
 	err := i.partitionRingKV.CAS(context.Background(), PartitionRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		updatedState = false // set back to false. We can get here multiple times, if CAS function failed. We need to capture last state -- that got applied.
+
 		var pr *ring.PartitionRingDesc
 		if in != nil {
 			if r, ok := in.(*ring.PartitionRingDesc); ok {
@@ -3807,11 +3823,16 @@ func (i *Ingester) updateIngesterPartitionState(state ring.PartitionState) {
 		}
 
 		if pr.UpdatePartitionState(i.partitionID, state, time.Now()) {
+			updatedState = true
 			return pr, true, nil
 		}
 		return nil, false, nil
 	})
 	if err != nil {
 		level.Warn(i.logger).Log("msg", "failed to update ingester's partition ring state", "partitionID", i.partitionID, "state", state.String(), "err", err)
+	}
+
+	if updatedState {
+		level.Warn(i.logger).Log("msg", "updated partition state", "partitionID", i.partitionID, "state", state.String())
 	}
 }
