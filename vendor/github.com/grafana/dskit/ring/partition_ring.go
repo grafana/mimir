@@ -1,6 +1,7 @@
 package ring
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"time"
@@ -195,6 +196,17 @@ func (pr *PartitionRing) BatchRing() PartitionBatchRing {
 	return PartitionBatchRing{ring: pr}
 }
 
+func (pr *PartitionRing) String() string {
+	buf := bytes.Buffer{}
+	for pid, pd := range pr.desc.Partitions {
+		buf.WriteString(fmt.Sprintf(" %d:%v", pid, pd.State.String()))
+	}
+
+	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(pr.desc.Owners), len(pr.desc.Owners), buf.String())
+}
+
+// PartitionBatchRing implements BatchRingAdapter for use with DoBatch function.
+// Instances returned from Get method are partitions.
 type PartitionBatchRing struct {
 	ring *PartitionRing
 }
