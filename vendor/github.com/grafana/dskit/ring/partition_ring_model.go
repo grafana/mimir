@@ -224,8 +224,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 		// Let's mark all missing partitions in incoming change as deleted.
 		// This breaks commutativity! But we only do it locally, not when gossiping with others.
 		for pid, thisPart := range m.Partitions {
-			_, exists := m.Partitions[pid]
-			if !exists {
+			if _, exists := other.Partitions[pid]; !exists && thisPart.State != PartitionDeleted {
 				// Partition was removed from the ring. We need to preserve it locally, but we set state to PartitionDeleted.
 				thisPart.State = PartitionDeleted
 				thisPart.StateTimestamp = time.Now().Unix()
@@ -250,7 +249,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 		// Mark all missing owners as deleted.
 		// This breaks commutativity! But we only do it locally, not when gossiping with others.
 		for id, thisOwner := range m.Owners {
-			if _, ok := other.Owners[id]; !ok && thisOwner.State != LEFT {
+			if _, exists := other.Owners[id]; !exists && thisOwner.State != LEFT {
 				// missing, let's mark our ingester as LEFT
 				thisOwner.State = LEFT
 				// We are deleting entry "now", and should not keep old timestamp, because there may already be pending
