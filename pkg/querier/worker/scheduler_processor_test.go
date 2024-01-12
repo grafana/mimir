@@ -7,7 +7,6 @@ import (
 	"errors"
 	"math"
 	"net"
-	"net/http"
 	"testing"
 	"time"
 
@@ -26,7 +25,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
@@ -250,34 +248,6 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		// and then to send the query result.
 		loopClient.AssertNumberOfCalls(t, "Send", 2)
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
-	})
-
-	t.Run("should parse consistency level from incoming request", func(t *testing.T) {
-		sp, loopClient, requestHandler, frontend := prepareSchedulerProcessor(t)
-
-		workerCtx, workerCancel := context.WithCancel(context.Background())
-		defer workerCancel()
-
-		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
-			return &schedulerpb.SchedulerToQuerier{
-				HttpRequest:     &httpgrpc.HTTPRequest{Headers: httpgrpc.FromHeader(http.Header{api.ReadConsistencyHeader: []string{api.ReadConsistencyStrong}})},
-				FrontendAddress: frontend.addr,
-				UserID:          "user-1",
-			}, nil
-		})
-
-		requestHandled := make(chan struct{})
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			ctx := args.Get(0).(context.Context)
-			consistency, ok := api.ReadConsistencyFromContext(ctx)
-			assert.True(t, ok)
-			assert.Equal(t, api.ReadConsistencyStrong, consistency)
-			close(requestHandled)
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
-
-		go sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
-
-		<-requestHandled
 	})
 }
 

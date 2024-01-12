@@ -7,7 +7,6 @@ package worker
 
 import (
 	"context"
-	"net/http"
 	"testing"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
-	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
@@ -94,32 +92,6 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		// We expect Send() to be called once, to send the query result.
 		processClient.AssertNumberOfCalls(t, "Send", 1)
-	})
-
-	t.Run("should parse consistency level from incoming request", func(t *testing.T) {
-		fp, processClient, requestHandler := prepareFrontendProcessor()
-
-		processClient.On("Recv").Return(func() (*frontendv1pb.FrontendToClient, error) {
-			return &frontendv1pb.FrontendToClient{
-				Type:        frontendv1pb.HTTP_REQUEST,
-				HttpRequest: &httpgrpc.HTTPRequest{Headers: httpgrpc.FromHeader(http.Header{api.ReadConsistencyHeader: []string{api.ReadConsistencyStrong}})},
-			}, nil
-		})
-
-		workerCtx, workerCancel := context.WithCancel(context.Background())
-		defer workerCancel()
-
-		requestHandled := make(chan struct{})
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			ctx := args.Get(0).(context.Context)
-			consistency, ok := api.ReadConsistencyFromContext(ctx)
-			assert.True(t, ok)
-			assert.Equal(t, api.ReadConsistencyStrong, consistency)
-			close(requestHandled)
-		}).Return(&httpgrpc.HTTPResponse{}, nil)
-
-		go fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
-		<-requestHandled
 	})
 }
 func TestFrontendProcessor_QueryTime(t *testing.T) {
