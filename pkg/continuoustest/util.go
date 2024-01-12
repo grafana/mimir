@@ -92,7 +92,7 @@ var (
 			typeLabel:  "histogram_int_counter_reset",
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
-				if ts%5 == 0 {
+				if ts%3 == 0 {
 					return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
 				}
 				return remote.HistogramToHistogramProto(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
