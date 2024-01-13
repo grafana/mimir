@@ -5,22 +5,27 @@
 
 package hintspb
 
-import "github.com/oklog/ulid"
+import (
+	"github.com/oklog/ulid"
+)
 
-func (m *SeriesResponseHints) AddQueriedBlock(id ulid.ULID) {
+func (m *SeriesResponseHints) AddQueriedBlock(id ulid.ULID, compacted bool) {
 	m.QueriedBlocks = append(m.QueriedBlocks, Block{
-		Id: id.String(),
+		Id:        id.String(),
+		Compacted: compacted,
 	})
 }
 
-func (m *LabelNamesResponseHints) AddQueriedBlock(id ulid.ULID) {
+func (m *LabelNamesResponseHints) AddQueriedBlock(id ulid.ULID, compacted bool) {
 	m.QueriedBlocks = append(m.QueriedBlocks, Block{
-		Id: id.String(),
+		Id:        id.String(),
+		Compacted: compacted,
 	})
 }
 
-func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID) {
+func (m *LabelValuesResponseHints) AddQueriedBlock(id ulid.ULID, compacted bool) {
 	m.QueriedBlocks = append(m.QueriedBlocks, Block{
-		Id: id.String(),
+		Id:        id.String(),
+		Compacted: compacted,
 	})
 }

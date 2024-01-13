@@ -625,7 +625,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		resHints = &hintspb.SeriesResponseHints{}
 	)
 	for _, b := range blocks {
-		resHints.AddQueriedBlock(b.meta.ULID)
+		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
@@ -1331,7 +1331,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			continue
 		}
 
-		resHints.AddQueriedBlock(b.meta.ULID)
+		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
 
 		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
@@ -1519,7 +1519,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			continue
 		}
 
-		resHints.AddQueriedBlock(b.meta.ULID)
+		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
 
 		g.Go(func() error {
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)

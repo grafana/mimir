@@ -47,6 +47,11 @@ type Meta struct {
 	Thanos ThanosMeta `json:"thanos"`
 }
 
+// IsCompacted returns whether the block has been compacted yet.
+func (m *Meta) IsCompacted() bool {
+	return m.Thanos.Source != ReceiveSource
+}
+
 func (m *Meta) String() string {
 	return fmt.Sprintf("%s (min time: %d, max time: %d)", m.ULID, m.MinTime, m.MaxTime)
 }
