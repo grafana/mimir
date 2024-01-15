@@ -993,9 +993,11 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
 		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{
-				client: {block1},
-			},
+			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
+			// when the tests fail because the request is retried (even if we expect not to be retried).
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
 		}}
 
 		q := &blocksStoreQuerier{
