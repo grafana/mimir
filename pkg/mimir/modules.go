@@ -185,7 +185,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	v, err := vault.NewVault(t.Cfg.Vault)
+	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,11 @@ func (t *Mimir) initVault() (services.Service, error) {
 		}
 	}
 
-	return nil, nil
+	runFunc := func(ctx context.Context) error {
+		return t.Vault.RenewTokenLease(ctx)
+	}
+
+	return services.NewBasicService(nil, runFunc, nil), nil
 }
 
 func (t *Mimir) initSanityCheck() (services.Service, error) {
