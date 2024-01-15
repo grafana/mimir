@@ -44,8 +44,8 @@ message OwnerDesc {
   string addr = 2;
   string zone = 3;
 
-  // Partitions that belong to this owner.
-  repeated int32 ownedPartitions = 4;
+  // Partition that belongs to this owner.
+  int32 ownedPartition = 4;
 
   // Unix timestamp in seconds of the last heartbeat sent by this instance.
   int64 heartbeat = 6;

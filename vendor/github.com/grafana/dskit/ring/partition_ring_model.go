@@ -62,11 +62,8 @@ func (m *PartitionRingDesc) TokensAndTokenPartitions() (Tokens, map[Token]int32)
 func (m *PartitionRingDesc) NumberOfPartitionOwners(partitionID int32) int {
 	owners := 0
 	for _, o := range m.Owners {
-		for _, p := range o.OwnedPartitions {
-			if p == partitionID {
-				owners++
-				break // stop iterating other partitions for this owner
-			}
+		if o.OwnedPartition == partitionID {
+			owners++
 		}
 	}
 	return owners
@@ -75,9 +72,7 @@ func (m *PartitionRingDesc) NumberOfPartitionOwners(partitionID int32) int {
 func (m *PartitionRingDesc) PartitionOwners() map[int32][]string {
 	out := make(map[int32][]string, len(m.Partitions))
 	for id, o := range m.Owners {
-		for _, p := range o.OwnedPartitions {
-			out[p] = append(out[p], id)
-		}
+		out[o.OwnedPartition] = append(out[o.OwnedPartition], id)
 	}
 	return out
 }
@@ -133,15 +128,7 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 	}
 
 	for oid, o := range m.Owners {
-		addOwner := false
-		for _, p := range o.OwnedPartitions {
-			if _, ok := partitions[p]; ok {
-				addOwner = true
-				break
-			}
-		}
-
-		if addOwner {
+		if _, ok := partitions[o.OwnedPartition]; ok {
 			newOwners[oid] = o
 		}
 	}
@@ -153,15 +140,15 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 }
 
 // AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
-func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartitions []int32, state InstanceState, heartbeat time.Time) bool {
+func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition int32, state InstanceState, heartbeat time.Time) bool {
 	prev, ok := m.Owners[id]
 	updated := OwnerDesc{
-		Id:              id,
-		Addr:            address,
-		Zone:            zone,
-		OwnedPartitions: ownedPartitions,
-		Heartbeat:       heartbeat.Unix(),
-		State:           state,
+		Id:             id,
+		Addr:           address,
+		Zone:           zone,
+		OwnedPartition: ownedPartition,
+		Heartbeat:      heartbeat.Unix(),
+		State:          state,
 	}
 
 	if !ok || !prev.Equal(updated) {
