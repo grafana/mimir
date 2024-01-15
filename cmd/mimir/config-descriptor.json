@@ -595,10 +595,10 @@
           "required": false,
           "desc": "If non-zero, configures the amount of GRPC server workers used to serve the requests.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc.num-workers",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
