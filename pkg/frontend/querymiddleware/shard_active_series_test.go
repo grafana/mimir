@@ -239,6 +239,28 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			},
 			expectContentEncoding: encodingTypeSnappyFramed,
 		},
+		{
+			name: "builds correct request shards for GET requests",
+			request: func() *http.Request {
+				q := url.Values{}
+				q.Set("selector", "metric")
+				req, _ := http.NewRequest(http.MethodGet, "/active_series", nil)
+				req.URL.RawQuery = q.Encode()
+				req.Header.Add(totalShardsControlHeader, "2")
+				return req
+			},
+			validResponses: [][]labels.Labels{
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "1")},
+				{labels.FromStrings(labels.MetricName, "metric", "shard", "2")},
+			},
+			checkResponseErr: noError,
+			expect: result{
+				Data: []labels.Labels{
+					labels.FromStrings(labels.MetricName, "metric", "shard", "1"),
+					labels.FromStrings(labels.MetricName, "metric", "shard", "2"),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -247,8 +269,10 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Stub upstream with valid or invalid responses.
 			var requestCount atomic.Int32
 			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				defer func(Body io.ReadCloser) {
-					_ = Body.Close()
+				defer func(body io.ReadCloser) {
+					if body != nil {
+						_ = body.Close()
+					}
 				}(r.Body)
 
 				requestCount.Inc()
