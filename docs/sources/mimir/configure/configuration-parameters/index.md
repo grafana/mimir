@@ -927,13 +927,13 @@ instance_limits:
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
 
-# (experimental) Number of pre-allocated workers used to forward push requests
-# to the ingesters. If 0, no workers will be used and a new goroutine will be
+# (advanced) Number of pre-allocated workers used to forward push requests to
+# the ingesters. If 0, no workers will be used and a new goroutine will be
 # spawned for each ingester push request. If not enough workers available, new
 # goroutine will be spawned. (Note: this is a performance optimization, not a
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
-[reusable_ingester_push_workers: <int> | default = 0]
+[reusable_ingester_push_workers: <int> | default = 2000]
 ```
 
 ### ingester
