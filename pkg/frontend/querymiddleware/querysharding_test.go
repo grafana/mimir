@@ -2407,7 +2407,11 @@ func (m *querierMock) LabelValues(context.Context, string, *storage.LabelHints, 
 	return nil, nil, nil
 }
 
-func (m *querierMock) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *querierMock) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.EmptyLabelValues()
+}
+
+func (m *querierMock) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

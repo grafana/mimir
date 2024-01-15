@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/querier/engine"
+	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
@@ -60,6 +61,7 @@ type Config struct {
 	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
 	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
 	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	StreamLabelValuesFromIngesters                 bool          `yaml:"stream_label_values_from_ingesters" category:"experimental"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
@@ -88,6 +90,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
 	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "Preferred availability zone to query ingesters from when using the ingest storage.")
+	f.BoolVar(&cfg.StreamLabelValuesFromIngesters, "querier.stream-label-values-from-ingesters", false, "Stream label values from ingesters.")
 
 	const minimiseIngesterRequestsFlagName = "querier.minimize-ingester-requests"
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlagName, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
@@ -332,6 +335,15 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, match
 			queriers = append(queriers, q)
 			mq.queryMetrics.QueriesExecutedTotal.WithLabelValues(queryable.StorageName).Inc()
 		}
+		if mq.cfg.StreamLabelValuesFromIngesters {
+			// Adapt the distributor querier to stream label values from the ingester
+			q = &streamingLabelValuesAdapter{
+				Querier: q,
+				logger:  mq.logger,
+			}
+		}
+		queriers = append(queriers, q)
+		mq.queryMetrics.QueriesExecutedTotal.WithLabelValues("ingester").Inc()
 	}
 
 	// If we didn't encounter any errors, store any created queriers here so that
@@ -341,6 +353,35 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, match
 	// consumed and the caller of this querier closes it.
 	mq.storeQueriers(queriers)
 	return ctx, queriers, minT, maxT, nil
+}
+
+type streamingLabelValuesAdapter struct {
+	storage.Querier
+
+	logger log.Logger
+}
+
+func (q *streamingLabelValuesAdapter) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) (
+	[]string, annotations.Annotations, error) {
+	spanLogger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "streamingLabelValuesAdapter.LabelValues")
+	defer spanLogger.Span.Finish()
+
+	spanLogger.Span.SetTag("label_name", name)
+
+	it := q.LabelValuesStream(ctx, name, matchers...)
+	defer func() {
+		_ = it.Close()
+	}()
+
+	// TODO: Implement streaming within the querier
+	var vals []string
+	for it.Next() && ctx.Err() == nil {
+		vals = append(vals, it.At())
+	}
+	if ctx.Err() != nil {
+		return nil, nil, ctx.Err()
+	}
+	return vals, it.Warnings(), it.Err()
 }
 
 // Select implements storage.Querier interface.
@@ -555,8 +596,30 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 	return util.MergeSlices(sets...), warnings, nil
 }
 
-func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
+// LabelValuesStream implements storage.Querier.
+func (mq multiQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	ctx, queriers, err := mq.getQueriers(ctx)
+	if err != nil {
+		if errors.Is(err, errEmptyTimeRange) {
+			return storage.EmptyLabelValues()
+		}
+		return storage.ErrLabelValues(err)
+	}
+
+	if len(queriers) == 1 {
+		return queriers[0].LabelValuesStream(ctx, name, matchers...)
+	}
+
+	var its []storage.LabelValues
+	for _, querier := range queriers {
+		its = append(its, querier.LabelValuesStream(ctx, name, matchers...))
+	}
+
+	return iterators.NewMergedLabelValues(its)
+}
+
+func (mq multiQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	ctx, queriers, err := mq.getQueriers(ctx)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}

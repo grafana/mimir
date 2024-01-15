@@ -135,7 +135,11 @@ func (m testQuerier) LabelValues(context.Context, string, *storage.LabelHints, .
 	return nil, nil, nil
 }
 
-func (m testQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m testQuerier) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.EmptyLabelValues()
+}
+
+func (m testQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
 }
 

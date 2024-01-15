@@ -24,14 +24,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/promslog"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"

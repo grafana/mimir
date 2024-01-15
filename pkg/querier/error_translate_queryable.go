@@ -144,8 +144,15 @@ func (e errorTranslateQuerier) LabelValues(ctx context.Context, name string, hin
 	return values, warnings, e.fn(err)
 }
 
-func (e errorTranslateQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelNames(ctx, hints, matchers...)
+func (e errorTranslateQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return errorTranslateLabelValues{
+		LabelValues: e.q.LabelValuesStream(ctx, name, matchers...),
+		fn:          e.fn,
+	}
+}
+
+func (e errorTranslateQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelNames(ctx, matchers...)
 	return values, warnings, e.fn(err)
 }
 
@@ -168,8 +175,15 @@ func (e errorTranslateChunkQuerier) LabelValues(ctx context.Context, name string
 	return values, warnings, e.fn(err)
 }
 
-func (e errorTranslateChunkQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	values, warnings, err := e.q.LabelNames(ctx, hints, matchers...)
+func (e errorTranslateChunkQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return errorTranslateLabelValues{
+		LabelValues: e.q.LabelValuesStream(ctx, name, matchers...),
+		fn:          e.fn,
+	}
+}
+
+func (e errorTranslateChunkQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	values, warnings, err := e.q.LabelNames(ctx, matchers...)
 	return values, warnings, e.fn(err)
 }
 
@@ -273,37 +287,11 @@ func (e errorTranslateChunkSeriesSet) Warnings() annotations.Annotations {
 	return e.s.Warnings()
 }
 
-type errorTranslateChunkSeries struct {
-	s  storage.ChunkSeries
+type errorTranslateLabelValues struct {
+	storage.LabelValues
 	fn ErrTranslateFn
 }
 
-func (e errorTranslateChunkSeries) Labels() labels.Labels {
-	return e.s.Labels()
-}
-
-func (e errorTranslateChunkSeries) Iterator(iterator chunks.Iterator) chunks.Iterator {
-	i := e.s.Iterator(iterator)
-	return errorTranslateChunksIterator{i: i, fn: e.fn}
-}
-
-func (e errorTranslateChunkSeries) ChunkCount() (int, error) {
-	return e.s.ChunkCount()
-}
-
-type errorTranslateChunksIterator struct {
-	i  chunks.Iterator
-	fn ErrTranslateFn
-}
-
-func (e errorTranslateChunksIterator) At() chunks.Meta {
-	return e.i.At()
-}
-
-func (e errorTranslateChunksIterator) Next() bool {
-	return e.i.Next()
-}
-
-func (e errorTranslateChunksIterator) Err() error {
-	return e.fn(e.i.Err())
+func (it errorTranslateLabelValues) Err() error {
+	return it.fn(it.LabelValues.Err())
 }

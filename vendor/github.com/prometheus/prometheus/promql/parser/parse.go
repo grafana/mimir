@@ -870,19 +870,27 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			// Skip the check for non-empty matchers because an explicit
 			// metric name is a non-empty matcher.
 			break
-		}
-		if !n.BypassEmptyMatcherCheck {
-			// A Vector selector must contain at least one non-empty matcher to prevent
-			// implicit selection of all metrics (e.g. by a typo).
-			notEmpty := false
-			for _, lm := range n.LabelMatchers {
-				if lm != nil && !lm.Matches("") {
-					notEmpty = true
-					break
+		} else {
+			// We also have to make sure a metric name was not set twice inside the
+			// braces.
+			foundMetricName := ""
+			for _, m := range n.LabelMatchers {
+				if m != nil && m.Name == labels.MetricName {
+					if foundMetricName != "" {
+						p.addParseErrf(n.PositionRange(), "metric name must not be set twice: %q or %q", foundMetricName, m.Value)
+					}
+					foundMetricName = m.Value
 				}
 			}
-			if !notEmpty {
-				p.addParseErrf(n.PositionRange(), "vector selector must contain at least one non-empty matcher")
+		}
+
+		// A Vector selector must contain at least one non-empty matcher to prevent
+		// implicit selection of all metrics (e.g. by a typo).
+		notEmpty := false
+		for _, lm := range n.LabelMatchers {
+			if lm != nil && !lm.Matches("") {
+				notEmpty = true
+				break
 			}
 		}
 

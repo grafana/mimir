@@ -18,11 +18,18 @@ import (
 	"errors"
 	"log/slog"
 	"math"
-	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
+
+	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"

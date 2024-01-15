@@ -211,7 +211,11 @@ func (t errorTestQuerier) LabelValues(context.Context, string, *storage.LabelHin
 	return nil, nil, t.err
 }
 
-func (t errorTestQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (t errorTestQuerier) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(t.err)
+}
+
+func (t errorTestQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, t.err
 }
 

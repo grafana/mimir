@@ -36,9 +36,10 @@ import (
 type Distributor interface {
 	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
-	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
-	LabelNames(ctx context.Context, from model.Time, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
-	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error)
+	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
+	LabelValuesStream(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) storage.LabelValues
+	LabelNames(ctx context.Context, from model.Time, to model.Time, matchers ...*labels.Matcher) ([]string, error)
+	MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error)
 	MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error)
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error)
 	LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error)
@@ -245,9 +246,31 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	spanLog, ctx := spanlogger.New(ctx, q.logger, tracer, "distributorQuerier.LabelNames")
-	defer spanLog.Finish()
+func (q *distributorQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return storage.ErrLabelValues(err)
+	}
+
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValuesStream")
+	defer spanLog.Span.Finish()
+
+	queryIngestersWithin := q.cfgProvider.QueryIngestersWithin(tenantID)
+
+	if !ShouldQueryIngesters(queryIngestersWithin, time.Now(), q.maxt) {
+		level.Debug(spanLog).Log("msg", "not querying ingesters; query time range ends before the query-ingesters-within limit")
+		return storage.EmptyLabelValues()
+	}
+
+	now := time.Now().UnixMilli()
+	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
+
+	return q.distributor.LabelValuesStream(ctx, model.Time(q.mint), model.Time(q.maxt), model.LabelName(name), matchers...)
+}
+
+func (q *distributorQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
+	defer spanLog.Span.Finish()
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {

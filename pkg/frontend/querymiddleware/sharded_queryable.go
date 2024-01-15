@@ -178,6 +178,11 @@ func (q *shardedQuerier) LabelValues(context.Context, string, *storage.LabelHint
 	return nil, nil, errNotImplemented
 }
 
+// LabelValuesStream implements storage.LabelQuerier.
+func (q *shardedQuerier) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(errNotImplemented)
+}
+
 // LabelNames implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented

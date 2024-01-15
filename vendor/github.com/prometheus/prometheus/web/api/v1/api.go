@@ -28,7 +28,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -705,11 +705,6 @@ func returnAPIError(err error) *apiError {
 }
 
 func (api *API) labelNames(r *http.Request) apiFuncResult {
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
-	}
-
 	start, err := parseTimeParam(r, "start", MinTime)
 	if err != nil {
 		return invalidParamError(err, "start")
@@ -773,11 +768,6 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if names == nil {
 		names = []string{}
 	}
-
-	if limit > 0 && len(names) > limit {
-		names = names[:limit]
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
-	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -792,11 +782,6 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	label := model.LabelName(name)
 	if !label.IsValid() {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
-	}
-
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -872,11 +857,6 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 
 	slices.Sort(vals)
 
-	if limit > 0 && len(vals) > limit {
-		vals = vals[:limit]
-		warnings = warnings.Add(errors.New("results truncated due to limit"))
-	}
-
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
@@ -911,11 +891,6 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
-	}
-
-	limit, err := parseLimitParam(r.FormValue("limit"))
-	if err != nil {
-		return invalidParamError(err, "limit")
 	}
 
 	start, err := parseTimeParam(r, "start", MinTime)
@@ -970,10 +945,6 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	}
 
 	metrics := []labels.Labels{}
-
-	warnings := set.Warnings()
-
-	i := 1
 	for set.Next() {
 		if i%checkContextEveryNIterations == 0 {
 			if err := ctx.Err(); err != nil {
@@ -983,13 +954,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		i++
 
 		metrics = append(metrics, set.At().Labels())
-
-		if limit > 0 && len(metrics) > limit {
-			metrics = metrics[:limit]
-			warnings.Add(errors.New("results truncated due to limit"))
-			return apiFuncResult{metrics, nil, warnings, closer}
-		}
 	}
+
+	warnings := set.Warnings()
 	if set.Err() != nil {
 		return apiFuncResult{nil, returnAPIError(set.Err()), warnings, closer}
 	}
@@ -1151,9 +1118,9 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 				globalURL, err := getGlobalURL(target.URL(), api.globalURLOptions)
 
 				res.ActiveTargets = append(res.ActiveTargets, &Target{
-					DiscoveredLabels: target.DiscoveredLabels(builder),
-					Labels:           target.Labels(builder),
-					ScrapePool:       pool,
+					DiscoveredLabels: target.DiscoveredLabels(),
+					Labels:           target.Labels(),
+					ScrapePool:       key,
 					ScrapeURL:        target.URL().String(),
 					GlobalURL:        globalURL.String(),
 					LastError: func() string {
@@ -1228,7 +1195,6 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		}
 	}
 
-	builder := labels.NewBuilder(labels.EmptyLabels())
 	metric := r.FormValue("metric")
 	res := []metricMetadata{}
 	for _, tt := range api.targetRetriever(r.Context()).TargetsActive() {
@@ -1236,20 +1202,19 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
-			targetLabels := t.Labels(builder)
 			// Filter targets that don't satisfy the label matchers.
-			if matchTarget != "" && !matchLabels(targetLabels, matchers) {
+			if matchTarget != "" && !matchLabels(t.Labels(), matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
 			if metric == "" {
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
-						Target:       targetLabels,
-						MetricFamily: md.MetricFamily,
-						Type:         md.Type,
-						Help:         md.Help,
-						Unit:         md.Unit,
+						Target: t.Labels(),
+						Metric: md.Metric,
+						Type:   md.Type,
+						Help:   md.Help,
+						Unit:   md.Unit,
 					})
 				}
 				continue
@@ -1257,7 +1222,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			// Get metadata for the specified metric.
 			if md, ok := t.GetMetadata(metric); ok {
 				res = append(res, metricMetadata{
-					Target: targetLabels,
+					Target: t.Labels(),
 					Type:   md.Type,
 					Help:   md.Help,
 					Unit:   md.Unit,
@@ -2118,53 +2083,4 @@ OUTER:
 		return nil, errors.New("match[] must contain at least one non-empty matcher")
 	}
 	return matcherSets, nil
-}
-
-// parseLimitParam returning 0 means no limit is to be applied.
-func parseLimitParam(limitStr string) (limit int, err error) {
-	if limitStr == "" {
-		return limit, nil
-	}
-
-	limit, err = strconv.Atoi(limitStr)
-	if err != nil {
-		return limit, err
-	}
-	if limit < 0 {
-		return limit, errors.New("limit must be non-negative")
-	}
-
-	return limit, nil
-}
-
-// toHintLimit increases the API limit, as returned by parseLimitParam, by 1.
-// This allows for emitting warnings when the results are truncated.
-func toHintLimit(limit int) int {
-	// 0 means no limit and avoid int overflow
-	if limit > 0 && limit < math.MaxInt {
-		return limit + 1
-	}
-	return limit
-}
-
-// truncateResults truncates result for queryRange() and query().
-// No truncation for other types(Scalars or Strings).
-func truncateResults(result *promql.Result, limit int) (*promql.Result, bool) {
-	isTruncated := false
-
-	switch v := result.Value.(type) {
-	case promql.Matrix:
-		if len(v) > limit {
-			result.Value = v[:limit]
-			isTruncated = true
-		}
-	case promql.Vector:
-		if len(v) > limit {
-			result.Value = v[:limit]
-			isTruncated = true
-		}
-	}
-
-	// Return the modified result. Unchanged for other types.
-	return result, isTruncated
 }

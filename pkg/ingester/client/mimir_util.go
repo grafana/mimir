@@ -33,6 +33,14 @@ func SendLabelValuesCardinalityResponse(s Ingester_LabelValuesCardinalityServer,
 	})
 }
 
+// SendLabelValuesStreamResponse wraps the stream's Send() checking if the context is done
+// before calling Send().
+func SendLabelValuesStreamResponse(s Ingester_LabelValuesStreamServer, response *LabelValuesResponse) error {
+	return sendWithContextErrChecking(s.Context(), func() error {
+		return s.Send(response)
+	})
+}
+
 func SendActiveSeriesResponse(s Ingester_ActiveSeriesServer, response *ActiveSeriesResponse) error {
 	return sendWithContextErrChecking(s.Context(), func() error {
 		return s.Send(response)

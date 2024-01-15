@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ import (
 	"github.com/facette/natsort"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -131,50 +131,38 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 	sampledInterval := float64(lastT-firstT) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamplesMinusOne)
 
-	// If samples are close enough to the (lower or upper) boundary of the
-	// range, we extrapolate the rate all the way to the boundary in
-	// question. "Close enough" is defined as "up to 10% more than the
-	// average duration between samples within the range", see
-	// extrapolationThreshold below. Essentially, we are assuming a more or
-	// less regular spacing between samples, and if we don't see a sample
-	// where we would expect one, we assume the series does not cover the
-	// whole range, but starts and/or ends within the range. We still
-	// extrapolate the rate in this case, but not all the way to the
-	// boundary, but only by half of the average duration between samples
-	// (which is our guess for where the series actually starts or ends).
-
-	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	if durationToStart >= extrapolationThreshold {
-		durationToStart = averageDurationBetweenSamples / 2
-	}
-	if isCounter {
+	// TODO(beorn7): Do this for histograms, too.
+	if isCounter && resultFloat > 0 && len(samples.Floats) > 0 && samples.Floats[0].F >= 0 {
 		// Counters cannot be negative. If we have any slope at all
 		// (i.e. resultFloat went up), we can extrapolate the zero point
 		// of the counter. If the duration to the zero point is shorter
 		// than the durationToStart, we take the zero point as the start
 		// of the series, thereby avoiding extrapolation to negative
 		// counter values.
-		durationToZero := durationToStart
-		if resultFloat > 0 &&
-			len(samples.Floats) > 0 &&
-			samples.Floats[0].F >= 0 {
-			durationToZero = sampledInterval * (samples.Floats[0].F / resultFloat)
-		} else if resultHistogram != nil &&
-			resultHistogram.Count > 0 &&
-			len(samples.Histograms) > 0 &&
-			samples.Histograms[0].H.Count >= 0 {
-			durationToZero = sampledInterval * (samples.Histograms[0].H.Count / resultHistogram.Count)
-		}
+		durationToZero := sampledInterval * (samples.Floats[0].F / resultFloat)
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
 	}
 
-	if durationToEnd >= extrapolationThreshold {
-		durationToEnd = averageDurationBetweenSamples / 2
-	}
+	// If the first/last samples are close to the boundaries of the range,
+	// extrapolate the result. This is as we expect that another sample
+	// will exist given the spacing between samples we've seen thus far,
+	// with an allowance for noise.
+	extrapolationThreshold := averageDurationBetweenSamples * 1.1
+	extrapolateToInterval := sampledInterval
 
-	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
+	if durationToStart < extrapolationThreshold {
+		extrapolateToInterval += durationToStart
+	} else {
+		extrapolateToInterval += averageDurationBetweenSamples / 2
+	}
+	if durationToEnd < extrapolationThreshold {
+		extrapolateToInterval += durationToEnd
+	} else {
+		extrapolateToInterval += averageDurationBetweenSamples / 2
+	}
+	factor := extrapolateToInterval / sampledInterval
 	if isRate {
 		factor /= ms.Range.Seconds()
 	}
@@ -1568,47 +1556,59 @@ func funcChanges(_ []Vector, matrixVal Matrix, _ parser.Expressions, enh *EvalNo
 	return append(enh.Out, Sample{F: float64(changes)}), nil
 }
 
-// label_replace function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+// === label_replace(Vector parser.ValueTypeVector, dst_label, replacement, src_labelname, regex parser.ValueTypeString) (Vector, Annotations) ===
+func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var (
+		vector   = vals[0].(Vector)
 		dst      = stringFromArg(args[1])
 		repl     = stringFromArg(args[2])
 		src      = stringFromArg(args[3])
 		regexStr = stringFromArg(args[4])
 	)
 
-	regex, err := regexp.Compile("^(?s:" + regexStr + ")$")
-	if err != nil {
-		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
-	}
-	if !model.LabelName(dst).IsValid() {
-		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+	if enh.regex == nil {
+		var err error
+		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
+		if err != nil {
+			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+		}
+		if !model.LabelNameRE.MatchString(dst) {
+			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
+		}
+		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
 
-	val, ws := ev.eval(ctx, args[0])
-	matrix := val.(Matrix)
-	lb := labels.NewBuilder(labels.EmptyLabels())
-
-	for i, el := range matrix {
-		srcVal := el.Metric.Get(src)
-		indexes := regex.FindStringSubmatchIndex(srcVal)
-		if indexes != nil { // Only replace when regexp matches.
-			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
-			lb.Reset(el.Metric)
-			lb.Set(dst, string(res))
-			matrix[i].Metric = lb.Labels()
-			if dst == model.MetricNameLabel {
-				matrix[i].DropName = false
+	for _, el := range vector {
+		h := el.Metric.Hash()
+		var outMetric labels.Labels
+		if l, ok := enh.Dmn[h]; ok {
+			outMetric = l
+		} else {
+			srcVal := el.Metric.Get(src)
+			indexes := enh.regex.FindStringSubmatchIndex(srcVal)
+			if indexes == nil {
+				// If there is no match, no replacement should take place.
+				outMetric = el.Metric
+				enh.Dmn[h] = outMetric
 			} else {
-				matrix[i].DropName = el.DropName
+				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
+
+				lb := labels.NewBuilder(el.Metric).Del(dst)
+				if len(res) > 0 {
+					lb.Set(dst, string(res))
+				}
+				outMetric = lb.Labels()
+				enh.Dmn[h] = outMetric
 			}
 		}
-	}
-	if matrix.ContainsSameLabelset() {
-		ev.errorf("vector cannot contain metrics with the same labelset")
-	}
 
-	return matrix, ws
+		enh.Out = append(enh.Out, Sample{
+			Metric: outMetric,
+			F:      el.F,
+			H:      el.H,
+		})
+	}
+	return enh.Out, nil
 }
 
 // === Vector(s Scalar) (Vector, Annotations) ===
@@ -1620,13 +1620,19 @@ func funcVector(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNo
 		}), nil
 }
 
-// label_join function operates only on series; does not look at timestamps or values.
-func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions) (parser.Value, annotations.Annotations) {
+// === label_join(vector model.ValVector, dest_labelname, separator, src_labelname...) (Vector, Annotations) ===
+func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	var (
+		vector    = vals[0].(Vector)
 		dst       = stringFromArg(args[1])
 		sep       = stringFromArg(args[2])
 		srcLabels = make([]string, len(args)-3)
 	)
+
+	if enh.Dmn == nil {
+		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
+	}
+
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
@@ -1638,31 +1644,42 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
-	val, ws := ev.eval(ctx, args[0])
-	matrix := val.(Matrix)
+	if !model.LabelName(dst).IsValid() {
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
+	}
+
 	srcVals := make([]string, len(srcLabels))
-	lb := labels.NewBuilder(labels.EmptyLabels())
-
-	for i, el := range matrix {
-		for i, src := range srcLabels {
-			srcVals[i] = el.Metric.Get(src)
-		}
-		strval := strings.Join(srcVals, sep)
-		lb.Reset(el.Metric)
-		lb.Set(dst, strval)
-		matrix[i].Metric = lb.Labels()
-
-		if dst == model.MetricNameLabel {
-			matrix[i].DropName = false
+	for _, el := range vector {
+		h := el.Metric.Hash()
+		var outMetric labels.Labels
+		if l, ok := enh.Dmn[h]; ok {
+			outMetric = l
 		} else {
-			matrix[i].DropName = el.DropName
-		}
-	}
-	if matrix.ContainsSameLabelset() {
-		ev.errorf("vector cannot contain metrics with the same labelset")
-	}
 
-	return matrix, ws
+			for i, src := range srcLabels {
+				srcVals[i] = el.Metric.Get(src)
+			}
+
+			lb := labels.NewBuilder(el.Metric)
+
+			strval := strings.Join(srcVals, sep)
+			if strval == "" {
+				lb.Del(dst)
+			} else {
+				lb.Set(dst, strval)
+			}
+
+			outMetric = lb.Labels()
+			enh.Dmn[h] = outMetric
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: outMetric,
+			F:      el.F,
+			H:      el.H,
+		})
+	}
+	return enh.Out, nil
 }
 
 // Common code for date related functions.

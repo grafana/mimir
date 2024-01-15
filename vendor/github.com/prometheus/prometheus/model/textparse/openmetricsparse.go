@@ -114,24 +114,9 @@ type OpenMetricsParser struct {
 	enableTypeAndUnitLabels bool
 }
 
-type openMetricsParserOptions struct {
-	skipCTSeries            bool
-	enableTypeAndUnitLabels bool
-}
-
-type OpenMetricsOption func(*openMetricsParserOptions)
-
-// WithOMParserCTSeriesSkipped turns off exposing _created lines
-// as series, which makes those only used for parsing created timestamp
-// for `CreatedTimestamp` method purposes.
-//
-// It's recommended to use this option to avoid using _created lines for other
-// purposes than created timestamp, but leave false by default for the
-// best-effort compatibility.
-func WithOMParserCTSeriesSkipped() OpenMetricsOption {
-	return func(o *openMetricsParserOptions) {
-		o.skipCTSeries = true
-	}
+// NewOpenMetricsParser returns a new parser of the byte slice.
+func NewOpenMetricsParser(b []byte) Parser {
+	return &OpenMetricsParser{l: &openMetricsLexer{b: b}}
 }
 
 // WithOMParserTypeAndUnitLabels enables type-and-unit-labels mode
@@ -443,8 +428,8 @@ func (p *OpenMetricsParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample.
-// It returns (EntryInvalid, io.EOF) if no samples were read.
+// Next advances the parser to the next sample. It returns false if no
+// more samples were read or an error occurred.
 func (p *OpenMetricsParser) Next() (Entry, error) {
 	var err error
 

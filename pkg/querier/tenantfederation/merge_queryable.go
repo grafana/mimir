@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -63,8 +64,9 @@ type MergeQueryableCallbacks struct {
 // MergeQuerierUpstream mirrors storage.Querier, except every query method also takes a federation ID.
 type MergeQuerierUpstream interface {
 	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
-	LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
-	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelValues(ctx context.Context, id string, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelValuesStream(ctx context.Context, id string, name string, matchers ...*labels.Matcher) storage.LabelValues
+	LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	Close() error
 }
 
@@ -82,8 +84,12 @@ func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string,
 	return q.upstream.LabelValues(user.InjectOrgID(ctx, id), name, hints, matchers...)
 }
 
-func (q *tenantQuerier) LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), hints, matchers...)
+func (q *tenantQuerier) LabelValuesStream(ctx context.Context, id string, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return q.upstream.LabelValuesStream(user.InjectOrgID(ctx, id), name, matchers...)
+}
+
+func (q *tenantQuerier) LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), matchers...)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -238,6 +244,46 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, hints *stor
 	return m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
 		return m.upstream.LabelValues(ctx, id, name, hints, filteredMatchers...)
 	})
+}
+
+func (m *mergeQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	ids, err := m.resolver.TenantIDs(ctx)
+	if err != nil {
+		return storage.ErrLabelValues(err)
+	}
+
+	m.tenantsQueried.Observe(float64(len(ids)))
+	if m.bypassWithSingleID && len(ids) == 1 {
+		return m.upstream.LabelValuesStream(ctx, ids[0], name, matchers...)
+	}
+
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValuesStream")
+	defer spanlog.Finish()
+
+	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+
+	if name == m.idLabelName {
+		values := make([]string, 0, len(matchedIDs))
+		for _, id := range ids {
+			if _, matched := matchedIDs[id]; matched {
+				values = append(values, id)
+			}
+		}
+		return storage.NewListLabelValues(values, nil)
+	}
+
+	// Ensure the name of a retained label gets handled under the original
+	// label name
+	if name == retainExistingPrefix+m.idLabelName {
+		name = m.idLabelName
+	}
+
+	// TODO: Consider parallelizing the first Next() on each iterator
+	var its []storage.LabelValues
+	for id := range matchedIDs {
+		its = append(its, m.upstream.LabelValuesStream(ctx, id, name, filteredMatchers...))
+	}
+	return iterators.NewMergedLabelValues(its)
 }
 
 // LabelNames returns all the unique label names present for involved federation IDs.

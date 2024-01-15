@@ -18,11 +18,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"

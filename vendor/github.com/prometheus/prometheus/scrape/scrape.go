@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"reflect"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,10 +36,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/version"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -88,10 +84,6 @@ type scrapePool struct {
 	config *config.ScrapeConfig
 	client *http.Client
 	loops  map[uint64]loop
-
-	symbolTable           *labels.SymbolTable
-	lastSymbolTableCheck  time.Time
-	initialSymbolTableLen int
 
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
@@ -167,19 +159,16 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:               cancel,
-		appendable:           app,
-		config:               cfg,
-		client:               client,
-		activeTargets:        map[uint64]*Target{},
-		loops:                map[uint64]loop{},
-		symbolTable:          labels.NewSymbolTable(),
-		lastSymbolTableCheck: time.Now(),
-		logger:               logger,
-		metrics:              metrics,
-		httpOpts:             options.HTTPClientOptions,
-		validationScheme:     cfg.MetricNameValidationScheme,
-		escapingScheme:       escapingScheme,
+		cancel:        cancel,
+		appendable:    app,
+		config:        cfg,
+		client:        client,
+		activeTargets: map[uint64]*Target{},
+		loops:         map[uint64]loop{},
+		logger:        logger,
+		metrics:       metrics,
+		httpOpts:      options.HTTPClientOptions,
+		noDefaultPort: options.NoDefaultPort,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -200,7 +189,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, offsetSeed 
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
-			sp.symbolTable,
 			offsetSeed,
 			opts.honorTimestamps,
 			opts.trackTimestampsStaleness,
@@ -442,24 +430,11 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 	sp.targetMtx.Unlock()
 
 	wg.Wait()
-}
-
-// Must be called with sp.mtx held.
-func (sp *scrapePool) checkSymbolTable() {
-	// Here we take steps to clear out the symbol table if it has grown a lot.
-	// After waiting some time for things to settle, we take the size of the symbol-table.
-	// If, after some more time, the table has grown to twice that size, we start a new one.
-	const minTimeToCleanSymbolTable = 5 * time.Minute
-	if time.Since(sp.lastSymbolTableCheck) > minTimeToCleanSymbolTable {
-		if sp.initialSymbolTableLen == 0 {
-			sp.initialSymbolTableLen = sp.symbolTable.Len()
-		} else if sp.symbolTable.Len() > 2*sp.initialSymbolTableLen {
-			sp.symbolTable = labels.NewSymbolTable()
-			sp.initialSymbolTableLen = 0
-			sp.restartLoops(false) // To drop all caches.
-		}
-		sp.lastSymbolTableCheck = time.Now()
-	}
+	oldClient.CloseIdleConnections()
+	sp.metrics.targetReloadIntervalLength.WithLabelValues(interval.String()).Observe(
+		time.Since(start).Seconds(),
+	)
+	return nil
 }
 
 // Sync converts target groups into actual scrape targets and synchronizes
@@ -472,7 +447,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	sp.targetMtx.Lock()
 	var all []*Target
 	var targets []*Target
-	lb := labels.NewBuilderWithSymbolTable(sp.symbolTable)
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	sp.droppedTargets = []*Target{}
 	sp.droppedTargetsCount = 0
 	for _, tg := range tgs {
@@ -945,7 +920,6 @@ type scrapeLoop struct {
 	enableTypeAndUnitLabels        bool
 
 	appender            func(ctx context.Context) storage.Appender
-	symbolTable         *labels.SymbolTable
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
@@ -1235,7 +1209,6 @@ func newScrapeLoop(ctx context.Context,
 	reportSampleMutator labelsMutator,
 	appender func(ctx context.Context) storage.Appender,
 	cache *scrapeCache,
-	symbolTable *labels.SymbolTable,
 	offsetSeed uint64,
 	honorTimestamps bool,
 	trackTimestampsStaleness bool,
@@ -1283,39 +1256,32 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:                        sc,
-		buffers:                        buffers,
-		cache:                          cache,
-		appender:                       appender,
-		symbolTable:                    symbolTable,
-		sampleMutator:                  sampleMutator,
-		reportSampleMutator:            reportSampleMutator,
-		stopped:                        make(chan struct{}),
-		offsetSeed:                     offsetSeed,
-		l:                              l,
-		parentCtx:                      ctx,
-		appenderCtx:                    appenderCtx,
-		honorTimestamps:                honorTimestamps,
-		trackTimestampsStaleness:       trackTimestampsStaleness,
-		enableCompression:              enableCompression,
-		sampleLimit:                    sampleLimit,
-		bucketLimit:                    bucketLimit,
-		maxSchema:                      maxSchema,
-		labelLimits:                    labelLimits,
-		interval:                       interval,
-		timeout:                        timeout,
-		alwaysScrapeClassicHist:        alwaysScrapeClassicHist,
-		convertClassicHistToNHCB:       convertClassicHistToNHCB,
-		enableNativeHistogramIngestion: enableNativeHistogramIngestion,
-		enableCTZeroIngestion:          enableCTZeroIngestion,
-		enableTypeAndUnitLabels:        enableTypeAndUnitLabels,
-		reportExtraMetrics:             reportExtraMetrics,
-		appendMetadataToWAL:            appendMetadataToWAL,
-		metrics:                        metrics,
-		skipOffsetting:                 skipOffsetting,
-		validationScheme:               validationScheme,
-		escapingScheme:                 escapingScheme,
-		fallbackScrapeProtocol:         fallbackScrapeProtocol,
+		scraper:                  sc,
+		buffers:                  buffers,
+		cache:                    cache,
+		appender:                 appender,
+		sampleMutator:            sampleMutator,
+		reportSampleMutator:      reportSampleMutator,
+		stopped:                  make(chan struct{}),
+		offsetSeed:               offsetSeed,
+		l:                        l,
+		parentCtx:                ctx,
+		appenderCtx:              appenderCtx,
+		honorTimestamps:          honorTimestamps,
+		trackTimestampsStaleness: trackTimestampsStaleness,
+		enableCompression:        enableCompression,
+		sampleLimit:              sampleLimit,
+		bucketLimit:              bucketLimit,
+		maxSchema:                maxSchema,
+		labelLimits:              labelLimits,
+		interval:                 interval,
+		timeout:                  timeout,
+		scrapeClassicHistograms:  scrapeClassicHistograms,
+		enableCTZeroIngestion:    enableCTZeroIngestion,
+		reportExtraMetrics:       reportExtraMetrics,
+		appendMetadataToWAL:      appendMetadataToWAL,
+		metrics:                  metrics,
+		skipOffsetting:           skipOffsetting,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1365,16 +1331,14 @@ mainLoop:
 		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
 		// and .Add on time.Time behave differently (see time package docs).
 		scrapeTime := time.Now().Round(0)
-		if AlignScrapeTimestamps {
-			// Tolerance is clamped to maximum 1% of the scrape interval.
-			tolerance := min(sl.interval/100, ScrapeTimestampTolerance)
+		if AlignScrapeTimestamps && sl.interval > 100*ScrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
 			for scrapeTime.Sub(alignedScrapeTime) >= sl.interval {
 				alignedScrapeTime = alignedScrapeTime.Add(sl.interval)
 			}
 			// Align the scrape time if we are in the tolerance boundaries.
-			if scrapeTime.Sub(alignedScrapeTime) <= tolerance {
+			if scrapeTime.Sub(alignedScrapeTime) <= ScrapeTimestampTolerance {
 				scrapeTime = alignedScrapeTime
 			}
 		}
@@ -1626,19 +1590,10 @@ func (sl *scrapeLoop) updateStaleMarkers(app storage.Appender, defTime int64) (e
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	defTime := timestamp.FromTime(ts)
-
-	if len(b) == 0 {
-		// Empty scrape. Just update the stale makers and swap the cache (but don't flush it).
-		err = sl.updateStaleMarkers(app, defTime)
-		sl.cache.iterDone(false)
-		return
-	}
-
-	p, err := textparse.New(b, contentType, sl.fallbackScrapeProtocol, sl.alwaysScrapeClassicHist, sl.enableCTZeroIngestion, sl.enableTypeAndUnitLabels, sl.symbolTable)
-	if p == nil {
-		sl.l.Error(
-			"Failed to determine correct type of scrape target.",
+	p, err := textparse.New(b, contentType, sl.scrapeClassicHistograms)
+	if err != nil {
+		level.Debug(sl.l).Log(
+			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
 			"content_type", contentType,
 			"fallback_media_type", sl.fallbackScrapeProtocol,
 			"err", err,
@@ -2118,31 +2073,30 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if scrapeErr == nil {
 		health = 1
 	}
-	b := labels.NewBuilderWithSymbolTable(sl.symbolTable)
 
-	if err = sl.addReportSample(app, scrapeHealthMetric, ts, health, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetric, ts, duration.Seconds(), b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, float64(scraped), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, float64(added), b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, float64(seriesAdded), b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, sl.timeout.Seconds(), b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, float64(sl.sampleLimit), b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit)); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, float64(bytes), b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes)); err != nil {
 			return
 		}
 	}
@@ -2153,39 +2107,38 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	ts := timestamp.FromTime(start)
 	app.SetOptions(&storage.AppendOptions{DiscardOutOfOrder: true})
 	stale := math.Float64frombits(value.StaleNaN)
-	b := labels.NewBuilder(labels.EmptyLabels())
 
-	if err = sl.addReportSample(app, scrapeHealthMetric, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetric, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetric, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetric, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetric, ts, stale, b); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetric, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetric, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetric, ts, stale, b); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t int64, v float64, b *labels.Builder) error {
-	ce, ok, _ := sl.cache.get(s.name)
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s []byte, t int64, v float64) error {
+	ce, ok := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
@@ -2195,9 +2148,8 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s reportSample, t in
 		// The constants are suffixed with the invalid \xff unicode rune to avoid collisions
 		// with scraped metrics in the cache.
 		// We have to drop it when building the actual metric.
-		b.Reset(labels.EmptyLabels())
-		b.Set(labels.MetricName, string(s.name[:len(s.name)-1]))
-		lset = sl.reportSampleMutator(b.Labels())
+		lset = labels.FromStrings(labels.MetricName, string(s[:len(s)-1]))
+		lset = sl.reportSampleMutator(lset)
 	}
 
 	ref, err := app.Append(ref, lset, t, v)

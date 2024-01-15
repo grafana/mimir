@@ -36,9 +36,6 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage"
@@ -243,18 +240,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 	}()
 
-	b := labels.NewScratchBuilder(0)
+	var exemplarErr error
 	for _, ts := range req.Timeseries {
-		ls := ts.ToLabels(&b, nil)
-
-		// TODO(bwplotka): Even as per 1.0 spec, this should be a 400 error, while other samples are
-		// potentially written. Perhaps unify with fixed writeV2 implementation a bit.
-		if !ls.Has(labels.MetricName) || !ls.IsValid(model.UTF8Validation) {
-			h.logger.Warn("Invalid metric names or labels", "got", ls.String())
-			samplesWithInvalidLabels++
-			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
+		labels := labelProtosToLabels(ts.Labels)
+		if !labels.IsValid() {
+			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
 			samplesWithInvalidLabels++
 			continue
 		}
@@ -265,16 +255,13 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		samplesAppended += len(ts.Samples)
 
 		for _, ep := range ts.Exemplars {
-			e := ep.ToExemplar(&b, nil)
-			if _, err := app.AppendExemplar(0, ls, e); err != nil {
-				switch {
-				case errors.Is(err, storage.ErrOutOfOrderExemplar):
-					outOfOrderExemplarErrs++
-					h.logger.Debug("Out of order exemplar", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e))
-				default:
-					// Since exemplar storage is still experimental, we don't fail the request on ingestion errors
-					h.logger.Debug("Error while adding exemplar in AppendExemplar", "series", ls.String(), "exemplar", fmt.Sprintf("%+v", e), "err", err)
-				}
+			e := exemplarProtoToExemplar(ep)
+
+			_, exemplarErr = app.AppendExemplar(0, labels, e)
+			exemplarErr = h.checkAppendExemplarError(exemplarErr, e, &outOfOrderExemplarErrs)
+			if exemplarErr != nil {
+				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors.
+				level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
 		}
 

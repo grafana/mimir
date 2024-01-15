@@ -20,12 +20,13 @@ service Ingester {
   rpc QueryStream(QueryRequest) returns (stream QueryStreamResponse) {}
   rpc QueryExemplars(ExemplarQueryRequest) returns (ExemplarQueryResponse) {}
 
-  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {}
-  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {}
-  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {}
-  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {}
-  rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {}
-  rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse) {}
+  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse) {};
+  rpc LabelValuesStream(LabelValuesRequest) returns (stream LabelValuesResponse) {};
+  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse) {};
+  rpc UserStats(UserStatsRequest) returns (UserStatsResponse) {};
+  rpc AllUserStats(UserStatsRequest) returns (UsersStatsResponse) {};
+  rpc MetricsForLabelMatchers(MetricsForLabelMatchersRequest) returns (MetricsForLabelMatchersResponse) {};
+  rpc MetricsMetadata(MetricsMetadataRequest) returns (MetricsMetadataResponse) {};
 
   // LabelNamesAndValues provides all values for each label that matches the matchers.
   // The order of the labels and values is not guaranteed.

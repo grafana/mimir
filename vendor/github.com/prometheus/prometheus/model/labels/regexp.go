@@ -14,7 +14,6 @@
 package labels
 
 import (
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -24,7 +23,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/text/unicode/norm"
+	"golang.org/x/exp/slices"
 )
 
 const (

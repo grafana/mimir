@@ -19,14 +19,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/promslog"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"

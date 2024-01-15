@@ -548,9 +548,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 6,  // 6h
 				60 * 60 * 12, // 12h
 			},
-			NativeHistogramBucketFactor:     1.1,
-			NativeHistogramMaxBucketNumber:  100,
-			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 		mmapChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_mmap_chunks_total",
@@ -805,7 +802,6 @@ func (h *Head) Init(minValidTime int64) error {
 
 	h.startWALReplayStatus(startFrom, endAt)
 
-	syms := labels.NewSymbolTable() // One table for the whole WAL.
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
 	if err == nil && startFrom >= snapIdx {
@@ -821,7 +817,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, endAt); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -855,7 +851,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, unknownSeriesRefs, mmappedChunks, oooMmappedChunks, endAt)
+		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
@@ -883,7 +879,7 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
-			err = h.loadWBL(wlog.NewReader(sr), syms, multiRef, lastMmapRef)
+			err = h.loadWBL(wlog.NewReader(sr), multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				h.logger.Warn("Error while closing the wbl segments reader", "err", err)
 			}
@@ -1163,11 +1159,11 @@ func (h *Head) SetMinValidTime(minValidTime int64) {
 
 // Truncate removes old data before mint from the head and WAL.
 func (h *Head) Truncate(mint int64) (err error) {
-	initialized := h.initialized()
+	initialize := h.MinTime() == math.MaxInt64
 	if err := h.truncateMemory(mint); err != nil {
 		return err
 	}
-	if !initialized {
+	if initialize {
 		return nil
 	}
 	return h.truncateWAL(mint)
@@ -1189,9 +1185,9 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		}
 	}()
 
-	initialized := h.initialized()
+	initialize := h.MinTime() == math.MaxInt64
 
-	if h.MinTime() >= mint && initialized {
+	if h.MinTime() >= mint && !initialize {
 		return nil
 	}
 
@@ -1206,7 +1202,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	}
 
 	// We wait for pending queries to end that overlap with this truncation.
-	if initialized {
+	if !initialize {
 		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
 	}
 
@@ -1220,7 +1216,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
-	if !initialized {
+	if initialize {
 		return nil
 	}
 
@@ -1727,25 +1723,15 @@ func (h *Head) MaxOOOTime() int64 {
 	return h.maxOOOTime.Load()
 }
 
-// initialized returns true if the head has a MinTime set, false otherwise.
-func (h *Head) initialized() bool {
-	return h.MinTime() != math.MaxInt64
-}
-
 // compactable returns whether the head has a compactable range.
 // When the TimelyCompaction option is enabled, the head is compactable when the min block end is .5 times the chunk range in the past.
 // Else the head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
-	if !h.initialized() {
-		return false
-	}
-
 	if h.opts.TimelyCompaction {
 		minBlockEnd := rangeForTimestamp(h.MinTime(), h.chunkRange.Load())
 		return minBlockEnd < h.appendableMinValidTime()
 	}
-
 	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
 }
 

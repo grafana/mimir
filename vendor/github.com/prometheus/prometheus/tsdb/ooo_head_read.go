@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/oklog/ulid"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -174,16 +174,17 @@ func (oh *HeadAndOOOIndexReader) PostingsForMatchers(ctx context.Context, concur
 	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, ms...)
 }
 
-// Fake Chunk object to pass a set of Metas inside Meta.Chunk.
-type multiMeta struct {
-	chunkenc.Chunk // We don't expect any of the methods to be called.
-	metas          []chunks.Meta
+// PostingsForMatcher needs to be overridden so that the right PostingsReader
+// implementation gets passed down.
+func (oh *OOOHeadIndexReader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings {
+	return oh.head.postings.PostingsForMatcher(ctx, oh, m)
 }
 
-// LabelValues needs to be overridden from the headIndexReader implementation
-// so we can return labels within either in-order range or ooo range.
-func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	if oh.maxt < oh.head.MinTime() && oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxTime() && oh.mint > oh.head.MaxOOOTime() {
+// LabelValues needs to be overridden from the headIndexReader implementation due
+// to the check that happens at the beginning where we make sure that the query
+// interval overlaps with the head minooot and maxooot.
+func (oh *OOOHeadIndexReader) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
+	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
 		return []string{}, nil
 	}
 
@@ -194,9 +195,51 @@ func (oh *HeadAndOOOIndexReader) LabelValues(ctx context.Context, name string, h
 	return labelValuesWithMatchers(ctx, oh, name, hints, matchers...)
 }
 
-// IndexLookupPlanner returns the index lookup planner for this reader.
-func (oh *HeadAndOOOIndexReader) IndexLookupPlanner() index.LookupPlanner {
-	return oh.head.opts.IndexLookupPlanner
+// LabelValuesStream needs to be overridden from the headIndexReader implementation due
+// to the check that happens at the beginning where we make sure that the query
+// interval overlaps with the head minooot and maxooot.
+func (oh *OOOHeadIndexReader) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
+		return storage.EmptyLabelValues()
+	}
+
+	ownMatchers := 0
+	for _, m := range matchers {
+		if m.Name == name {
+			ownMatchers++
+		}
+	}
+	if ownMatchers == len(matchers) {
+		return oh.head.postings.LabelValuesStream(ctx, name, matchers...)
+	}
+
+	// There are matchers on other label names than the requested one, so will need to intersect matching series
+	return labelValuesForMatchersStream(ctx, oh, name, matchers)
+}
+
+type chunkMetaAndChunkDiskMapperRef struct {
+	meta     chunks.Meta
+	ref      chunks.ChunkDiskMapperRef
+	origMinT int64
+	origMaxT int64
+}
+
+func refLessByMinTimeAndMinRef(a, b chunkMetaAndChunkDiskMapperRef) int {
+	switch {
+	case a.meta.MinTime < b.meta.MinTime:
+		return -1
+	case a.meta.MinTime > b.meta.MinTime:
+		return 1
+	}
+
+	switch {
+	case a.meta.Ref < b.meta.Ref:
+		return -1
+	case a.meta.Ref > b.meta.Ref:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func lessByMinTimeAndMinRef(a, b chunks.Meta) int {
@@ -457,11 +500,7 @@ func (ir *OOOCompactionHeadIndexReader) Postings(_ context.Context, name string,
 	return index.NewListPostings(ir.ch.postings), nil
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForLabelMatching(context.Context, string, func(string) bool) index.Postings {
-	return index.ErrPostings(errors.New("not supported"))
-}
-
-func (ir *OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, string) index.Postings {
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatcher(context.Context, *labels.Matcher) index.Postings {
 	return index.ErrPostings(errors.New("not supported"))
 }
 
@@ -505,7 +544,11 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 	return getOOOSeriesChunks(s, ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks)
 }
 
-func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, error) {
+func (ir *OOOCompactionHeadIndexReader) Labels(ref storage.SeriesRef, builder *labels.ScratchBuilder) error {
+	return ir.ch.oooIR.series(ref, builder, nil, 0, ir.ch.lastMmapRef)
+}
+
+func (ir *OOOCompactionHeadIndexReader) SortedLabelValues(_ context.Context, name string, matchers ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -513,7 +556,11 @@ func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, _ string,
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, _ bool, _ ...*labels.Matcher) (index.Postings, error) {
+func (ir *OOOCompactionHeadIndexReader) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(errors.New("not implemented"))
+}
+
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
 	return nil, errors.New("not implemented")
 }
 

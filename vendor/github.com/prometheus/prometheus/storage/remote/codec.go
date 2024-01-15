@@ -20,7 +20,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"slices"
 	"sort"
 	"sync"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -175,13 +175,12 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
-	b := labels.NewScratchBuilder(0)
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
 		if err := validateLabelsAndMetricName(ts.Labels); err != nil {
 			return errSeriesSet{err: err}
 		}
-		lbls := ts.ToLabels(&b, nil)
+		lbls := labelProtosToLabels(ts.Labels)
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
@@ -832,6 +831,183 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 		result = append(result, matcher)
 	}
 	return result, nil
+}
+
+func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
+	timestamp := ep.Timestamp
+
+	return exemplar.Exemplar{
+		Labels: labelProtosToLabels(ep.Labels),
+		Value:  ep.Value,
+		Ts:     timestamp,
+		HasTs:  timestamp != 0,
+	}
+}
+
+// HistogramProtoToHistogram extracts a (normal integer) Histogram from the
+// provided proto message. The caller has to make sure that the proto message
+// represents an integer histogram and not a float histogram, or it panics.
+func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToHistogram called with a float histogram")
+	}
+	return &histogram.Histogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountInt(),
+		Count:            hp.GetCountInt(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveDeltas(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeDeltas(),
+	}
+}
+
+// FloatHistogramProtoToFloatHistogram extracts a float Histogram from the
+// provided proto message to a Float Histogram. The caller has to make sure that
+// the proto message represents a float histogram and not an integer histogram,
+// or it panics.
+func FloatHistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if !hp.IsFloatHistogram() {
+		panic("FloatHistogramProtoToFloatHistogram called with an integer histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        hp.GetZeroCountFloat(),
+		Count:            hp.GetCountFloat(),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  hp.GetPositiveCounts(),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  hp.GetNegativeCounts(),
+	}
+}
+
+// HistogramProtoToFloatHistogram extracts and converts a (normal integer) histogram from the provided proto message
+// to a float histogram. The caller has to make sure that the proto message represents an integer histogram and not a
+// float histogram, or it panics.
+func HistogramProtoToFloatHistogram(hp prompb.Histogram) *histogram.FloatHistogram {
+	if hp.IsFloatHistogram() {
+		panic("HistogramProtoToFloatHistogram called with a float histogram")
+	}
+	return &histogram.FloatHistogram{
+		CounterResetHint: histogram.CounterResetHint(hp.ResetHint),
+		Schema:           hp.Schema,
+		ZeroThreshold:    hp.ZeroThreshold,
+		ZeroCount:        float64(hp.GetZeroCountInt()),
+		Count:            float64(hp.GetCountInt()),
+		Sum:              hp.Sum,
+		PositiveSpans:    spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets:  deltasToCounts(hp.GetPositiveDeltas()),
+		NegativeSpans:    spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets:  deltasToCounts(hp.GetNegativeDeltas()),
+	}
+}
+
+func spansProtoToSpans(s []prompb.BucketSpan) []histogram.Span {
+	spans := make([]histogram.Span, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+func deltasToCounts(deltas []int64) []float64 {
+	counts := make([]float64, len(deltas))
+	var cur float64
+	for i, d := range deltas {
+		cur += float64(d)
+		counts[i] = cur
+	}
+	return counts
+}
+
+func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
+	return prompb.Histogram{
+		Count:          &prompb.Histogram_CountInt{CountInt: h.Count},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
+		NegativeDeltas: h.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
+		PositiveDeltas: h.PositiveBuckets,
+		ResetHint:      prompb.Histogram_ResetHint(h.CounterResetHint),
+		Timestamp:      timestamp,
+	}
+}
+
+func FloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) prompb.Histogram {
+	return prompb.Histogram{
+		Count:          &prompb.Histogram_CountFloat{CountFloat: fh.Count},
+		Sum:            fh.Sum,
+		Schema:         fh.Schema,
+		ZeroThreshold:  fh.ZeroThreshold,
+		ZeroCount:      &prompb.Histogram_ZeroCountFloat{ZeroCountFloat: fh.ZeroCount},
+		NegativeSpans:  spansToSpansProto(fh.NegativeSpans),
+		NegativeCounts: fh.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(fh.PositiveSpans),
+		PositiveCounts: fh.PositiveBuckets,
+		ResetHint:      prompb.Histogram_ResetHint(fh.CounterResetHint),
+		Timestamp:      timestamp,
+	}
+}
+
+func spansToSpansProto(s []histogram.Span) []prompb.BucketSpan {
+	spans := make([]prompb.BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+// LabelProtosToMetric unpack a []*prompb.Label to a model.Metric.
+func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
+	metric := make(model.Metric, len(labelPairs))
+	for _, l := range labelPairs {
+		metric[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+	}
+	return metric
+}
+
+func labelProtosToLabels(labelPairs []prompb.Label) labels.Labels {
+	b := labels.ScratchBuilder{}
+	for _, l := range labelPairs {
+		b.Add(l.Name, l.Value)
+	}
+	b.Sort()
+	return b.Labels()
+}
+
+// labelsToLabelsProto transforms labels into prompb labels. The buffer slice
+// will be used to avoid allocations if it is big enough to store the labels.
+func labelsToLabelsProto(lbls labels.Labels, buf []prompb.Label) []prompb.Label {
+	result := buf[:0]
+	lbls.Range(func(l labels.Label) {
+		result = append(result, prompb.Label{
+			Name:  l.Name,
+			Value: l.Value,
+		})
+	})
+	return result
+}
+
+// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProto(t model.MetricType) prompb.MetricMetadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.MetricMetadata_MetricType_value[mt]
+	if !ok {
+		return prompb.MetricMetadata_UNKNOWN
+	}
+
+	return prompb.MetricMetadata_MetricType(v)
 }
 
 // DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling

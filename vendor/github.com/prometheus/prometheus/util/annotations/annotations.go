@@ -135,16 +135,12 @@ var (
 	PromQLInfo    = errors.New("PromQL info")
 	PromQLWarning = errors.New("PromQL warning")
 
-	InvalidRatioWarning                        = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
-	InvalidQuantileWarning                     = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
-	BadBucketLabelWarning                      = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
-	MixedFloatsHistogramsWarning               = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
-	MixedClassicNativeHistogramsWarning        = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
-	NativeHistogramNotCounterWarning           = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
-	NativeHistogramNotGaugeWarning             = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
-	MixedExponentialCustomHistogramsWarning    = fmt.Errorf("%w: vector contains a mix of histograms with exponential and custom buckets schemas for metric name", PromQLWarning)
-	IncompatibleCustomBucketsHistogramsWarning = fmt.Errorf("%w: vector contains histograms with incompatible custom buckets for metric name", PromQLWarning)
-	IncompatibleBucketLayoutInBinOpWarning     = fmt.Errorf("%w: incompatible bucket layout encountered for binary operator", PromQLWarning)
+	InvalidQuantileWarning              = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
+	BadBucketLabelWarning               = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
+	MixedFloatsHistogramsWarning        = fmt.Errorf("%w: encountered a mix of histograms and floats for metric name", PromQLWarning)
+	MixedClassicNativeHistogramsWarning = fmt.Errorf("%w: vector contains a mix of classic and native histograms for metric name", PromQLWarning)
+	NativeHistogramNotCounterWarning    = fmt.Errorf("%w: this native histogram metric is not a counter:", PromQLWarning)
+	NativeHistogramNotGaugeWarning      = fmt.Errorf("%w: this native histogram metric is not a gauge:", PromQLWarning)
 
 	PossibleNonCounterInfo                  = fmt.Errorf("%w: metric might not be a counter, name does not end in _total/_sum/_count/_bucket:", PromQLInfo)
 	PossibleNonCounterLabelInfo             = fmt.Errorf("%w: metric might not be a counter, __type__ label is not set to %q or %q", PromQLInfo, model.MetricTypeCounter, model.MetricTypeHistogram)
@@ -207,16 +203,7 @@ func NewBadBucketLabelWarning(metricName, label string, pos posrange.PositionRan
 func NewMixedFloatsHistogramsWarning(metricName string, pos posrange.PositionRange) error {
 	return annoErr{
 		PositionRange: pos,
-		Err:           fmt.Errorf("%w metric name %q", MixedFloatsHistogramsWarning, metricName),
-	}
-}
-
-// NewMixedFloatsHistogramsAggWarning is used when the queried series includes both
-// float samples and histogram samples in an aggregation.
-func NewMixedFloatsHistogramsAggWarning(pos posrange.PositionRange) error {
-	return annoErr{
-		PositionRange: pos,
-		Err:           fmt.Errorf("%w aggregation", MixedFloatsHistogramsWarning),
+		Err:           fmt.Errorf("%w %q", MixedFloatsHistogramsWarning, metricName),
 	}
 }
 

@@ -81,32 +81,24 @@ type Parser interface {
 	// if the scrape protocol or metric type does not support created timestamps.
 	CreatedTimestamp() int64
 
-	// Next advances the parser to the next sample.
-	// It returns (EntryInvalid, io.EOF) if no samples were read.
+	// Next advances the parser to the next sample. It returns false if no
+	// more samples were read or an error occurred.
 	Next() (Entry, error)
 }
 
-// extractMediaType returns the mediaType of a required parser. It tries first to
-// extract a valid and supported mediaType from contentType. If that fails,
-// the provided fallbackType (possibly an empty string) is returned, together with
-// an error. fallbackType is used as-is without further validation.
-func extractMediaType(contentType, fallbackType string) (string, error) {
+// New returns a new parser of the byte slice.
+//
+// This function always returns a valid parser, but might additionally
+// return an error if the content type cannot be parsed.
+func New(b []byte, contentType string, parseClassicHistograms bool) (Parser, error) {
 	if contentType == "" {
-		if fallbackType == "" {
-			return "", errors.New("non-compliant scrape target sending blank Content-Type and no fallback_scrape_protocol specified for target")
-		}
-		return fallbackType, fmt.Errorf("non-compliant scrape target sending blank Content-Type, using fallback_scrape_protocol %q", fallbackType)
+		return NewPromParser(b), nil
 	}
 
 	// We have a contentType, parse it.
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		if fallbackType == "" {
-			retErr := fmt.Errorf("cannot parse Content-Type %q and no fallback_scrape_protocol for target", contentType)
-			return "", errors.Join(retErr, err)
-		}
-		retErr := fmt.Errorf("could not parse received Content-Type %q, using fallback_scrape_protocol %q", contentType, fallbackType)
-		return fallbackType, errors.Join(retErr, err)
+		return NewPromParser(b), err
 	}
 
 	// We have a valid media type, either we recognise it and can use it
@@ -136,16 +128,11 @@ func New(b []byte, contentType, fallbackType string, parseClassicHistograms, ski
 
 	switch mediaType {
 	case "application/openmetrics-text":
-		return NewOpenMetricsParser(b, st, func(o *openMetricsParserOptions) {
-			o.skipCTSeries = skipOMCTSeries
-			o.enableTypeAndUnitLabels = enableTypeAndUnitLabels
-		}), err
+		return NewOpenMetricsParser(b), nil
 	case "application/vnd.google.protobuf":
-		return NewProtobufParser(b, parseClassicHistograms, enableTypeAndUnitLabels, st), err
-	case "text/plain":
-		return NewPromParser(b, st, enableTypeAndUnitLabels), err
+		return NewProtobufParser(b, parseClassicHistograms), nil
 	default:
-		return nil, err
+		return NewPromParser(b), nil
 	}
 }
 

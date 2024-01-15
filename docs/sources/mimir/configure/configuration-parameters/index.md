@@ -1598,26 +1598,9 @@ The `querier` block configures the querier.
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
-# (experimental) Query engine to use, either 'prometheus' or 'mimir'
-# CLI flag: -querier.query-engine
-[query_engine: <string> | default = "mimir"]
-
-# (experimental) If set to true and the Mimir query engine is in use, fall back
-# to using the Prometheus query engine for any queries not supported by the
-# Mimir query engine.
-# CLI flag: -querier.enable-query-engine-fallback
-[enable_query_engine_fallback: <boolean> | default = true]
-
-# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
-# filter down the list of queryables that shall be used. This is useful to test
-# and monitor single queryables in isolation.
-# CLI flag: -querier.filter-queryables-enabled
-[filter_queryables_enabled: <boolean> | default = false]
-
-# (advanced) Maximum number of remote read queries that can be executed
-# concurrently. 0 or negative values mean unlimited concurrency.
-# CLI flag: -querier.max-concurrent-remote-read-queries
-[max_concurrent_remote_read_queries: <int> | default = 2]
+# (experimental) Stream label values from ingesters.
+# CLI flag: -querier.stream-label-values-from-ingesters
+[stream_label_values_from_ingesters: <boolean> | default = false]
 
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is

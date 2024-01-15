@@ -1288,16 +1288,24 @@ var errDistributorError = fmt.Errorf("errDistributorError")
 func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
+
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
+
+func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
+
+func (m *errDistributor) LabelValuesStream(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(errDistributorError)
+}
+
+func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, *storage.SelectHints, ...*labels.Matcher) ([]labels.Labels, error) {
+
+func (m *errDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]labels.Labels, error) {
 	return nil, errDistributorError
 }
 
@@ -1335,7 +1343,11 @@ func (d *emptyDistributor) LabelValuesForLabelName(context.Context, model.Time, 
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
+func (d *emptyDistributor) LabelValuesStream(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) storage.LabelValues {
+	return storage.EmptyLabelValues()
+}
+
+func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, nil
 }
 
@@ -1670,8 +1682,13 @@ func (m *mockBlocksStorageQuerier) LabelValues(ctx context.Context, name string,
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 
-func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	args := m.Called(ctx, matchers, hints)
+func (m *mockBlocksStorageQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	args := m.Called(ctx, name, matchers)
+	return args.Get(0).(storage.LabelValues)
+}
+
+func (m *mockBlocksStorageQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	args := m.Called(ctx, matchers)
 	return args.Get(0).([]string), args.Get(1).(annotations.Annotations), args.Error(2)
 }
 

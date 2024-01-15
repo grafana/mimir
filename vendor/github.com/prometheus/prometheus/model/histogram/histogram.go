@@ -17,8 +17,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strings"
+
+	"golang.org/x/exp/slices"
 )
 
 // CounterResetHint contains the known information about a counter reset,

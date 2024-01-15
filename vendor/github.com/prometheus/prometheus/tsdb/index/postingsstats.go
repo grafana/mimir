@@ -15,7 +15,8 @@ package index
 
 import (
 	"math"
-	"slices"
+
+	"golang.org/x/exp/slices"
 )
 
 // Stat holds values for a single cardinality statistic.

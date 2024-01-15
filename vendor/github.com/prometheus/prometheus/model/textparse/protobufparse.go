@@ -83,15 +83,13 @@ type ProtobufParser struct {
 }
 
 // NewProtobufParser returns a parser for the payload in the byte slice.
-func NewProtobufParser(b []byte, parseClassicHistograms, enableTypeAndUnitLabels bool, st *labels.SymbolTable) Parser {
+func NewProtobufParser(b []byte, parseClassicHistograms bool) Parser {
 	return &ProtobufParser{
-		dec:        dto.NewMetricStreamingDecoder(b),
-		entryBytes: &bytes.Buffer{},
-		builder:    labels.NewScratchBuilderWithSymbolTable(st, 16), // TODO(bwplotka): Try base builder.
-
-		state:                   EntryInvalid,
-		parseClassicHistograms:  parseClassicHistograms,
-		enableTypeAndUnitLabels: enableTypeAndUnitLabels,
+		in:                     b,
+		state:                  EntryInvalid,
+		mf:                     &dto.MetricFamily{},
+		metricBytes:            &bytes.Buffer{},
+		parseClassicHistograms: parseClassicHistograms,
 	}
 }
 

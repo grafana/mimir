@@ -53,33 +53,8 @@ type histogramRecord struct {
 	fh  *histogram.FloatHistogram
 }
 
-type seriesRefSet struct {
-	refs map[chunks.HeadSeriesRef]struct{}
-	mtx  sync.Mutex
-}
-
-func (s *seriesRefSet) merge(other map[chunks.HeadSeriesRef]struct{}) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	maps.Copy(s.refs, other)
-}
-
-func (s *seriesRefSet) count() int {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	return len(s.refs)
-}
-
-func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
-	if value > 0 {
-		v.WithLabelValues(lvs...).Add(value)
-	}
-}
-
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, globalMissingSeriesRefs *seriesRefSet, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
-	// Track number of missing series records that were referenced by other records.
-	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
-	// Track number of different records that referenced a series we don't know about
+func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownSampleRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
@@ -96,6 +71,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors     = make([]walSubsetProcessor, concurrency)
 		exemplarsInput chan record.RefExemplar
 
+		dec             record.Decoder
 		shards          = make([][]record.RefSample, concurrency)
 		histogramShards = make([][]histogramRecord, concurrency)
 
@@ -155,7 +131,6 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	go func() {
 		defer close(decoded)
 		var err error
-		dec := record.NewDecoder(syms)
 		for r.Next() {
 			switch dec.Type(r.Record()) {
 			case record.Series:
@@ -750,10 +725,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
-func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
-	// Track number of missing series records that were referenced by other records.
-	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
-	// Track number of samples, histogram samples, and m-map markers that referenced a series we don't know about
+func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+	// Track number of samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
 	var unknownSampleRefs, unknownHistogramRefs, mmapMarkerUnknownRefs atomic.Uint64
 
@@ -764,8 +737,8 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		concurrency = h.opts.WALReplayConcurrency
 		processors  = make([]wblSubsetProcessor, concurrency)
 
-		shards          = make([][]record.RefSample, concurrency)
-		histogramShards = make([][]histogramRecord, concurrency)
+		dec    record.Decoder
+		shards = make([][]record.RefSample, concurrency)
 
 		decodedCh = make(chan interface{}, 10)
 		decodeErr error
@@ -1608,8 +1581,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		errChan          = make(chan error, concurrency)
 		refSeries        map[chunks.HeadSeriesRef]*memSeries
 		exemplarBuf      []record.RefExemplar
-		syms             = labels.NewSymbolTable() // New table for the whole snapshot.
-		dec              = record.NewDecoder(syms)
+		dec              record.Decoder
 	)
 
 	wg.Add(concurrency)

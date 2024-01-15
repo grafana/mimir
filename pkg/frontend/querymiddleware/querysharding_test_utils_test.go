@@ -196,6 +196,10 @@ func (q *mockShardedQueryable) LabelValues(context.Context, string, *storage.Lab
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
+func (q *mockShardedQueryable) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(fmt.Errorf("unimplemented"))
+}
+
 // LabelNames returns all the unique label names present in the block in sorted order.
 func (q *mockShardedQueryable) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errors.Errorf("unimplemented")

@@ -24,19 +24,22 @@ import (
 	"math"
 	"reflect"
 	"runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1142,7 +1145,8 @@ type EvalNodeHelper struct {
 	// Caches.
 	// funcHistogramQuantile and funcHistogramFraction for classic histograms.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
-	nativeHistogramSamples       []Sample
+	// label_replace.
+	regex *regexp.Regexp
 
 	lb           *labels.Builder
 	lblBuf       []byte
@@ -1751,17 +1755,6 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 				break
 			}
 		}
-
-		// Special handling for functions that work on series not samples.
-		switch e.Func.Name {
-		case "label_replace":
-			return ev.evalLabelReplace(ctx, e.Args)
-		case "label_join":
-			return ev.evalLabelJoin(ctx, e.Args)
-		case "info":
-			return ev.evalInfo(ctx, e.Args)
-		}
-
 		if !matrixArg {
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
@@ -3241,7 +3234,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		case parser.AVG:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
-				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
+				metricName := aggr.labels.Get(labels.MetricName)
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, e.Expr.PositionRange()))
 				continue
 			}
 			switch {
@@ -3270,7 +3264,8 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
 				// We cannot aggregate histogram sample with a float64 sample.
-				annos.Add(annotations.NewMixedFloatsHistogramsAggWarning(e.Expr.PositionRange()))
+				metricName := aggr.labels.Get(labels.MetricName)
+				annos.Add(annotations.NewMixedFloatsHistogramsWarning(metricName, e.Expr.PositionRange()))
 				continue
 			}
 			switch {

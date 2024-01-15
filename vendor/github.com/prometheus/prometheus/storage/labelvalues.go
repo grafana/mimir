@@ -35,13 +35,15 @@ func EmptyLabelValues() LabelValues {
 
 // ListLabelValues is an iterator over a slice of label values.
 type ListLabelValues struct {
-	cur    string
-	values []string
+	cur      string
+	values   []string
+	warnings annotations.Annotations
 }
 
-func NewListLabelValues(values []string) *ListLabelValues {
+func NewListLabelValues(values []string, warnings annotations.Annotations) *ListLabelValues {
 	return &ListLabelValues{
-		values: values,
+		values:   values,
+		warnings: warnings,
 	}
 }
 
@@ -63,8 +65,8 @@ func (*ListLabelValues) Err() error {
 	return nil
 }
 
-func (*ListLabelValues) Warnings() annotations.Annotations {
-	return nil
+func (l *ListLabelValues) Warnings() annotations.Annotations {
+	return l.warnings
 }
 
 func (*ListLabelValues) Close() error {

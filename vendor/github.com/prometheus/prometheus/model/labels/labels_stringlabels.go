@@ -16,11 +16,12 @@
 package labels
 
 import (
-	"slices"
+	"reflect"
 	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
+	"golang.org/x/exp/slices"
 )
 
 // Labels is implemented by a single flat string holding name/value pairs.
@@ -181,7 +182,8 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	return Labels{data: strings.Clone(ls.data)}
+	buf := append([]byte{}, ls.data...)
+	return Labels{data: yoloString(buf)}
 }
 
 // Get returns the value for the label with the given name.
@@ -456,25 +458,6 @@ func (ls *Labels) InternStrings(intern func(string) string) {
 func (ls Labels) ReleaseStrings(release func(string)) {
 }
 
-// Builder allows modifying Labels.
-type Builder struct {
-	base Labels
-	del  []string
-	add  []Label
-}
-
-// Reset clears all current state for the builder.
-func (b *Builder) Reset(base Labels) {
-	b.base = base
-	b.del = b.del[:0]
-	b.add = b.add[:0]
-	b.base.Range(func(l Label) {
-		if l.Value == "" {
-			b.del = append(b.del, l.Name)
-		}
-	})
-}
-
 // Labels returns the labels from the builder.
 // If no modifications were made, the original labels are returned.
 func (b *Builder) Labels() Labels {
@@ -657,30 +640,4 @@ func (b *ScratchBuilder) Overwrite(ls *Labels) {
 	}
 	marshalLabelsToSizedBuffer(b.add, b.overwriteBuffer)
 	ls.data = yoloString(b.overwriteBuffer)
-}
-
-// SymbolTable is no-op, just for api parity with dedupelabels.
-type SymbolTable struct{}
-
-func NewSymbolTable() *SymbolTable { return nil }
-
-func (t *SymbolTable) Len() int { return 0 }
-
-// NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
-func NewBuilderWithSymbolTable(_ *SymbolTable) *Builder {
-	return NewBuilder(EmptyLabels())
-}
-
-// NewScratchBuilderWithSymbolTable creates a ScratchBuilder, for api parity with dedupelabels.
-func NewScratchBuilderWithSymbolTable(_ *SymbolTable, n int) ScratchBuilder {
-	return NewScratchBuilder(n)
-}
-
-func (b *ScratchBuilder) SetSymbolTable(_ *SymbolTable) {
-	// no-op
-}
-
-// SizeOfLabels returns the approximate space required for n copies of a label.
-func SizeOfLabels(name, value string, n uint64) uint64 {
-	return uint64(labelSize(&Label{Name: name, Value: value})) * n
 }

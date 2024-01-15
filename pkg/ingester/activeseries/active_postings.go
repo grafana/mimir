@@ -63,3 +63,7 @@ func (a *Postings) Seek(v storage.SeriesRef) bool {
 	// seek to the next active value.
 	return a.Next()
 }
+
+func (a *Postings) Reset() {
+	a.postings.Reset()
+}
