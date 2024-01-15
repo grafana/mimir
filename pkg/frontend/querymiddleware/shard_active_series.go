@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -138,7 +137,10 @@ func parseSelector(req *http.Request) (*parser.VectorSelector, error) {
 func buildShardedRequests(ctx context.Context, req *http.Request, numRequests int, selector parser.Expr) ([]*http.Request, error) {
 	reqs := make([]*http.Request, numRequests)
 	for i := 0; i < numRequests; i++ {
-		reqs[i] = req.Clone(ctx)
+		r, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL.Path, http.NoBody)
+		if err != nil {
+			return nil, err
+		}
 
 		sharded, err := shardedSelector(numRequests, i, selector)
 		if err != nil {
@@ -147,11 +149,12 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 
 		vals := url.Values{}
 		vals.Set("selector", sharded.String())
+		r.URL.RawQuery = vals.Encode()
+		// This is the field read by httpgrpc.FromHTTPRequest, so we need to populate it
+		// here to ensure the request parameter makes it to the querier.
+		r.RequestURI = r.URL.String()
 
-		reqs[i].Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		reqs[i].Header.Del(totalShardsControlHeader)
-		reqs[i].Header.Del("Accept-Encoding")
-		reqs[i].Body = io.NopCloser(strings.NewReader(vals.Encode()))
+		reqs[i] = r
 	}
 
 	return reqs, nil
