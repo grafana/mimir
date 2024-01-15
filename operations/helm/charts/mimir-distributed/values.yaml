@@ -1252,7 +1252,10 @@ query_frontend:
       memory: 128Mi
 
   # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
-  extraArgs: {}
+  extraArgs:
+    # Reduce the likelihood of queries hitting terminated query-frontends.
+    "server.grpc.keepalive.max-connection-age": 30s
+    "shutdown-delay": 90s
 
   # Pod Labels
   podLabels: {}
@@ -1303,7 +1306,7 @@ query_frontend:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 180
+  terminationGracePeriodSeconds: 390
 
   tolerations: []
   initContainers: []

@@ -49,6 +49,8 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc.keepalive.max-connection-age=30s"
+            - "-shutdown-delay=90s"
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -103,7 +105,7 @@ spec:
             app.kubernetes.io/component: query-frontend
       tolerations:
         []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 390
       volumes:
         - name: config
           configMap:
