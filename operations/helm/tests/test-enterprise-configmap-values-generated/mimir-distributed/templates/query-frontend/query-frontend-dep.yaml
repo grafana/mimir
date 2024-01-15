@@ -53,6 +53,7 @@ spec:
             - "-target=query-frontend"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Reduce the likelihood of queries hitting terminated query-frontends.
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"
           volumeMounts:
