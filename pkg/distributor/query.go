@@ -10,6 +10,7 @@ package distributor
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -21,10 +22,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -458,6 +462,163 @@ func (d *Distributor) estimatedIngestersPerSeries(replicationSets []ring.Replica
 
 	// Not zone-aware: quorum is replication factor less allowable unavailable ingesters.
 	return d.ingestersRing.ReplicationFactor() - replicationSet.MaxErrors
+}
+
+// LabelValuesStream returns an iterator over the values for a given label name.
+func (d *Distributor) LabelValuesStream(ctx context.Context, from, to model.Time, name model.LabelName, matchers ...*labels.Matcher) storage.LabelValues {
+	spanLogger, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.LabelValuesStream")
+	defer spanLogger.Finish()
+
+	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
+	if err != nil {
+		return storage.ErrLabelValues(err)
+	}
+
+	req, err := ingester_client.ToLabelValuesRequest(name, from, to, matchers)
+	if err != nil {
+		return storage.ErrLabelValues(err)
+	}
+
+	// Ignore the context passed to the callback, since it gets canceled before forReplicationSet returns,
+	// while we need the streams alive for the lifetime of the iterators
+	streams, err := forReplicationSets(ctx, d, replicationSets, func(_ context.Context, client ingester_client.IngesterClient) (
+		ingester_client.Ingester_LabelValuesStreamClient, error) {
+		return client.LabelValuesStream(ctx, req)
+	})
+	if err != nil {
+		level.Error(spanLogger).Log("msg", "failed at obtaining label values streams", "err", err)
+		return storage.ErrLabelValues(err)
+	}
+
+	return newConcurrentMergingLabelValues(ctx, streams, spanLogger)
+}
+
+func newConcurrentMergingLabelValues(ctx context.Context, streams []ingester_client.Ingester_LabelValuesStreamClient, spanLogger *spanlogger.SpanLogger) storage.LabelValues {
+	var wg sync.WaitGroup
+	var its []storage.LabelValues
+	for _, stream := range streams {
+		stream := stream
+		ch := make(chan []string, 100)
+		// Make it buffered so the goroutine won't have to wait for the receiver
+		errCh := make(chan error, 1)
+		wg.Add(1)
+		go func() {
+			defer func() {
+				close(ch)
+				close(errCh)
+				if err := util.CloseAndExhaust(stream); err != nil {
+					level.Warn(spanLogger).Log("msg", "closing LabelValuesStream gRPC stream failed", "err", err)
+				}
+				wg.Done()
+			}()
+
+			for ctx.Err() == nil {
+				resp, err := stream.Recv()
+				if err != nil {
+					if errors.Is(err, io.EOF) {
+						return
+					}
+
+					level.Warn(spanLogger).Log("msg", "receiving label values over gRPC failed", "err", err)
+					errCh <- errors.Wrap(err, "receiving label values over gRPC")
+					return
+				}
+
+				if len(resp.LabelValues) > 0 {
+					select {
+					case ch <- resp.LabelValues:
+					case <-ctx.Done():
+						level.Warn(spanLogger).Log("msg", "context canceled while passing label values", "err", ctx.Err())
+						errCh <- errors.Wrap(ctx.Err(), "context canceled while passing label values")
+						return
+					}
+				}
+			}
+			if ctx.Err() != nil {
+				level.Warn(spanLogger).Log("msg", "context canceled while receiving label values over gRPC", "err", ctx.Err())
+				errCh <- errors.Wrap(ctx.Err(), "receiving label values over gRPC")
+			}
+		}()
+
+		its = append(its, &labelValues{
+			ch:         ch,
+			errCh:      errCh,
+			spanLogger: spanLogger,
+		})
+	}
+
+	return &concurrentMergingLabelValues{
+		LabelValues: iterators.NewMergedLabelValues(its),
+		wg:          &wg,
+	}
+}
+
+type concurrentMergingLabelValues struct {
+	storage.LabelValues
+
+	wg *sync.WaitGroup
+}
+
+func (it *concurrentMergingLabelValues) Close() error {
+	it.wg.Wait()
+	return it.LabelValues.Close()
+}
+
+// labelValues is an iterator over label values from a channel.
+type labelValues struct {
+	ch         chan []string
+	errCh      chan error
+	buf        []string
+	cur        string
+	exhausted  bool
+	err        error
+	spanLogger *spanlogger.SpanLogger
+}
+
+func (it *labelValues) Next() bool {
+	if it.exhausted || it.err != nil {
+		return false
+	}
+
+	if len(it.buf) > 0 {
+		it.cur = it.buf[0]
+		it.buf = it.buf[1:]
+		return true
+	}
+
+	vals := <-it.ch
+	it.buf = vals
+	if len(vals) == 0 {
+		err := <-it.errCh
+		if err == nil {
+			it.exhausted = true
+			return false
+		}
+
+		level.Warn(it.spanLogger).Log("msg", "labelValues received an error over channel", "err", err)
+		it.err = errors.Wrap(err, "labelValues.Next()")
+		return false
+	}
+
+	it.cur = it.buf[0]
+	it.buf = it.buf[1:]
+	return true
+}
+
+func (it *labelValues) At() string {
+	return it.cur
+}
+
+func (it *labelValues) Err() error {
+	return it.err
+}
+
+func (it *labelValues) Warnings() annotations.Annotations {
+	return nil
+}
+
+func (it *labelValues) Close() error {
+	return nil
 }
 
 // Merges and dedupes two sorted slices with samples together.

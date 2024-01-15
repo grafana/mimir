@@ -141,6 +141,13 @@ func (e errorTranslateQuerier) LabelValues(ctx context.Context, name string, mat
 	return values, warnings, e.fn(err)
 }
 
+func (e errorTranslateQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return errorTranslateLabelValues{
+		LabelValues: e.q.LabelValuesStream(ctx, name, matchers...),
+		fn:          e.fn,
+	}
+}
+
 func (e errorTranslateQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	values, warnings, err := e.q.LabelNames(ctx, matchers...)
 	return values, warnings, e.fn(err)
@@ -163,6 +170,13 @@ type errorTranslateChunkQuerier struct {
 func (e errorTranslateChunkQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	values, warnings, err := e.q.LabelValues(ctx, name, matchers...)
 	return values, warnings, e.fn(err)
+}
+
+func (e errorTranslateChunkQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return errorTranslateLabelValues{
+		LabelValues: e.q.LabelValuesStream(ctx, name, matchers...),
+		fn:          e.fn,
+	}
 }
 
 func (e errorTranslateChunkQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -219,4 +233,13 @@ func (e errorTranslateChunkSeriesSet) Err() error {
 
 func (e errorTranslateChunkSeriesSet) Warnings() annotations.Annotations {
 	return e.s.Warnings()
+}
+
+type errorTranslateLabelValues struct {
+	storage.LabelValues
+	fn ErrTranslateFn
+}
+
+func (it errorTranslateLabelValues) Err() error {
+	return it.fn(it.LabelValues.Err())
 }

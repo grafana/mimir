@@ -62,6 +62,15 @@ func (i *ActivityTrackerWrapper) LabelValues(ctx context.Context, request *clien
 	return i.ing.LabelValues(ctx, request)
 }
 
+func (i *ActivityTrackerWrapper) LabelValuesStream(request *client.LabelValuesRequest, stream client.Ingester_LabelValuesStreamServer) error {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(stream.Context(), "Ingester/LabelValuesStream", request)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.LabelValuesStream(request, stream)
+}
+
 func (i *ActivityTrackerWrapper) LabelNames(ctx context.Context, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/LabelNames", request)

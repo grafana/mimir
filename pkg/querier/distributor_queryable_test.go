@@ -674,18 +674,27 @@ func (m *mockDistributor) QueryExemplars(ctx context.Context, from, to model.Tim
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).(*client.ExemplarQueryResponse), args.Error(1)
 }
+
 func (m *mockDistributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	args := m.Called(ctx, queryMetrics, from, to, matchers)
 	return args.Get(0).(client.CombinedQueryStreamResponse), args.Error(1)
 }
+
 func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, lbl model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
 	args := m.Called(ctx, from, to, lbl, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
+
+func (m *mockDistributor) LabelValuesStream(ctx context.Context, from, to model.Time, name model.LabelName, matchers ...*labels.Matcher) storage.LabelValues {
+	args := m.Called(ctx, from, to, name, matchers)
+	return args.Get(0).(storage.LabelValues)
+}
+
 func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
+
 func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]labels.Labels), args.Error(1)

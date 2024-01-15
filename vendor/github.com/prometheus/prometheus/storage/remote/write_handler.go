@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/model/exemplar"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	otlptranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
@@ -113,10 +112,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = app.Commit()
 	}()
 
-	b := labels.NewScratchBuilder(0)
 	var exemplarErr error
 	for _, ts := range req.Timeseries {
-		labels := labelProtosToLabels(&b, ts.Labels)
+		labels := labelProtosToLabels(ts.Labels)
 		if !labels.IsValid() {
 			level.Warn(h.logger).Log("msg", "Invalid metric names or labels", "got", labels.String())
 			samplesWithInvalidLabels++
@@ -139,7 +137,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		}
 
 		for _, ep := range ts.Exemplars {
-			e := exemplarProtoToExemplar(&b, ep)
+			e := exemplarProtoToExemplar(ep)
 
 			_, exemplarErr = app.AppendExemplar(0, labels, e)
 			exemplarErr = h.checkAppendExemplarError(exemplarErr, e, &outOfOrderExemplarErrs)

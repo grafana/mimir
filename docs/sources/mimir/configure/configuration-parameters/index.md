@@ -1327,6 +1327,10 @@ store_gateway_client:
 # CLI flag: -querier.minimize-ingester-requests-hedging-delay
 [minimize_ingester_requests_hedging_delay: <duration> | default = 3s]
 
+# (experimental) Stream label values from ingesters.
+# CLI flag: -querier.stream-label-values-from-ingesters
+[stream_label_values_from_ingesters: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier.
 # CLI flag: -querier.max-concurrent

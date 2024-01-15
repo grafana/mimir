@@ -427,6 +427,10 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 	return util.MergeSlices(resValueSets...), resWarnings, nil
 }
 
+func (q *blocksStoreQuerier) LabelValuesStream(context.Context, string, ...*labels.Matcher) storage.LabelValues {
+	return storage.ErrLabelValues(fmt.Errorf("not implemented"))
+}
+
 func (q *blocksStoreQuerier) Close() error {
 	return nil
 }

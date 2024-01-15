@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 
 	"github.com/oklog/ulid"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -77,6 +77,10 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 func (q *blockBaseQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	res, err := q.index.SortedLabelValues(ctx, name, matchers...)
 	return res, nil, err
+}
+
+func (q *blockBaseQuerier) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	return q.index.LabelValuesStream(ctx, name, matchers...)
 }
 
 func (q *blockBaseQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
@@ -255,9 +259,9 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 					return nil, err
 				}
 
-				it, err := postingsForMatcher(ctx, ix, inverse)
-				if err != nil {
-					return nil, err
+				it := ix.PostingsForMatcher(ctx, inverse)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				notIts = append(notIts, it)
 			case isNot && !matchesEmpty: // l!=""
@@ -277,10 +281,10 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 				}
 				its = append(its, it)
 			default: // l="a"
-				// Non-Not matcher, use normal postingsForMatcher.
-				it, err := postingsForMatcher(ctx, ix, m)
-				if err != nil {
-					return nil, err
+				// Non-Not matcher, use normal PostingsForMatcher.
+				it := ix.PostingsForMatcher(ctx, m)
+				if it.Err() != nil {
+					return nil, it.Err()
 				}
 				if index.IsEmptyPostingsType(it) {
 					return index.EmptyPostings(), nil
@@ -307,41 +311,6 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 	}
 
 	return it, nil
-}
-
-func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
-	// This method will not return postings for missing labels.
-
-	// Fast-path for equal matching.
-	if m.Type == labels.MatchEqual {
-		return ix.Postings(ctx, m.Name, m.Value)
-	}
-
-	// Fast-path for set matching.
-	if m.Type == labels.MatchRegexp {
-		setMatches := m.SetMatches()
-		if len(setMatches) > 0 {
-			return ix.Postings(ctx, m.Name, setMatches...)
-		}
-	}
-
-	vals, err := ix.LabelValues(ctx, m.Name)
-	if err != nil {
-		return nil, err
-	}
-
-	var res []string
-	for _, val := range vals {
-		if m.Matches(val) {
-			res = append(res, val)
-		}
-	}
-
-	if len(res) == 0 {
-		return index.EmptyPostings(), nil
-	}
-
-	return ix.Postings(ctx, m.Name, res...)
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
@@ -446,11 +415,11 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 
 			// We have expanded all the postings -- all returned label values will be from these series only.
 			// (We supply allValues as a buffer for storing results. It should be big enough already, since it holds all possible label values.)
-			return labelValuesFromSeries(r, name, expanded, allValues)
+			return index.LabelValuesFromSeries(r, name, expanded, allValues)
 		}
 
 		// If we haven't reached end of postings, we prepend our expanded postings to "p", and continue.
-		p = newPrependPostings(expanded, p)
+		p = index.NewPrependPostings(expanded, p)
 	}
 
 	valuesPostings := make([]index.Postings, len(allValues))
@@ -471,87 +440,6 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 	}
 
 	return values, nil
-}
-
-// labelValuesFromSeries returns all unique label values from for given label name from supplied series. Values are not sorted.
-// buf is space for holding result (if it isn't big enough, it will be ignored), may be nil.
-func labelValuesFromSeries(r IndexReader, labelName string, refs []storage.SeriesRef, buf []string) ([]string, error) {
-	values := map[string]struct{}{}
-
-	var builder labels.ScratchBuilder
-	for _, ref := range refs {
-		err := r.Series(ref, &builder, nil)
-		// Postings may be stale. Skip if no underlying series exists.
-		if errors.Is(err, storage.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("label values for label %s: %w", labelName, err)
-		}
-
-		v := builder.Labels().Get(labelName)
-		if v != "" {
-			values[v] = struct{}{}
-		}
-	}
-
-	if cap(buf) >= len(values) {
-		buf = buf[:0]
-	} else {
-		buf = make([]string, 0, len(values))
-	}
-	for v := range values {
-		buf = append(buf, v)
-	}
-	return buf, nil
-}
-
-func newPrependPostings(a []storage.SeriesRef, b index.Postings) index.Postings {
-	return &prependPostings{
-		ix:     -1,
-		prefix: a,
-		rest:   b,
-	}
-}
-
-// prependPostings returns series references from "prefix" before using "rest" postings.
-type prependPostings struct {
-	ix     int
-	prefix []storage.SeriesRef
-	rest   index.Postings
-}
-
-func (p *prependPostings) Next() bool {
-	p.ix++
-	if p.ix < len(p.prefix) {
-		return true
-	}
-	return p.rest.Next()
-}
-
-func (p *prependPostings) Seek(v storage.SeriesRef) bool {
-	for p.ix < len(p.prefix) {
-		if p.ix >= 0 && p.prefix[p.ix] >= v {
-			return true
-		}
-		p.ix++
-	}
-
-	return p.rest.Seek(v)
-}
-
-func (p *prependPostings) At() storage.SeriesRef {
-	if p.ix >= 0 && p.ix < len(p.prefix) {
-		return p.prefix[p.ix]
-	}
-	return p.rest.At()
-}
-
-func (p *prependPostings) Err() error {
-	if p.ix >= 0 && p.ix < len(p.prefix) {
-		return nil
-	}
-	return p.rest.Err()
 }
 
 func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {

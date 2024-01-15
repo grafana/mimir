@@ -1793,6 +1793,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.stream-label-values-from-ingesters
+    	[experimental] Stream label values from ingesters.
   -querier.streaming-chunks-per-ingester-buffer-size uint
     	Number of series to buffer per ingester when streaming chunks from ingesters. (default 256)
   -querier.streaming-chunks-per-store-gateway-buffer-size uint

@@ -18,10 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"sync"
 
 	"github.com/go-kit/log/level"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -87,6 +87,30 @@ func (h *headIndexReader) LabelValues(ctx context.Context, name string, matchers
 	return labelValuesWithMatchers(ctx, h, name, matchers...)
 }
 
+// LabelValuesStream returns an iterator over label values present in
+// the head for the specific label name that are within the time range
+// mint to maxt.
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (h *headIndexReader) LabelValuesStream(ctx context.Context, name string, matchers ...*labels.Matcher) storage.LabelValues {
+	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
+		return storage.EmptyLabelValues()
+	}
+
+	ownMatchers := 0
+	for _, m := range matchers {
+		if m.Name == name {
+			ownMatchers++
+		}
+	}
+	if ownMatchers == len(matchers) {
+		return h.head.postings.LabelValuesStream(ctx, name, matchers...)
+	}
+
+	// There are matchers on other label names than the requested one, so will need to intersect matching series
+	return labelValuesForMatchersStream(ctx, h, name, matchers)
+}
+
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
 func (h *headIndexReader) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error) {
@@ -119,6 +143,10 @@ func (h *headIndexReader) Postings(ctx context.Context, name string, values ...s
 		}
 		return index.Merge(ctx, res...), nil
 	}
+}
+
+func (h *headIndexReader) PostingsForMatcher(ctx context.Context, m *labels.Matcher) index.Postings {
+	return h.head.postings.PostingsForMatcher(ctx, h, m)
 }
 
 func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
@@ -182,13 +210,24 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 
 // LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
 func (h *headIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
-	return h.head.postings.LabelValuesFor(postings, name)
+	return h.head.postings.LabelValuesFor(postings, name, h)
 }
 
 // LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
 // This is useful for obtaining label values for other postings than the ones you wish to exclude.
 func (h *headIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
 	return h.head.postings.LabelValuesExcluding(postings, name)
+}
+
+// Labels reads the series with the given ref and writes its labels into builder.
+func (h *headIndexReader) Labels(ref storage.SeriesRef, builder *labels.ScratchBuilder) error {
+	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		h.head.metrics.seriesNotFound.Inc()
+		return storage.ErrNotFound
+	}
+	builder.Assign(s.lset)
+	return nil
 }
 
 // Series returns the series for the given reference.

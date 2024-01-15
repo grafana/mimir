@@ -228,13 +228,17 @@ func decodeMatchers(src []byte) ([]*labels.Matcher, int, error) {
 }
 
 func newDiffVarintPostings(input []byte) *diffVarintPostings {
-	return &diffVarintPostings{buf: &encoding.Decbuf{B: input}}
+	return &diffVarintPostings{
+		buf:   &encoding.Decbuf{B: input},
+		bytes: input,
+	}
 }
 
 // diffVarintPostings is an implementation of index.Postings based on diff+varint encoded data.
 type diffVarintPostings struct {
-	buf *encoding.Decbuf
-	cur storage.SeriesRef
+	buf   *encoding.Decbuf
+	bytes []byte
+	cur   storage.SeriesRef
 }
 
 func (it *diffVarintPostings) At() storage.SeriesRef {
@@ -273,4 +277,8 @@ func (it *diffVarintPostings) Seek(x storage.SeriesRef) bool {
 
 func (it *diffVarintPostings) Err() error {
 	return it.buf.Err()
+}
+
+func (it *diffVarintPostings) Reset() {
+	it.buf = &encoding.Decbuf{B: it.bytes}
 }

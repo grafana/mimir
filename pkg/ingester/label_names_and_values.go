@@ -48,7 +48,7 @@ func labelNamesAndValues(
 		}
 		labelItem := &client.LabelValues{LabelName: labelName}
 		responseSizeBytes += len(labelName)
-		// send message if (response size + size of label name of current label) is greater or equals to threshold
+		// send message if (response size + size of label name of current label) is >= threshold
 		if responseSizeBytes >= messageSizeThreshold {
 			err = client.SendLabelNamesAndValuesResponse(stream, &response)
 			if err != nil {
