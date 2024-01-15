@@ -298,7 +298,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.batch-series-size int
     	This option controls how many series to fetch per batch. The batch size must be greater than 0. (default 5000)
   -blocks-storage.bucket-store.block-sync-concurrency int
-    	Maximum number of concurrent blocks synching per tenant. (default 20)
+    	Maximum number of concurrent blocks synching per tenant. (default 4)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
@@ -660,7 +660,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
-    	Maximum number of concurrent tenants synching blocks. (default 10)
+    	Maximum number of concurrent tenants synching blocks. (default 1)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string

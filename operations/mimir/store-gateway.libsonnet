@@ -37,9 +37,6 @@
        'blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout': '60m',
      } else {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'false',
-       // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
-       'blocks-storage.bucket-store.block-sync-concurrency': 4,
-       'blocks-storage.bucket-store.tenant-sync-concurrency': 1,
      }) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
