@@ -108,7 +108,7 @@ get rejected with HTTP status code 503 (Service Unavailable), until utilization 
 
 Whenever the ingester rejects a read request due to utilization based limiting, it increments the
 `cortex_ingester_utilization_limited_read_requests_total` counter metric.
-CPU and memory utilization are also tracked, via the `utilization_limiter_current_cpu_load` and
+CPU and memory utilization are also tracked, via the `cortex_ingester_utilization_limiter_current_cpu_load` and
 `utilization_limiter_current_memory_usage_bytes` gauge metrics respectively.
 
 For more information, refer to [Configuring resource utilization based ingester read path limiting]({{< relref "../../../configure/configure-resource-utilization-based-ingester-read-path-limiting" >}}).
