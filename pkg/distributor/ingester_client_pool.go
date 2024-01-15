@@ -36,7 +36,7 @@ func (cfg *PoolConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.HealthCheckIngesters, "distributor.health-check-ingesters", true, "Run a health check on each ingester client during periodic cleanup.")
 }
 
-func NewPool(cfg PoolConfig, ring ring.ReadRing, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {
+func NewPoolFromIngesters(cfg PoolConfig, ring ring.ReadRing, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {
 	poolCfg := ring_client.PoolConfig{
 		CheckInterval:      cfg.ClientCleanupPeriod,
 		HealthCheckEnabled: cfg.HealthCheckIngesters,
@@ -44,4 +44,14 @@ func NewPool(cfg PoolConfig, ring ring.ReadRing, factory ring_client.PoolFactory
 	}
 
 	return ring_client.NewPool("ingester", poolCfg, ring_client.NewRingServiceDiscovery(ring), factory, clients, logger)
+}
+
+func NewPoolFromPartitions(cfg PoolConfig, watcher *ring.PartitionRingWatcher, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {
+	poolCfg := ring_client.PoolConfig{
+		CheckInterval:      cfg.ClientCleanupPeriod,
+		HealthCheckEnabled: cfg.HealthCheckIngesters,
+		HealthCheckTimeout: cfg.RemoteTimeout,
+	}
+
+	return ring_client.NewPool("ingester", poolCfg, ring_client.NewPartitionRingServiceDiscovery(watcher), factory, clients, logger)
 }

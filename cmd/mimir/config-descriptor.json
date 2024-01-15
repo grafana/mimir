@@ -3075,6 +3075,16 @@
           "fieldFlag": "ingester.owned-series-update-interval",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "remove_inactive_partitions_after_interval",
+          "required": false,
+          "desc": "At what point should inactive (read-only) partitions be removed from the partitions ring.",
+          "fieldValue": null,
+          "fieldDefaultValue": 43200000000000,
+          "fieldFlag": "ingester.remove-inactive-partitions-after-interval",
+          "fieldType": "duration"
         }
       ],
       "fieldValue": null,
@@ -15932,6 +15942,14 @@
           "fieldType": "string"
         }
       ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "partitions_ring",
+      "required": false,
+      "desc": "",
       "fieldValue": null,
       "fieldDefaultValue": null
     },

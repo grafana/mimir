@@ -461,6 +461,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	if t.Cfg.Querier.ShuffleShardingIngestersEnabled {
 		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.BlocksStorage.TSDB.Retention
 	}
+	t.Cfg.Distributor.IngesterHeartbeatTimeout = t.Cfg.Ingester.IngesterRing.HeartbeatTimeout
 
 	// Check whether the distributor can join the distributors ring, which is
 	// whenever it's not running as an internal dependency (ie. querier or

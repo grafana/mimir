@@ -393,6 +393,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.
   -ingester.max-global-series-per-user int
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
+  -ingester.remove-inactive-partitions-after-interval duration
+    	At what point should inactive (read-only) partitions be removed from the partitions ring. (default 12h0m0s)
   -ingester.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -ingester.ring.etcd.endpoints string
