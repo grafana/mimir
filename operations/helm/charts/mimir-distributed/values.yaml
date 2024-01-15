@@ -1309,7 +1309,7 @@ query_frontend:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 180
+  terminationGracePeriodSeconds: 390
 
   tolerations: []
   initContainers: []

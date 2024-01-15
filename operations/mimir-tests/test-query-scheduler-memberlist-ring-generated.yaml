@@ -711,9 +711,11 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -744,6 +746,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
