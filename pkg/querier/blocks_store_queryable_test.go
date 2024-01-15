@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -959,6 +960,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 	var (
 		block1 = ulid.MustNew(1, nil)
+		logger = test.NewTestingLogger(t)
 	)
 
 	// Create an utility to easily run each test case in isolation.
@@ -1005,8 +1007,8 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			maxT:        maxT,
 			finder:      finder,
 			stores:      stores,
-			consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
-			logger:      log.NewNopLogger(),
+			consistency: NewBlocksConsistency(0, 0, logger, nil),
+			logger:      logger,
 			metrics:     newBlocksStoreQueryableMetrics(nil),
 			limits:      &blocksStoreLimitsMock{},
 		}
