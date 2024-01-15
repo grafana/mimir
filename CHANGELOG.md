@@ -33,6 +33,7 @@
 * [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
+* [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
