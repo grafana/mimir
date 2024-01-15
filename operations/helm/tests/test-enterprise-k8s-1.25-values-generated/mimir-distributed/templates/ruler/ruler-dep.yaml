@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-k8s-1.25-values-mimir
+      serviceAccountName: test-enterprise-k8s-1.25-values-mimir-ruler
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

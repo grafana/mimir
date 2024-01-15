@@ -1090,6 +1090,12 @@ ruler:
   service:
     annotations: {}
     labels: {}
+  
+  serviceAccount:
+    create: true
+    name:
+    annotations: {}
+    labels: {}
 
   resources:
     requests:

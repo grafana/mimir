@@ -33,7 +33,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics-ruler
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

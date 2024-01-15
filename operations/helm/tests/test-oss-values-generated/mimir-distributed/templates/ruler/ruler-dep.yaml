@@ -37,7 +37,7 @@ spec:
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-values-mimir
+      serviceAccountName: test-oss-values-mimir-ruler
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
