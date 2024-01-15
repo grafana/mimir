@@ -29,6 +29,8 @@ var NonParallelFuncs = []string{
 	"absent_over_time",
 	"histogram_quantile",
 	"sort_desc",
+	"sort_by_label",
+	"sort_by_label_desc",
 	"sort",
 	"time",
 	"vector",

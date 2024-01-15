@@ -965,6 +965,10 @@ type queryShardingFunctionCorrectnessTest struct {
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
+	// We want to test experimental functions too.
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
+	parser.EnableExperimentalFunctions = true
+
 	testsForBoth := []queryShardingFunctionCorrectnessTest{
 		{fn: "count_over_time", rangeQuery: true},
 		{fn: "days_in_month"},
@@ -980,6 +984,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "resets", rangeQuery: true},
 		{fn: "sort"},
 		{fn: "sort_desc"},
+		{fn: "sort_by_label"},
+		{fn: "sort_by_label_desc"},
 		{fn: "last_over_time", rangeQuery: true},
 		{fn: "present_over_time", rangeQuery: true},
 		{fn: "timestamp"},
@@ -1026,6 +1032,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "sum_over_time", rangeQuery: true},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
 		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
+		{fn: "mad_over_time", rangeQuery: true, tpl: `(<fn>(bar1{}))`},
 		{fn: "sgn"},
 		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},

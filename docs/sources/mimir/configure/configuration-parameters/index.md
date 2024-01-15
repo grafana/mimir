@@ -1348,6 +1348,11 @@ store_gateway_client:
 # on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
+
+# (experimental) Enable experimental PromQL functions. This config option should
+# be set on query-frontend too when query sharding is enabled.
+# CLI flag: -querier.promql-experimental-functions-enabled
+[promql_experimental_functions_enabled: <boolean> | default = false]
 ```
 
 ### frontend

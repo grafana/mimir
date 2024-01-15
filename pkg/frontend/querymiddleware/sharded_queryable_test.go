@@ -471,7 +471,7 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 			case chunkenc.ValHistogram:
 				t, v := it.AtHistogram()
 				stream.Histograms = append(stream.Histograms, mimirpb.FloatHistogramPair{
-					Histogram:   mimirpb.FloatHistogramFromPrometheusModel(v.ToFloat()),
+					Histogram:   mimirpb.FloatHistogramFromPrometheusModel(v.ToFloat(nil)),
 					TimestampMs: t,
 				})
 			case chunkenc.ValFloatHistogram:

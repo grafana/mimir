@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -185,9 +186,10 @@ func NewTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
+	engineExperimentalFunctionsEnabled bool,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -204,11 +206,15 @@ func newQueryTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
+	engineExperimentalFunctionsEnabled bool,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
 	engineOpts.ActiveQueryTracker = nil
 	engine := promql.NewEngine(engineOpts)
+
+	// Experimental functions can only be enabled globally, and not on a per-engine basis.
+	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
 
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)

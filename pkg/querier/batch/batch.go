@@ -173,7 +173,7 @@ func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) 
 	}
 	if a.curr.ValueType == chunkenc.ValHistogram {
 		h := (*histogram.Histogram)(a.curr.PointerValues[a.curr.Index])
-		return a.curr.Timestamps[a.curr.Index], h.ToFloat()
+		return a.curr.Timestamps[a.curr.Index], h.ToFloat(nil)
 	}
 	panic(fmt.Sprintf("Cannot read floathistogram from batch %v", a.curr.ValueType))
 }
