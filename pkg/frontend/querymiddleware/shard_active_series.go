@@ -183,9 +183,12 @@ func doShardedRequests(ctx context.Context, upstreamRequests []*http.Request, ne
 
 			if resp.StatusCode != http.StatusOK {
 				span.LogFields(otlog.Int("statusCode", resp.StatusCode))
-				body, _ := io.ReadAll(resp.Body)
 				if resp.StatusCode == http.StatusRequestEntityTooLarge {
 					return errShardCountTooLow
+				}
+				var body []byte
+				if resp.Body != nil {
+					body, _ = io.ReadAll(resp.Body)
 				}
 				return fmt.Errorf("received unexpected response from upstream: status %d, body: %s", resp.StatusCode, string(body))
 			}
