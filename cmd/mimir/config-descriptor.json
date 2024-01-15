@@ -1922,7 +1922,7 @@
           "kind": "field",
           "name": "promql_experimental_functions_enabled",
           "required": false,
-          "desc": "True to enable support for experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.promql-experimental-functions-enabled",
