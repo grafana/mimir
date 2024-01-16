@@ -275,6 +275,9 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 					}
 				}(r.Body)
 
+				_, err := user.ExtractOrgID(r.Context())
+				require.NoError(t, err)
+
 				requestCount.Inc()
 
 				if tt.errorResponse != nil {
