@@ -2341,11 +2341,11 @@ circuit_breaker:
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
 
-# (advanced) If set to true, gRPC status codes will be reported in "status_code"
-# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
-# they will be reported as "error"
+# (deprecated) If set to true, gRPC status codes will be reported in
+# "status_code" label of "cortex_ingester_client_request_duration_seconds"
+# metric. Otherwise, they will be reported as "error"
 # CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 ```
 
 ### grpc_client
