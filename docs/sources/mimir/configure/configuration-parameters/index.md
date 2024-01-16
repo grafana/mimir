@@ -3474,11 +3474,11 @@ bucket_store:
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
-  [tenant_sync_concurrency: <int> | default = 10]
+  [tenant_sync_concurrency: <int> | default = 1]
 
   # (advanced) Maximum number of concurrent blocks synching per tenant.
   # CLI flag: -blocks-storage.bucket-store.block-sync-concurrency
-  [block_sync_concurrency: <int> | default = 20]
+  [block_sync_concurrency: <int> | default = 4]
 
   # (advanced) Number of Go routines to use when syncing block meta files from
   # object storage per tenant.

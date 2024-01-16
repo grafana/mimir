@@ -6366,7 +6366,7 @@
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",
               "fieldValue": null,
-              "fieldDefaultValue": 10,
+              "fieldDefaultValue": 1,
               "fieldFlag": "blocks-storage.bucket-store.tenant-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -6377,7 +6377,7 @@
               "required": false,
               "desc": "Maximum number of concurrent blocks synching per tenant.",
               "fieldValue": null,
-              "fieldDefaultValue": 20,
+              "fieldDefaultValue": 4,
               "fieldFlag": "blocks-storage.bucket-store.block-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
