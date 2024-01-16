@@ -48,7 +48,7 @@ The ingester write path is generally considered more important than the read pat
 limit read requests when ingesters are under pressure than to fail writes (or even crash).
 
 We recommend enabling resource utilization based ingester read path limiting, to protect ingesters from potentially getting overwhelmed by intensive queries.
-For more information on its configuration, refer to [ingester]({{< relref "../../../references/architecture/components/ingester" >}}).
+For more information on its configuration, refer to [ingester]({{< relref "../../../configure/configure-resource-utilization-based-ingester-read-path-limiting.md" >}}).
 
 ## Querier
 
