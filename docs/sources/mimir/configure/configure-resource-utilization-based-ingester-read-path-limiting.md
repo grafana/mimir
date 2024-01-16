@@ -1,6 +1,4 @@
 ---
-aliases:
-  - ../operators-guide/configure/configure-resource-utilization-based-ingester-read-path-limiting/
 description: Learn how to configure Grafana Mimir for resource utilization based ingester read path limiting.
 menuTitle: Resource utilization based ingester read path limiting
 title: Configure resource utilization based ingester read path limiting
