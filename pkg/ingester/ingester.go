@@ -1070,51 +1070,50 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 		// of it, so that we can return it back to the distributor, which will return a
 		// 400 error to the client. The client (Prometheus) will not retry on 400, and
 		// we actually ingested all samples which haven't failed.
-		//nolint:errorlint // We don't expect the cause error to be wrapped.
-		switch cause := errors.Cause(err); cause {
-		case storage.ErrOutOfBounds:
+		switch {
+		case errors.Is(err, storage.ErrOutOfBounds):
 			stats.sampleOutOfBoundsCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 				return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 			})
 			return true
 
-		case storage.ErrOutOfOrderSample:
+		case errors.Is(err, storage.ErrOutOfOrderSample):
 			stats.sampleOutOfOrderCount++
 			updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
 				return newSampleOutOfOrderError(model.Time(timestamp), labels)
 			})
 			return true
 
-		case storage.ErrTooOldSample:
+		case errors.Is(err, storage.ErrTooOldSample):
 			stats.sampleTooOldCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
 				return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
 			})
 			return true
 
-		case globalerror.SampleTooFarInFuture:
+		case errors.Is(err, globalerror.SampleTooFarInFuture):
 			stats.sampleTooFarInFutureCount++
 			updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
 				return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 			})
 			return true
 
-		case storage.ErrDuplicateSampleForTimestamp:
+		case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 			stats.newValueForTimestampCount++
 			updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
 				return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
 			})
 			return true
 
-		case globalerror.MaxSeriesPerUser:
+		case errors.Is(err, globalerror.MaxSeriesPerUser):
 			stats.perUserSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerUserLimitExceeded, func() softError {
 				return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
 			})
 			return true
 
-		case globalerror.MaxSeriesPerMetric:
+		case errors.Is(err, globalerror.MaxSeriesPerMetric):
 			stats.perMetricSeriesLimitCount++
 			updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 				return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
@@ -1660,7 +1659,22 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream)
+
+	var valueFilter func(name, value string) (bool, error)
+	switch request.GetCountMethod() {
+	case client.IN_MEMORY:
+		valueFilter = func(name, value string) (bool, error) {
+			return true, nil
+		}
+	case client.ACTIVE:
+		valueFilter = func(name, value string) (bool, error) {
+			return activeseries.IsLabelValueActive(stream.Context(), index, db.activeSeries, name, value)
+		}
+	default:
+		return fmt.Errorf("unknown count method %q", request.GetCountMethod())
+	}
+
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, stream, valueFilter)
 }
 
 // labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.

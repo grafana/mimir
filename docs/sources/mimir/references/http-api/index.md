@@ -554,15 +554,26 @@ GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
 Returns label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
 
-As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
-cutting between the calls.
-
 The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
 The count of items is limited by `limit` request param.
 
 This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+#### Count series by `inmemory` or `active`
+
+Two methods of counting are available: `inmemory` and `active`. To choose one, use the `count_method` parameter.
+
+The `inmemory` method counts the labels in currently opened TSDBs in Mimir's ingesters.
+Two subsequent calls might return completely different results if an ingester cut a block between calls.
+This method of counting is most useful for understanding ingester memory usage.
+
+The `active` method also counts labels in currently opened TSDBs in Mimir's ingesters, but filters out values that have not received a sample within a configurable duration of time.
+To configure this duration, use the `-ingester.active-series-metrics-idle-timeout` parameter.
+This method of counting is most useful for understanding what label values are represented in the samples ingested by Mimir in the last `-ingester.active-series-metrics-idle-timeout`.
+Two subsequent calls will likely return similar results, because this window of time is not related to the block cutting on ingesters.
+Values will change only as a result of changes in the data ingested by Mimir.
 
 #### Caching
 
@@ -571,6 +582,7 @@ The query-frontend can return a stale response fetched from the query results ca
 #### Request params
 
 - **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **count_method** - _optional_ - specifies which series counting method will be used. (default="inmemory", available options=["inmemory", "active"])
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
 
 #### Response schema

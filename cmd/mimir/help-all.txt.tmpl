@@ -1168,7 +1168,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.retry-after-header.max-backoff-exponent int
     	[experimental] Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds. (default 5)
   -distributor.reusable-ingester-push-workers int
-    	[experimental] Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)
+    	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1721,6 +1721,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this. (default true)
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
+  -querier.promql-experimental-functions-enabled
+    	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1874,7 +1876,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-total-query-length duration
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
   -query-frontend.not-running-timeout duration
-    	[experimental] Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)
+    	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
@@ -2600,7 +2602,7 @@ Usage of ./cmd/mimir/mimir:
   -server.grpc.keepalive.timeout duration
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
-    	[experimental] If non-zero, configures the amount of GRPC server workers used to serve the requests.
+    	If non-zero, configures the amount of GRPC server workers used to serve the requests. (default 100)
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration

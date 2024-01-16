@@ -84,8 +84,6 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
     - `-overrides-exporter.ring.heartbeat-period=0`
-  - Reusable ingester push worker
-    - `-distributor.reusable-ingester-push-workers`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -126,13 +124,13 @@ The following features are currently experimental:
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
+  - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
   - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
-  - Wait for the query-frontend to complete startup if a query request is received while it is starting up (`-query-frontend.not-running-timeout`)
   - Max number of tenants that may be queried at once (`-tenant-federation.max-tenants`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
 - Query-scheduler
@@ -160,7 +158,6 @@ The following features are currently experimental:
     - `-<prefix>.memcached.read-buffer-size-bytes`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
-- Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`

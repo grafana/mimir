@@ -132,6 +132,7 @@ type storeGatewayStreamReader struct {
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
 	stats               *stats.Stats
+	metrics             *blocksStoreQueryableMetrics
 	log                 log.Logger
 
 	chunkCountEstimateChan chan int
@@ -141,13 +142,14 @@ type storeGatewayStreamReader struct {
 	err                    error
 }
 
-func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, log log.Logger) *storeGatewayStreamReader {
+func newStoreGatewayStreamReader(ctx context.Context, client storegatewaypb.StoreGateway_SeriesClient, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, stats *stats.Stats, metrics *blocksStoreQueryableMetrics, log log.Logger) *storeGatewayStreamReader {
 	return &storeGatewayStreamReader{
 		ctx:                 ctx,
 		client:              client,
 		expectedSeriesCount: expectedSeriesCount,
 		queryLimiter:        queryLimiter,
 		stats:               stats,
+		metrics:             metrics,
 		log:                 log,
 	}
 }
@@ -193,6 +195,9 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error {
 	totalSeries := 0
 	totalChunks := 0
+	defer func() {
+		s.metrics.chunksTotal.Add(float64(totalChunks))
+	}()
 
 	translateReceivedError := func(err error) error {
 		if errors.Is(err, context.Canceled) {

@@ -674,10 +674,10 @@ grpc_tls_config:
 # CLI flag: -server.grpc.keepalive.ping-without-stream-allowed
 [grpc_server_ping_without_stream_allowed: <boolean> | default = true]
 
-# (experimental) If non-zero, configures the amount of GRPC server workers used
-# to serve the requests.
+# (advanced) If non-zero, configures the amount of GRPC server workers used to
+# serve the requests.
 # CLI flag: -server.grpc.num-workers
-[grpc_server_num_workers: <int> | default = 0]
+[grpc_server_num_workers: <int> | default = 100]
 
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
@@ -927,13 +927,13 @@ instance_limits:
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
 [limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
 
-# (experimental) Number of pre-allocated workers used to forward push requests
-# to the ingesters. If 0, no workers will be used and a new goroutine will be
+# (advanced) Number of pre-allocated workers used to forward push requests to
+# the ingesters. If 0, no workers will be used and a new goroutine will be
 # spawned for each ingester push request. If not enough workers available, new
 # goroutine will be spawned. (Note: this is a performance optimization, not a
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
-[reusable_ingester_push_workers: <int> | default = 0]
+[reusable_ingester_push_workers: <int> | default = 2000]
 ```
 
 ### ingester
@@ -1348,6 +1348,11 @@ store_gateway_client:
 # on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
+
+# (experimental) Enable experimental PromQL functions. This config option should
+# be set on query-frontend too when query sharding is enabled.
+# CLI flag: -querier.promql-experimental-functions-enabled
+[promql_experimental_functions_enabled: <boolean> | default = false]
 ```
 
 ### frontend
@@ -1472,12 +1477,12 @@ results_cache:
 # CLI flag: -query-frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
 
-# (experimental) Maximum time to wait for the query-frontend to become ready
-# before rejecting requests received before the frontend was ready. 0 to disable
-# (i.e. fail immediately if a request is received while the frontend is still
-# starting up)
+# (advanced) Maximum time to wait for the query-frontend to become ready before
+# rejecting requests received before the frontend was ready. 0 to disable (i.e.
+# fail immediately if a request is received while the frontend is still starting
+# up)
 # CLI flag: -query-frontend.not-running-timeout
-[not_running_timeout: <duration> | default = 0s]
+[not_running_timeout: <duration> | default = 2s]
 
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries

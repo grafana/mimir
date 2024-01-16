@@ -207,7 +207,7 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
-	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"experimental"`
+	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -224,7 +224,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
-	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 0, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
+	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -1509,13 +1509,13 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 }
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
-func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
+func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := toLabelNamesCardinalityRequest(matchers)
+	req, err := toLabelNamesCardinalityRequest(matchers, countMethod)
 	if err != nil {
 		return nil, err
 	}
@@ -1546,12 +1546,19 @@ type labelNamesAndValuesResponseMerger struct {
 	currentSizeBytes int
 }
 
-func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesRequest, error) {
+func toLabelNamesCardinalityRequest(matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesRequest, error) {
 	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
-	return &ingester_client.LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
+	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
+	if err != nil {
+		return nil, err
+	}
+	return &ingester_client.LabelNamesAndValuesRequest{
+		Matchers:    matchersProto,
+		CountMethod: ingesterCountMethod,
+	}, nil
 }
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.

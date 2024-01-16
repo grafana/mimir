@@ -10,6 +10,18 @@
 * [CHANGE] Server: responses with HTTP 4xx status codes are now treated as errors and used in `status_code` label of request duration metric. #7045
 * [CHANGE] Memberlist: change default for `-memberlist.stream-timeout` from `10s` to `2s`. #7076
 * [CHANGE] Memcached: remove legacy `thanos_cache_memcached_*` and `thanos_memcached_*` prefixed metrics. Instead, Memcached and Redis cache clients now emit `thanos_cache_*` prefixed metrics with a `backend` label. #7076
+* [CHANGE] Ruler: the following metrics, exposed when the ruler is configured to discover Alertmanager instances via service discovery, have been renamed: #7057
+  * `prometheus_sd_failed_configs` renamed to `cortex_prometheus_sd_failed_configs`
+  * `prometheus_sd_discovered_targets` renamed to `cortex_prometheus_sd_discovered_targets`
+  * `prometheus_sd_received_updates_total` renamed to `cortex_prometheus_sd_received_updates_total`
+  * `prometheus_sd_updates_delayed_total` renamed to `cortex_prometheus_sd_updates_delayed_total`
+  * `prometheus_sd_updates_total` renamed to `cortex_prometheus_sd_updates_total`
+  * `prometheus_sd_refresh_failures_total` renamed to `cortex_prometheus_sd_refresh_failures_total`
+  * `prometheus_sd_refresh_duration_seconds` renamed to `cortex_prometheus_sd_refresh_duration_seconds`
+* [CHANGE] Query-frontend: the default value for `-query-frontend.not-running-timeout` has been changed from 0 (disabled) to 2s. The configuration option has also been moved from "experimental" to "advanced". #7126
+* [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
+* [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
+* [FEATURE] Querier / query-frontend: added `-querier.promql-experimental-functions-enabled` CLI flag (and respective YAML config option) to enable experimental PromQL functions. The experimental functions introduced are: `mad_over_time()`, `sort_by_label()` and `sort_by_label_desc()`. #7057
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
@@ -18,8 +30,10 @@
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
 * [ENHANCEMENT] Storage Provider: allow aws sts support for s3 storage provider #6172
-* [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
+* [ENHANCEMENT] Querier: add `cortex_querier_queries_storage_type_total ` metric that indicates how many queries have executed for a source, ingesters or store-gateways. Add `cortex_query_storegateway_chunks_total` metric to count the number of chunks fetched from a store gateway. #7099
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
+* [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
+* [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -40,6 +54,7 @@
 * [ENHANCEMENT] Dashboards: remove legacy `graph` panel from Rollout Progress dashboard. #6864
 * [ENHANCEMENT] Dashboards: Make most columns in "Slow Queries" sortable. #7000
 * [ENHANCEMENT] Dashboards: Render graph panels at full resolution as opposed to at half resolution. #7027
+* [ENHANCEMENT] Dashboards: show query-scheduler queue length on "Reads" and "Remote Ruler Reads" dashboards. #7088
 
 ### Jsonnet
 
@@ -83,6 +98,8 @@
 * [FEATURE] Ingester: Allow automated zone-by-zone downscaling, that can be enabled via the `ingester_automated_downscale_enabled` flag. It is disabled by default. #6850
 * [ENHANCEMENT] Alerts: Add `MimirStoreGatewayTooManyFailedOperations` warning alert that triggers when Mimir store-gateway report error when interacting with the object storage. #6831
 * [ENHANCEMENT] Querier HPA: improved scaling metric and scaling policies, in order to scale up and down more gradually. #6971
+* [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
+* [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 
 ### Mimirtool

@@ -34,7 +34,13 @@ func (dnsServiceDiscovery) Name() string {
 }
 
 func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return refresh.NewDiscovery(opts.Logger, mechanismName, c.RefreshInterval, c.resolve), nil
+	return refresh.NewDiscovery(refresh.Options{
+		Logger:   opts.Logger,
+		Mech:     mechanismName,
+		Interval: c.RefreshInterval,
+		RefreshF: c.resolve,
+		Registry: opts.Registerer,
+	}), nil
 }
 
 func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {

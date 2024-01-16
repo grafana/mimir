@@ -56,7 +56,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 
 			// Create the request.
 			reqURL := mustParseURL(t, `/prometheus/api/v1/cardinality/label_names?selector={job="test"}&limit=100`)
-			reqCacheKey := tenant.JoinTenantIDs(testData.tenantIDs) + ":job=\"test\"\x00100"
+			reqCacheKey := tenant.JoinTenantIDs(testData.tenantIDs) + ":job=\"test\"\x00inmemory\x00100"
 			reqHashedCacheKey := cardinalityLabelNamesQueryCachePrefix + cacheHashKey(reqCacheKey)
 
 			req := &http.Request{URL: reqURL}
@@ -102,9 +102,9 @@ func TestCardinalityQueryCache_RoundTrip(t *testing.T) {
 	testGenericQueryCacheRoundTrip(t, newCardinalityQueryCacheRoundTripper, "cardinality", map[string]testGenericQueryCacheRequestType{
 		"label names request": {
 			reqPath:        "/prometheus/api/v1/cardinality/label_names",
-			reqData:        url.Values{"selector": []string{`{job="test"}`}, "limit": []string{"100"}},
-			cacheKey:       "user-1:job=\"test\"\x00100",
-			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00100"),
+			reqData:        url.Values{"selector": []string{`{job="test"}`}, "limit": []string{"100"}, "count_method": []string{"active"}},
+			cacheKey:       "user-1:job=\"test\"\x00active\x00100",
+			hashedCacheKey: cardinalityLabelNamesQueryCachePrefix + cacheHashKey("user-1:job=\"test\"\x00active\x00100"),
 		},
 		"label values request": {
 			reqPath:        "/prometheus/api/v1/cardinality/label_values",

@@ -595,10 +595,10 @@
           "required": false,
           "desc": "If non-zero, configures the amount of GRPC server workers used to serve the requests.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc.num-workers",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1654,10 +1654,10 @@
           "required": false,
           "desc": "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 2000,
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -1917,6 +1917,17 @@
           "fieldFlag": "querier.lookback-delta",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "promql_experimental_functions_enabled",
+          "required": false,
+          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.promql-experimental-functions-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -5613,10 +5624,10 @@
           "required": false,
           "desc": "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "query-frontend.not-running-timeout",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

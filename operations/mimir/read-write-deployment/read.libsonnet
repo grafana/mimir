@@ -57,7 +57,13 @@
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
-    (if $._config.memberlist_ring_enabled then gossipLabel else {}),
+    (if $._config.memberlist_ring_enabled then gossipLabel else {}) +
+
+    // Inherit the terminationGracePeriodSeconds from query-frontend.
+    (
+      local qf = $.newQueryFrontendDeployment('query-frontend', $.query_frontend_container);
+      deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(qf.spec.template.spec.terminationGracePeriodSeconds)
+    ),
 
   mimir_read_service: if !$._config.is_read_write_deployment_mode then null else
     $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels),

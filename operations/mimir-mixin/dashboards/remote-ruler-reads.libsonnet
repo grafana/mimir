@@ -111,6 +111,22 @@ local filename = 'mimir-remote-ruler-reads.json';
         ) +
         $.panelDescription(title, description),
       )
+      .addPanel(
+        local title = 'Queue length';
+
+        $.timeseriesPanel(title) +
+        $.hiddenLegendQueryPanel(
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ruler_query_scheduler)],
+          'Queue length'
+        ) +
+        $.panelDescription(title, description) + {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'queries',
+            },
+          },
+        },
+      )
     )
     .addRow(
       $.row('Querier (dedicated to ruler)')
