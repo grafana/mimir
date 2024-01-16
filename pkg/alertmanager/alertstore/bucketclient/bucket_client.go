@@ -288,6 +288,5 @@ func (s *BucketAlertStore) getAlertmanagerUserBucket(userID string) objstore.Buc
 }
 
 func (s *BucketAlertStore) getUserGrafanaBucket(userID string) objstore.Bucket {
-	//TODO: Do I expect this to be empty?
 	return bucket.NewSSEBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }

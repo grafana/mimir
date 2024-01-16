@@ -113,7 +113,6 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	// TODO: Extract an issue to limit the number of bytes we should read.
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
@@ -244,7 +243,6 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	// TODO: Extract issue, we need to enforce a limit that checks against both configs at the same time.
 	payload, err := io.ReadAll(r.Body)
 	if err != nil {
 		level.Error(logger).Log("msg", errReadingGrafanaConfig, "err", err.Error())
