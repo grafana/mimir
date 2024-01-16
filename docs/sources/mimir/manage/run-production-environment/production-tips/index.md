@@ -47,7 +47,7 @@ The ingester supports limiting read requests based on resource (CPU/memory) util
 The ingester write path is generally considered more important than the read path in production, so it's (often) better to
 limit read requests when ingesters are under pressure than to fail writes (or even crash).
 
-We recommend enabling resource utilization based ingester read path limiting, to protect ingesters from potentially getting overwhelmed by intensive queries.
+We recommend enabling resource utilization based ingester read path limiting, to protect ingesters from potentially getting overwhelmed by expensive queries.
 For more information on its configuration, refer to [ingester]({{< relref "../../../configure/configure-resource-utilization-based-ingester-read-path-limiting.md" >}}).
 
 ## Querier
