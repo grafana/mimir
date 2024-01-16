@@ -263,7 +263,7 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 func DefaultTenantManagerFactory(
 	cfg Config,
 	p Pusher,
-	embeddedQueryable storage.Queryable,
+	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -304,14 +304,18 @@ func DefaultTenantManagerFactory(
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-		var wrappedQueryFunc rules.QueryFunc
 
-		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+		// Wrap the query function with our custom logic.
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc)
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
 
+		// Wrap the queryable with our custom logic.
+		wrappedQueryable := WrapQueryableWithReadConsistency(queryable)
+		
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
-			Queryable:                  embeddedQueryable,
+			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,

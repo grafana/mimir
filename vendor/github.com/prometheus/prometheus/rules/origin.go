@@ -28,6 +28,10 @@ type RuleDetail struct {
 	Query  string
 	Labels labels.Labels
 	Kind   string
+
+	// Independent holds whether this rule depends on the result of other rules
+	// within the same rule group or not.
+	Independent bool
 }
 
 const (
@@ -36,7 +40,7 @@ const (
 )
 
 // NewRuleDetail creates a RuleDetail from a given Rule.
-func NewRuleDetail(r Rule) RuleDetail {
+func NewRuleDetail(r Rule, independent bool) RuleDetail {
 	var kind string
 	switch r.(type) {
 	case *AlertingRule:
@@ -48,10 +52,11 @@ func NewRuleDetail(r Rule) RuleDetail {
 	}
 
 	return RuleDetail{
-		Name:   r.Name(),
-		Query:  r.Query().String(),
-		Labels: r.Labels(),
-		Kind:   kind,
+		Name:        r.Name(),
+		Query:       r.Query().String(),
+		Labels:      r.Labels(),
+		Kind:        kind,
+		Independent: independent,
 	}
 }
 

@@ -41,7 +41,7 @@ type Rule interface {
 	Labels() labels.Labels
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	// The duration passed is the evaluation delay.
-	Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
+	Eval(_ context.Context, evalDelay time.Duration, ts time.Time, _ QueryFunc, externalURL *url.URL, limit int, independent bool) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.

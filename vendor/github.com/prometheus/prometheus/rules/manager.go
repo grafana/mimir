@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/exp/slices"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -105,22 +106,28 @@ type ContextWrapFunc func(ctx context.Context, g *Group) context.Context
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL *url.URL
-	QueryFunc   QueryFunc
-	NotifyFunc  NotifyFunc
-	Context     context.Context
+	ExternalURL               *url.URL
+	QueryFunc                 QueryFunc
+	NotifyFunc                NotifyFunc
+	Context                   context.Context
+	Appendable                storage.Appendable
+	Queryable                 storage.Queryable
+	Logger                    log.Logger
+	Registerer                prometheus.Registerer
+	OutageTolerance           time.Duration
+	ForGracePeriod            time.Duration
+	ResendDelay               time.Duration
+	GroupLoader               GroupLoader
+	MaxConcurrentEvals        int64
+	ConcurrentEvalsEnabled    bool
+	RuleDependencyController  RuleDependencyController
+	RuleConcurrencyController RuleConcurrencyController
+
+	DefaultEvaluationDelay func() time.Duration
+
 	// GroupEvaluationContextFunc will be called to wrap Context based on the group being evaluated.
 	// Will be skipped if nil.
 	GroupEvaluationContextFunc ContextWrapFunc
-	Appendable                 storage.Appendable
-	Queryable                  storage.Queryable
-	Logger                     log.Logger
-	Registerer                 prometheus.Registerer
-	OutageTolerance            time.Duration
-	ForGracePeriod             time.Duration
-	ResendDelay                time.Duration
-	GroupLoader                GroupLoader
-	DefaultEvaluationDelay     func() time.Duration
 
 	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
 	// Useful when you know you will be adding alerting rules after the manager has already started.
@@ -138,6 +145,14 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.GroupLoader == nil {
 		o.GroupLoader = FileLoader{}
+	}
+
+	if o.RuleDependencyController == nil {
+		o.RuleDependencyController = NewRuleDependencyController()
+	}
+
+	if o.RuleConcurrencyController == nil {
+		o.RuleConcurrencyController = newRuleConcurrencyController(o.ConcurrentEvalsEnabled, o.MaxConcurrentEvals)
 	}
 
 	m := &Manager{
@@ -185,6 +200,10 @@ func (m *Manager) Stop() {
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, groupEvalIterationFunc GroupEvalIterationFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
+
+	if m.opts.RuleDependencyController != nil {
+		m.opts.RuleDependencyController.Invalidate()
+	}
 
 	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, groupEvalIterationFunc, files...)
 
@@ -420,4 +439,86 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 			s.Send(res...)
 		}
 	}
+}
+
+// TODO doc
+type RuleDependencyController interface {
+	// TODO doc
+	IsRuleIndependent(g *Group, r Rule) bool
+
+	// TODO doc
+	Invalidate()
+}
+
+// TODO unit test
+type ruleDependencyController struct {
+	depMapsMu sync.Mutex
+	depMaps   map[*Group]dependencyMap
+}
+
+func NewRuleDependencyController() RuleDependencyController {
+	return &ruleDependencyController{
+		depMaps: map[*Group]dependencyMap{},
+	}
+}
+
+func (c *ruleDependencyController) IsRuleIndependent(g *Group, r Rule) bool {
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
+
+	depMap, found := c.depMaps[g]
+	if !found {
+		depMap = buildDependencyMap(g.rules)
+		c.depMaps[g] = depMap
+	}
+
+	return depMap.isIndependent(r)
+}
+
+func (c *ruleDependencyController) Invalidate() {
+	c.depMapsMu.Lock()
+	defer c.depMapsMu.Unlock()
+
+	// Clear out the memoized dependency maps because some or all groups may have been updated.
+	c.depMaps = map[*Group]dependencyMap{}
+}
+
+// RuleConcurrencyController controls whether rules can be evaluated concurrently. Its purpose it to bound the amount
+// of concurrency in rule evaluations, to not overwhelm the Prometheus server with additional query load.
+// Concurrency is controlled globally, not on a per-group basis.
+type RuleConcurrencyController interface {
+	// Allow determines whether any concurrent evaluation slots are available.
+	Allow() bool
+
+	// Done releases a concurrent evaluation slot.
+	Done()
+}
+
+func newRuleConcurrencyController(enabled bool, maxConcurrency int64) RuleConcurrencyController {
+	return &concurrentRuleEvalController{
+		enabled: enabled,
+		sema:    semaphore.NewWeighted(maxConcurrency),
+	}
+}
+
+// concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
+type concurrentRuleEvalController struct {
+	enabled bool
+	sema    *semaphore.Weighted
+}
+
+func (c *concurrentRuleEvalController) Allow() bool {
+	if !c.enabled {
+		return false
+	}
+
+	return c.sema.TryAcquire(1)
+}
+
+func (c *concurrentRuleEvalController) Done() {
+	if !c.enabled {
+		return
+	}
+
+	c.sema.Release(1)
 }
