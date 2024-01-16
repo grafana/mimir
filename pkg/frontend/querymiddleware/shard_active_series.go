@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/user"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/klauspost/compress/s2"
 	"github.com/opentracing/opentracing-go"
@@ -153,6 +154,10 @@ func buildShardedRequests(ctx context.Context, req *http.Request, numRequests in
 		// This is the field read by httpgrpc.FromHTTPRequest, so we need to populate it
 		// here to ensure the request parameter makes it to the querier.
 		r.RequestURI = r.URL.String()
+
+		if err := user.InjectOrgIDIntoHTTPRequest(ctx, r); err != nil {
+			return nil, err
+		}
 
 		reqs[i] = r
 	}

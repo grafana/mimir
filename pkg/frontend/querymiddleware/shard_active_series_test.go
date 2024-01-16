@@ -33,6 +33,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 
 	validReq := func() *http.Request {
 		r := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__="metric"}`))
+		r.Header.Add("X-Scope-OrgID", "test")
 		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 		return r
 	}
@@ -275,7 +276,9 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 					}
 				}(r.Body)
 
-				_, err := user.ExtractOrgID(r.Context())
+				_, _, err := user.ExtractOrgIDFromHTTPRequest(r)
+				require.NoError(t, err)
+				_, err = user.ExtractOrgID(r.Context())
 				require.NoError(t, err)
 
 				requestCount.Inc()
