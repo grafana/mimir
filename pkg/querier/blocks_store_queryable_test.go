@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -959,6 +960,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 	var (
 		block1 = ulid.MustNew(1, nil)
+		logger = test.NewTestingLogger(t)
 	)
 
 	// Create an utility to easily run each test case in isolation.
@@ -993,9 +995,11 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
 		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{
-				client: {block1},
-			},
+			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
+			// when the tests fail because the request is retried (even if we expect not to be retried).
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
 		}}
 
 		q := &blocksStoreQuerier{
@@ -1003,8 +1007,8 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			maxT:        maxT,
 			finder:      finder,
 			stores:      stores,
-			consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
-			logger:      log.NewNopLogger(),
+			consistency: NewBlocksConsistency(0, 0, logger, nil),
+			logger:      logger,
 			metrics:     newBlocksStoreQueryableMetrics(nil),
 			limits:      &blocksStoreLimitsMock{},
 		}
