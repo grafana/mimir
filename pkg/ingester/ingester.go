@@ -468,6 +468,31 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "opening existing TSDBs")
 	}
 
+	if i.ownedSeriesService != nil {
+		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
+		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
+		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
+		//
+		// Since we don't actually need to be ACTIVE in the ring to calculate owned series (just present, with tokens) we instead
+		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
+		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
+		// ACTIVE once we finish.
+
+		oss := i.ownedSeriesService
+
+		// Fetch and cache current ring state
+		_, err := oss.checkRingForChanges()
+		switch {
+		case errors.Is(err, ring.ErrEmptyRing):
+			level.Warn(i.logger).Log("msg", "ingester ring is empty")
+		case err != nil:
+			return fmt.Errorf("can't read ring: %v", err)
+		default:
+			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
+			oss.updateAllTenants(ctx, true)
+		}
+	}
+
 	// Important: we want to keep lifecycler running until we ask it to stop, so we need to give it independent context
 	if err := i.lifecycler.StartAsync(context.Background()); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
