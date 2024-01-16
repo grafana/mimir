@@ -30,6 +30,8 @@
       'ruler.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
 
       'server.http-listen-port': $._config.server_http_port,
+
+      'distributor.remote-timeout': '10s',
     },
 
   ruler_env_map:: {

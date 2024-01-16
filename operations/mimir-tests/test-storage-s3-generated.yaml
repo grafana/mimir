@@ -842,6 +842,7 @@ spec:
         - -common.storage.backend=s3
         - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3

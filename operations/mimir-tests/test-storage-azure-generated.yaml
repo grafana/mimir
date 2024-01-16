@@ -844,6 +844,7 @@ spec:
         - -common.storage.azure.account-name=azure-account-name
         - -common.storage.backend=azure
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3

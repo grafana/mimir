@@ -846,6 +846,7 @@ spec:
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-tenant-shard-size=3
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3

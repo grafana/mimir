@@ -844,6 +844,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
