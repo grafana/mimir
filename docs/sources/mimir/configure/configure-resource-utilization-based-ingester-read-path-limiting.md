@@ -9,8 +9,18 @@ weight: 120
 
 # Configure resource utilization based ingester read path limiting
 
-As an **experimental** feature, Grafana Mimir allows you to configure limits for CPU and/or memory utilization which can cause the ingester to reject incoming read requests in order to protect the write path. The ingester's model of memory utilization
-corresponds to the Go heap size, which it tracks, along with a sliding window average of the process' CPU utilization.
+Grafana Mimir allows you to configure limits for CPU and/or memory utilization, which cause the ingester to reject incoming read requests while either of the limits is reached.
+The idea is to prevent expensive queries from interrupting the write path, ensuring a minimum of headroom for the latter.
+The ingester's model of memory utilization corresponds to the Go heap size, which it tracks, along with a sliding window average of the process' CPU utilization.
+
+The process' CPU utilization and Go memory heap size are sampled every second, and a sliding window average is taken of
+the CPU utilization. If either is greater than or equal to the corresponding configured limit, ingester read requests
+get rejected with HTTP status code 503 (Service Unavailable), until utilization levels are below respective limits again.
+
+Whenever the ingester rejects a read request due to utilization based limiting, it increments the
+`cortex_ingester_utilization_limited_read_requests_total` counter metric.
+CPU and memory utilization are also tracked, via the `cortex_ingester_utilization_limiter_current_cpu_load` and
+`cortex_ingester_utilization_limiter_current_memory_usage_bytes` gauge metrics respectively.
 
 To configure resource utilization based ingester read path limiting, you may use the following flags:
 
