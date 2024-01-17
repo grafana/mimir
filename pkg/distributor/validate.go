@@ -312,19 +312,19 @@ type labelValidationConfig interface {
 	MaxLabelValueLength(userID string) int
 }
 
-func removeNonAsciiChars(in string) (out string) {
-	foundNonAscii := false
+func removeNonASCIIChars(in string) (out string) {
+	foundNonASCII := false
 
 	out = strings.Map(func(r rune) rune {
 		if r <= unicode.MaxASCII {
 			return r
 		}
 
-		foundNonAscii = true
+		foundNonASCII = true
 		return -1
 	}, in)
 
-	if foundNonAscii {
+	if foundNonASCII {
 		out = out + " (non-ascii characters removed)"
 	}
 
@@ -342,7 +342,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonAsciiChars(unsafeMetricName))
+		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
 
 	numLabelNames := len(ls)
