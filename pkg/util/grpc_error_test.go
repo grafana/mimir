@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package storegatewaypb
+package util
 
 import (
 	"context"
@@ -67,7 +67,7 @@ func TestWrapContextError(t *testing.T) {
 
 		for testName, testData := range tests {
 			t.Run(testName, func(t *testing.T) {
-				wrapped := wrapContextError(testData.origErr)
+				wrapped := WrapGrpcContextError(testData.origErr)
 
 				assert.NotEqual(t, testData.origErr, wrapped)
 				assert.Equal(t, testData.origErr, errors.Unwrap(wrapped))
@@ -88,10 +88,10 @@ func TestWrapContextError(t *testing.T) {
 
 	t.Run("should return the input error on a non-gRPC error", func(t *testing.T) {
 		orig := errors.New("mock error")
-		assert.Equal(t, orig, wrapContextError(orig))
+		assert.Equal(t, orig, WrapGrpcContextError(orig))
 
-		assert.Equal(t, context.Canceled, wrapContextError(context.Canceled))
-		assert.Equal(t, context.DeadlineExceeded, wrapContextError(context.DeadlineExceeded))
-		assert.Equal(t, io.EOF, wrapContextError(io.EOF))
+		assert.Equal(t, context.Canceled, WrapGrpcContextError(context.Canceled))
+		assert.Equal(t, context.DeadlineExceeded, WrapGrpcContextError(context.DeadlineExceeded))
+		assert.Equal(t, io.EOF, WrapGrpcContextError(io.EOF))
 	})
 }
