@@ -28,9 +28,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -389,10 +392,10 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	require.Equal(t, float64(3), testutil.ToFloat64(zeroFetchedSeriesCount.WithLabelValues("userID")))
 }
 
-// TestManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
+// TestDefaultManagerFactory_CorrectQueryableUsed ensures that when evaluating a group with non-empty SourceTenants
 // the federated queryable is called. If SourceTenants are empty, then the regular queryable should be used.
 // This is to ensure that the `__tenant_id__` label is present for all rules evaluating within a federated rule group.
-func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
+func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
 	dummyRules := []*rulespb.RuleDesc{createRecordingRule("sum:up", "sum(up)")}
@@ -477,6 +480,96 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 				require.Fail(t, "neither of the queryables was called within the timeout")
 			}
 			manager.Stop()
+		})
+	}
+}
+
+func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDetail(t *testing.T) {
+	const userID = "tenant-1"
+
+	tests := map[string]struct {
+		ruleGroup               rulespb.RuleGroupDesc
+		expectedReadConsistency string
+	}{
+		"should inject strong read consistency if the rule is not independent": {
+			ruleGroup: rulespb.RuleGroupDesc{
+				Name: "dependent-rules",
+				Rules: []*rulespb.RuleDesc{
+					createRecordingRule("sum:up:1", "sum(up)"),
+					createRecordingRule("sum:up:2", "sum:up:1"),
+				},
+			},
+			expectedReadConsistency: api.ReadConsistencyStrong,
+		},
+		"should not inject read consistency level if the rule is independent, to let run with the per-tenant default": {
+			ruleGroup: rulespb.RuleGroupDesc{
+				Name: "independent-rules",
+				Rules: []*rulespb.RuleDesc{
+					createRecordingRule("sum:up:1", "sum(up)"),
+					createRecordingRule("sum:up:2", "sum(up)"),
+				},
+			},
+			expectedReadConsistency: "",
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			var (
+				cfg             = defaultRulerConfig(t)
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+				eng             = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+
+				// Count the number of rules evaluated.
+				ruleEvaluationsCount = atomic.NewInt64(0)
+
+				// Channel that gets closed once the expected number of rules have been evaluated.
+				ruleEvaluationsDone = make(chan struct{})
+			)
+
+			// Mock the querier.
+			querier := newQuerierMock()
+			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+				// Ensure the read consistency injected in the context is the expected one.
+				actual, _ := api.ReadConsistencyFromContext(ctx)
+				assert.Equal(t, testData.expectedReadConsistency, actual)
+
+				if ruleEvaluationsCount.Inc() == int64(len(testData.ruleGroup.Rules)) {
+					close(ruleEvaluationsDone)
+				}
+
+				return storage.EmptySeriesSet()
+			}
+
+			// Mock the pusher.
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+			// Create the manager from the factory.
+			queryable := &storage.MockQueryable{MockQuerier: querier}
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
+
+			// Load rules into manager.
+			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, testData.ruleGroup)
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+
+			// Start the manager.
+			go manager.Run()
+			t.Cleanup(manager.Stop)
+
+			// Wait until the expected rule evaluations have run.
+			select {
+			case <-ruleEvaluationsDone:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("the ruler manager has not evaluated the expected number of rules (evaluated: %d)", ruleEvaluationsCount.Load())
+			}
 		})
 	}
 }
