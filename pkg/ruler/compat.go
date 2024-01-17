@@ -312,7 +312,7 @@ func DefaultTenantManagerFactory(
 
 		// Wrap the queryable with our custom logic.
 		wrappedQueryable := WrapQueryableWithReadConsistency(queryable)
-		
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
 			Queryable:                  wrappedQueryable,
