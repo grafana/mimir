@@ -279,7 +279,7 @@ func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
 
 		// BrokerMaxReadBytes sets the maximum response size that can be read from
 		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
-		// Recommendation is to set it 2x FetchMaxBytes.
+		// franz-go recommendation is to set it 2x FetchMaxBytes.
 		kgo.BrokerMaxReadBytes(2*fetchMaxBytes),
 	)
 	client, err := kgo.NewClient(opts...)
