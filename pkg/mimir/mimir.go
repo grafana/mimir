@@ -256,7 +256,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(); err != nil {
+	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(); err != nil {
@@ -537,13 +537,14 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc.keepalive.min-time-between-pings":      "10s",
-		"server.grpc.keepalive.ping-without-stream-allowed": "true",
-		"server.grpc.num-workers":                           "100",
-		"server.http-listen-port":                           "8080",
-		"server.http-write-timeout":                         "2m",
+		"server.grpc-max-recv-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc.keepalive.min-time-between-pings":              "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed":         "true",
+		"server.grpc.num-workers":                                   "100",
+		"server.http-listen-port":                                   "8080",
+		"server.http-write-timeout":                                 "2m",
+		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {

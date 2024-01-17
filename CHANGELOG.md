@@ -20,6 +20,9 @@
   * `prometheus_sd_refresh_duration_seconds` renamed to `cortex_prometheus_sd_refresh_duration_seconds`
 * [CHANGE] Query-frontend: the default value for `-query-frontend.not-running-timeout` has been changed from 0 (disabled) to 2s. The configuration option has also been moved from "experimental" to "advanced". #7126
 * [CHANGE] Store-gateway: to reduce disk contention on HDDs the default value for `blocks-storage.bucket-store.tenant-sync-concurrency` has been changed from `10` to `1` and the default value for `blocks-storage.bucket-store.block-sync-concurrency` has been changed from `20` to `4`. #7136
+* [CHANGE] All: set `-server.report-grpc-codes-in-instrumentation-label-enabled` to `true` by default, which enables reporting gRPC status codes as `status_code` labels in the `cortex_request_duration_seconds` metric. #7144
+* [CHANGE] Distributor: report gRPC status codes as `status_code` labels in the `cortex_ingester_client_request_duration_seconds` metric by default. #7144
+* [CHANGE] Distributor: CLI flag `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled` has been deprecated, and its default value is set to `true`. #7144
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
 * [FEATURE] Querier / query-frontend: added `-querier.promql-experimental-functions-enabled` CLI flag (and respective YAML config option) to enable experimental PromQL functions. The experimental functions introduced are: `mad_over_time()`, `sort_by_label()` and `sort_by_label_desc()`. #7057
