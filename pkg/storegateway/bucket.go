@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -1086,11 +1087,11 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	strategy seriesIteratorStrategy,
 ) (seriesChunkRefsSetIterator, error) {
 	var (
-		mtx          = sync.Mutex{}
-		batches      = make([]seriesChunkRefsSetIterator, 0, len(blocks))
-		g, _         = errgroup.WithContext(ctx)
-		begin        = time.Now()
-		nonCompacted = 0
+		mtx                           = sync.Mutex{}
+		batches                       = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		g, _                          = errgroup.WithContext(ctx)
+		begin                         = time.Now()
+		blocksQueriedBySourceAndLevel = make(map[blockSourceAndLevel]int)
 	)
 	for i, b := range blocks {
 		b := b
@@ -1137,9 +1138,10 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 			return nil
 		})
 
-		if !b.meta.IsCompacted() {
-			nonCompacted++
-		}
+		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
+			source: string(b.meta.Thanos.Source),
+			level:  b.meta.Compaction.Level,
+		}]++
 	}
 
 	err := g.Wait()
@@ -1149,7 +1151,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
-		stats.nonCompactedBlocksQueried = nonCompacted
+		stats.setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel)
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
@@ -1180,7 +1182,9 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
 	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
-	s.metrics.seriesNonCompactedBlocksQueried.Observe(float64(stats.nonCompactedBlocksQueried))
+	for sl, count := range stats.blocksQueriedBySourceAndLevel {
+		s.metrics.seriesBlockSourceAndLevelQueried.WithLabelValues(sl.source, strconv.Itoa(sl.level)).Add(float64(count))
+	}
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouchedSizeSum))
@@ -1200,7 +1204,9 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordStreamingSeriesStats(stats)
 
 	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
-	s.metrics.seriesNonCompactedBlocksQueried.Observe(float64(stats.nonCompactedBlocksQueried))
+	for sl, count := range stats.blocksQueriedBySourceAndLevel {
+		s.metrics.seriesBlockSourceAndLevelQueried.WithLabelValues(sl.source, strconv.Itoa(sl.level)).Add(float64(count))
+	}
 }
 
 func (s *BucketStore) recordLabelValuesCallResult(safeStats *safeQueryStats) {
@@ -1328,7 +1334,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var mtx sync.Mutex
 	var sets [][]string
-	nonCompacted := 0
+	var blocksQueriedBySourceAndLevel = make(map[blockSourceAndLevel]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	for _, b := range s.blocks {
@@ -1341,9 +1347,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 
 		resHints.AddQueriedBlock(b.meta.ULID)
-		if !b.meta.IsCompacted() {
-			nonCompacted++
-		}
+		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
+			source: string(b.meta.Thanos.Source),
+			level:  b.meta.Compaction.Level,
+		}]++
 
 		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
@@ -1377,7 +1384,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
-		stats.nonCompactedBlocksQueried = nonCompacted
+		stats.setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel)
 	})
 
 	anyHints, err := types.MarshalAny(resHints)

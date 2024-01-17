@@ -20,20 +20,20 @@ import (
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
 // BucketStore is offloaded.
 type BucketStoreMetrics struct {
-	blockLoads                      prometheus.Counter
-	blockLoadFailures               prometheus.Counter
-	blockDrops                      prometheus.Counter
-	blockDropFailures               prometheus.Counter
-	seriesDataTouched               *prometheus.SummaryVec
-	seriesDataFetched               *prometheus.SummaryVec
-	seriesDataSizeTouched           *prometheus.SummaryVec
-	seriesDataSizeFetched           *prometheus.SummaryVec
-	seriesBlocksQueried             prometheus.Summary
-	seriesNonCompactedBlocksQueried prometheus.Summary
-	resultSeriesCount               prometheus.Summary
-	chunkSizeBytes                  prometheus.Histogram
-	queriesDropped                  *prometheus.CounterVec
-	seriesRefetches                 prometheus.Counter
+	blockLoads                       prometheus.Counter
+	blockLoadFailures                prometheus.Counter
+	blockDrops                       prometheus.Counter
+	blockDropFailures                prometheus.Counter
+	seriesDataTouched                *prometheus.SummaryVec
+	seriesDataFetched                *prometheus.SummaryVec
+	seriesDataSizeTouched            *prometheus.SummaryVec
+	seriesDataSizeFetched            *prometheus.SummaryVec
+	seriesBlocksQueried              prometheus.Summary
+	seriesBlockSourceAndLevelQueried *prometheus.CounterVec
+	resultSeriesCount                prometheus.Summary
+	chunkSizeBytes                   prometheus.Histogram
+	queriesDropped                   *prometheus.CounterVec
+	seriesRefetches                  prometheus.Counter
 
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
@@ -97,10 +97,10 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
 	})
-	m.seriesNonCompactedBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
-		Name: "cortex_bucket_store_series_non_compacted_blocks_queried",
-		Help: "Number of non-compacted blocks in a bucket store that were touched to satisfy a query.",
-	})
+	m.seriesBlockSourceAndLevelQueried = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_series_blocks_queried_by_source_and_level",
+		Help: "Number of blocks in a bucket store that were touched to satisfy a query, by source and compaction level.",
+	}, []string{"source", "level"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",
 		Help: "Total number of cases where the built-in max series size was not enough to fetch series from index, resulting in refetch.",

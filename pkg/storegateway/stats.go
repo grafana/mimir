@@ -12,8 +12,8 @@ import (
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
-	blocksQueried             int
-	nonCompactedBlocksQueried int
+	blocksQueried                 int
+	blocksQueriedBySourceAndLevel map[blockSourceAndLevel]int
 
 	postingsTouched          int
 	postingsTouchedSizeSum   int
@@ -77,9 +77,17 @@ type queryStats struct {
 	streamingSeriesAmbientTime time.Duration
 }
 
+// blockSourceAndLevel encapsulate a block's thanos source and compaction level
+type blockSourceAndLevel struct {
+	source string
+	level  int
+}
+
 func (s queryStats) merge(o *queryStats) *queryStats {
 	s.blocksQueried += o.blocksQueried
-	s.nonCompactedBlocksQueried += o.nonCompactedBlocksQueried
+	for sl, count := range o.blocksQueriedBySourceAndLevel {
+		s.blocksQueriedBySourceAndLevel[sl] += count
+	}
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
@@ -134,6 +142,16 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
 
 	return &s
+}
+
+func (s *queryStats) setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel map[blockSourceAndLevel]int) {
+	if s.blocksQueriedBySourceAndLevel == nil {
+		s.blocksQueriedBySourceAndLevel = blocksQueriedBySourceAndLevel
+	} else {
+		for sl, count := range blocksQueriedBySourceAndLevel {
+			s.blocksQueriedBySourceAndLevel[sl] += count
+		}
+	}
 }
 
 // safeQueryStats wraps queryStats adding functions manipulate the statistics while holding a lock.
