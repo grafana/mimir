@@ -49,6 +49,8 @@ ruler:
   rule_path: /data/ruler
   # Each ruler is configured to route alerts to the Alertmanager running within the same component.
   alertmanager_url: http://localhost:8080/alertmanager
+  # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
+  for_grace_period: 1s
 
 ruler_storage:
   s3:
