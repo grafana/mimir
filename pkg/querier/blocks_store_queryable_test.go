@@ -834,7 +834,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for _, streaming := range []bool{false} {
+			for _, streaming := range []bool{true, false} {
 				t.Run(fmt.Sprintf("streaming=%t", streaming), func(t *testing.T) {
 					reg := prometheus.NewPedanticRegistry()
 
