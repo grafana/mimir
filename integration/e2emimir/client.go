@@ -813,7 +813,7 @@ func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, id, created i
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("setting config failed with status %d and error %v", resp.StatusCode, string(body))
+		return fmt.Errorf("setting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
 	return nil
@@ -836,7 +836,97 @@ func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("deleting config failed with status %d and error %v", resp.StatusCode, string(body))
+		return fmt.Errorf("deleting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugs *alertmanager.UserGrafanaState
+	err = json.Unmarshal(sr.Data, &ugs)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugs, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerState(ctx context.Context, state string) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	data, err := json.Marshal(&alertmanager.UserGrafanaState{
+		State: state,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerState(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
 	return nil
