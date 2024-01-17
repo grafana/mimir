@@ -105,7 +105,6 @@ type blocksStoreQueryableMetrics struct {
 
 	blocksFound                                       prometheus.Counter
 	blocksQueried                                     prometheus.Counter
-	compactedBlocksQueried                            prometheus.Counter
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
 	// The total number of chunks received from store-gateways that were used to evaluate queries
 	chunksTotal prometheus.Counter
@@ -133,10 +132,6 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 		blocksQueried: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_queried_total",
 			Help: "Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.",
-		}),
-		compactedBlocksQueried: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_compacted_blocks_queried_total",
-			Help: "Number of compacted blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.",
 		}),
 		blocksWithCompactorShardButIncompatibleQueryShard: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
@@ -505,7 +500,6 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 
 type queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)
 
-// queryWithConsistencyCheck asserts that the queryF result matches the expected blocks for minT, maxT, tenantID, and shard, based on the bucket index.
 func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	ctx context.Context, spanLog *spanlogger.SpanLogger, minT, maxT int64, tenantID string, shard *sharding.ShardSelector, queryF queryFunc,
 ) error {
@@ -772,7 +766,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			myStreamingSeries := []*storepb.StreamingSeries(nil)
 			var myWarnings annotations.Annotations
 			myQueriedBlocks := []ulid.ULID(nil)
-			myCompactedBlocks := 0
 			indexBytesFetched := uint64(0)
 
 			for {
@@ -827,14 +820,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						return errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
 					}
 
-					ids, compactedBlocks, err := convertBlockHints(hints.QueriedBlocks)
-					q.metrics.compactedBlocksQueried.Add(float64(compactedBlocks))
+					ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
 					if err != nil {
 						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 					}
 
 					myQueriedBlocks = append(myQueriedBlocks, ids...)
-					myCompactedBlocks += compactedBlocks
 				}
 
 				if s := resp.GetStats(); s != nil {
@@ -872,8 +863,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"fetched chunks", chunksFetched,
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-					"compacted blocks", myCompactedBlocks)
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
@@ -883,8 +873,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"fetched series", len(myStreamingSeries),
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-					"compacted blocks", myCompactedBlocks)
+					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 			}
 
 			// Store the result.
@@ -989,26 +978,25 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
-			compactedBlocks := 0
 			if namesResp.Hints != nil {
 				hints := hintspb.LabelNamesResponseHints{}
 				if err := types.UnmarshalAny(namesResp.Hints, &hints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label names hints from %s", c.RemoteAddress())
 				}
 
-				myQueriedBlocks, compactedBlocks, err = convertBlockHints(hints.QueriedBlocks)
-				q.metrics.compactedBlocksQueried.Add(float64(compactedBlocks))
+				ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
 				if err != nil {
 					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 				}
+
+				myQueriedBlocks = ids
 			}
 
 			spanLog.DebugLog("msg", "received label names from store-gateway",
 				"instance", c,
 				"num labels", len(namesResp.Names),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-				"compacted blocks", compactedBlocks)
+				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
 			// Store the result.
 			mtx.Lock()
@@ -1072,26 +1060,25 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 			}
 
 			myQueriedBlocks := []ulid.ULID(nil)
-			compactedBlocks := 0
 			if valuesResp.Hints != nil {
 				hints := hintspb.LabelValuesResponseHints{}
 				if err := types.UnmarshalAny(valuesResp.Hints, &hints); err != nil {
 					return errors.Wrapf(err, "failed to unmarshal label values hints from %s", c.RemoteAddress())
 				}
 
-				myQueriedBlocks, compactedBlocks, err = convertBlockHints(hints.QueriedBlocks)
-				q.metrics.compactedBlocksQueried.Add(float64(compactedBlocks))
+				ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
 				if err != nil {
 					return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 				}
+
+				myQueriedBlocks = ids
 			}
 
 			spanLog.DebugLog("msg", "received label values from store-gateway",
 				"instance", c.RemoteAddress(),
 				"num values", len(valuesResp.Values),
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
-				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "),
-				"compacted blocks", compactedBlocks)
+				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
 			// Values returned need not be sorted, but we need them to be sorted so we can merge.
 			slices.Sort(valuesResp.Values)
@@ -1213,23 +1200,19 @@ func convertULIDsToString(ids []ulid.ULID) []string {
 	return res
 }
 
-func convertBlockHints(hints []hintspb.Block) (r []ulid.ULID, compactedBlocks int, err error) {
+func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 	res := make([]ulid.ULID, len(hints))
 
-	var blockID ulid.ULID
 	for idx, hint := range hints {
-		blockID, err = ulid.Parse(hint.Id)
+		blockID, err := ulid.Parse(hint.Id)
 		if err != nil {
-			return nil, compactedBlocks, err
+			return nil, err
 		}
 
 		res[idx] = blockID
-		if hint.Compacted {
-			compactedBlocks++
-		}
 	}
 
-	return res, compactedBlocks, nil
+	return res, nil
 }
 
 // countChunksAndBytes returns the number of chunks and size of the chunks making up the provided series in bytes

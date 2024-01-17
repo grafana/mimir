@@ -2403,7 +2403,7 @@ func mockStatsResponse(fetchedIndexBytes int) *storepb.SeriesResponse {
 func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
 	hints := &hintspb.SeriesResponseHints{}
 	for _, id := range ids {
-		hints.AddQueriedBlock(id, false)
+		hints.AddQueriedBlock(id)
 	}
 
 	marshalled, err := types.MarshalAny(hints)
@@ -2421,7 +2421,7 @@ func mockHintsResponse(ids ...ulid.ULID) *storepb.SeriesResponse {
 func mockNamesHints(ids ...ulid.ULID) *types.Any {
 	hints := &hintspb.LabelNamesResponseHints{}
 	for _, id := range ids {
-		hints.AddQueriedBlock(id, false)
+		hints.AddQueriedBlock(id)
 	}
 
 	marshalled, err := types.MarshalAny(hints)
@@ -2435,7 +2435,7 @@ func mockNamesHints(ids ...ulid.ULID) *types.Any {
 func mockValuesHints(ids ...ulid.ULID) *types.Any {
 	hints := &hintspb.LabelValuesResponseHints{}
 	for _, id := range ids {
-		hints.AddQueriedBlock(id, false)
+		hints.AddQueriedBlock(id)
 	}
 
 	marshalled, err := types.MarshalAny(hints)

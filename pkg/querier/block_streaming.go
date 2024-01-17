@@ -195,10 +195,8 @@ func (s *storeGatewayStreamReader) StartBuffering() {
 func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error {
 	totalSeries := 0
 	totalChunks := 0
-	compactedBlocks := 0
 	defer func() {
 		s.metrics.chunksTotal.Add(float64(totalChunks))
-		s.metrics.compactedBlocksQueried.Add(float64(compactedBlocks))
 	}()
 
 	translateReceivedError := func(err error) error {

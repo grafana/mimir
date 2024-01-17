@@ -35,9 +35,8 @@ message SeriesResponseHints {
 
 message Block {
     string id = 1;
-    // compacted indicates whether the block has been compacted yet
-    bool compacted = 2;
 }
+
 
 message LabelNamesRequestHints {
     /// block_matchers is a list of label matchers that are evaluated against each single block's

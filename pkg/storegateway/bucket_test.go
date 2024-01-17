@@ -1362,7 +1362,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		id := createBlockFromHead(t, blockDir, head)
 		assert.NoError(t, head.Close())
 		series = append(series, bSeries...)
-		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String(), Compacted: true})
+		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
 		meta, err := block.InjectThanosMeta(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
@@ -1861,7 +1861,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 				ExpectedSeries: seriesSet1,
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String(), Compacted: true},
+						{Id: block1.String()},
 					},
 				},
 			}, {
@@ -1876,8 +1876,8 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 				ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String(), Compacted: true},
-						{Id: block2.String(), Compacted: true},
+						{Id: block1.String()},
+						{Id: block2.String()},
 					},
 				},
 			}, {
@@ -1897,7 +1897,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 				ExpectedSeries: seriesSet1,
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String(), Compacted: true},
+						{Id: block1.String()},
 					},
 				},
 			},
@@ -2613,7 +2613,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
+					{Id: block1.String()},
 				},
 			},
 
@@ -2625,7 +2625,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedValues: []string{"1"},
 			expectedValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
+					{Id: block1.String()},
 				},
 			},
 		},
@@ -2641,8 +2641,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
-					{Id: block2.String(), Compacted: true},
+					{Id: block1.String()},
+					{Id: block2.String()},
 				},
 			},
 
@@ -2654,8 +2654,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedValues: []string{"1"},
 			expectedValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
-					{Id: block2.String(), Compacted: true},
+					{Id: block1.String()},
+					{Id: block2.String()},
 				},
 			},
 		},
@@ -2674,7 +2674,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedNames: labelNamesFromSeriesSet(seriesSet1),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
+					{Id: block1.String()},
 				},
 			},
 
@@ -2691,7 +2691,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 			expectedValues: []string{"1"},
 			expectedValuesHints: hintspb.LabelValuesResponseHints{
 				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String(), Compacted: true},
+					{Id: block1.String()},
 				},
 			},
 		},
