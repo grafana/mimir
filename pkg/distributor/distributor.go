@@ -1858,7 +1858,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil && !(errors.Is(util.WrapGrpcContextError(err), context.Canceled)) {
+			if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
