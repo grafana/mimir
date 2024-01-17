@@ -51,6 +51,9 @@ ruler:
   alertmanager_url: http://localhost:8080/alertmanager
   # Force the ruler to restore the state of any alert with a "for" period longer than 1s.
   for_grace_period: 1s
+  # Evaluate rules via query-frontend (remote rule evaluation).
+  query_frontend:
+    address: dns:///mimir-read-1:9095
 
 ruler_storage:
   s3:
