@@ -122,7 +122,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
 	r.ClientConfig.ExtraHeaders = map[string]string{}
-	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests, alternatively set  "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
+	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
 	// Register rule commands
 	listCmd := rulesCmd.
