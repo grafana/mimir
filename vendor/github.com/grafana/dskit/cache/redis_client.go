@@ -222,15 +222,23 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	return c, nil
 }
 
-// SetAsync implement RemoteCacheClient.
-func (c *RedisClient) SetAsync(key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+// SetMultiAsync implements RemoteCacheClient.
+func (c *RedisClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	c.setMultiAsync(data, ttl, func(key string, value []byte, ttl time.Duration) error {
 		_, err := c.client.Set(context.Background(), key, value, ttl).Result()
 		return err
 	})
 }
 
-// GetMulti implement RemoteCacheClient.
+// SetAsync implements RemoteCacheClient.
+func (c *RedisClient) SetAsync(key string, value []byte, ttl time.Duration) {
+	c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+		_, err := c.client.Set(context.Background(), key, buf, ttl).Result()
+		return err
+	})
+}
+
+// GetMulti implements RemoteCacheClient.
 func (c *RedisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil

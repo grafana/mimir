@@ -129,10 +129,16 @@ func newBaseClient(
 	}
 }
 
-func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) error {
+func (c *baseClient) setMultiAsync(data map[string][]byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
+	for key, val := range data {
+		c.setAsync(key, val, ttl, f)
+	}
+}
+
+func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
 	if c.maxItemSize > 0 && uint64(len(value)) > c.maxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
-		return nil
+		return
 	}
 
 	err := c.asyncQueue.submit(func() {
@@ -154,12 +160,10 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 		c.metrics.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
 	})
 
-	if errors.Is(err, errAsyncQueueFull) {
+	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.asyncBuffSize)
-		return nil
 	}
-	return err
 }
 
 // wait submits an async task and blocks until it completes. This can be used during
