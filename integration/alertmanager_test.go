@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
@@ -836,9 +837,10 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 	require.NoError(t, err)
 	{
+		var cfg *alertmanager.UserGrafanaConfig
 		// When no config is set yet, it should not return anything.
-		cfg, err := c.GetGrafanaAlertmanagerConfig(context.Background())
-		require.Error(t, e2emimir.ErrNotFound)
+		cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		require.Nil(t, cfg)
 
 		// Now, let's set a config.
@@ -858,22 +860,23 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 		// Now that the config is deleted, it should not return anything again.
 		cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
-		require.Error(t, e2emimir.ErrNotFound)
+		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
 		require.Nil(t, cfg)
 	}
 
 	{
+		var state *alertmanager.UserGrafanaState
 		// When no state is set yet, it should not return anything.
-		cfg, err := c.GetGrafanaAlertmanagerState(context.Background())
-		require.Error(t, e2emimir.ErrNotFound)
-		require.Nil(t, cfg)
+		state, err = c.GetGrafanaAlertmanagerState(context.Background())
+		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+		require.Nil(t, state)
 
 		// Now, let's set the state.
 		err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
 		require.NoError(t, err)
 
 		// With a state now set, let's get it back.
-		state, err := c.GetGrafanaAlertmanagerState(context.Background())
+		state, err = c.GetGrafanaAlertmanagerState(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
 
@@ -882,8 +885,8 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		require.NoError(t, err)
 
 		// Now that the state is deleted, it should not return anything again.
-		cfg, err = c.GetGrafanaAlertmanagerState(context.Background())
-		require.Error(t, e2emimir.ErrNotFound)
-		require.Nil(t, cfg)
+		state, err = c.GetGrafanaAlertmanagerState(context.Background())
+		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+		require.Nil(t, state)
 	}
 }
