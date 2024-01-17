@@ -20,6 +20,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
@@ -372,6 +373,87 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 		return nil, fmt.Errorf("error decoding label values response: %w", err)
 	}
 	return &lvalsResp, nil
+}
+
+type activeSeriesRequestConfig struct {
+	method         string
+	useCompression bool
+	header         http.Header
+}
+
+type ActiveSeriesOption func(*activeSeriesRequestConfig)
+
+func WithEnableCompression() ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.useCompression = true
+		c.header.Set("Accept-Encoding", "x-snappy-framed")
+	}
+}
+
+func WithRequestMethod(m string) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.method = m
+	}
+}
+
+func WithQueryShards(n int) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.header.Set("Sharding-Control", strconv.Itoa(n))
+	}
+}
+
+func (c *Client) ActiveSeries(selector string, options ...ActiveSeriesOption) (*api.ActiveSeriesResponse, error) {
+	cfg := activeSeriesRequestConfig{method: http.MethodGet, header: http.Header{"X-Scope-OrgID": []string{c.orgID}}}
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	req, err := http.NewRequest(cfg.method, fmt.Sprintf("http://%s/prometheus/api/v1/cardinality/active_series", c.querierAddress), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = cfg.header
+
+	q := req.URL.Query()
+	q.Set("selector", selector)
+	switch cfg.method {
+	case http.MethodGet:
+		req.URL.RawQuery = q.Encode()
+	case http.MethodPost:
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Body = io.NopCloser(strings.NewReader(q.Encode()))
+	default:
+		return nil, fmt.Errorf("invalid method %s", cfg.method)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer func(body io.ReadCloser) {
+		_, _ = io.ReadAll(body)
+		_ = body.Close()
+	}(resp.Body)
+
+	var bodyReader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+		bodyReader = s2.NewReader(bodyReader)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(bodyReader)
+		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, body)
+	}
+
+	res := &api.ActiveSeriesResponse{}
+	err = json.NewDecoder(bodyReader).Decode(res)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding active series response: %w", err)
+	}
+	return res, nil
 }
 
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
