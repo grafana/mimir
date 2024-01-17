@@ -3038,10 +3038,10 @@
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",

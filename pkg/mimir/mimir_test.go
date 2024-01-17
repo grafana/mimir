@@ -428,7 +428,7 @@ func TestConfigValidation(t *testing.T) {
 				cfg.IngestStorage.Enabled = true
 				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
 				cfg.IngestStorage.KafkaConfig.Topic = "topic"
-				cfg.Ingester.ReturnOnlyGRPCErrors = false
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
 
 				return cfg
 			},
@@ -442,7 +442,7 @@ func TestConfigValidation(t *testing.T) {
 				cfg.IngestStorage.Enabled = true
 				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
 				cfg.IngestStorage.KafkaConfig.Topic = "topic"
-				cfg.Ingester.ReturnOnlyGRPCErrors = false
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
 
 				return cfg
 			},
