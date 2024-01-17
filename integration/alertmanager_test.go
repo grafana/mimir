@@ -811,3 +811,53 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 		})
 	}
 }
+
+func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		map[string]string{"-api.experimental-grafana-alertmanager-routes-enabled": "true"})
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	// When no config is set yet, it should not return anything.
+	cfg, err := c.GetGrafanaAlertmanagerConfig(context.Background())
+	require.Error(t, e2emimir.ErrNotFound)
+	require.Nil(t, cfg)
+
+	// Now, let's set a config.
+	now := time.Now().UnixMilli()
+	err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(1), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+	require.NoError(t, err)
+
+	// With that set, let's get it back.
+	cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, int64(1), cfg.ID)
+	require.Equal(t, now, cfg.CreatedAt)
+
+	// Now, let's delete it.
+	err = c.DeleteGrafanaAlertmanagerConfig(context.Background())
+	require.NoError(t, err)
+
+	// Now that the config is deleted, it should not return anything again.
+	cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+	require.Error(t, e2emimir.ErrNotFound)
+	require.Nil(t, cfg)
+}

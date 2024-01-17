@@ -212,7 +212,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
 
-		if a.cfg.EnableGrafanaAlertmanagerRoutes {
+		if a.cfg.ExperimentalGrafanaAlertmanagerRoutesEnabled {
 			level.Info(a.logger).Log("msg", "enabled experimental grafana routes")
 
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)

@@ -4,11 +4,13 @@ package alertmanager
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
@@ -26,6 +28,7 @@ const successJSON = `{ "status": "success" }`
 func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
 	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -35,12 +38,10 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:      "test_user",
 		RawConfig: "a grafana config",
-		Templates: []*alertspb.TemplateDesc{
-			{
-				Filename: "template_one",
-				Body:     "template_contents",
-			},
-		},
+		Id:        int64(1),
+		Hash:      "bb788eaa294c05ec556c1ed87546b7a9",
+		CreatedAt: now,
+		Default:   false,
 	}))
 
 	require.Len(t, storage.Objects(), 1)
@@ -148,6 +149,7 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaState(t *testing.T) {
 func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	storage := objstore.NewInMemBucket()
 	alertstore := bucketclient.NewBucketAlertStore(storage, nil, log.NewNopLogger())
+	now := time.Now().UnixMilli()
 
 	am := &MultitenantAlertmanager{
 		store:  alertstore,
@@ -157,12 +159,10 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
 		User:      "test_user",
 		RawConfig: "a grafana config",
-		Templates: []*alertspb.TemplateDesc{
-			{
-				Filename: "template_one",
-				Body:     "template_contents",
-			},
-		},
+		Id:        int64(1),
+		Hash:      "bb788eaa294c05ec556c1ed87546b7a9",
+		CreatedAt: now,
+		Default:   false,
 	}))
 
 	require.Len(t, storage.Objects(), 1)
@@ -183,17 +183,18 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code)
 		body, err := io.ReadAll(rec.Body)
 		require.NoError(t, err)
-		json := `
+		json := fmt.Sprintf(`
 		{
 			"data": {
-				 "grafana_alertmanager_config": "a grafana config",
-				 "template_files": {
-					  "template_one": "template_contents"
-				 }
+				 "configuration": "a grafana config",
+				 "configuration_hash": "bb788eaa294c05ec556c1ed87546b7a9",
+				 "created": %d,
+				 "default": false,
+				 "id": 1
 			},
 			"status": "success"
 		}
-		`
+		`, now)
 		require.JSONEq(t, json, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 		require.Len(t, storage.Objects(), 1)

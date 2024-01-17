@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -408,6 +409,11 @@ type ServerStatus struct {
 	} `json:"data"`
 }
 
+type successResult struct {
+	Status string          `json:"status"`
+	Data   json.RawMessage `json:"data,omitempty"`
+}
+
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
 func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Create HTTP request
@@ -721,6 +727,100 @@ func (c *Client) SetAlertmanagerConfig(ctx context.Context, amConfig string, tem
 // DeleteAlertmanagerConfig gets the status of an alertmanager instance
 func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 	u := c.alertmanagerClient.URL("/api/v1/alerts", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanager.UserGrafanaConfig, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugc *alertmanager.UserGrafanaConfig
+	err = json.Unmarshal(sr.Data, &ugc)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugc, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, id, created int64, cfg, hash string, d bool) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+
+	data, err := json.Marshal(&alertmanager.UserGrafanaConfig{
+		ID:                        id,
+		GrafanaAlertmanagerConfig: cfg,
+		Hash:                      hash,
+		CreatedAt:                 created,
+		Default:                   d,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
 	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("error creating request: %v", err)
