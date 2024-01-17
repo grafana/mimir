@@ -137,9 +137,8 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Name: "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
 			Help: "Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.",
 		}),
-		// Named to be consistent with distributor_query_ingester_chunks_total
 		chunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_query_storegateway_chunks_total",
+			Name: "cortex_querier_query_storegateway_chunks_total",
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
 	}
