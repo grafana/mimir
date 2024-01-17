@@ -537,13 +537,14 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc.keepalive.min-time-between-pings":      "10s",
-		"server.grpc.keepalive.ping-without-stream-allowed": "true",
-		"server.grpc.num-workers":                           "100",
-		"server.http-listen-port":                           "8080",
-		"server.http-write-timeout":                         "2m",
+		"server.grpc-max-recv-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc.keepalive.min-time-between-pings":              "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed":         "true",
+		"server.grpc.num-workers":                                   "100",
+		"server.http-listen-port":                                   "8080",
+		"server.http-write-timeout":                                 "2m",
+		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {

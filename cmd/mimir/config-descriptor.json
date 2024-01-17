@@ -411,7 +411,7 @@
           "required": false,
           "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "server.report-grpc-codes-in-instrumentation-label-enabled",
           "fieldType": "boolean"
         },

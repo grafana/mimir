@@ -39,13 +39,11 @@ type closableHealthAndIngesterClient struct {
 // MakeIngesterClient makes a new IngesterClient
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	logger = log.With(logger, "component", "ingester-client")
-	unary, stream := grpcclient.Instrument(metrics.requestDuration, middleware.ReportGRPCStatusOption)
-	// cfg.DeprecatedReportGRPCStatusCodes is deprecated.
-	// Starting from Mimir 2.14.0, Mimir behavior should be as this flag were set to true.
-	// TODO: Remove the following check in Mimir 2.14.0
-	if !cfg.DeprecatedReportGRPCStatusCodes {
-		unary, stream = grpcclient.Instrument(metrics.requestDuration)
+	var reportGRPCStatusesOptions []middleware.InstrumentationOption
+	if cfg.DeprecatedReportGRPCStatusCodes {
+		reportGRPCStatusesOptions = []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	}
+	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	if cfg.CircuitBreaker.Enabled {
 		unary = append([]grpc.UnaryClientInterceptor{NewCircuitBreaker(inst, cfg.CircuitBreaker, metrics, logger)}, unary...)
 	}

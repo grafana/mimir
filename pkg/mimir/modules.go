@@ -304,9 +304,6 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
 	t.Cfg.Server.ReportHTTP4XXCodesInInstrumentationLabel = true
 
-	// Allow reporting gRPC statuses in status_code label of request duration metrics
-	t.Cfg.Server.ReportGRPCCodesInInstrumentationLabel = true
-
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
 	serv, err := server.New(t.Cfg.Server)

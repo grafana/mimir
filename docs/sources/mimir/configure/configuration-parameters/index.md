@@ -595,7 +595,7 @@ grpc_tls_config:
 # If set to true, gRPC statuses will be reported in instrumentation labels with
 # their string representations. Otherwise, they will be reported as "error".
 # CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
