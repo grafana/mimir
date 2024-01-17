@@ -1125,8 +1125,7 @@ ruler:
       memory: 128Mi
 
   # Additional ruler container arguments, e.g. log level (debug, info, warn, error)
-  extraArgs:
-    distributor.remote-timeout: 10s
+  extraArgs: {}
     # log.level: debug
 
   # Pod Labels
