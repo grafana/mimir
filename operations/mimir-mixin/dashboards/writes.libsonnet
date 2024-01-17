@@ -111,7 +111,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanelNativeHistogram('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+        $.latencyPanelNativeHistogram($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
