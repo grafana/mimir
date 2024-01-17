@@ -12,7 +12,8 @@ import (
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
-	blocksQueried int
+	blocksQueried             int
+	nonCompactedBlocksQueried int
 
 	postingsTouched          int
 	postingsTouchedSizeSum   int
@@ -78,6 +79,7 @@ type queryStats struct {
 
 func (s queryStats) merge(o *queryStats) *queryStats {
 	s.blocksQueried += o.blocksQueried
+	s.nonCompactedBlocksQueried += o.nonCompactedBlocksQueried
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum

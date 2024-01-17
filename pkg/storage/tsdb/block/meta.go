@@ -47,8 +47,10 @@ type Meta struct {
 	Thanos ThanosMeta `json:"thanos"`
 }
 
-// IsCompacted returns whether the block has been compacted yet.
+// IsCompacted returns whether the block has been compacted yet or was backfilled.
 func (m *Meta) IsCompacted() bool {
+	// ReceiveSource indicates a block was uploaded by an ingester, but not yet compacted by a compactor.
+	// It also excludes blocks that were backfilled.
 	return m.Thanos.Source != ReceiveSource
 }
 

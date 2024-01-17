@@ -625,7 +625,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		resHints = &hintspb.SeriesResponseHints{}
 	)
 	for _, b := range blocks {
-		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
+		resHints.AddQueriedBlock(b.meta.ULID)
 	}
 	if err := s.sendHints(srv, resHints); err != nil {
 		return err
@@ -1086,10 +1086,11 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	strategy seriesIteratorStrategy,
 ) (seriesChunkRefsSetIterator, error) {
 	var (
-		mtx     = sync.Mutex{}
-		batches = make([]seriesChunkRefsSetIterator, 0, len(blocks))
-		g, _    = errgroup.WithContext(ctx)
-		begin   = time.Now()
+		mtx          = sync.Mutex{}
+		batches      = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		g, _         = errgroup.WithContext(ctx)
+		begin        = time.Now()
+		nonCompacted = 0
 	)
 	for i, b := range blocks {
 		b := b
@@ -1135,6 +1136,10 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 
 			return nil
 		})
+
+		if !b.meta.IsCompacted() {
+			nonCompacted++
+		}
 	}
 
 	err := g.Wait()
@@ -1144,6 +1149,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
+		stats.nonCompactedBlocksQueried = nonCompacted
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
@@ -1174,6 +1180,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
 	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
+	s.metrics.seriesNonCompactedBlocksQueried.Observe(float64(stats.nonCompactedBlocksQueried))
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
 	s.metrics.seriesDataSizeTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouchedSizeSum))
@@ -1193,6 +1200,7 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordStreamingSeriesStats(stats)
 
 	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
+	s.metrics.seriesNonCompactedBlocksQueried.Observe(float64(stats.nonCompactedBlocksQueried))
 }
 
 func (s *BucketStore) recordLabelValuesCallResult(safeStats *safeQueryStats) {
@@ -1320,6 +1328,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var mtx sync.Mutex
 	var sets [][]string
+	nonCompacted := 0
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	for _, b := range s.blocks {
@@ -1331,7 +1340,10 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			continue
 		}
 
-		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
+		resHints.AddQueriedBlock(b.meta.ULID)
+		if !b.meta.IsCompacted() {
+			nonCompacted++
+		}
 
 		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
@@ -1365,6 +1377,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
+		stats.nonCompactedBlocksQueried = nonCompacted
 	})
 
 	anyHints, err := types.MarshalAny(resHints)
@@ -1519,7 +1532,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			continue
 		}
 
-		resHints.AddQueriedBlock(b.meta.ULID, b.meta.IsCompacted())
+		resHints.AddQueriedBlock(b.meta.ULID)
 
 		g.Go(func() error {
 			result, err := blockLabelValues(gctx, b, s.postingsStrategy, s.maxSeriesPerBatch, req.Label, reqSeriesMatchers, s.logger, stats)
