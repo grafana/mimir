@@ -265,15 +265,22 @@ func (r *PartitionReader) recordFetchesMetrics(fetches kgo.Fetches) {
 }
 
 func (r *PartitionReader) newKafkaReader(at kgo.Offset) (*kgo.Client, error) {
+	const fetchMaxBytes = 100_000_000
+
 	opts := append(
 		commonKafkaClientOptions(r.kafkaCfg, r.metrics.kprom, r.logger),
 		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
 			r.kafkaCfg.Topic: {r.partitionID: at},
 		}),
 		kgo.FetchMinBytes(1),
-		kgo.FetchMaxBytes(100_000_000),
+		kgo.FetchMaxBytes(fetchMaxBytes),
 		kgo.FetchMaxWait(5*time.Second),
 		kgo.FetchMaxPartitionBytes(50_000_000),
+
+		// BrokerMaxReadBytes sets the maximum response size that can be read from
+		// Kafka. This is a safety measure to avoid OOMing on invalid responses.
+		// Recommendation is to set it 2x FetchMaxBytes.
+		kgo.BrokerMaxReadBytes(2*fetchMaxBytes),
 	)
 	client, err := kgo.NewClient(opts...)
 	if err != nil {
