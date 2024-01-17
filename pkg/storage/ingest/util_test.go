@@ -106,8 +106,6 @@ func TestResultPromise(t *testing.T) {
 		)
 
 		// Spawn few goroutines waiting for the result.
-		wg.Add(3)
-
 		for i := 0; i < 3; i++ {
 			runAsync(&wg, func() {
 				actual, err := rw.wait(ctx)
@@ -132,8 +130,6 @@ func TestResultPromise(t *testing.T) {
 		)
 
 		// Spawn few goroutines waiting for the result.
-		wg.Add(3)
-
 		for i := 0; i < 3; i++ {
 			runAsync(&wg, func() {
 				actual, err := rw.wait(ctx)
