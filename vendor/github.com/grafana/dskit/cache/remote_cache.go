@@ -77,23 +77,7 @@ func newRemoteCache(name string, logger log.Logger, remoteClient RemoteCacheClie
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *remoteCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
-	var (
-		firstErr error
-		failed   int
-	)
-
-	for key, val := range data {
-		if err := c.remoteClient.SetAsync(key, val, ttl); err != nil {
-			failed++
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-
-	if firstErr != nil {
-		level.Warn(c.logger).Log("msg", "failed to store one or more items into remote cache", "failed", failed, "firstErr", firstErr)
-	}
+	c.remoteClient.SetMultiAsync(data, ttl)
 }
 
 // Fetch fetches multiple keys and returns a map containing cache hits, along with a list of missing keys.

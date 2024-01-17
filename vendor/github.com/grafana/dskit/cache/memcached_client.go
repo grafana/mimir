@@ -305,12 +305,22 @@ func (c *MemcachedClient) Stop() {
 	c.client.Close()
 }
 
-func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) error {
-	return c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	c.setMultiAsync(data, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
 			Key:        key,
-			Value:      value,
-			Expiration: int32(time.Now().Add(ttl).Unix()),
+			Value:      buf,
+			Expiration: int32(ttl.Seconds()),
+		})
+	})
+}
+
+func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
+	c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
+		return c.client.Set(&memcache.Item{
+			Key:        key,
+			Value:      buf,
+			Expiration: int32(ttl.Seconds()),
 		})
 	})
 }
