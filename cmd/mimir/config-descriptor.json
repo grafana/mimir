@@ -98,6 +98,17 @@
         },
         {
           "kind": "field",
+          "name": "experimental_grafana_alertmanager_routes_enabled",
+          "required": false,
+          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "api.experimental-grafana-alertmanager-routes-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",
