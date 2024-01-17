@@ -299,9 +299,9 @@ data:
         key_file: /certs/tls.key
     store_gateway:
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         kvstore:
-          heartbeat_period: 1m
-          heartbeat_timeout: 4m
           prefix: multi-zone/
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
