@@ -59,7 +59,7 @@ data:
         wait_stability_min_duration: 1m
       symbols_flushers_concurrency: 4
     distributor:
-      sharding_ring:
+      ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
     frontend:

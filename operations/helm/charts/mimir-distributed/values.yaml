@@ -235,7 +235,7 @@ mimir:
         heartbeat_timeout: 4m
 
     distributor:
-      sharding_ring:
+      ring:
         heartbeat_period: 1m
         heartbeat_timeout: 4m
 
