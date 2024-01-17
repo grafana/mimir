@@ -109,11 +109,11 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+      name: 'alertmanager|compactor|distributor|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
     patch: |-
       # Jsonnet configures the ingester's ring heartbeat period only on the ingester (other components don't need it).
       - op: remove
-        path: /config/store_gateway/sharding_ring/heartbeat_period
+        path: /config/ingester/ring/heartbeat_period
 
   - target:
       kind: MimirConfig
