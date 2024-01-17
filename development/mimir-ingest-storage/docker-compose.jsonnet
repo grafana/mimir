@@ -121,6 +121,13 @@ std.manifestYamlDoc({
       ports: [
         '29092:29092',
       ],
+      healthcheck: {
+        test: 'nc -z localhost 9092 || exit -1',
+        start_period: '1s',
+        interval: '1s',
+        timeout: '1s',
+        retries: '30',
+      },
     },
   },
 
@@ -164,7 +171,10 @@ std.manifestYamlDoc({
       name: error 'missing name',
       target: error 'missing target',
       publishedHttpPort: error 'missing publishedHttpPort',
-      dependsOn: ['minio', 'kafka'],
+      dependsOn: {
+        minio: { condition: 'service_started' },
+        kafka: { condition: 'service_healthy' },
+      },
       env: {},
       extraVolumes: [],
       memberlistBindPort: self.publishedHttpPort + 2000,
