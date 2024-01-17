@@ -45,7 +45,6 @@ func TestPartitionOffsetReader(t *testing.T) {
 
 		// Run few goroutines waiting for the last produced offset.
 		wg := sync.WaitGroup{}
-		wg.Add(2)
 
 		for i := 0; i < 2; i++ {
 			runAsync(&wg, func() {
@@ -151,7 +150,6 @@ func TestPartitionOffsetReader_getLastProducedOffset(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(2)
 
 		// Run the 1st getLastProducedOffset() with a timeout which is expected to expire
 		// before the request will succeed.
@@ -257,7 +255,6 @@ func TestPartitionOffsetReader_FetchLastProducedOffset(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(2)
 
 		// The 1st FetchLastProducedOffset() is called before the service start so it's expected
 		// to wait the result of the 1st request.

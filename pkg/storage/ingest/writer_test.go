@@ -133,7 +133,6 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(3)
 
 		// Write the first record, which is expected to be sent immediately.
 		runAsync(&wg, func() {
@@ -198,7 +197,6 @@ func TestWriter_WriteSync(t *testing.T) {
 		})
 
 		wg := sync.WaitGroup{}
-		wg.Add(3)
 
 		runAsync(&wg, func() {
 			require.NoError(t, writer.WriteSync(ctx, partitionID, tenantID, &mimirpb.WriteRequest{Timeseries: series1, Metadata: nil, Source: mimirpb.API}))
@@ -266,11 +264,10 @@ func TestWriter_WriteSync(t *testing.T) {
 		var (
 			firstRequest         = atomic.NewBool(true)
 			firstRequestReceived = make(chan struct{})
+			wg                   = sync.WaitGroup{}
 		)
 
-		wg := sync.WaitGroup{}
-		wg.Add(3)
-
+		wg.Add(1)
 		cluster.ControlKey(int16(kmsg.Produce), func(request kmsg.Request) (kmsg.Response, error, bool) {
 			// Ensure the test waits for this too, since the client request will fail earlier
 			// (if we don't wait, the test will end before this function and then goleak will
@@ -349,6 +346,8 @@ func getProduceRequestRecordsCount(req *kmsg.ProduceRequest) (int, error) {
 }
 
 func runAsync(wg *sync.WaitGroup, fn func()) {
+	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		fn()
@@ -356,6 +355,8 @@ func runAsync(wg *sync.WaitGroup, fn func()) {
 }
 
 func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
+	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 		<-waitFor
@@ -366,14 +367,12 @@ func runAsyncAfter(wg *sync.WaitGroup, waitFor chan struct{}, fn func()) {
 // runAsyncAndAssertCompletionOrder runs all executors functions concurrently and asserts that the functions
 // completes in the given order.
 func runAsyncAndAssertCompletionOrder(t *testing.T, executors ...func()) {
-	wg := sync.WaitGroup{}
-	wg.Add(len(executors))
-
-	// Keep track of the actual execution order.
 	var (
+		// Keep track of the actual execution order.
 		actualOrderMx = sync.Mutex{}
 		actualOrder   = make([]int, 0, len(executors))
 		expectedOrder = make([]int, 0, len(executors))
+		wg            = sync.WaitGroup{}
 	)
 
 	for i, executor := range executors {
