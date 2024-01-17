@@ -410,11 +410,11 @@ mimir:
     {{- end}}
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
-  structuredConfig: {}
-
-  # Example
-  # See also the optional "insecure_skip_verify" key below, it allows you to skip_verify_false in case the s3_endpoint certificate is not trusted.
+  # 
+  # Additionally, consider the optional "insecure_skip_verify" key below, it allows you to skip_verify_false in case the s3_endpoint certificate is not trusted.
   # For more information see https://grafana.com/docs/mimir/latest/references/configuration-parameters/
+  #
+  # Example:
   #
   # structuredConfig:
   #   common:
@@ -427,6 +427,7 @@ mimir:
   #         secret_access_key: "${AWS_SECRET_ACCESS_KEY}" # This is a secret injected via an environment variable
   #         http: 
   #           insecure_skip_verify: true
+  structuredConfig: {}
 
 # -- runtimeConfig provides a reloadable runtime configuration. Changing the runtimeConfig doesn't require a restart of all components.
 # For more infromation see https://grafana.com/docs/mimir/latest/configure/about-runtime-configuration/
