@@ -188,6 +188,7 @@ Some of the functionality that `mimirtool rules` offers is also available as a G
 For more information, refer to the [documentation of Mimirtool Github Action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
 
 Configuration options relevant to rules commands:
+
 | Flag | Description |
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | `--auth-token` | Authentication token for bearer token or JWT auth. |
