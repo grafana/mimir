@@ -1362,7 +1362,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.return-only-grpc-errors
-    	[experimental] When enabled only gRPC errors will be returned by the ingester.
+    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration

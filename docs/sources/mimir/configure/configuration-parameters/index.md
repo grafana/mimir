@@ -1172,9 +1172,9 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
 
-# (experimental) When enabled only gRPC errors will be returned by the ingester.
+# (deprecated) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
-[return_only_grpc_errors: <boolean> | default = false]
+[return_only_grpc_errors: <boolean> | default = true]
 
 # (experimental) When enabled, only series currently owned by ingester according
 # to the ring are used when checking user per-tenant series limit.
