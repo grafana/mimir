@@ -32,7 +32,7 @@ func NewKafka() *KafkaService {
 func (s *KafkaService) Start(networkName, sharedDir string) (err error) {
 	// Configures Kafka right before starting it so that we have the networkName to correctly compute
 	// the advertised host.
-	s.SetEnvVars(map[string]string{
+	s.HTTPService.SetEnvVars(map[string]string{
 		// Configure Kafka to run in KRaft mode (without Zookeeper).
 		"CLUSTER_ID":                      "NqnEdODVKkiLTfJvqd1uqQ==", // A random ID (16 bytes of a base64-encoded UUID).
 		"KAFKA_BROKER_ID":                 "1",
