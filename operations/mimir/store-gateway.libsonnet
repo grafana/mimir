@@ -29,8 +29,12 @@
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
+
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
+
+      // Relax pressure on KV store when running at scale.
+      'store-gateway.sharding-ring.heartbeat-period': '1m',
     } +
     (if $._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'true',

@@ -28,7 +28,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&cfg, &expected)
 
-	// The default config of the compactor ring must be the exact same
+	// The default config of the ingester ring must be the exact same
 	// of the default lifecycler config, except few options which are
 	// intentionally overridden
 	expected.ListenPort = cfg.ListenPort
