@@ -24,6 +24,7 @@
 * [CHANGE] Distributor: report gRPC status codes as `status_code` labels in the `cortex_ingester_client_request_duration_seconds` metric by default. #7144
 * [CHANGE] Distributor: CLI flag `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled` has been deprecated, and its default value is set to `true`. #7144
 * [CHANGE] Ingester: CLI flag `-ingester.return-only-grpc-errors` has been deprecated, and its default value is set to `true`. To ensure backwards compatibility, during a migration from a version prior to 2.11.0 to 2.12 or later, `-ingester.return-only-grpc-errors` should be set to `false`. Once all the components are migrated, the flag can be removed.   #7151
+* [CHANGE] Distributor: default the optimization `-distributor.write-requests-buffer-pooling-enabled` to `true`. #7165
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
 * [FEATURE] Querier / query-frontend: added `-querier.promql-experimental-functions-enabled` CLI flag (and respective YAML config option) to enable experimental PromQL functions. The experimental functions introduced are: `mad_over_time()`, `sort_by_label()` and `sort_by_label_desc()`. #7057

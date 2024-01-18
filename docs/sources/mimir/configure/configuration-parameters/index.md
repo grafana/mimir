@@ -921,7 +921,7 @@ instance_limits:
 
 # (experimental) Enable pooling of buffers used for marshaling write requests.
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
-[write_requests_buffer_pooling_enabled: <boolean> | default = false]
+[write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
 # (experimental) Use experimental method of limiting push requests.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
