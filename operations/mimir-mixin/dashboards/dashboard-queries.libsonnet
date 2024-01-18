@@ -1,3 +1,5 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 {
   // This object contains common queries used in the Mimir dashboards.
   // These queries are NOT intended to be configurable or overriddeable via jsonnet,
@@ -25,43 +27,53 @@
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
+      local p = self,
       //writeRequestsPerSecond: removed, use combination of writeRequestsPerSecondMetric and writeRequestsPerSecondSelector instead
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
-      writeRequestsPerSecondSelector: '{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
+      writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
       readRequestsPerSecondMetric: 'cortex_request_duration_seconds',
-      readRequestsPerSecondSelector: '{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+      readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate: |||
         (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
+            # gRPC errors are not tracked as 5xx but "error".
+            sum(%(countFailQuery)s)
             or
             # Handle the case no failure has been tracked yet.
             vector(0)
         )
         /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+        sum(%(countQuery)s)
+      ||| % {
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"'),
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      },
 
       // Read failures rate as percentage of total requests.
       readFailuresRate: |||
         (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
+            # gRPC errors are not tracked as 5xx but "error".
+            sum(%(countFailQuery)s)
             or
             # Handle the case no failure has been tracked yet.
             vector(0)
         )
         /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+        sum(%(countQuery)s)
+      ||| % {
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"'),
+        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
+      },
     },
 
     distributor: {
+      local p = self,
       //writeRequestsPerSecond: removed, use combination of writeRequestsPerSecondMetric and writeRequestsPerSecondSelector instead
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
-      writeRequestsPerSecondSelector: '{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
@@ -69,14 +81,17 @@
       writeFailuresRate: |||
         (
             # gRPC errors are not tracked as 5xx but "error".
-            sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s",status_code=~"5.*|error"}[$__rate_interval]))
+            sum(%(countFailQuery)s)
             or
             # Handle the case no failure has been tracked yet.
             vector(0)
         )
         /
-        sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+        sum(%(countQuery)s)
+      ||| % {
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"'),
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+      },
     },
 
     query_frontend: {
