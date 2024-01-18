@@ -221,8 +221,8 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          # The '0' here is for historical reasons.
-          key: test-0-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          # Cache is shared between test groups.
+          key: test-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Run Tests
         run: |
@@ -320,7 +320,8 @@ jobs:
       - name: Cache Go build cache
         uses: actions/cache@v3
         with:
-          key: integration-0-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          # Cache is shared between test groups.
+          key: integration-go-build-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           path: ${{ steps.gocache.outputs.path }}
       - name: Download Archive with Docker Images
         uses: actions/download-artifact@v4
