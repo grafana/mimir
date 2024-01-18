@@ -38,6 +38,7 @@
 * [ENHANCEMENT] Query-frontend: add experimental support for sharding active series queries via `-query-frontend.shard-active-series-queries`. #6784
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
 * [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
+* [ENHANCEMENT] Distributor: invalid metric name error message gets cleaned up to not include non-ascii strings. #7146
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -59,6 +60,7 @@
 * [ENHANCEMENT] Dashboards: Make most columns in "Slow Queries" sortable. #7000
 * [ENHANCEMENT] Dashboards: Render graph panels at full resolution as opposed to at half resolution. #7027
 * [ENHANCEMENT] Dashboards: show query-scheduler queue length on "Reads" and "Remote Ruler Reads" dashboards. #7088
+* [BUGFIX] Dashboards: drop `step` parameter from targets as it is not supported. #7157
 
 ### Jsonnet
 
@@ -66,6 +68,14 @@
 * [CHANGE] rollout-operator: remove default CPU limit. #7066
 * [CHANGE] Store-gateway: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 1000, to avoid dropping tracing spans. #7068
 * [CHANGE] Query-frontend, ingester, ruler, backend and write instances: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100), to avoid dropping tracing spans. #7086
+* [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
+  * `-distributor.ring.heartbeat-period` set to `1m`
+  * `-distributor.ring.heartbeat-timeout` set to `4m`
+  * `-ingester.ring.heartbeat-period` set to `2m`
+  * `-store-gateway.sharding-ring.heartbeat-period` set to `1m`
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `4m`
+  * `-compactor.ring.heartbeat-period` set to `1m`
+  * `-compactor.ring.heartbeat-timeout` set to `4m`
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`

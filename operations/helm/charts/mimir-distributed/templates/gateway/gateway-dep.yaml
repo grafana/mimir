@@ -88,7 +88,8 @@ spec:
             {{ toYaml .extraVolumeMounts | nindent 12 }}
             {{- end }}
             - name: nginx-config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             {{- if .nginx.basicAuth.enabled }}
             - name: auth
               mountPath: /etc/nginx/secrets

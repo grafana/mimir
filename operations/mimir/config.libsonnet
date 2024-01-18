@@ -221,6 +221,10 @@
       'store-gateway.sharding-ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
+
+      // Relax pressure on KV store when running at scale.
+      // When changing this, please remember to also change the hearbeat period defined in store_gateway_args.
+      'store-gateway.sharding-ring.heartbeat-timeout': '4m',
     },
 
     // Querier component config (shared between the ruler and querier).
@@ -241,9 +245,12 @@
       'ingester.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'ingester.ring.replication-factor': $._config.replication_factor,
       'distributor.health-check-ingesters': true,
-      'ingester.ring.heartbeat-timeout': '10m',
       'ingester.ring.store': 'consul',
       'ingester.ring.prefix': '',
+
+      // Relax pressure on KV store when running at scale.
+      // When changing this, please remember to also change the hearbeat period defined in ingester_args.
+      'ingester.ring.heartbeat-timeout': '10m',
     },
 
     local querySchedulerRingConfig = {

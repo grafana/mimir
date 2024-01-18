@@ -31,6 +31,10 @@
       'distributor.ring.store': 'consul',
       'distributor.ring.consul.hostname': 'consul.%(namespace)s.svc.%(cluster_domain)s:8500' % $._config,
       'distributor.ring.prefix': '',
+
+      // Relax pressure on KV store when running at scale.
+      'distributor.ring.heartbeat-period': '1m',
+      'distributor.ring.heartbeat-timeout': '4m',
     } + $.mimirRuntimeConfigFile,
 
   distributor_ports:: $.util.defaultPorts,
