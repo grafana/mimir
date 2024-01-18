@@ -8,6 +8,7 @@ package ruler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"testing"
@@ -35,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -571,6 +573,101 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				t.Fatalf("the ruler manager has not evaluated the expected number of rules (evaluated: %d)", ruleEvaluationsCount.Load())
 			}
 		})
+	}
+}
+
+func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQueryingAlertsForStateMetric(t *testing.T) {
+	const (
+		userID     = "tenant-1"
+		metricName = "test_metric"
+	)
+
+	// Configure the ruler so that rules are evaluated very frequently and any alert state restored
+	// (active alerts with a "for" duration > the "grace period" are restored).
+	cfg := defaultRulerConfig(t)
+	cfg.ForGracePeriod = 0
+	cfg.EvaluationInterval = time.Second
+
+	var (
+		options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+		eng             = promql.NewEngine(promql.EngineOpts{
+			MaxSamples:         1e6,
+			ActiveQueryTracker: tracker,
+			Timeout:            2 * time.Minute,
+		})
+
+		// Create a test alerting rule with a "for" duration greater than the "grace period".
+		ruleGroup = rulespb.RuleGroupDesc{
+			Name:            "test",
+			Interval:        cfg.EvaluationInterval,
+			EvaluationDelay: 0,
+			Rules: []*rulespb.RuleDesc{{
+				Expr:  fmt.Sprintf("%s > 0", metricName),
+				Alert: "test",
+				For:   100 * time.Millisecond,
+			}},
+		}
+
+		// Channel that gets closed once the ALERTS_FOR_STATE metric is queried.
+		alertsForStateQueried = make(chan struct{})
+	)
+
+	// Mock the querier.
+	querier := newQuerierMock()
+	querier.selectFunc = func(ctx context.Context, _ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+		t.Logf("Select() called with matchers: %v", matchers)
+
+		if isQueryingAlertsForStateMetric("", matchers...) {
+			// Ensure it's queried with strong read consistency.
+			actual, ok := api.ReadConsistencyFromContext(ctx)
+			assert.True(t, ok)
+			assert.Equal(t, api.ReadConsistencyStrong, actual)
+
+			// Close alertsForStateQueried channel (only once).
+			select {
+			case <-alertsForStateQueried:
+			default:
+				close(alertsForStateQueried)
+			}
+
+			return storage.EmptySeriesSet()
+		}
+
+		// If it's not the ALERTS_FOR_STATE query, then it should be the alerting query. We want the alert
+		// to fire, so we return a non-empty series set.
+		return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
+			series.NewConcreteSeries(
+				labels.FromStrings(labels.MetricName, metricName),
+				[]model.SamplePair{{Timestamp: model.Time(hints.End - 1), Value: 1.0}},
+				nil,
+			),
+		})
+	}
+
+	// Mock the pusher.
+	pusher := newPusherMock()
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+	// Create the manager from the factory.
+	queryable := &storage.MockQueryable{MockQuerier: querier}
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
+
+	// Load rules into manager.
+	ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+	require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+
+	// Start the manager.
+	go manager.Run()
+	t.Cleanup(manager.Stop)
+
+	// Wait until the ALERTS_FOR_STATE metric has been queried.
+	select {
+	case <-alertsForStateQueried:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the ruler manager has not queried ALERTS_FOR_STATE metric")
 	}
 }
 

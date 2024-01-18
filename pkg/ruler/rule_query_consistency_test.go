@@ -118,5 +118,9 @@ func newQuerierMock() *querierMock {
 }
 
 func (m *querierMock) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return m.selectFunc(ctx, sortSeries, hints, matchers...)
+	if m.selectFunc != nil {
+		return m.selectFunc(ctx, sortSeries, hints, matchers...)
+	}
+
+	return storage.EmptySeriesSet()
 }
