@@ -3139,7 +3139,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
-[max_cache_freshness: <duration> | default = 1m]
+[max_cache_freshness: <duration> | default = 10m]
 
 # Maximum number of queriers that can handle requests for a single tenant. If
 # set to 0 or value higher than number of available queriers, *all* queriers
