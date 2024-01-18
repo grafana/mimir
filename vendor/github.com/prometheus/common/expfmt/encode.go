@@ -161,7 +161,7 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 // to the Encoder interface directly. The current version of the Encoder
 // interface is kept for backwards compatibility.
 func NewEncoder(w io.Writer, format Format) Encoder {
-	escapingScheme := model.DefaultNameEscapingScheme
+	escapingScheme := model.NameEscapingScheme
 	if format.SupportsUTF8() {
 		escapingScheme = model.NoEscaping
 	}

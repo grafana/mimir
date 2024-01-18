@@ -86,6 +86,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
+    # can't disable utf8 here because then my hacked internal bad metrics don't work.
     command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001 -api.utf8-names-enabled -log.level=debug"]
     depends_on:
       - consul

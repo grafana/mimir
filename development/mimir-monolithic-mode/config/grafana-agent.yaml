@@ -6,7 +6,6 @@ prometheus:
     scrape_interval: 5s
     external_labels:
       scraped_by: grafana-agent
-    utf8_names: true
   configs:
     - name: local
       host_filter: false

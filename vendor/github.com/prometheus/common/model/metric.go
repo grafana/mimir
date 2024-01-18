@@ -67,9 +67,9 @@ var (
 	// an init(), before multiple goroutines are started.
 	NameValidationScheme = LegacyValidation
 
-	// DefaultNameEscapingScheme defines the default way that names will be
+	// NameEscapingScheme defines the way that names will be
 	// escaped when presented to systems that do not support UTF-8 names.
-	DefaultNameEscapingScheme = ValueEncodingEscaping
+	NameEscapingScheme = ValueEncodingEscaping
 )
 
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
@@ -416,6 +416,9 @@ func (e EscapingScheme) String() string {
 }
 
 func ToEscapingScheme(s string) (EscapingScheme, error) {
+	if s == "" {
+		return NoEscaping, fmt.Errorf("got empty string instead of escaping scheme")
+	}
 	switch s {
 	case EscapeNone:
 		return NoEscaping, nil

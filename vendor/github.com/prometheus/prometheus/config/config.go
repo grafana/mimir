@@ -423,8 +423,6 @@ type GlobalConfig struct {
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
 	// Allow UTF8 Metric and Label Names
 	AllowUTF8Names bool `yaml:"utf8_names,omitempty"`
-	// // if UTF8 is not allowed, use this method 
-	// NameEscapingScheme string `yaml:"name_escaping_scheme,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
