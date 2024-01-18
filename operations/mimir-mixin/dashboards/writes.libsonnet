@@ -116,7 +116,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
+          utils.nativeClassicHistogramQuantile('0.99', $.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
         )
       )
     )
@@ -157,7 +157,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
+          utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
         )
       )
     )
