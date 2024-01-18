@@ -26,7 +26,6 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.14.0  | 2024-09-09 | _To be announced_  |
 | 2.15.0  | 2024-12-09 | _To be announced_  |
 
-
 ## Release shepherd responsibilities
 
 The release shepherd is responsible for an entire minor release series, meaning all pre- and patch releases of a minor release.
