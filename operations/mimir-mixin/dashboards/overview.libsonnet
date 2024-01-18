@@ -114,11 +114,15 @@ local filename = 'mimir-overview.json';
       )
       .addPanel(
         $.panel(std.stripChars('Write requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
-        $.qpsPanel(
+        $.qpsPanelNativeHistogram(
           if $._config.gateway_enabled then
-            $.queries.gateway.writeRequestsPerSecond
+            $.queries.gateway.writeRequestsPerSecondMetric
           else
-            $.queries.distributor.writeRequestsPerSecond
+            $.queries.distributor.writeRequestsPerSecondMetric,
+          if $._config.gateway_enabled then
+            $.queries.gateway.writeRequestsPerSecondSelector
+          else
+            $.queries.distributor.writeRequestsPerSecondSelector
         )
       )
       .addPanel(

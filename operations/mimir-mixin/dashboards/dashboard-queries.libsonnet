@@ -25,7 +25,7 @@
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
 
     gateway: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
+      //writeRequestsPerSecond: removed, use combination of writeRequestsPerSecondMetric and writeRequestsPerSecondSelector instead
       readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
@@ -59,7 +59,7 @@
     },
 
     distributor: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+      //writeRequestsPerSecond: removed, use combination of writeRequestsPerSecondMetric and writeRequestsPerSecondSelector instead
       writeRequestsPerSecondMetric: 'cortex_request_duration_seconds',
       writeRequestsPerSecondSelector: '{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
