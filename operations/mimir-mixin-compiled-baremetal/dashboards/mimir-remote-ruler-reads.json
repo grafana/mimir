@@ -840,7 +840,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-scheduler (dedicated to ruler) Latency (Time in Queue) Breakout by Additional Queue Dimensions",
+            "title": "Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
             "titleSize": "h6"
          },
          {
