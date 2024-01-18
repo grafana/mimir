@@ -49,11 +49,59 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return errors.New("no Grafana Alertmanager config specified")
 	}
 
+	if gc.ID == 0 {
+		return errors.New("ID must be non-zero")
+	}
+
+	if gc.Hash == "" {
+		return errors.New("no hash specified")
+	}
+
+	if gc.CreatedAt == 0 {
+		return errors.New("created must be non-zero")
+	}
+
+	return nil
+}
+
+func (gc *UserGrafanaConfig) UnmarshalJSON(data []byte) error {
+	type plain UserGrafanaConfig
+	err := json.Unmarshal(data, (*plain)(gc))
+	if err != nil {
+		return err
+	}
+
+	if err = gc.Validate(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 type UserGrafanaState struct {
 	State string `json:"state"`
+}
+
+func (gs *UserGrafanaState) UnmarshalJSON(data []byte) error {
+	type plain UserGrafanaState
+	err := json.Unmarshal(data, (*plain)(gs))
+	if err != nil {
+		return err
+	}
+
+	if err = gs.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (gs *UserGrafanaState) Validate() error {
+	if gs.State == "" {
+		return errors.New("no state specified")
+	}
+
+	return nil
 }
 
 type successResult struct {

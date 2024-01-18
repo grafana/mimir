@@ -27,7 +27,7 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 	}
 }
 
-// ToProto transforms a yaml Alertmanager config and map of template files to an AlertConfigDesc.
+// ToGrafanaProto transforms a Grafana Alertmanager config to a GrafanaAlertConfigDesc.
 func ToGrafanaProto(cfg, user, hash string, id int64, at int64, d bool) GrafanaAlertConfigDesc {
 	return GrafanaAlertConfigDesc{
 		User:      user,
@@ -39,7 +39,7 @@ func ToGrafanaProto(cfg, user, hash string, id int64, at int64, d bool) GrafanaA
 	}
 }
 
-// ParseTemplates returns a alertmanager config object.
+// ParseTemplates returns an Alertmanager config object.
 func ParseTemplates(cfg AlertConfigDesc) map[string]string {
 	templates := map[string]string{}
 	for _, t := range cfg.Templates {

@@ -274,17 +274,46 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test_user")
 	req = req.WithContext(ctx)
 	{
+		// First, try with invalid configuration.
 		rec := httptest.NewRecorder()
 		json := `
 		{
-			"state": "ChEKBW5mbG9nEghzb21lZGF0YQ=="
+			"id": 124,
+			"configuration_hash": "",
+			"created": 12312414343,
+			"default": false
+		}
+		`
+		req.Body = io.NopCloser(strings.NewReader(json))
+		am.SetUserGrafanaConfig(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		require.NoError(t, err)
+		failedJSON := `
+		{
+			"error": "error marshalling JSON Grafana Alertmanager config: no Grafana Alertmanager config specified",
+			"status": "error"
+		}
+		`
+		require.JSONEq(t, failedJSON, string(body))
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+
+		// Now, with a valid configuration.
+		rec = httptest.NewRecorder()
+		json = `
+		{
+			"id": 124,
+			"configuration": "a grafana configuration",
+			"configuration_hash": "",
+			"created": 12312414343,
+			"default": false
 		}
 		`
 		req.Body = io.NopCloser(strings.NewReader(json))
 		am.SetUserGrafanaConfig(rec, req)
 
 		require.Equal(t, http.StatusCreated, rec.Code)
-		body, err := io.ReadAll(rec.Body)
+		body, err = io.ReadAll(rec.Body)
 		require.NoError(t, err)
 		require.JSONEq(t, successJSON, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -317,8 +346,29 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test_user")
 	req = req.WithContext(ctx)
 	{
+		// First, try with invalid state payload.
 		rec := httptest.NewRecorder()
 		json := `
+		{
+		}
+		`
+		req.Body = io.NopCloser(strings.NewReader(json))
+		am.SetUserGrafanaState(rec, req)
+
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+		body, err := io.ReadAll(rec.Body)
+		require.NoError(t, err)
+		failureJSON := `
+		{
+			"error": "error marshalling JSON Grafana Alertmanager state: no state specified",
+			"status": "error"
+		}
+		`
+		require.JSONEq(t, failureJSON, string(body))
+		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+		// Now, with a valid one.
+		rec = httptest.NewRecorder()
+		json = `
 		{
 			"state": "ChEKBW5mbG9nEghzb21lZGF0YQ=="
 		}
@@ -327,7 +377,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 		am.SetUserGrafanaState(rec, req)
 
 		require.Equal(t, http.StatusCreated, rec.Code)
-		body, err := io.ReadAll(rec.Body)
+		body, err = io.ReadAll(rec.Body)
 		require.NoError(t, err)
 		require.JSONEq(t, successJSON, string(body))
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
