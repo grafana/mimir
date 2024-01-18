@@ -8,7 +8,7 @@
           "subdir": "grafana-builder"
         }
       },
-      "version": "e5a8012ea28654aeacb3929ac703fe7a7c61c212"
+      "version": "256e4986fb94044b12dfb8f6a1ecfb82d0d2ed57"
     },
     {
       "source": {
@@ -17,7 +17,7 @@
           "subdir": "mixin-utils"
         }
       },
-      "version": "e5a8012ea28654aeacb3929ac703fe7a7c61c212"
+      "version": "256e4986fb94044b12dfb8f6a1ecfb82d0d2ed57"
     }
   ],
   "legacyImports": true
