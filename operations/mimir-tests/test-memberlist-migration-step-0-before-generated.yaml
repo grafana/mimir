@@ -1222,6 +1222,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local.:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=

@@ -45,6 +45,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
             - "-ingester.ring.zone-awareness-enabled=false"

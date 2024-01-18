@@ -38,6 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `4m`
   * `-compactor.ring.heartbeat-period` set to `1m`
   * `-compactor.ring.heartbeat-timeout` set to `4m`
+* [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
 * [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
