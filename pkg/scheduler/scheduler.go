@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -40,6 +41,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
+var errFrontendDisconnected = cancellation.NewErrorf("frontend disconnected")
 
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
@@ -88,7 +92,7 @@ type connectedFrontend struct {
 	// This context is used for running all queries from the same frontend.
 	// When last frontend connection is closed, context is canceled.
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 type Config struct {
@@ -255,7 +259,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			enqueueSpan.Finish()
 		case schedulerpb.CANCEL:
-			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID)
+			s.cancelRequestAndRemoveFromPending(frontendAddress, msg.QueryID, "frontend cancelled query")
 			resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 
 		default:
@@ -291,7 +295,7 @@ func (s *Scheduler) frontendConnected(frontend schedulerpb.SchedulerForFrontend_
 		cf = &connectedFrontend{
 			connections: 0,
 		}
-		cf.ctx, cf.cancel = context.WithCancel(context.Background())
+		cf.ctx, cf.cancel = context.WithCancelCause(context.Background())
 		s.connectedFrontends[msg.FrontendAddress] = cf
 	}
 
@@ -307,17 +311,17 @@ func (s *Scheduler) frontendDisconnected(frontendAddress string) {
 	cf.connections--
 	if cf.connections == 0 {
 		delete(s.connectedFrontends, frontendAddress)
-		cf.cancel()
+		cf.cancel(errFrontendDisconnected)
 	}
 }
 
 func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr string, msg *schedulerpb.FrontendToScheduler) error {
 	// Create new context for this request, to support cancellation.
-	ctx, cancel := context.WithCancel(requestContext)
+	ctx, cancel := context.WithCancelCause(requestContext)
 	shouldCancel := true
 	defer func() {
 		if shouldCancel {
-			cancel()
+			cancel(errEnqueuingRequestFailed)
 		}
 	}()
 
@@ -357,14 +361,14 @@ func (s *Scheduler) enqueueRequest(requestContext context.Context, frontendAddr 
 }
 
 // This method doesn't do removal from the queue.
-func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, queryID uint64) {
+func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, queryID uint64, reason string) {
 	s.pendingRequestsMu.Lock()
 	defer s.pendingRequestsMu.Unlock()
 
 	key := requestKey{frontendAddr: frontendAddr, queryID: queryID}
 	req := s.pendingRequests[key]
 	if req != nil {
-		req.CancelFunc()
+		req.CancelFunc(cancellation.NewErrorf(reason))
 	}
 
 	delete(s.pendingRequests, key)
@@ -418,7 +422,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 
 		if r.Ctx.Err() != nil {
 			// Remove from pending requests.
-			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID)
+			s.cancelRequestAndRemoveFromPending(r.FrontendAddress, r.QueryID, "request cancelled")
 
 			lastUserIndex = lastUserIndex.ReuseLastUser()
 			continue
@@ -441,7 +445,7 @@ func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.No
 
 func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuerier_QuerierLoopServer, req *queue.SchedulerRequest, queueTime time.Duration) error {
 	// Make sure to cancel request at the end to clean up resources.
-	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID)
+	defer s.cancelRequestAndRemoveFromPending(req.FrontendAddress, req.QueryID, "request complete")
 
 	// Handle the stream sending & receiving on a goroutine so we can
 	// monitor the contexts in a select and cancel things appropriately.

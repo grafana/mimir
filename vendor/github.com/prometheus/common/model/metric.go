@@ -24,52 +24,71 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ValidationScheme is a Go enum for determining how metric and label names will
+// be validated by this library.
 type ValidationScheme int
 
 const (
+	// LegacyValidation is a setting that requirets that metric and label names
+	// conform to the original Prometheus character requirements described by
+	// MetricNameRE and LabelNameRE.
 	LegacyValidation ValidationScheme = iota
+
+	// UTF8Validation only requires that metric and label names be valid UTF8
+	// strings.
 	UTF8Validation
 )
 
+// EscapingScheme is a Go enum for determining how UTF8 metric and label names
+// will be escaped to legacy valid Prometheus names.
 type EscapingScheme int
 
 const (
-	// NoEscaping indicates that a name will not be escaped.
+	// NoEscaping indicates that a name will not be escaped because the receiver
+	// is UTF8-compatible.
 	NoEscaping EscapingScheme = iota
 
+	// ValueEncodingEscaping prepends the name with `U__` and replaces all invalid
+	// characters with the unicode value, surrounded by underscores. Single
+	// underscores are replaced with double underscores. This is the only escaping
+	// format that is fully round-trippable.
+	ValueEncodingEscaping
+
 	// UnderscoreEscaping replaces all legacy-invalid characters with underscores.
+	// This escaping cannot be reversed.
 	UnderscoreEscaping
 
 	// DotsEscaping is similar to UnderscoreEscaping, except that dots are
 	// converted to `_dot_` and pre-existing underscores are converted to `__`.
+	// This escaping is partially reversible.
 	DotsEscaping
-
-	// ValueEncodingEscaping prepends the name with `U__` and replaces all invalid
-	// characters with the unicode value, surrounded by underscores. Single
-	// underscores are replaced with double underscores.
-	ValueEncodingEscaping
 )
 
 const (
-	EscapeNone         = "none"
-	EscapeUnderscores  = "underscores"
-	EscapeDots         = "dots"
-	EscapeValues       = "values"
+	EscapeNone        = "none"
+	EscapeUnderscores = "underscores"
+	EscapeDots        = "dots"
+	EscapeValues      = "values"
 )
 
 var (
-	// MetricNameRE is a regular expression matching valid metric
-	// names. Note that the IsValidMetricName function performs the same
-	// check but faster than a match with this regular expression.
-	MetricNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
-	// NameValidationScheme determines the default method of name validation to be
-	// used. To avoid need for locking, this value should be set once, probably in
-	// an init(), before multiple goroutines are started.
+	// NameValidationScheme determines the method of name validation to be used by
+	// all calls to IsValidMetricName() and LabelName IsValid(). Setting UTF8 mode
+	// in isolation from other components that don't support UTF8 may result in
+	// bugs or other undefined behavior. This value is intended to be set by
+	// UTF8-aware binaries as part of their startup. To avoid need for locking,
+	// this value should be set once, ideally in an init(), before multiple
+	// goroutines are started.
 	NameValidationScheme = LegacyValidation
 
 	// NameEscapingScheme defines the way that names will be
 	// escaped when presented to systems that do not support UTF-8 names.
 	NameEscapingScheme = ValueEncodingEscaping
+
+	// MetricNameRE is a regular expression matching valid metric
+	// names. Note that the IsValidMetricName function performs the same
+	// check but faster than a match with this regular expression.
+	MetricNameRE = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 )
 
 // A Metric is similar to a LabelSet, but the key difference is that a Metric is
@@ -429,6 +448,6 @@ func ToEscapingScheme(s string) (EscapingScheme, error) {
 	case EscapeValues:
 		return ValueEncodingEscaping, nil
 	default:
-	  return NoEscaping, fmt.Errorf("unknown format scheme " + s)
+		return NoEscaping, fmt.Errorf("unknown format scheme " + s)
 	}
 }

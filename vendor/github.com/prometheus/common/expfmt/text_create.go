@@ -62,6 +62,18 @@ var (
 // contains duplicate metrics or invalid metric or label names, the conversion
 // will result in invalid text format output.
 //
+// If metric names conform to the legacy validation pattern, they will be placed
+// outside the brackets in the traditional way, like `foo{}`. If the metric name
+// fails the legacy validation check, it will be placed quoted inside the
+// brackets: `{"foo"}`. As stated above, the input is assumed to be santized and
+// no error will be thrown in this case.
+//
+// Similar to metric names, if label names conform to the legacy validation
+// pattern, they will be unquoted as normal, like `foo{bar="baz"}`. If the label
+// name fails the legacy validation check, it will be quoted:
+// `foo{"bar"="baz"}`. As stated above, the input is assumed to be santized and
+// no error will be thrown in this case.
+//
 // This method fulfills the type 'prometheus.encoder'.
 func MetricFamilyToText(out io.Writer, in *dto.MetricFamily) (written int, err error) {
 	// Fail-fast checks.
@@ -319,12 +331,14 @@ func writeSample(
 }
 
 // writeNameAndLabelPairs converts a slice of LabelPair proto messages plus the
-// explicitly given additional label pair into text formatted as required by the
-// text format and writes it to 'w'. An empty slice in combination with an empty
-// string 'additionalLabelName' results in nothing being written. Otherwise, the
-// label pairs are written, escaped as required by the text format, and enclosed
-// in '{...}'. The function returns the number of bytes written and any error
-// encountered.
+// explicitly given metric name and additional label pair into text formatted as
+// required by the text format and writes it to 'w'. An empty slice in
+// combination with an empty string 'additionalLabelName' results in nothing
+// being written. Otherwise, the label pairs are written, escaped as required by
+// the text format, and enclosed in '{...}'. The function returns the number of
+// bytes written and any error encountered. If the metric name is not
+// legacy-valid, it will be put inside the brackets as well. Legacy-invalid
+// label names will also be quoted.
 func writeNameAndLabelPairs(
 	w enhancedWriter,
 	name string,
@@ -484,23 +498,23 @@ func writeInt(w enhancedWriter, i int64) (int, error) {
 // writeName writes a string as-is if it complies with the legacy naming
 // scheme, or escapes it in double quotes if not.
 func writeName(w enhancedWriter, name string) (int, error) {
-	if !model.IsValidLegacyMetricName(model.LabelValue(name)) {
-		var written int
-		var err error
-		err = w.WriteByte('"')
-		written++
-		if err != nil {
-			return written, err
-		}
-		var n int
-		n, err = writeEscapedString(w, name, true)
-		written += n
-		if err != nil {
-			return written, err
-		}
-		err = w.WriteByte('"')
-		written++
+	if model.IsValidLegacyMetricName(model.LabelValue(name)) {
+		return w.WriteString(name)
+	}
+	var written int
+	var err error
+	err = w.WriteByte('"')
+	written++
+	if err != nil {
 		return written, err
 	}
-	return w.WriteString(name)
+	var n int
+	n, err = writeEscapedString(w, name, true)
+	written += n
+	if err != nil {
+		return written, err
+	}
+	err = w.WriteByte('"')
+	written++
+	return written, err
 }

@@ -35,6 +35,18 @@ import (
 // sanity checks. If the input contains duplicate metrics or invalid metric or
 // label names, the conversion will result in invalid text format output.
 //
+// If metric names conform to the legacy validation pattern, they will be placed
+// outside the brackets in the traditional way, like `foo{}`. If the metric name
+// fails the legacy validation check, it will be placed quoted inside the
+// brackets: `{"foo"}`. As stated above, the input is assumed to be santized and
+// no error will be thrown in this case.
+//
+// Similar to metric names, if label names conform to the legacy validation
+// pattern, they will be unquoted as normal, like `foo{bar="baz"}`. If the label
+// name fails the legacy validation check, it will be quoted:
+// `foo{"bar"="baz"}`. As stated above, the input is assumed to be santized and
+// no error will be thrown in this case.
+//
 // This function fulfills the type 'expfmt.encoder'.
 //
 // Note that OpenMetrics requires a final `# EOF` line. Since this function acts

@@ -44,7 +44,7 @@ type SchedulerRequest struct {
 	EnqueueTime time.Time
 
 	Ctx        context.Context
-	CancelFunc context.CancelFunc
+	CancelFunc context.CancelCauseFunc
 	QueueSpan  opentracing.Span
 
 	// This is only used for testing.

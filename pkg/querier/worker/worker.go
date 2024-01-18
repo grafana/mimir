@@ -213,7 +213,7 @@ func (w *querierWorker) stopping(_ error) error {
 	// worker no longer creates new managers in InstanceAdded method.
 	w.mu.Lock()
 	for address, m := range w.managers {
-		m.stop()
+		m.stop("querier shutting down")
 
 		delete(w.managers, address)
 		delete(w.instances, address)
@@ -270,7 +270,7 @@ func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
 	w.mu.Unlock()
 
 	if p != nil {
-		p.stop()
+		p.stop("instance removed")
 	}
 
 	// Re-balance the connections between the available query-frontends / query-schedulers.
@@ -319,7 +319,7 @@ func (w *querierWorker) resetConcurrency() {
 			concurrency = 1
 		}
 
-		m.concurrency(concurrency)
+		m.concurrency(concurrency, "resetting worker concurrency")
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/cancellation"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 )
@@ -30,7 +31,7 @@ type processorManager struct {
 
 	// Cancel functions for individual goroutines.
 	cancelsMu sync.Mutex
-	cancels   []context.CancelFunc
+	cancels   []context.CancelCauseFunc
 
 	currentProcessors *atomic.Int32
 }
@@ -45,7 +46,7 @@ func newProcessorManager(ctx context.Context, p processor, conn *grpc.ClientConn
 	}
 }
 
-func (pm *processorManager) stop() {
+func (pm *processorManager) stop(cause string) {
 	// Notify the remote query-frontend or query-scheduler we're shutting down.
 	// We use a new context to make sure it's not cancelled.
 	notifyCtx, cancel := context.WithTimeout(context.Background(), notifyShutdownTimeout)
@@ -53,7 +54,7 @@ func (pm *processorManager) stop() {
 	pm.p.notifyShutdown(notifyCtx, pm.conn, pm.address)
 
 	// Stop all goroutines.
-	pm.concurrency(0)
+	pm.concurrency(0, cause)
 
 	// Wait until they finish.
 	pm.wg.Wait()
@@ -61,7 +62,7 @@ func (pm *processorManager) stop() {
 	_ = pm.conn.Close()
 }
 
-func (pm *processorManager) concurrency(n int) {
+func (pm *processorManager) concurrency(n int, cause string) {
 	pm.cancelsMu.Lock()
 	defer pm.cancelsMu.Unlock()
 
@@ -70,7 +71,7 @@ func (pm *processorManager) concurrency(n int) {
 	}
 
 	for len(pm.cancels) < n {
-		ctx, cancel := context.WithCancel(pm.ctx)
+		ctx, cancel := context.WithCancelCause(pm.ctx)
 		pm.cancels = append(pm.cancels, cancel)
 
 		pm.wg.Add(1)
@@ -85,7 +86,7 @@ func (pm *processorManager) concurrency(n int) {
 	}
 
 	for len(pm.cancels) > n {
-		pm.cancels[0]()
+		pm.cancels[0](cancellation.NewErrorf("stopping worker: %v", cause))
 		pm.cancels = pm.cancels[1:]
 	}
 }

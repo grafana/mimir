@@ -127,7 +127,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.89.0
+    image: otel/opentelemetry-collector-contrib:0.91.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -142,7 +142,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.89.0
+    image: otel/opentelemetry-collector-contrib:0.91.0
     profiles:
       - otel-collector-otlp-push
     volumes:

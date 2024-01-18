@@ -368,6 +368,11 @@ lint: check-makefiles
 		"github.com/grafana/mimir/pkg/storegateway/storegatewaypb.{NewStoreGatewayClient}=github.com/grafana/mimir/pkg/storegateway/storegatewaypb.NewCustomStoreGatewayClient" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Prefer using WithCancelCause in production code, so that cancelled contexts have more information available from context.Cause(ctx).
+	faillint -ignore-tests -paths \
+		"context.{WithCancel}=context.WithCancelCause" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

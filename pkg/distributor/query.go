@@ -40,6 +40,8 @@ var (
 	// In the case where an ingester has just started, queriers may have only observed the ingester in the PENDING state,
 	// but distributors may have observed the ingester in the ACTIVE state and started sending samples.
 	readNoExtend = ring.NewOp([]ring.InstanceState{ring.ACTIVE, ring.PENDING}, nil)
+
+	errStreamClosed = cancellation.NewErrorf("stream closed")
 )
 
 func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*ingester_client.ExemplarQueryResponse, error) {
@@ -209,7 +211,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.queryIngesterStream")
 		cleanup := func() {
 			log.Span.Finish()
-			cancelContext(cancellation.NewErrorf("stream closed"))
+			cancelContext(errStreamClosed)
 		}
 
 		var stream ingester_client.Ingester_QueryStreamClient
