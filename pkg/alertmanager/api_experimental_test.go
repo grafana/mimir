@@ -304,7 +304,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 		{
 			"id": 124,
 			"configuration": "a grafana configuration",
-			"configuration_hash": "",
+			"configuration_hash": "ChEKBW5mbG9nEghzb21lZGF0YQ==",
 			"created": 12312414343,
 			"default": false
 		}
