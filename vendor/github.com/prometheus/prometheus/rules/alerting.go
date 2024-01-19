@@ -142,6 +142,9 @@ type AlertingRule struct {
 	active map[uint64]*Alert
 
 	logger log.Logger
+
+	noDependentRules  *atomic.Bool
+	noDependencyRules *atomic.Bool
 }
 
 // NewAlertingRule constructs a new AlertingRule.
@@ -168,6 +171,9 @@ func NewAlertingRule(
 		evaluationTimestamp: atomic.NewTime(time.Time{}),
 		evaluationDuration:  atomic.NewDuration(0),
 		lastError:           atomic.NewError(nil),
+
+		noDependentRules:  atomic.NewBool(false),
+		noDependencyRules: atomic.NewBool(false),
 	}
 }
 
@@ -317,14 +323,30 @@ func (r *AlertingRule) Restored() bool {
 	return r.restored.Load()
 }
 
+func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
+	r.noDependentRules.Store(noDependentRules)
+}
+
+func (r *AlertingRule) GetNoDependentRules() bool {
+	return r.noDependentRules.Load()
+}
+
+func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
+	r.noDependencyRules.Store(noDependencyRules)
+}
+
+func (r *AlertingRule) GetNoDependencyRules() bool {
+	return r.noDependencyRules.Load()
+}
+
 // resolvedRetention is the duration for which a resolved alert instance
 // is kept in memory state and consequently repeatedly sent to the AlertManager.
 const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int, independent bool) (promql.Vector, error) {
-	ctx = NewOriginContext(ctx, NewRuleDetail(r, independent))
+func (r *AlertingRule) Eval(ctx context.Context, evalDelay time.Duration, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+	ctx = NewOriginContext(ctx, NewRuleDetail(r))
 
 	res, err := query(ctx, r.vector.String(), ts.Add(-evalDelay))
 	if err != nil {

@@ -29,9 +29,13 @@ type RuleDetail struct {
 	Labels labels.Labels
 	Kind   string
 
-	// Independent holds whether this rule depends on the result of other rules
-	// within the same rule group or not.
-	Independent bool
+	// NoDependentRules is set to true if it's guaranteed that in the rule group there's no other rule
+	// which depends on this one.
+	NoDependentRules bool
+
+	// NoDependencyRules is set to true if it's guaranteed that this rule doesn't depend on any other
+	// rule within the rule group.
+	NoDependencyRules bool
 }
 
 const (
@@ -40,7 +44,7 @@ const (
 )
 
 // NewRuleDetail creates a RuleDetail from a given Rule.
-func NewRuleDetail(r Rule, independent bool) RuleDetail {
+func NewRuleDetail(r Rule) RuleDetail {
 	var kind string
 	switch r.(type) {
 	case *AlertingRule:
@@ -52,11 +56,13 @@ func NewRuleDetail(r Rule, independent bool) RuleDetail {
 	}
 
 	return RuleDetail{
-		Name:        r.Name(),
-		Query:       r.Query().String(),
-		Labels:      r.Labels(),
-		Kind:        kind,
-		Independent: independent,
+		Name:   r.Name(),
+		Query:  r.Query().String(),
+		Labels: r.Labels(),
+		Kind:   kind,
+
+		NoDependentRules:  r.GetNoDependentRules(),
+		NoDependencyRules: r.GetNoDependencyRules(),
 	}
 }
 

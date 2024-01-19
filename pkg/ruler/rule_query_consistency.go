@@ -16,15 +16,16 @@ import (
 )
 
 // WrapQueryFuncWithReadConsistency wraps rules.QueryFunc with a function that injects strong read consistency
-// requirement in the context if the query is originated from a non-independent rule.
+// requirement in the context if the query is originated from a rule which depends on other rules in the same
+// rule group.
 func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc) rules.QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		// Get details about the rule.
 		detail := rules.FromOriginContext(ctx)
 
-		// If the rule is not independent then we should enforce strong read consistency,
+		// If the rule has dependencies then we should enforce strong read consistency,
 		// otherwise we'll fallback to the per-tenant default.
-		if !detail.Independent {
+		if !detail.NoDependencyRules {
 			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
 		}
 

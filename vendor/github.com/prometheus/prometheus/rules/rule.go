@@ -41,7 +41,7 @@ type Rule interface {
 	Labels() labels.Labels
 	// Eval evaluates the rule, including any associated recording or alerting actions.
 	// The duration passed is the evaluation delay.
-	Eval(_ context.Context, evalDelay time.Duration, ts time.Time, _ QueryFunc, externalURL *url.URL, limit int, independent bool) (promql.Vector, error)
+	Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -62,4 +62,12 @@ type Rule interface {
 	// GetEvaluationTimestamp returns last evaluation timestamp.
 	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
+
+	// SetNoDependentRules sets whether there's no other rule in the rule group that depends on this rule.
+	SetNoDependentRules(bool)
+	GetNoDependentRules() bool
+
+	// SetNoDependencyRules sets whether this rule doesn't depend on the output of any rule in the rule group.
+	SetNoDependencyRules(bool)
+	GetNoDependencyRules() bool
 }

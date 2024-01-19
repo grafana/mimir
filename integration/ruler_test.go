@@ -1211,9 +1211,9 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 		// Wait until the rules are evaluated.
 		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(len(group.Rules))), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
-		// The rules have been evaluated at least once. We expect the rule queries
-		// have run with strong consistency because they are not independent.
-		require.NoError(t, ingester.WaitSumMetrics(e2e.GreaterOrEqual(2), "cortex_ingest_storage_strong_consistency_requests_total"))
+		// The rules have been evaluated at least once. We expect the 2nd rule query
+		// has run with strong consistency because it depends on the 1st one.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingest_storage_strong_consistency_requests_total"))
 	})
 }
 
