@@ -447,22 +447,14 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	// Instantiate a different blocks metadata fetcher based on whether bucket index is enabled or not.
-	var (
-		fetcher block.MetadataFetcher
-		err     error
-	)
-	fetcher, err = block.NewMetaFetcher(
-		userLogger,
-		u.cfg.BucketStore.MetaSyncConcurrency,
-		userBkt,
-		u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
+	fetcher := NewBucketIndexMetadataFetcher(
+		userID,
+		u.bucket,
+		u.limits,
+		u.logger,
 		fetcherReg,
 		filters,
 	)
-	if err != nil {
-		return nil, err
-	}
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
@@ -470,7 +462,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithLazyLoadingGate(u.lazyLoadingGate),
 	}
 
-	bs, err = NewBucketStore(
+	bs, err := NewBucketStore(
 		userID,
 		userBkt,
 		fetcher,
