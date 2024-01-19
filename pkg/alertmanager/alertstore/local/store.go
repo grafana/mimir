@@ -23,8 +23,9 @@ const (
 )
 
 var (
-	errReadOnly = errors.New("local alertmanager config storage is read-only")
-	errState    = errors.New("local alertmanager storage does not support state persistency")
+	errReadOnly              = errors.New("local alertmanager config storage is read-only")
+	errState                 = errors.New("local alertmanager storage does not support state persistency")
+	errGrafanaStateAndConfig = errors.New("local alertmanager storage does not support Grafana configuration endpoints")
 )
 
 // StoreConfig configures a static file alertmanager store
@@ -40,6 +41,18 @@ func (cfg *StoreConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 // Store is used to load user alertmanager configs from a local disk
 type Store struct {
 	cfg StoreConfig
+}
+
+func (f *Store) GetFullGrafanaState(_ context.Context, _ string) (alertspb.FullStateDesc, error) {
+	return alertspb.FullStateDesc{}, errGrafanaStateAndConfig
+}
+
+func (f *Store) SetFullGrafanaState(_ context.Context, _ string, _ alertspb.FullStateDesc) error {
+	return errGrafanaStateAndConfig
+}
+
+func (f *Store) DeleteFullGrafanaState(_ context.Context, _ string) error {
+	return errGrafanaStateAndConfig
 }
 
 // NewStore returns a new file alert store.
@@ -103,6 +116,18 @@ func (f *Store) SetAlertConfig(_ context.Context, _ alertspb.AlertConfigDesc) er
 // DeleteAlertConfig implements alertstore.AlertStore.
 func (f *Store) DeleteAlertConfig(_ context.Context, _ string) error {
 	return errReadOnly
+}
+
+func (f *Store) GetGrafanaAlertConfig(_ context.Context, _ string) (alertspb.GrafanaAlertConfigDesc, error) {
+	return alertspb.GrafanaAlertConfigDesc{}, errGrafanaStateAndConfig
+}
+
+func (f *Store) SetGrafanaAlertConfig(_ context.Context, _ alertspb.GrafanaAlertConfigDesc) error {
+	return errGrafanaStateAndConfig
+}
+
+func (f *Store) DeleteGrafanaAlertConfig(_ context.Context, _ string) error {
+	return errGrafanaStateAndConfig
 }
 
 // ListUsersWithFullState implements alertstore.AlertStore.

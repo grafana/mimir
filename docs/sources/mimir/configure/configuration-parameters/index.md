@@ -1069,23 +1069,22 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Supported values are: random,spread-minimizing.
+  # (advanced) Specifies the strategy used for generating tokens for ingesters.
+  # Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
-  # (experimental) True to allow this ingester registering tokens in the ring
-  # only after all previous ingesters (with ID lower than the current one) have
+  # (advanced) True to allow this ingester registering tokens in the ring only
+  # after all previous ingesters (with ID lower than the current one) have
   # already been registered. This configuration option is supported only when
   # the token generation strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-join-ring-in-order
   [spread_minimizing_join_ring_in_order: <boolean> | default = false]
 
-  # (experimental) Comma-separated list of zones in which spread minimizing
-  # strategy is used for token generation. This value must include all zones in
-  # which ingesters are deployed, and must not change over time. This
-  # configuration is used only when "token-generation-strategy" is set to
-  # "spread-minimizing".
+  # (advanced) Comma-separated list of zones in which spread minimizing strategy
+  # is used for token generation. This value must include all zones in which
+  # ingesters are deployed, and must not change over time. This configuration is
+  # used only when "token-generation-strategy" is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
@@ -2087,6 +2086,11 @@ sharding_ring:
 # (advanced) Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
+
+# (experimental) Enable routes to support the migration and operation of the
+# Grafana Alertmanager.
+# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
+[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
@@ -3135,7 +3139,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
-[max_cache_freshness: <duration> | default = 1m]
+[max_cache_freshness: <duration> | default = 10m]
 
 # Maximum number of queriers that can handle requests for a single tenant. If
 # set to 0 or value higher than number of available queriers, *all* queriers

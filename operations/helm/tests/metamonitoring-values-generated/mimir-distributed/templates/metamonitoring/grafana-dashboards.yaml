@@ -26316,7 +26316,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": true,
                       "steppedLine": false,
                       "targets": [
@@ -26391,7 +26391,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -26451,14 +26451,76 @@ data:
                       ]
                    },
                    {
+                      "datasource": "$datasource",
+                      "description": "### Queue length\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 0,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "queries"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 8,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "displayMode": "hidden",
+                            "showLegend": false
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "desc"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "exemplar": true,
+                            "expr": "sum(min_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Queue length",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Queue length",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-scheduler (dedicated to ruler)",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
                       "aliasColors": { },
                       "bars": false,
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue) by Queue Dimension\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
                       "fill": 1,
-                      "id": 8,
+                      "id": 9,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -26478,7 +26540,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 3,
+                      "span": 4,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -26487,24 +26549,12 @@ data:
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
-                         },
-                         {
-                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
-                            "format": "time_series",
-                            "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
-                            "refId": "A"
-                         },
-                         {
-                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
-                            "format": "time_series",
-                            "legendFormat": "Average: {{ additional_queue_dimensions }}",
-                            "refId": "C"
                          }
                       ],
                       "thresholds": [ ],
                       "timeFrom": null,
                       "timeShift": null,
-                      "title": "Latency (Time in Queue) by Queue Dimension",
+                      "title": "99th Percentile Latency by Queue Dimension",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -26538,61 +26588,161 @@ data:
                       ]
                    },
                    {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
-                      "fieldConfig": {
-                         "defaults": {
-                            "custom": {
-                               "drawStyle": "line",
-                               "fillOpacity": 0,
-                               "lineWidth": 1,
-                               "pointSize": 5,
-                               "showPoints": "never",
-                               "spanNulls": false,
-                               "stacking": {
-                                  "group": "A",
-                                  "mode": "none"
-                               }
-                            },
-                            "thresholds": {
-                               "mode": "absolute",
-                               "steps": [ ]
-                            },
-                            "unit": "queries"
-                         },
-                         "overrides": [ ]
+                      "description": "### 50th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "fill": 1,
+                      "id": 10,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
                       },
-                      "id": 9,
+                      "lines": true,
+                      "linewidth": 1,
                       "links": [ ],
-                      "options": {
-                         "legend": {
-                            "displayMode": "hidden",
-                            "showLegend": false
-                         },
-                         "tooltip": {
-                            "mode": "multi",
-                            "sort": "desc"
-                         }
-                      },
-                      "span": 3,
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
                       "targets": [
                          {
-                            "exemplar": true,
-                            "expr": "sum(min_over_time(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__interval]))",
+                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
-                            "legendFormat": "Queue length",
-                            "legendLink": null
+                            "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
+                            "refId": "A"
                          }
                       ],
-                      "title": "Queue length",
-                      "type": "timeseries"
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "50th Percentile Latency by Queue Dimension",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Average Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "fill": 1,
+                      "id": 11,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 4,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "format": "time_series",
+                            "legendFormat": "Average: {{ additional_queue_dimensions }}",
+                            "refId": "C"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Average Latency by Queue Dimension",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "ms",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
                    }
                 ],
                 "repeat": null,
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler (dedicated to ruler)",
+                "title": "Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
                 "titleSize": "h6"
              },
              {
@@ -26616,7 +26766,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 10,
-                      "id": 10,
+                      "id": 12,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -26690,7 +26840,7 @@ data:
                       "dashes": false,
                       "datasource": "$datasource",
                       "fill": 1,
-                      "id": 11,
+                      "id": 13,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -26793,7 +26943,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 12,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26838,7 +26988,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Replicas\nThe maximum and current number of ruler-querier replicas.\nNote: The current number of replicas can still show 1 replica even when scaled to 0.\nBecause HPA never reports 0 replicas, the query will report 0 only if the HPA is not active.\n\n",
                       "fill": 1,
-                      "id": 13,
+                      "id": 15,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -26940,7 +27090,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Scaling metric (CPU): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                       "fill": 1,
-                      "id": 14,
+                      "id": 16,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -27015,7 +27165,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Scaling metric (memory): Desired replicas\nThis panel shows the scaling metric exposed by KEDA divided by the target/threshold used.\nIt should represent the desired number of replicas, ignoring the min/max constraints applied later.\n\n",
                       "fill": 1,
-                      "id": 15,
+                      "id": 17,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -27090,7 +27240,7 @@ data:
                       "datasource": "$datasource",
                       "description": "### Autoscaler failures rate\nThe rate of failures in the KEDA custom metrics API server. Whenever an error occurs, the KEDA custom\nmetrics server is unable to query the scaling metric from Prometheus so the autoscaler woudln't work properly.\n\n",
                       "fill": 1,
-                      "id": 16,
+                      "id": 18,
                       "legend": {
                          "avg": false,
                          "current": false,

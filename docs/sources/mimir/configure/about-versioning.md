@@ -46,6 +46,9 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Alertmanager
+  - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
+    - `-alertmanager.grafana-alertmanager-compatibility-enabled`
 - Compactor
   - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
@@ -104,10 +107,6 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
-  - Spread minimizing token generation strategy:
-    - `ingester.ring.token-generation-strategy`
-    - `ingester.ring.spread-minimizing-zones`
-    - `ingester.ring.spread-minimizing-join-ring-in-order`
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`

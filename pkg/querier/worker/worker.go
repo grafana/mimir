@@ -17,13 +17,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 type Config struct {
@@ -143,7 +143,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
 		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return servicediscovery.NewDNS(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+			return servicediscovery.NewDNS(log, cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
 		}
 
 		grpcCfg = cfg.QueryFrontendGRPCClientConfig
