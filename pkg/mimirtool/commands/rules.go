@@ -116,11 +116,13 @@ type RuleCommand struct {
 
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
 	rulesCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
 	rulesCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&r.ClientConfig.AuthToken)
+	r.ClientConfig.ExtraHeaders = map[string]string{}
+	rulesCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&r.ClientConfig.ExtraHeaders)
 
 	// Register rule commands
 	listCmd := rulesCmd.
