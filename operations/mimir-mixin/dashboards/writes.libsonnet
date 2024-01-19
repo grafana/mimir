@@ -99,7 +99,7 @@ local filename = 'mimir-writes.json';
       .addPanelIf(
         $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], format='reqps')
+        $.statPanel('sum(%s)' % utils.nativeClassicHistogramCountRate($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector), format='reqps')
       )
     )
     .addRowIf(
@@ -175,7 +175,7 @@ local filename = 'mimir-writes.json';
             When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
         ) +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.qpsPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester)) +
         if $._config.show_rejected_requests_on_writes_dashboard then {
           targets: [
             {
@@ -194,12 +194,12 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+        $.latencyPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
+          utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label]), ''
         )
       )
     )
