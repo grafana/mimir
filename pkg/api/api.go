@@ -54,8 +54,6 @@ type Config struct {
 
 	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"experimental"`
 
-	ExperimentalGrafanaAlertmanagerRoutesEnabled bool `yaml:"experimental_grafana_alertmanager_routes_enabled" category:"experimental"`
-
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
 
@@ -74,7 +72,6 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", false, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
-	f.BoolVar(&cfg.ExperimentalGrafanaAlertmanagerRoutesEnabled, "api.experimental-grafana-alertmanager-routes-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
@@ -186,7 +183,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, grafanaCompatEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
@@ -212,7 +209,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
 
-		if a.cfg.ExperimentalGrafanaAlertmanagerRoutesEnabled {
+		if grafanaCompatEnabled {
 			level.Info(a.logger).Log("msg", "enabled experimental grafana routes")
 
 			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)

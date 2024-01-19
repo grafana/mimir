@@ -275,7 +275,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			ID:                        cfg.Id,
 			GrafanaAlertmanagerConfig: cfg.RawConfig,
 			Hash:                      cfg.Hash,
-			CreatedAt:                 cfg.CreatedAt,
+			CreatedAt:                 cfg.CreatedAtTimestamp,
 			Default:                   cfg.Default,
 		},
 	})

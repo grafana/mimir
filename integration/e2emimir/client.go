@@ -784,15 +784,15 @@ func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanage
 	return ugc, err
 }
 
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, id, created int64, cfg, hash string, d bool) error {
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, id, createdAtTimestamp int64, cfg, hash string, isDefault bool) error {
 	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
 
 	data, err := json.Marshal(&alertmanager.UserGrafanaConfig{
 		ID:                        id,
 		GrafanaAlertmanagerConfig: cfg,
 		Hash:                      hash,
-		CreatedAt:                 created,
-		Default:                   d,
+		CreatedAt:                 createdAtTimestamp,
+		Default:                   isDefault,
 	})
 	if err != nil {
 		return err

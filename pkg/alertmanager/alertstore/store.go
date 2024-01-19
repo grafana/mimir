@@ -31,19 +31,31 @@ type AlertStore interface {
 	// GetAlertConfig loads and returns the alertmanager configuration for the given user.
 	GetAlertConfig(ctx context.Context, user string) (alertspb.AlertConfigDesc, error)
 
-	// SetAlertConfig stores the alertmanager configuration for an user.
+	// SetAlertConfig stores the alertmanager configuration for a user.
 	SetAlertConfig(ctx context.Context, cfg alertspb.AlertConfigDesc) error
 
-	// DeleteAlertConfig deletes the alertmanager configuration for an user.
+	// DeleteAlertConfig deletes the alertmanager configuration for a user.
 	// If configuration for the user doesn't exist, no error is reported.
 	DeleteAlertConfig(ctx context.Context, user string) error
 
+	// GetGrafanaAlertConfig returns the Grafana Alertmanager configuration for a user.
 	GetGrafanaAlertConfig(ctx context.Context, user string) (alertspb.GrafanaAlertConfigDesc, error)
+
+	// SetGrafanaAlertConfig stores the Grafana Alertmanager configuration for a user.
 	SetGrafanaAlertConfig(ctx context.Context, cfg alertspb.GrafanaAlertConfigDesc) error
+
+	// DeleteGrafanaAlertConfig delete the Grafana Alertmanager configuration for a user.
+	// If configuration for the user doesn't exist, no error is reported.
 	DeleteGrafanaAlertConfig(ctx context.Context, user string) error
 
+	// GetFullGrafanaState returns the Grafana Alertmanager state for a user.
 	GetFullGrafanaState(ctx context.Context, user string) (alertspb.FullStateDesc, error)
+
+	// SetFullGrafanaState stores the Grafana Alertmanager state for a user.
 	SetFullGrafanaState(ctx context.Context, user string, fs alertspb.FullStateDesc) error
+
+	// DeleteFullGrafanaState delete the Grafana Alertmanager state for a user.
+	// If state for the user doesn't exist, no error is reported.
 	DeleteFullGrafanaState(ctx context.Context, user string) error
 
 	// ListUsersWithFullState returns the list of users which have had state written.

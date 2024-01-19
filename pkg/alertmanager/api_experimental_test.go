@@ -36,12 +36,12 @@ func TestMultitenantAlertmanager_DeleteUserGrafanaConfig(t *testing.T) {
 	}
 
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
-		User:      "test_user",
-		RawConfig: "a grafana config",
-		Id:        int64(1),
-		Hash:      "bb788eaa294c05ec556c1ed87546b7a9",
-		CreatedAt: now,
-		Default:   false,
+		User:               "test_user",
+		RawConfig:          "a grafana config",
+		Id:                 int64(1),
+		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
+		CreatedAtTimestamp: now,
+		Default:            false,
 	}))
 
 	require.Len(t, storage.Objects(), 1)
@@ -157,12 +157,12 @@ func TestMultitenantAlertmanager_GetUserGrafanaConfig(t *testing.T) {
 	}
 
 	require.NoError(t, alertstore.SetGrafanaAlertConfig(context.Background(), alertspb.GrafanaAlertConfigDesc{
-		User:      "test_user",
-		RawConfig: "a grafana config",
-		Id:        int64(1),
-		Hash:      "bb788eaa294c05ec556c1ed87546b7a9",
-		CreatedAt: now,
-		Default:   false,
+		User:               "test_user",
+		RawConfig:          "a grafana config",
+		Id:                 int64(1),
+		Hash:               "bb788eaa294c05ec556c1ed87546b7a9",
+		CreatedAtTimestamp: now,
+		Default:            false,
 	}))
 
 	require.Len(t, storage.Objects(), 1)

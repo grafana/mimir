@@ -825,7 +825,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 	flags := mergeFlags(AlertmanagerFlags(),
 		AlertmanagerS3Flags(),
 		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
-		map[string]string{"-api.experimental-grafana-alertmanager-routes-enabled": "true"})
+		map[string]string{"-alertmanager.grafana-alertmanager-compatibility-enabled": "true"})
 
 	am := e2emimir.NewAlertmanager(
 		"alertmanager",

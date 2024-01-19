@@ -287,6 +287,8 @@ func (s *BucketAlertStore) getAlertmanagerUserBucket(userID string) objstore.Buc
 	return bucket.NewUserBucketClient(userID, s.amBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }
 
+// getUserGrafanaBucket returns the Grafana Alertmanager bucket for the given user.
+// It uses NewSSEBucketClient as we need to store multiple objects under the same user independently but read them together.
 func (s *BucketAlertStore) getUserGrafanaBucket(userID string) objstore.Bucket {
 	return bucket.NewSSEBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }

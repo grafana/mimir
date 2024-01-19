@@ -146,11 +146,6 @@ api:
   # CLI flag: -distributor.enable-otlp-metadata-storage
   [enable_otel_metadata_translation: <boolean> | default = false]
 
-  # (experimental) Enable routes to support the migration and operation of the
-  # Grafana Alertmanager.
-  # CLI flag: -api.experimental-grafana-alertmanager-routes-enabled
-  [experimental_grafana_alertmanager_routes_enabled: <boolean> | default = false]
-
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -2092,6 +2087,11 @@ sharding_ring:
 # (advanced) Enable the alertmanager config API.
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
+
+# (experimental) Enable routes to support the migration and operation of the
+# Grafana Alertmanager.
+# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
+[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
