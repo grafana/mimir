@@ -3144,6 +3144,12 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				cleanupCallCount++
 			}
 
+			duplicateCleanup := func() {
+				// If we get here, that means the middleware called `next`
+				// (which will call `CleanUp`) and then called `CleanUp` again.
+				assert.Fail(t, "cleanup called twice")
+			}
+
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
 			next := func(ctx context.Context, pushReq *Request) error {
@@ -3152,6 +3158,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
+				pushReq.AddCleanup(duplicateCleanup)
 				return nil
 			}
 
@@ -3387,12 +3394,19 @@ func TestRelabelMiddleware(t *testing.T) {
 				cleanupCallCount++
 			}
 
+			duplicateCleanup := func() {
+				// If we get here, that means the middleware called `next`
+				// (which will call `CleanUp`) and then called `CleanUp` again.
+				assert.Fail(t, "cleanup called twice")
+			}
+
 			var gotReqs []*mimirpb.WriteRequest
 			next := func(ctx context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
+				pushReq.AddCleanup(duplicateCleanup)
 				return nil
 			}
 
