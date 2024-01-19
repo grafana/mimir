@@ -460,12 +460,12 @@ func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSe
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "series"))
 
 		assert.NotZero(t, numObservationsForHistogram(t, "cortex_bucket_store_series_request_stage_duration_seconds", metrics))
-		assert.NotZero(t, valueForCounters(t, "cortex_bucket_store_series_blocks_queried_by_source_and_level", metrics, "source", "test", "level", "1"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
 	if numChunksPerSeries > 0 {
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_touched", metrics, "data_type", "chunks"))
 		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_data_fetched", metrics, "data_type", "chunks"))
-		assert.NotZero(t, valueForCounters(t, "cortex_bucket_store_series_blocks_queried_by_source_and_level", metrics, "source", "test", "level", "1"))
+		assert.NotZero(t, numObservationsForSummaries(t, "cortex_bucket_store_series_blocks_queried", metrics, "source", "test", "level", "1"))
 	}
 }
 
@@ -990,14 +990,4 @@ func numObservationsForHistogram(t *testing.T, histogramName string, metrics dsk
 	m := &dto.Metric{}
 	require.NoError(t, histogramData.Metric(prometheus.NewDesc("test", "", nil, nil)).Write(m))
 	return m.GetHistogram().GetSampleCount()
-}
-
-func valueForCounters(t *testing.T, metricName string, metrics dskit_metrics.MetricFamilyMap, labelValuePairs ...string) float64 {
-	t.Helper()
-
-	value := 0.0
-	for _, metric := range dskit_metrics.FindMetricsInFamilyMatchingLabels(metrics[metricName], labelValuePairs...) {
-		value += metric.GetCounter().GetValue()
-	}
-	return value
 }

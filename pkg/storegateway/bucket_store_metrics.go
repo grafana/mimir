@@ -20,20 +20,19 @@ import (
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
 // BucketStore is offloaded.
 type BucketStoreMetrics struct {
-	blockLoads                       prometheus.Counter
-	blockLoadFailures                prometheus.Counter
-	blockDrops                       prometheus.Counter
-	blockDropFailures                prometheus.Counter
-	seriesDataTouched                *prometheus.SummaryVec
-	seriesDataFetched                *prometheus.SummaryVec
-	seriesDataSizeTouched            *prometheus.SummaryVec
-	seriesDataSizeFetched            *prometheus.SummaryVec
-	seriesBlocksQueried              prometheus.Summary
-	seriesBlockSourceAndLevelQueried *prometheus.CounterVec
-	resultSeriesCount                prometheus.Summary
-	chunkSizeBytes                   prometheus.Histogram
-	queriesDropped                   *prometheus.CounterVec
-	seriesRefetches                  prometheus.Counter
+	blockLoads            prometheus.Counter
+	blockLoadFailures     prometheus.Counter
+	blockDrops            prometheus.Counter
+	blockDropFailures     prometheus.Counter
+	seriesDataTouched     *prometheus.SummaryVec
+	seriesDataFetched     *prometheus.SummaryVec
+	seriesDataSizeTouched *prometheus.SummaryVec
+	seriesDataSizeFetched *prometheus.SummaryVec
+	seriesBlocksQueried   *prometheus.SummaryVec
+	resultSeriesCount     prometheus.Summary
+	chunkSizeBytes        prometheus.Histogram
+	queriesDropped        *prometheus.CounterVec
+	seriesRefetches       prometheus.Counter
 
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
@@ -93,13 +92,9 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Help: "Size of all items of a data type in a block were fetched for a single Series/LabelValues/LabelNames request. This includes chunks from the cache and the object storage.",
 	}, []string{"data_type", "stage"})
 
-	m.seriesBlocksQueried = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
+	m.seriesBlocksQueried = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_blocks_queried",
 		Help: "Number of blocks in a bucket store that were touched to satisfy a query.",
-	})
-	m.seriesBlockSourceAndLevelQueried = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_bucket_store_series_blocks_queried_by_source_and_level",
-		Help: "Number of blocks in a bucket store that were touched to satisfy a query, by source and compaction level.",
 	}, []string{"source", "level"})
 	m.seriesRefetches = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_series_refetches_total",

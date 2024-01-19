@@ -8,6 +8,8 @@ package storegateway
 import (
 	"sync"
 	"time"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
@@ -77,9 +79,15 @@ type queryStats struct {
 	streamingSeriesAmbientTime time.Duration
 }
 
+func newQueryStats() *queryStats {
+	return &queryStats{
+		blocksQueriedBySourceAndLevel: make(map[blockSourceAndLevel]int),
+	}
+}
+
 // blockSourceAndLevel encapsulate a block's thanos source and compaction level
 type blockSourceAndLevel struct {
-	source string
+	source block.SourceType
 	level  int
 }
 
@@ -144,16 +152,6 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	return &s
 }
 
-func (s *queryStats) setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel map[blockSourceAndLevel]int) {
-	if s.blocksQueriedBySourceAndLevel == nil {
-		s.blocksQueriedBySourceAndLevel = blocksQueriedBySourceAndLevel
-	} else {
-		for sl, count := range blocksQueriedBySourceAndLevel {
-			s.blocksQueriedBySourceAndLevel[sl] += count
-		}
-	}
-}
-
 // safeQueryStats wraps queryStats adding functions manipulate the statistics while holding a lock.
 type safeQueryStats struct {
 	unsafeStatsMx sync.Mutex
@@ -162,7 +160,7 @@ type safeQueryStats struct {
 
 func newSafeQueryStats() *safeQueryStats {
 	return &safeQueryStats{
-		unsafeStats: &queryStats{},
+		unsafeStats: newQueryStats(),
 	}
 }
 

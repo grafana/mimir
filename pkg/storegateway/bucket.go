@@ -1139,7 +1139,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 		})
 
 		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
-			source: string(b.meta.Thanos.Source),
+			source: b.meta.Thanos.Source,
 			level:  b.meta.Compaction.Level,
 		}]++
 	}
@@ -1151,7 +1151,9 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
-		stats.setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel)
+		for sl, count := range blocksQueriedBySourceAndLevel {
+			stats.blocksQueriedBySourceAndLevel[sl] += count
+		}
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
 
@@ -1181,9 +1183,8 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
-	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 	for sl, count := range stats.blocksQueriedBySourceAndLevel {
-		s.metrics.seriesBlockSourceAndLevelQueried.WithLabelValues(sl.source, strconv.Itoa(sl.level)).Add(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(sl.source), strconv.Itoa(sl.level)).Observe(float64(count))
 	}
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
@@ -1203,9 +1204,8 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordSeriesHashCacheStats(stats)
 	s.recordStreamingSeriesStats(stats)
 
-	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 	for sl, count := range stats.blocksQueriedBySourceAndLevel {
-		s.metrics.seriesBlockSourceAndLevelQueried.WithLabelValues(sl.source, strconv.Itoa(sl.level)).Add(float64(count))
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(sl.source), strconv.Itoa(sl.level)).Observe(float64(count))
 	}
 }
 
@@ -1348,7 +1348,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 		resHints.AddQueriedBlock(b.meta.ULID)
 		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
-			source: string(b.meta.Thanos.Source),
+			source: b.meta.Thanos.Source,
 			level:  b.meta.Compaction.Level,
 		}]++
 
@@ -1384,7 +1384,9 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
-		stats.setBlocksQueriedBySourceAndLevel(blocksQueriedBySourceAndLevel)
+		for sl, count := range blocksQueriedBySourceAndLevel {
+			stats.blocksQueriedBySourceAndLevel[sl] += count
+		}
 	})
 
 	anyHints, err := types.MarshalAny(resHints)
