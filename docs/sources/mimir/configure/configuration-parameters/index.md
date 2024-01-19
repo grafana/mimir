@@ -2087,6 +2087,11 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
+# (experimental) Enable routes to support the migration and operation of the
+# Grafana Alertmanager.
+# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
+[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
+
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
 # whichever is larger. Status code 503 is served for GET requests that would
