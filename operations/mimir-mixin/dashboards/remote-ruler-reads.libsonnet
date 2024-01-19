@@ -84,13 +84,13 @@ local filename = 'mimir-remote-ruler-reads.json';
         local title = 'Requests / sec';
         $.panel(title) +
         $.panelDescription(title, description) +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.panel(title) +
         $.panelDescription(title, description) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler))
       )
       .addPanel(
         local title = 'Queue length';
@@ -98,7 +98,7 @@ local filename = 'mimir-remote-ruler-reads.json';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.hiddenLegendQueryPanel(
-          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.query_scheduler)],
+          'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ruler_query_scheduler)],
           'Queue length'
         ) +
         {
@@ -122,7 +122,7 @@ local filename = 'mimir-remote-ruler-reads.json';
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
-      local selector = '{%s}' % $.jobMatcher($._config.job_names.query_scheduler);
+      local selector = '{%s}' % $.jobMatcher($._config.job_names.ruler_query_scheduler);
       local labels = ['additional_queue_dimensions'];
       local labelReplaceArgSets = [
         {
