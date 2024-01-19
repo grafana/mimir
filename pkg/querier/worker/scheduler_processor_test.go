@@ -3,8 +3,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"math"
 	"net"
 	"testing"
@@ -325,6 +327,63 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 	assert.Equal(t, conf, sp.grpcConfig)
 }
 
+func TestSchedulerProcessor_ResponseStream(t *testing.T) {
+	receiveRequests := func(r []*schedulerpb.SchedulerToQuerier, c schedulerpb.SchedulerForQuerier_QuerierLoopClient) func() (*schedulerpb.SchedulerToQuerier, error) {
+		nextReq := atomic.NewInt64(0)
+		return func() (*schedulerpb.SchedulerToQuerier, error) {
+			switch n := int(nextReq.Inc()); {
+			case n <= len(r):
+				return r[n-1], nil
+			default:
+				// No more messages to process, wait until terminated.
+				<-c.Context().Done()
+				return nil, toRPCErr(c.Context().Err())
+			}
+		}
+	}
+
+	returnResponses := func(res []*httpgrpc.HTTPResponse) func() (*httpgrpc.HTTPResponse, error) {
+		nextResp := atomic.NewInt64(0)
+		return func() (*httpgrpc.HTTPResponse, error) {
+			return res[nextResp.Inc()-1], nil
+		}
+	}
+
+	streamingEnabledHeader := &httpgrpc.Header{Key: ResponseStreamingEnabledHeader, Values: []string{"true"}}
+
+	t.Run("should stream response metadata followed by response body chunks", func(t *testing.T) {
+		reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		// enable response streaming
+		reqProcessor.streamingEnabled = true
+		// make sure responses don't get rejected as too large
+		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		requestQueue := []*schedulerpb.SchedulerToQuerier{
+			{QueryID: 1, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+		}
+		responses := []*httpgrpc.HTTPResponse{
+			{
+				Code: 200, Body: bytes.Repeat([]byte("a"), responseStreamingBodyChunkSizeBytes+1),
+				Headers: []*httpgrpc.Header{streamingEnabledHeader},
+			},
+		}
+
+		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
+		ctx, cancel := context.WithCancel(context.Background())
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+			func(arguments mock.Arguments) { cancel() },
+		).Return(returnResponses(responses)())
+
+		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+		require.Equal(t, 1, int(frontend.queryResultStreamMetadataCalls.Load()))
+		// Response body does not fit into one chunk, expect body to be split into two chunks.
+		require.Equal(t, 2, int(frontend.queryResultStreamBodyCalls.Load()))
+		require.Equal(t, 0, int(frontend.queryResultCalls.Load()))
+	})
+}
+
 func prepareSchedulerProcessor(t *testing.T) (*schedulerProcessor, *querierLoopClientMock, *requestHandlerMock, *frontendForQuerierMockServer) {
 	loopClient := &querierLoopClientMock{}
 	loopClient.On("Send", mock.Anything).Return(nil)
@@ -455,10 +514,40 @@ func (m *requestHandlerMock) Handle(ctx context.Context, req *httpgrpc.HTTPReque
 type frontendForQuerierMockServer struct {
 	addr             string
 	queryResultCalls atomic.Int64
+
+	queryResultStreamMetadataCalls atomic.Int64
+	queryResultStreamBodyCalls     atomic.Int64
 }
 
 func (f *frontendForQuerierMockServer) QueryResult(context.Context, *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.queryResultCalls.Inc()
 
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	metadataSent := false
+	for {
+		resp, err := s.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return err
+		}
+		switch resp.Data.(type) {
+		case *frontendv2pb.QueryResultStreamRequest_Metadata:
+			f.queryResultStreamMetadataCalls.Inc()
+			metadataSent = true
+		case *frontendv2pb.QueryResultStreamRequest_Body:
+			f.queryResultStreamBodyCalls.Inc()
+			if !metadataSent {
+				return errors.New("expected metadata to be sent before body")
+			}
+		default:
+			return errors.New("unexpected request type")
+		}
+	}
+
+	return nil
 }

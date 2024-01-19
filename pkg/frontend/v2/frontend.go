@@ -6,9 +6,11 @@
 package v2
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -109,6 +111,11 @@ type Frontend struct {
 	requests                *requestsInProgress
 }
 
+type queryResultWithBody struct {
+	wireType *frontendv2pb.QueryResultRequest
+	body     io.ReadCloser
+}
+
 type frontendRequest struct {
 	queryID      uint64
 	request      *httpgrpc.HTTPRequest
@@ -118,7 +125,7 @@ type frontendRequest struct {
 	ctx context.Context
 
 	enqueue  chan enqueueResult
-	response chan *frontendv2pb.QueryResultRequest
+	response chan queryResultWithBody
 }
 
 type enqueueStatus int
@@ -202,15 +209,15 @@ func (f *Frontend) stopping(_ error) error {
 }
 
 // RoundTripGRPC round trips a proto (instead of an HTTP request).
-func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error) {
 	if s := f.State(); s != services.Running {
 		// This should never happen: requests should be blocked by frontendRunningRoundTripper before they get here.
-		return nil, fmt.Errorf("frontend not running: %v", s)
+		return nil, nil, fmt.Errorf("frontend not running: %v", s)
 	}
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 
@@ -219,13 +226,13 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	if tracer != nil && span != nil {
 		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
 		if err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	spanLogger := spanlogger.FromContext(ctx, f.log)
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(errExecutingQueryRoundTripFinished)
+	// cancel is passed to the cleanup function and invoked from there
 
 	freq := &frontendRequest{
 		queryID:      f.lastQueryID.Inc(),
@@ -238,11 +245,22 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 		// Buffer of 1 to ensure response or error can be written to the channel
 		// even if this goroutine goes away due to client context cancellation.
 		enqueue:  make(chan enqueueResult, 1),
-		response: make(chan *frontendv2pb.QueryResultRequest, 1),
+		response: make(chan queryResultWithBody, 1),
 	}
 
 	f.requests.put(freq)
-	defer f.requests.delete(freq.queryID)
+	// delete is called through the cleanup func executed either in the defer or by the caller closing the body.
+
+	cleanup := func() {
+		defer cancel(errExecutingQueryRoundTripFinished)
+		f.requests.delete(freq.queryID)
+	}
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			cleanup()
+		}
+	}()
 
 	retries := f.cfg.WorkerConcurrency + 1 // To make sure we hit at least two different schedulers.
 
@@ -253,7 +271,7 @@ enqueueAgain:
 	select {
 	case <-ctx.Done():
 		spanLogger.DebugLog("msg", "request context cancelled while enqueuing request, aborting", "err", ctx.Err())
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 
 	case f.requestsCh <- freq:
 		// Enqueued, let's wait for response.
@@ -271,7 +289,7 @@ enqueueAgain:
 
 		spanLogger.DebugLog("msg", "enqueuing request failed, retries are exhausted, aborting")
 
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
+		return nil, nil, httpgrpc.Errorf(http.StatusInternalServerError, "failed to enqueue request")
 	}
 
 	spanLogger.DebugLog("msg", "request enqueued successfully, waiting for response")
@@ -289,18 +307,40 @@ enqueueAgain:
 				level.Warn(spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
 			}
 		}
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 
 	case resp := <-freq.response:
 		spanLogger.DebugLog("msg", "received response")
 
-		if stats.ShouldTrackHTTPGRPCResponse(resp.HttpResponse) {
+		if stats.ShouldTrackHTTPGRPCResponse(resp.wireType.HttpResponse) {
 			stats := stats.FromContext(ctx)
-			stats.Merge(resp.Stats) // Safe if stats is nil.
+			stats.Merge(resp.wireType.Stats) // Safe if stats is nil.
 		}
 
-		return resp.HttpResponse, nil
+		// the cleanup will be triggered by the caller closing the body.
+		cleanupInDefer = false
+		body := &cleanupReadCloser{cleanup: cleanup}
+		if resp.body != nil {
+			body.rc = resp.body
+		} else {
+			body.rc = io.NopCloser(bytes.NewReader(resp.wireType.HttpResponse.Body))
+		}
+		return resp.wireType.HttpResponse, body, nil
 	}
+}
+
+type cleanupReadCloser struct {
+	cleanup func()
+	rc      io.ReadCloser
+}
+
+func (c cleanupReadCloser) Read(p []byte) (n int, err error) {
+	return c.rc.Read(p)
+}
+
+func (c cleanupReadCloser) Close() error {
+	c.cleanup()
+	return c.rc.Close()
 }
 
 func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
@@ -316,7 +356,9 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	// To avoid mixing results from different queries, we randomize queryID counter on start.
 	if req != nil && req.userID == userID {
 		select {
-		case req.response <- qrReq:
+		case req.response <- queryResultWithBody{
+			wireType: qrReq,
+		}:
 			// Should always be possible, unless QueryResult is called multiple times with the same queryID.
 		default:
 			level.Warn(f.log).Log("msg", "failed to write query result to the response channel", "queryID", qrReq.QueryID, "user", userID)
@@ -324,6 +366,79 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}
 
 	return &frontendv2pb.QueryResultResponse{}, nil
+}
+
+func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
+	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
+		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
+		if err != nil {
+			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
+		}
+	}(stream)
+
+	tenantIDs, err := tenant.TenantIDs(stream.Context())
+	if err != nil {
+		return err
+	}
+	userID := tenant.JoinTenantIDs(tenantIDs)
+
+	reader, writer := io.Pipe()
+	defer func(c io.Closer) {
+		if err := c.Close(); err != nil {
+			level.Warn(f.log).Log("msg", "failed to close query result body writer", "err", err)
+		}
+	}(writer)
+
+	metadataReceived := false
+
+	for {
+		resp, err := stream.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("failed to receive query result stream message: %w", err)
+		}
+		switch d := resp.Data.(type) {
+		case *frontendv2pb.QueryResultStreamRequest_Metadata:
+			req := f.requests.get(resp.QueryID)
+			if req == nil {
+				return fmt.Errorf("query %d not found", resp.QueryID)
+			}
+			if req.userID != userID {
+				return fmt.Errorf("expected metadata for user: %s, got: %s", req.userID, userID)
+			}
+			select {
+			case req.response <- queryResultWithBody{
+				wireType: &frontendv2pb.QueryResultRequest{
+					QueryID: resp.QueryID,
+					Stats:   d.Metadata.Stats,
+					HttpResponse: &httpgrpc.HTTPResponse{
+						Code:    d.Metadata.Code,
+						Headers: d.Metadata.Headers,
+					},
+				},
+				body: reader,
+			}: // Should always be possible unless QueryResultStream is called multiple times with the same queryID.
+				metadataReceived = true
+			default:
+				level.Warn(f.log).Log("msg", "failed to write query result to the response channel",
+					"queryID", resp.QueryID, "user", req.userID)
+			}
+		case *frontendv2pb.QueryResultStreamRequest_Body:
+			if !metadataReceived {
+				return fmt.Errorf("result body for query ID %d received before metadata", resp.QueryID)
+			}
+			_, err := writer.Write(d.Body.Chunk)
+			if err != nil {
+				return fmt.Errorf("failed to write query result body chunk: %w", err)
+			}
+		default:
+			return fmt.Errorf("unknown query result stream message type: %T", resp.Data)
+		}
+	}
+
+	return nil
 }
 
 // CheckReady determines if the query frontend is ready.  Function parameters/return

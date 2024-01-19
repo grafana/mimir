@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"testing"
@@ -19,21 +20,37 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestActiveSeriesWithQueryShardingHTTP(t *testing.T) {
-	config := queryFrontendTestConfig{
-		queryStatsEnabled:           true,
-		querySchedulerEnabled:       true,
-		querySchedulerDiscoveryMode: "ring",
-		setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
-			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(minio))
+func TestActiveSeriesWithQuerySharding(t *testing.T) {
+	for _, qsEnabled := range []bool{false, true} {
+		for _, shardingEnabled := range []string{"false", "true"} {
+			for _, responseStreamingEnabled := range []string{"false", "true"} {
+				config := queryFrontendTestConfig{
+					queryStatsEnabled:           true,
+					querySchedulerEnabled:       qsEnabled,
+					querySchedulerDiscoveryMode: "ring",
+					setup: func(t *testing.T, s *e2e.Scenario) (string, map[string]string) {
+						flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(),
+							map[string]string{
+								"-querier.response-streaming-enabled":         responseStreamingEnabled,
+								"-query-frontend.shard-active-series-queries": shardingEnabled,
+							},
+						)
+						minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+						require.NoError(t, s.StartAndWaitReady(minio))
 
-			return "", flags
-		},
+						return "", flags
+					},
+				}
+
+				testName := fmt.Sprintf("query scheduler=%v/query sharding=%v/response streaming=%v",
+					qsEnabled, shardingEnabled, responseStreamingEnabled,
+				)
+				t.Run(testName, func(t *testing.T) {
+					runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
+				})
+			}
+		}
 	}
-
-	runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
 }
 
 func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
@@ -54,8 +71,8 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 		"-query-frontend.query-stats-enabled":                strconv.FormatBool(cfg.queryStatsEnabled),
 		"-query-frontend.query-sharding-total-shards":        "32",
 		"-query-frontend.query-sharding-max-sharded-queries": "128",
-		"-query-frontend.shard-active-series-queries":        "true",
 		"-querier.cardinality-analysis-enabled":              "true",
+		"-querier.max-concurrent":                            "128",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -134,6 +151,10 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 	}
 
 	_, err = c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
+	if flags["-query-frontend.shard-active-series-queries"] == "true" {
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
+	} else {
+		require.NoError(t, err)
+	}
 }

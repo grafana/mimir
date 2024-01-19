@@ -6,8 +6,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
@@ -38,18 +41,24 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-const maxNotifyFrontendRetries = 5
+const (
+	ResponseStreamingEnabledHeader      = "X-Mimir-Stream-Grpc-Response"
+	responseStreamingBodyChunkSizeBytes = 1 * 1024 * 1024
+
+	maxNotifyFrontendRetries = 5
+)
 
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
-		log:            log,
-		handler:        handler,
-		maxMessageSize: cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
-		querierID:      cfg.QuerierID,
-		grpcConfig:     cfg.QueryFrontendGRPCClientConfig,
+		log:              log,
+		handler:          handler,
+		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
+		querierID:        cfg.QuerierID,
+		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
+		streamingEnabled: cfg.ResponseStreamingEnabled,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 			return schedulerpb.NewSchedulerForQuerierClient(conn)
@@ -79,11 +88,12 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
-	log            log.Logger
-	handler        RequestHandler
-	grpcConfig     grpcclient.Config
-	maxMessageSize int
-	querierID      string
+	log              log.Logger
+	handler          RequestHandler
+	grpcConfig       grpcclient.Config
+	maxMessageSize   int
+	querierID        string
+	streamingEnabled bool
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
@@ -285,15 +295,20 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			break
 		}
 
-		// Response is empty and uninteresting.
-		_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
-			QueryID:      queryID,
-			HttpResponse: response,
-			Stats:        stats,
-		})
+		if sp.streamingEnabled && streamingEnabledForResponse(response.Headers) {
+			err = streamResponse(frontendCtx, c, queryID, response, stats)
+		} else {
+			// Response is empty and uninteresting.
+			_, err = c.(frontendv2pb.FrontendForQuerierClient).QueryResult(frontendCtx, &frontendv2pb.QueryResultRequest{
+				QueryID:      queryID,
+				HttpResponse: response,
+				Stats:        stats,
+			})
+		}
 		if err == nil {
 			break
 		}
+
 		level.Warn(logger).Log("msg", "retrying to notify frontend about finished query", "err", err, "frontend", frontendAddress, "retries", bof.NumRetries(), "query_id", queryID)
 		sp.frontendPool.RemoveClient(c, frontendAddress)
 		bof.Wait()
@@ -302,6 +317,72 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	if err != nil {
 		level.Error(logger).Log("msg", "error notifying frontend about finished query", "err", err, "frontend", frontendAddress, "query_id", queryID)
 	}
+}
+
+func streamingEnabledForResponse(headers []*httpgrpc.Header) bool {
+	streamEnabledViaHeader := false
+	for _, header := range headers {
+		if header.Key == ResponseStreamingEnabledHeader && header.Values[0] == "true" {
+			streamEnabledViaHeader = true
+			break
+		}
+	}
+	return streamEnabledViaHeader
+}
+
+func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
+	sc, err := c.(frontendv2pb.FrontendForQuerierClient).QueryResultStream(ctx)
+	if err != nil {
+		return fmt.Errorf("error creating stream to frontend: %w", err)
+	}
+
+	// Send metadata
+	err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
+		QueryID: queryID,
+		Data: &frontendv2pb.QueryResultStreamRequest_Metadata{Metadata: &frontendv2pb.QueryResultMetadata{
+			Code:    response.Code,
+			Headers: response.Headers,
+			Stats:   stats,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("error sending initial response to frontend: %w", err)
+	}
+
+	// Send body chunks.
+	bodyReader := bytes.NewReader(response.Body)
+	for bodyReader.Len() > 0 {
+		payload, err := buildBodyChunk(queryID, bodyReader)
+		if err != nil {
+			return fmt.Errorf("error reading response body chunk: %w", err)
+		}
+		err = sc.Send(payload)
+		if err != nil {
+			return fmt.Errorf("error sending response body chunk to frontend: %w", err)
+		}
+	}
+
+	_, err = sc.CloseAndRecv()
+	if err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("error closing stream to frontend: %w", err)
+	}
+
+	return nil
+}
+
+func buildBodyChunk(queryID uint64, bodyReader *bytes.Reader) (*frontendv2pb.QueryResultStreamRequest, error) {
+	data := &frontendv2pb.QueryResultStreamRequest_Body{
+		Body: &frontendv2pb.QueryResultBody{Chunk: make([]byte, min(responseStreamingBodyChunkSizeBytes, bodyReader.Len()))},
+	}
+	payload := &frontendv2pb.QueryResultStreamRequest{
+		QueryID: queryID,
+		Data:    data,
+	}
+	_, err := bodyReader.Read(data.Body.Chunk)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return payload, nil
 }
 
 func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
@@ -333,7 +414,11 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
 		middleware.UnaryClientInstrumentInterceptor(sp.frontendClientRequestDuration),
-	}, nil)
+	}, []grpc.StreamClientInterceptor{
+		otgrpc.OpenTracingStreamClientInterceptor(opentracing.GlobalTracer()),
+		middleware.StreamClientUserHeaderInterceptor,
+		middleware.StreamClientInstrumentInterceptor(sp.frontendClientRequestDuration),
+	})
 
 	if err != nil {
 		return nil, err
