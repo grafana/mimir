@@ -90,6 +90,10 @@ type Block struct {
 
 	// Block's compactor shard ID, copied from tsdb.CompactorShardIDExternalLabel label.
 	CompactorShardID string `json:"compactor_shard_id,omitempty"`
+
+	// Source is the real upload source of the block
+	Source          string `json:"source,omitempty"`
+	CompactionLevel int    `json:"compaction_level,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -113,10 +117,14 @@ func (m *Block) ThanosMeta() *block.Meta {
 			MinTime: m.MinTime,
 			MaxTime: m.MaxTime,
 			Version: block.TSDBVersion1,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level: m.CompactionLevel,
+			},
 		},
 		Thanos: block.ThanosMeta{
 			Version:      block.ThanosVersion1,
 			SegmentFiles: m.thanosMetaSegmentFiles(),
+			Source:       block.SourceType(m.Source),
 		},
 	}
 }
@@ -153,6 +161,8 @@ func BlockFromThanosMeta(meta block.Meta) *Block {
 		SegmentsFormat:   segmentsFormat,
 		SegmentsNum:      segmentsNum,
 		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+		Source:           string(meta.Thanos.Source),
+		CompactionLevel:  meta.Compaction.Level,
 	}
 }
 

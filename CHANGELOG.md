@@ -39,7 +39,7 @@
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
 * [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
 * [ENHANCEMENT] Distributor: invalid metric name error message gets cleaned up to not include non-ascii strings. #7146
-* [ENHANCEMENT] Store-gateway: add `cortex_bucket_store_series_blocks_queried_by_source_and_level` metric that indicates the number of blocks that were queried from store gateways by source and compaction level. #7112
+* [ENHANCEMENT] Store-gateway: add `source` and `level` to `cortex_bucket_store_series_blocks_queried` metric that indicates the number of blocks that were queried from store gateways by source and compaction level. #7112
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
