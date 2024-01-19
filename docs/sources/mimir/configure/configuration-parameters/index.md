@@ -1069,23 +1069,22 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Supported values are: random,spread-minimizing.
+  # (advanced) Specifies the strategy used for generating tokens for ingesters.
+  # Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
-  # (experimental) True to allow this ingester registering tokens in the ring
-  # only after all previous ingesters (with ID lower than the current one) have
+  # (advanced) True to allow this ingester registering tokens in the ring only
+  # after all previous ingesters (with ID lower than the current one) have
   # already been registered. This configuration option is supported only when
   # the token generation strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-join-ring-in-order
   [spread_minimizing_join_ring_in_order: <boolean> | default = false]
 
-  # (experimental) Comma-separated list of zones in which spread minimizing
-  # strategy is used for token generation. This value must include all zones in
-  # which ingesters are deployed, and must not change over time. This
-  # configuration is used only when "token-generation-strategy" is set to
-  # "spread-minimizing".
+  # (advanced) Comma-separated list of zones in which spread minimizing strategy
+  # is used for token generation. This value must include all zones in which
+  # ingesters are deployed, and must not change over time. This configuration is
+  # used only when "token-generation-strategy" is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
