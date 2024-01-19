@@ -3526,7 +3526,7 @@
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.max-cache-freshness",
           "fieldType": "duration",
           "fieldCategory": "advanced"
