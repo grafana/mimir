@@ -1549,7 +1549,7 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 
 	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.LogToSpan(span)
+		request.AddSpanTags(span)
 	}
 
 	response, err := q.handler.Do(r.Context(), request)

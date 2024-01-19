@@ -91,9 +91,9 @@ func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64)
 	return &newRequest
 }
 
-// LogToSpan writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
+// AddSpanTags writes the current `PrometheusRangeQueryRequest` parameters to the specified span tags
 // ("attributes" in OpenTelemetry parlance).
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
+func (q *PrometheusRangeQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("query", q.GetQuery())
 	sp.SetTag("start", timestamp.Time(q.GetStart()).String())
 	sp.SetTag("end", timestamp.Time(q.GetEnd()).String())
@@ -154,9 +154,9 @@ func (r *PrometheusInstantQueryRequest) WithEstimatedSeriesCountHint(count uint6
 	return &newRequest
 }
 
-// LogToSpan writes query information about the current `PrometheusInstantQueryRequest`
+// AddSpanTags writes query information about the current `PrometheusInstantQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
+func (r *PrometheusInstantQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("query", r.GetQuery())
 	sp.SetTag("time", timestamp.Time(r.GetTime()).String())
 }
