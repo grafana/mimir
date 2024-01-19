@@ -142,7 +142,7 @@ func (s *BucketAlertStore) DeleteAlertConfig(ctx context.Context, userID string)
 
 func (s *BucketAlertStore) GetGrafanaAlertConfig(ctx context.Context, userID string) (alertspb.GrafanaAlertConfigDesc, error) {
 	config := alertspb.GrafanaAlertConfigDesc{}
-	err := s.get(ctx, s.getUserGrafanaBucket(userID), grafanaConfigName, &config)
+	err := s.get(ctx, s.getGrafanaAlertmanagerUserBucket(userID), grafanaConfigName, &config)
 	if s.grafanaAMBucket.IsObjNotFoundErr(err) {
 		return config, alertspb.ErrNotFound
 	}
@@ -155,11 +155,11 @@ func (s *BucketAlertStore) SetGrafanaAlertConfig(ctx context.Context, cfg alerts
 		return err
 	}
 
-	return s.getUserGrafanaBucket(cfg.User).Upload(ctx, grafanaConfigName, bytes.NewBuffer(cfgBytes))
+	return s.getGrafanaAlertmanagerUserBucket(cfg.User).Upload(ctx, grafanaConfigName, bytes.NewBuffer(cfgBytes))
 }
 
 func (s *BucketAlertStore) DeleteGrafanaAlertConfig(ctx context.Context, userID string) error {
-	userBkt := s.getUserGrafanaBucket(userID)
+	userBkt := s.getGrafanaAlertmanagerUserBucket(userID)
 
 	err := userBkt.Delete(ctx, grafanaConfigName)
 	if userBkt.IsObjNotFoundErr(err) {
@@ -218,7 +218,7 @@ func (s *BucketAlertStore) DeleteFullState(ctx context.Context, userID string) e
 }
 
 func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID string) (alertspb.FullStateDesc, error) {
-	bkt := s.getUserGrafanaBucket(userID)
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
 	fs := alertspb.FullStateDesc{}
 
 	err := s.get(ctx, bkt, grafanaStateName, &fs)
@@ -230,7 +230,7 @@ func (s *BucketAlertStore) GetFullGrafanaState(ctx context.Context, userID strin
 }
 
 func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID string, fs alertspb.FullStateDesc) error {
-	bkt := s.getUserGrafanaBucket(userID)
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
 
 	fsBytes, err := fs.Marshal()
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *BucketAlertStore) SetFullGrafanaState(ctx context.Context, userID strin
 }
 
 func (s *BucketAlertStore) DeleteFullGrafanaState(ctx context.Context, userID string) error {
-	bkt := s.getUserGrafanaBucket(userID)
+	bkt := s.getGrafanaAlertmanagerUserBucket(userID)
 
 	err := bkt.Delete(ctx, grafanaStateName)
 	if bkt.IsObjNotFoundErr(err) {
@@ -287,8 +287,6 @@ func (s *BucketAlertStore) getAlertmanagerUserBucket(userID string) objstore.Buc
 	return bucket.NewUserBucketClient(userID, s.amBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }
 
-// getUserGrafanaBucket returns the Grafana Alertmanager bucket for the given user.
-// It uses NewSSEBucketClient as we need to store multiple objects under the same user independently but read them together.
-func (s *BucketAlertStore) getUserGrafanaBucket(userID string) objstore.Bucket {
-	return bucket.NewSSEBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
+func (s *BucketAlertStore) getGrafanaAlertmanagerUserBucket(userID string) objstore.Bucket {
+	return bucket.NewUserBucketClient(userID, s.grafanaAMBucket, s.cfgProvider).WithExpectedErrs(s.amBucket.IsObjNotFoundErr)
 }

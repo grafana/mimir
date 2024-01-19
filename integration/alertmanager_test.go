@@ -831,62 +831,112 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		"alertmanager",
 		flags,
 	)
-
 	require.NoError(t, s.StartAndWaitReady(am))
 
-	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
-	require.NoError(t, err)
+	// For Grafana Alertmanager configuration.
 	{
-		var cfg *alertmanager.UserGrafanaConfig
-		// When no config is set yet, it should not return anything.
-		cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
-		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-		require.Nil(t, cfg)
-
-		// Now, let's set a config.
-		now := time.Now().UnixMilli()
-		err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(1), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+		c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 		require.NoError(t, err)
+		{
+			var cfg *alertmanager.UserGrafanaConfig
+			// When no config is set yet, it should not return anything.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
 
-		// With that set, let's get it back.
-		cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			// Now, let's set a config.
+			now := time.Now().UnixMilli()
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(1), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+			require.NoError(t, err)
+
+			// With that set, let's get it back.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, int64(1), cfg.ID)
+			require.Equal(t, now, cfg.CreatedAt)
+		}
+
+		// Let's store config for a different user as well.
+		c, err = e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-5")
 		require.NoError(t, err)
-		require.Equal(t, int64(1), cfg.ID)
-		require.Equal(t, now, cfg.CreatedAt)
+		{
+			var cfg *alertmanager.UserGrafanaConfig
+			// When no config is set yet, it should not return anything.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
 
-		// Now, let's delete it.
-		err = c.DeleteGrafanaAlertmanagerConfig(context.Background())
-		require.NoError(t, err)
+			// Now, let's set a config.
+			now := time.Now().UnixMilli()
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), int64(5), now, "a grafana configuration", "bb788eaa294c05ec556c1ed87546b7a9", false)
+			require.NoError(t, err)
 
-		// Now that the config is deleted, it should not return anything again.
-		cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
-		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-		require.Nil(t, cfg)
+			// With that set, let's get it back.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, int64(5), cfg.ID)
+			require.Equal(t, now, cfg.CreatedAt)
+
+			// Now, let's delete it.
+			err = c.DeleteGrafanaAlertmanagerConfig(context.Background())
+			require.NoError(t, err)
+
+			// Now that the config is deleted, it should not return anything again.
+			cfg, err = c.GetGrafanaAlertmanagerConfig(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, cfg)
+		}
 	}
 
+	// For Grafana Alertmanager state.
 	{
-		var state *alertmanager.UserGrafanaState
-		// When no state is set yet, it should not return anything.
-		state, err = c.GetGrafanaAlertmanagerState(context.Background())
-		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-		require.Nil(t, state)
-
-		// Now, let's set the state.
-		err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
+		c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
 		require.NoError(t, err)
+		{
+			var state *alertmanager.UserGrafanaState
+			// When no state is set yet, it should not return anything.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
 
-		// With a state now set, let's get it back.
-		state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			// Now, let's set the state.
+			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
+			require.NoError(t, err)
+
+			// With a state now set, let's get it back.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
+		}
+
+		// Let's store state for a different user as well.
+		c, err = e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-5")
 		require.NoError(t, err)
-		require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
+		{
+			var state *alertmanager.UserGrafanaState
+			// When no state is set yet, it should not return anything.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
 
-		// Now, let's delete it.
-		err = c.DeleteGrafanaAlertmanagerState(context.Background())
-		require.NoError(t, err)
+			// Now, let's set the state.
+			err = c.SetGrafanaAlertmanagerState(context.Background(), "ChEKBW5mbG9nEghzb21lZGF0YQ==")
+			require.NoError(t, err)
 
-		// Now that the state is deleted, it should not return anything again.
-		state, err = c.GetGrafanaAlertmanagerState(context.Background())
-		require.EqualError(t, err, e2emimir.ErrNotFound.Error())
-		require.Nil(t, state)
+			// With a state now set, let's get it back.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, "ChEKBW5mbG9nEghzb21lZGF0YQ==", state.State)
+
+			// Now, let's delete it.
+			err = c.DeleteGrafanaAlertmanagerState(context.Background())
+			require.NoError(t, err)
+
+			// Now that the state is deleted, it should not return anything again.
+			state, err = c.GetGrafanaAlertmanagerState(context.Background())
+			require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+			require.Nil(t, state)
+		}
+
 	}
 }

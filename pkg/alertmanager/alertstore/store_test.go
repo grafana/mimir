@@ -8,6 +8,7 @@ package alertstore
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -170,6 +171,19 @@ func makeTestFullState(content string) alertspb.FullStateDesc {
 	}
 }
 
+func makeTestGrafanaAlertConfig(t *testing.T, user, cfg, hash string, id, createdAtTimestamp int64, isDefault bool) alertspb.GrafanaAlertConfigDesc {
+	t.Helper()
+
+	return alertspb.GrafanaAlertConfigDesc{
+		User:               user,
+		RawConfig:          cfg,
+		Id:                 id,
+		Hash:               hash,
+		CreatedAtTimestamp: createdAtTimestamp,
+		Default:            isDefault,
+	}
+}
+
 func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 	bucket := objstore.NewInMemBucket()
 	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
@@ -237,5 +251,122 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 		// Delete again (should be idempotent).
 		require.NoError(t, store.DeleteFullState(ctx, "user-1"))
+	}
+}
+
+func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+
+	ctx := context.Background()
+	state1 := makeTestFullState("one")
+	state2 := makeTestFullState("two")
+
+	// The storage is empty.
+	{
+		_, err := store.GetFullGrafanaState(ctx, "user-1")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+
+		_, err = store.GetFullGrafanaState(ctx, "user-2")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+	}
+
+	// The storage contains users.
+	{
+		require.NoError(t, store.SetFullGrafanaState(ctx, "user-1", state1))
+		require.NoError(t, store.SetFullGrafanaState(ctx, "user-2", state2))
+
+		res, err := store.GetFullGrafanaState(ctx, "user-1")
+		require.NoError(t, err)
+		assert.Equal(t, state1, res)
+
+		res, err = store.GetFullGrafanaState(ctx, "user-2")
+		require.NoError(t, err)
+		assert.Equal(t, state2, res)
+
+		// Ensure the state is stored at the expected location. Without this check
+		// we have no guarantee that the objects are stored at the expected location.
+		exists, err := bucket.Exists(ctx, "grafana_alertmanager/user-1/grafana_fullstate")
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = bucket.Exists(ctx, "grafana_alertmanager/user-2/grafana_fullstate")
+		require.NoError(t, err)
+		assert.True(t, exists)
+	}
+
+	// The storage has had user-1 deleted.
+	{
+		require.NoError(t, store.DeleteFullGrafanaState(ctx, "user-1"))
+
+		// Ensure the correct entry has been deleted.
+		_, err := store.GetFullGrafanaState(ctx, "user-1")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+
+		res, err := store.GetFullGrafanaState(ctx, "user-2")
+		require.NoError(t, err)
+		assert.Equal(t, state2, res)
+
+		// Delete again (should be idempotent).
+		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
+	}
+}
+
+func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
+	bucket := objstore.NewInMemBucket()
+	store := bucketclient.NewBucketAlertStore(bucket, nil, log.NewNopLogger())
+
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	cfg1 := makeTestGrafanaAlertConfig(t, "user-1", "config one", "3edf15da6a1e11c454e7285d9443071a", 1, now, false)
+	cfg2 := makeTestGrafanaAlertConfig(t, "user-2", "config two", "b7aed2b102aa09fe21f324392ace74eb", 2, now, false)
+
+	// The storage is empty.
+	{
+		_, err := store.GetGrafanaAlertConfig(ctx, "user-1")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+
+		_, err = store.GetGrafanaAlertConfig(ctx, "user-2")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+	}
+
+	// The storage contains users.
+	{
+		require.NoError(t, store.SetGrafanaAlertConfig(ctx, cfg1))
+		require.NoError(t, store.SetGrafanaAlertConfig(ctx, cfg2))
+
+		res, err := store.GetGrafanaAlertConfig(ctx, "user-1")
+		require.NoError(t, err)
+		assert.Equal(t, cfg1, res)
+
+		res, err = store.GetGrafanaAlertConfig(ctx, "user-2")
+		require.NoError(t, err)
+		assert.Equal(t, cfg2, res)
+
+		// Ensure the config is stored at the expected location. Without this check
+		// we have no guarantee that the objects are stored at the expected location.
+		exists, err := bucket.Exists(ctx, "grafana_alertmanager/user-1/grafana_config")
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		exists, err = bucket.Exists(ctx, "grafana_alertmanager/user-2/grafana_config")
+		require.NoError(t, err)
+		assert.True(t, exists)
+	}
+
+	// The storage has had user-1 deleted.
+	{
+		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
+
+		// Ensure the correct entry has been deleted.
+		_, err := store.GetGrafanaAlertConfig(ctx, "user-1")
+		assert.Equal(t, alertspb.ErrNotFound, err)
+
+		res, err := store.GetGrafanaAlertConfig(ctx, "user-2")
+		require.NoError(t, err)
+		assert.Equal(t, cfg2, res)
+
+		// Delete again (should be idempotent).
+		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
 	}
 }
