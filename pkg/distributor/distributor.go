@@ -1102,13 +1102,13 @@ func (d *Distributor) startPushRequest(ctx context.Context, checkInflightBytesFo
 		rs.httpgrpcRequestSize = httpgrpcRequestSize
 		inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
 
-		if err := d.checkInflightBytes(inflightBytes, false); err != nil {
+		if err := d.checkInflightBytes(inflightBytes); err != nil {
 			return ctx, nil, err
 		}
 	} else if checkInflightBytesForUnknownHttpgrpcRequestSize {
 		// If we don't know httpgrpcRequestSize, we can at least check if distributor already has too many inflight bytes.
 		inflightBytes := d.inflightPushRequestsBytes.Load()
-		if err := d.checkInflightBytes(inflightBytes, true); err != nil {
+		if err := d.checkInflightBytes(inflightBytes); err != nil {
 			return ctx, nil, err
 		}
 	}
@@ -1127,17 +1127,15 @@ func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize i
 
 	rs.writeRequestSize = writeRequestSize
 	inflightBytes := d.inflightPushRequestsBytes.Add(writeRequestSize)
-	return d.checkInflightBytes(inflightBytes, false)
+	return d.checkInflightBytes(inflightBytes)
 }
 
-func (d *Distributor) checkInflightBytes(inflightBytes int64, rejectEqualInflightBytes bool) error {
+func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
 	il := d.getInstanceLimits()
 
-	if il.MaxInflightPushRequestsBytes > 0 {
-		if (rejectEqualInflightBytes && inflightBytes >= int64(il.MaxInflightPushRequestsBytes)) || inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
-			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
-			return errMaxInflightRequestsBytesReached
-		}
+	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes >= int64(il.MaxInflightPushRequestsBytes) {
+		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
+		return errMaxInflightRequestsBytesReached
 	}
 	return nil
 }

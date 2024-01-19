@@ -5512,13 +5512,13 @@ func TestStartFinishRequest(t *testing.T) {
 			expectedPushError:              errMaxInflightRequestsBytesReached,
 		},
 
-		"too many inflight bytes requests, external with httpgrpc size within limit": {
+		"too many inflight bytes requests, external with httpgrpc size hits the limit": {
 			externalCheck:                  true,
 			httpgrpcRequestSize:            500,
 			inflightRequestsBeforePush:     1,
 			inflightRequestsSizeBeforePush: inflightBytesLimit - 500,
-			expectedStartError:             nil, // httpgrpc request size fits into inflight request size limit.
-			expectedPushError:              errMaxInflightRequestsBytesReached,
+			expectedStartError:             errMaxInflightRequestsBytesReached, // technically this should be allowed, but this edge case is not important enough to fix
+			expectedPushError:              nil,
 		},
 
 		"too many inflight bytes requests, external with httpgrpc size outside limit": {
@@ -5575,7 +5575,11 @@ func TestStartFinishRequest(t *testing.T) {
 			// Set values that are checked by test handler.
 			ctx = context.WithValue(ctx, distributorKey, ds[0])
 			ctx = context.WithValue(ctx, expectedInflightRequestsKey, int64(tc.inflightRequestsBeforePush)+1)
-			ctx = context.WithValue(ctx, expectedInflightBytesKey, tc.inflightRequestsSizeBeforePush+tc.httpgrpcRequestSize+int64(pushReq.Size()))
+			expectedInflightBytes := tc.inflightRequestsSizeBeforePush + int64(pushReq.Size())
+			if tc.externalCheck && tc.expectedStartError == nil {
+				expectedInflightBytes += tc.httpgrpcRequestSize
+			}
+			ctx = context.WithValue(ctx, expectedInflightBytesKey, expectedInflightBytes)
 
 			if tc.externalCheck {
 				var err error
