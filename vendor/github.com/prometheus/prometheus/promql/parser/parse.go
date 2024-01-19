@@ -72,7 +72,7 @@ func WithFunctions(functions map[string]*Function) Opt {
 }
 
 // NewParser returns a new parser.
-func NewParser(input string, opts ...Opt) *parser {
+func NewParser(input string, opts ...Opt) *parser { //nolint:revive // unexported-return.
 	p := parserPool.Get().(*parser)
 
 	p.functions = Functions
@@ -206,6 +206,20 @@ func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	}
 
 	return m, err
+}
+
+// ParseMetricSelectors parses a list of provided textual metric selectors into lists of
+// label matchers.
+func ParseMetricSelectors(matchers []string) (m [][]*labels.Matcher, err error) {
+	var matcherSets [][]*labels.Matcher
+	for _, s := range matchers {
+		matchers, err := ParseMetricSelector(s)
+		if err != nil {
+			return nil, err
+		}
+		matcherSets = append(matcherSets, matchers)
+	}
+	return matcherSets, nil
 }
 
 // SequenceValue is an omittable value in a sequence of time series values.

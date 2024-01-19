@@ -71,6 +71,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -alertmanager-storage.s3.storage-class string
     	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+  -alertmanager-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -alertmanager-storage.storage-prefix string
@@ -296,7 +298,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.batch-series-size int
     	This option controls how many series to fetch per batch. The batch size must be greater than 0. (default 5000)
   -blocks-storage.bucket-store.block-sync-concurrency int
-    	Maximum number of concurrent blocks synching per tenant. (default 20)
+    	Maximum number of concurrent blocks synching per tenant. (default 4)
   -blocks-storage.bucket-store.bucket-index.idle-timeout duration
     	How long a unused bucket index should be cached. Once this timeout expires, the unused bucket index is removed from the in-memory cache. This option is used only by querier. (default 1h0m0s)
   -blocks-storage.bucket-store.bucket-index.max-stale-period duration
@@ -658,7 +660,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.sync-interval duration
     	How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction). (default 15m0s)
   -blocks-storage.bucket-store.tenant-sync-concurrency int
-    	Maximum number of concurrent tenants synching blocks. (default 10)
+    	Maximum number of concurrent tenants synching blocks. (default 1)
   -blocks-storage.filesystem.dir string
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
@@ -709,6 +711,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -blocks-storage.s3.storage-class string
     	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+  -blocks-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -blocks-storage.storage-prefix string
@@ -873,6 +877,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -common.storage.s3.storage-class string
     	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+  -common.storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -common.storage.swift.auth-url string
@@ -1162,7 +1168,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.retry-after-header.max-backoff-exponent int
     	[experimental] Sets the upper limit on the number of Retry-Attempt considered for calculation. It caps the Retry-Attempt header without rejecting additional attempts, controlling exponential backoff calculations. For example, when the base-seconds is set to 3 and max-backoff-exponent to 5, the maximum retry duration would be 3 * 2^5 = 96 seconds. (default 5)
   -distributor.reusable-ingester-push-workers int
-    	[experimental] Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)
+    	Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.) (default 2000)
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -distributor.ring.consul.cas-retry-delay duration
@@ -1294,7 +1300,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.client.initial-stream-window-size value
     	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-    	If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error"
+    	[deprecated] If set to true, gRPC status codes will be reported in "status_code" label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise, they will be reported as "error" (default true)
   -ingester.client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
@@ -1356,7 +1362,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.return-only-grpc-errors
-    	[experimental] When enabled only gRPC errors will be returned by the ingester.
+    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1526,7 +1532,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.retransmit-factor int
     	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
   -memberlist.stream-timeout duration
-    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
+    	The timeout for establishing a connection with a remote node, and for read/write operations. (default 2s)
   -memberlist.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -memberlist.tls-cert-path string
@@ -1715,6 +1721,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Request ingesters stream chunks. Ingesters will only respond with a stream of chunks if the target ingester supports this, and this preference will be ignored by ingesters that do not support this. (default true)
   -querier.prefer-streaming-chunks-from-store-gateways
     	[experimental] Request store-gateways stream chunks. Store-gateways will only respond with a stream of chunks if the target store-gateway supports this, and this preference will be ignored by store-gateways that do not support this.
+  -querier.promql-experimental-functions-enabled
+    	[experimental] Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.
   -querier.query-ingesters-within duration
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
@@ -1868,7 +1876,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-total-query-length duration
     	Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query.
   -query-frontend.not-running-timeout duration
-    	[experimental] Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)
+    	Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up) (default 2s)
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
@@ -2283,6 +2291,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -ruler-storage.s3.storage-class string
     	[experimental] The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+  -ruler-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.s3.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
   -ruler-storage.storage-prefix string
@@ -2592,7 +2602,7 @@ Usage of ./cmd/mimir/mimir:
   -server.grpc.keepalive.timeout duration
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
-    	[experimental] If non-zero, configures the amount of GRPC server workers used to serve the requests.
+    	If non-zero, configures the amount of GRPC server workers used to serve the requests. (default 100)
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration
@@ -2636,7 +2646,7 @@ Usage of ./cmd/mimir/mimir:
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
   -server.report-grpc-codes-in-instrumentation-label-enabled
-    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string

@@ -28,16 +28,34 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets for compactor, ingester, store-gateway, and alertmanager via `*.persistance.enableRetentionPolicy`, `*.persistance.whenDeleted`, and `*.persistance.whenScaled`. #6106
-* [FEATURE] Add pure Ingress option instead of the gateway service. #6932
+* [CHANGE] Rollout-operator: remove default CPU limit. #7125
+* [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
+  * `-distributor.ring.heartbeat-period` set to `1m`
+  * `-distributor.ring.heartbeat-timeout` set to `4m`
+  * `-ingester.ring.heartbeat-period` set to `2m`
+  * `-ingester.ring.heartbeat-timeout` set to `10m`
+  * `-store-gateway.sharding-ring.heartbeat-period` set to `1m`
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `4m`
+  * `-compactor.ring.heartbeat-period` set to `1m`
+  * `-compactor.ring.heartbeat-timeout` set to `4m`
+* [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
+* [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086
+* [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
+* [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
+* [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
+
+## 5.2.0
+
 * [CHANGE] Remove deprecated configuration parameter `blocks_storage.bucket_store.max_chunk_pool_bytes`. #6673
 * [CHANGE] Reduce `-server.grpc-max-concurrent-streams` from 1000 to 500 for ingester and to 100 for all components. #5666
 * [CHANGE] Changed default `clusterDomain` from `cluster.local` to `cluster.local.` to reduce the number of DNS lookups made by Mimir. #6389
 * [CHANGE] Change the default timeout used for index-queries caches from `200ms` to `450ms`. #6786
+* [FEATURE] Added option to enable StatefulSetAutoDeletePVC for StatefulSets for compactor, ingester, store-gateway, and alertmanager via `*.persistance.enableRetentionPolicy`, `*.persistance.whenDeleted`, and `*.persistance.whenScaled`. #6106
+* [FEATURE] Add pure Ingress option instead of the gateway service. #6932
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.10.0`. #6022 #6110 #6558 #6681
 * [ENHANCEMENT] Add support for not setting replicas for distributor, querier, and query-frontend. #6373
 * [ENHANCEMENT] Make Memcached connection limit configurable. #6715
-* [BUGFIX] Let the unified gatway/nginx config listen on IPv6 as well. Followup to #5948. #6204
+* [BUGFIX] Let the unified gateway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
 

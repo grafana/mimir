@@ -106,6 +106,8 @@ type blocksStoreQueryableMetrics struct {
 	blocksFound                                       prometheus.Counter
 	blocksQueried                                     prometheus.Counter
 	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
+	// The total number of chunks received from store-gateways that were used to evaluate queries
+	chunksTotal prometheus.Counter
 }
 
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
@@ -134,6 +136,10 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 		blocksWithCompactorShardButIncompatibleQueryShard: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
 			Help: "Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.",
+		}),
+		chunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_query_storegateway_chunks_total",
+			Help: "Number of chunks received from store gateways at query time.",
 		}),
 	}
 }
@@ -486,10 +492,6 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	if len(resSeriesSets) == 0 {
-		storage.EmptySeriesSet()
-	}
-
 	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, storage.ChainedSeriesMerge),
 		resWarnings)
@@ -795,6 +797,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					}
 
 					chunksCount, chunksSize := countChunksAndBytes(s)
+					q.metrics.chunksTotal.Add(float64(chunksCount))
 					if err := queryLimiter.AddChunkBytes(chunksSize); err != nil {
 						return err
 					}
@@ -863,7 +866,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			} else if len(myStreamingSeries) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
 				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
-				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeries), queryLimiter, reqStats, q.logger)
+				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeries), queryLimiter, reqStats, q.metrics, q.logger)
 				level.Debug(log).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
 					"fetched series", len(myStreamingSeries),

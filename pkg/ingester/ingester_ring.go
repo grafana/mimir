@@ -75,7 +75,7 @@ func (cfg *RingConfig) Validate() error {
 		if cfg.TokensFilePath != "" {
 			return fmt.Errorf("%q token generation strategy requires %q to be empty", spreadMinimizingTokenGeneration, tokensFilePathFlag)
 		}
-		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, nil)
+		_, err := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder)
 		return err
 	}
 
@@ -152,7 +152,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 
 // ToLifecyclerConfig returns a ring.LifecyclerConfig based on the ingester
 // ring config.
-func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) ring.LifecyclerConfig {
+func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	// Configure lifecycler
 	lc := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&lc)
@@ -175,7 +175,7 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) ring.LifecyclerConf
 	lc.ID = cfg.InstanceID
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
-	lc.RingTokenGenerator = cfg.customTokenGenerator(logger)
+	lc.RingTokenGenerator = cfg.customTokenGenerator()
 
 	return lc
 }
@@ -185,10 +185,10 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) ring.LifecyclerConf
 // set, customTokenGenerator tries to build and return an instance of ring.SpreadMinimizingTokenGenerator.
 // If it was impossible, or if "random" token generation strategy is set, customTokenGenerator returns
 // an instance of ring.RandomTokenGenerator. Otherwise, nil is returned.
-func (cfg *RingConfig) customTokenGenerator(logger log.Logger) ring.TokenGenerator {
+func (cfg *RingConfig) customTokenGenerator() ring.TokenGenerator {
 	switch cfg.TokenGenerationStrategy {
 	case spreadMinimizingTokenGeneration:
-		tokenGenerator, _ := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, logger)
+		tokenGenerator, _ := ring.NewSpreadMinimizingTokenGenerator(cfg.InstanceID, cfg.InstanceZone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder)
 		return tokenGenerator
 	case randomTokenGeneration:
 		return ring.NewRandomTokenGenerator()

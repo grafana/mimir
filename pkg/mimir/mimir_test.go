@@ -420,6 +420,34 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectAnyError: true,
 		},
+		{
+			name: "should pass if grpc errors are disabled, and the distributor is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: false,
+		},
+		{
+			name: "should fails if grpc errors are disabled, and the ingester is running with ingest storage",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.IngestStorage.Enabled = true
+				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
+				cfg.IngestStorage.KafkaConfig.Topic = "topic"
+				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(log.NewNopLogger())

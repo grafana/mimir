@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
@@ -158,6 +159,10 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 }
 
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
+	// Propagate the consistency level on all HTTP routes.
+	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
+	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
+
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}

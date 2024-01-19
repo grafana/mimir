@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r272-146af07
+  tag: r273-accc1f2
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -231,6 +231,13 @@ mimir:
       data_dir: "/data"
       sharding_ring:
         wait_stability_min_duration: 1m
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
+
+    distributor:
+      ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
 
     frontend:
       parallelize_shardable_queries: true
@@ -292,6 +299,8 @@ mimir:
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
+        heartbeat_period: 2m
+        heartbeat_timeout: 10m
         {{- if .Values.ingester.zoneAwareReplication.enabled }}
         zone_awareness_enabled: true
         {{- end }}
@@ -372,6 +381,8 @@ mimir:
 
     store_gateway:
       sharding_ring:
+        heartbeat_period: 1m
+        heartbeat_timeout: 4m
         wait_stability_min_duration: 1m
         {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
         kvstore:
@@ -410,6 +421,23 @@ mimir:
     {{- end}}
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaluated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
+  #
+  # Additionally, consider the optional "insecure_skip_verify" key below, it allows you to skip_verify_false in case the s3_endpoint certificate is not trusted.
+  # For more information see https://grafana.com/docs/mimir/latest/references/configuration-parameters/
+  #
+  # Example:
+  #
+  # structuredConfig:
+  #   common:
+  #     storage:
+  #       backend: s3
+  #       s3:
+  #         bucket_name: "${BUCKET_NAME}"
+  #         endpoint: "${BUCKET_HOST}:${BUCKET_PORT}"
+  #         access_key_id: "${AWS_ACCESS_KEY_ID}" # This is a secret injected via an environment variable
+  #         secret_access_key: "${AWS_SECRET_ACCESS_KEY}" # This is a secret injected via an environment variable
+  #         http:
+  #           insecure_skip_verify: true
   structuredConfig: {}
 
 # -- runtimeConfig provides a reloadable runtime configuration. Changing the runtimeConfig doesn't require a restart of all components.
@@ -628,6 +656,10 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
+
   # -- Options to configure zone-aware replication for alertmanager
   # Example configuration with full geographical redundancy:
   # rollout_operator:
@@ -778,6 +810,10 @@ distributor:
   env: []
   extraEnvFrom: []
 
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
+
 ingester:
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -903,6 +939,10 @@ ingester:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for ingester
   # Example configuration with full geographical redundancy:
@@ -1067,6 +1107,10 @@ overrides_exporter:
   env: []
   extraEnvFrom: []
 
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
+
 ruler:
   enabled: true
   replicas: 1
@@ -1139,6 +1183,10 @@ ruler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 1000
 
 querier:
   replicas: 2
@@ -1214,6 +1262,10 @@ querier:
   env: []
   extraEnvFrom: []
 
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 5000
+
 query_frontend:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1279,7 +1331,7 @@ query_frontend:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 180
+  terminationGracePeriodSeconds: 390
 
   tolerations: []
   initContainers: []
@@ -1288,6 +1340,10 @@ query_frontend:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 5000
 
 query_scheduler:
   enabled: true
@@ -1363,6 +1419,10 @@ query_scheduler:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
 
 store_gateway:
   # -- Total number of replicas for the store-gateway across all availability zones
@@ -1491,6 +1551,10 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: 1000
 
   # -- Options to configure zone-aware replication for store-gateway
   # Example configuration with full geographical redundancy:
@@ -1681,12 +1745,16 @@ compactor:
   env: []
   extraEnvFrom: []
 
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
+
 memcached:
   image:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.22-alpine
+    tag: 1.6.23-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2562,6 +2630,9 @@ gateway:
   env: []
   # -- Environment variables from secrets or configmaps to add to the Pods.
   extraEnvFrom: []
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
   # -- Volumes to add to the Pods
   extraVolumes: []
   # -- Volume mounts to add to the Pods
@@ -2974,7 +3045,7 @@ metaMonitoring:
 
     # -- Controls whether to install the Grafana Agent Operator and its CRDs.
     # Note that helm will not install CRDs if this flag is enabled during an upgrade.
-    # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/production/operator/crds
+    # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/operations/agent-static-operator/crds
     installOperator: false
 
     logs:
@@ -3133,7 +3204,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r272-3283c718
+    tag: r273-b29ee627
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3240,6 +3311,9 @@ admin_api:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
 
 # -- Cache for admin bucket.
 # If this is disabled, in-memory cache will be set by default.
@@ -3401,6 +3475,9 @@ graphite:
 
     env: []
     extraEnvFrom: []
+    # -- Jaeger reporter queue size
+    # Set to 'null' to use the Jaeger client's default value
+    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -3480,6 +3557,9 @@ graphite:
     terminationGracePeriodSeconds: 180
     env: []
     extraEnvFrom: []
+    # -- Jaeger reporter queue size
+    # Set to 'null' to use the Jaeger client's default value
+    jaegerReporterMaxQueueSize: null
     tolerations: []
     podDisruptionBudget:
       maxUnavailable: 1
@@ -3625,7 +3705,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r272-146af07
+    tag: r273-accc1f2
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3645,7 +3725,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r272-146af07
+    tag: r273-accc1f2
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 
@@ -3682,6 +3762,9 @@ continuous_test:
   extraArgs: {}
   # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
+  # -- Jaeger reporter queue size
+  # Set to 'null' to use the Jaeger client's default value
+  jaegerReporterMaxQueueSize: null
   # -- Extra volumes for the continuous test container
   extraVolumes: []
   # -- Extra volume mounts for the continuous test container

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -14,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
@@ -22,6 +24,7 @@ type queryStatsMiddleware struct {
 	nonAlignedQueries           prometheus.Counter
 	regexpMatcherCount          prometheus.Counter
 	regexpMatcherOptimizedCount prometheus.Counter
+	consistencyCounter          *prometheus.CounterVec
 	next                        Handler
 }
 
@@ -38,6 +41,10 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 		Name: "cortex_query_frontend_regexp_matcher_optimized_count",
 		Help: "Total number of optimized regexp matchers",
 	})
+	consistencyCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_queries_consistency_total",
+		Help: "Total number of queries that explicitly request a level of consistency.",
+	}, []string{"user", "consistency"})
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &queryStatsMiddleware{
@@ -45,6 +52,7 @@ func newQueryStatsMiddleware(reg prometheus.Registerer, engine *promql.Engine) M
 			nonAlignedQueries:           nonAlignedQueries,
 			regexpMatcherCount:          regexpMatcherCount,
 			regexpMatcherOptimizedCount: regexpMatcherOptimizedCount,
+			consistencyCounter:          consistencyCounter,
 			next:                        next,
 		}
 	})
@@ -55,24 +63,30 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req Request) (Response, er
 		s.nonAlignedQueries.Inc()
 	}
 
-	if expr, err := parser.ParseExpr(req.GetQuery()); err == nil {
-		for _, selectors := range parser.ExtractSelectors(expr) {
-			for _, matcher := range selectors {
-				if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
-					continue
-				}
-
-				s.regexpMatcherCount.Inc()
-				if matcher.IsRegexOptimized() {
-					s.regexpMatcherOptimizedCount.Inc()
-				}
-			}
-		}
-	}
-
+	s.trackRegexpMatchers(req)
+	s.trackReadConsistency(ctx)
 	s.populateQueryDetails(ctx, req)
 
 	return s.next.Do(ctx, req)
+}
+
+func (s queryStatsMiddleware) trackRegexpMatchers(req Request) {
+	expr, err := parser.ParseExpr(req.GetQuery())
+	if err != nil {
+		return
+	}
+	for _, selectors := range parser.ExtractSelectors(expr) {
+		for _, matcher := range selectors {
+			if matcher.Type != labels.MatchRegexp && matcher.Type != labels.MatchNotRegexp {
+				continue
+			}
+
+			s.regexpMatcherCount.Inc()
+			if matcher.IsRegexOptimized() {
+				s.regexpMatcherOptimizedCount.Inc()
+			}
+		}
+	}
 }
 
 var queryStatsErrQueryable = &storage.MockQueryable{MockQuerier: &storage.MockQuerier{SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
@@ -104,6 +118,17 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Requ
 	}
 	if maxT != 0 {
 		details.MaxT = time.UnixMilli(maxT)
+	}
+}
+
+func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
+	consistency, ok := api.ReadConsistencyFromContext(ctx)
+	if !ok {
+		return
+	}
+	tenants, _ := tenant.TenantIDs(ctx)
+	for _, tenantID := range tenants {
+		s.consistencyCounter.WithLabelValues(tenantID, consistency).Inc()
 	}
 }
 

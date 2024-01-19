@@ -88,7 +88,8 @@ spec:
             {{ toYaml .extraVolumeMounts | nindent 12 }}
             {{- end }}
             - name: nginx-config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             {{- if .nginx.basicAuth.enabled }}
             - name: auth
               mountPath: /etc/nginx/secrets
@@ -114,6 +115,11 @@ spec:
             {{- end }}
             {{- with .env }}
               {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil . }}
+            {{- if $jaeger_queue_size }}
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           envFrom:
             {{- with $.Values.global.extraEnvFrom }}

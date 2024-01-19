@@ -28,6 +28,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -300,6 +301,9 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
 			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
 		)
+		if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+			logMessage = append(logMessage, "read_consistency", consistency)
+		}
 	}
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)

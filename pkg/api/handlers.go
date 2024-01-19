@@ -32,6 +32,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
@@ -282,6 +283,8 @@ func NewQuerierHandler(
 		InflightRequests: inflightRequests,
 	}
 	router.Use(instrumentMiddleware.Wrap)
+	// Since we don't use the regular RegisterQueryAPI, we need to add the consistency middleware manually.
+	router.Use(querierapi.ConsistencyMiddleware().Wrap)
 
 	// Define the prefixes for all routes
 	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)

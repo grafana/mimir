@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreQuerier_Select(t *testing.T) {
@@ -270,7 +271,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			storeSetResponses: []interface{}{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-						mockSeriesResponse(series1Label, minT+1, 2),
+						mockSeriesResponse(series1Label, minT+1, 2), // a chunk is written for each mockSeriesResponse
 						mockSeriesResponse(series2Label, minT, 1),
 						mockHintsResponse(block1),
 					}}: {block1},
@@ -339,6 +340,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 6
 			`,
 		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
@@ -475,6 +479,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"max chunks per query limit greater then the number of chunks fetched": {
@@ -678,6 +685,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"all blocks are queried if shards don't match": {
@@ -745,6 +755,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -812,6 +825,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 1
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 1
 			`,
 		},
 	}
@@ -941,7 +957,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					if testData.expectedMetrics != "" {
 						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
 							"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
-							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
+							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
+							"cortex_querier_query_storegateway_chunks_total"))
 					}
 				})
 			}
@@ -959,6 +976,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 	var (
 		block1 = ulid.MustNew(1, nil)
+		logger = test.NewTestingLogger(t)
 	)
 
 	// Create an utility to easily run each test case in isolation.
@@ -993,9 +1011,11 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the stores, returning a gRPC client connecting to the gRPC server controlled in this test.
 		stores := &blocksStoreSetMock{mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{
-				client: {block1},
-			},
+			// These tests only require 1 mocked response, but we mock it multiple times to make debugging easier
+			// when the tests fail because the request is retried (even if we expect not to be retried).
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
+			map[BlocksStoreClient][]ulid.ULID{client: {block1}},
 		}}
 
 		q := &blocksStoreQuerier{
@@ -1003,8 +1023,8 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			maxT:        maxT,
 			finder:      finder,
 			stores:      stores,
-			consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
-			logger:      log.NewNopLogger(),
+			consistency: NewBlocksConsistency(0, 0, logger, nil),
+			logger:      logger,
 			metrics:     newBlocksStoreQueryableMetrics(nil),
 			limits:      &blocksStoreLimitsMock{},
 		}
@@ -1614,6 +1634,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 2
 				cortex_querier_storegateway_refetches_per_query_count 1
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {

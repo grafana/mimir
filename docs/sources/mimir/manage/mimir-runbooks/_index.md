@@ -716,6 +716,9 @@ The procedure to investigate it is the same as the one for [`MimirSchedulerQueri
 
 This alert fires if queries are piling up in the query-scheduler.
 
+The size of the queue is shown on the `Queue length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
+(for the dedicated rule evaluation query path) dashboards.
+
 How it **works**:
 
 - A query-frontend API endpoint is called to execute a query

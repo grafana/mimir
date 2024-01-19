@@ -569,7 +569,7 @@ func TestIngesterQuerying(t *testing.T) {
 						return counts[0], nil
 					}
 
-					successfulQueryRequests, err := queryRequestCount("2xx")
+					successfulQueryRequests, err := queryRequestCount("OK")
 					require.NoError(t, err)
 
 					cancelledQueryRequests, err := queryRequestCount("cancel")
@@ -662,7 +662,7 @@ func TestIngesterQueryingWithRequestMinimization(t *testing.T) {
 					[]string{"cortex_request_duration_seconds"},
 					e2e.WithLabelMatchers(
 						labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/QueryStream"),
-						labels.MustNewMatcher(labels.MatchEqual, "status_code", "success"),
+						labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
 					),
 					e2e.SkipMissingMetrics,
 					e2e.WithMetricCount,
@@ -686,31 +686,16 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	queryStep := 10 * time.Minute
 
 	testCases := map[string]struct {
-		serverReportGRPCStatusCodes         bool
 		ingesterClientReportGRPCStatusCodes bool
 		expectedPushStatusCode              string
 		expectedQueryStatusCode             string
 	}{
-		"when server and ingester client do not report grpc codes, successful push and query give success and 2xx": {
-			serverReportGRPCStatusCodes:         false,
-			ingesterClientReportGRPCStatusCodes: false,
-			expectedPushStatusCode:              "success",
-			expectedQueryStatusCode:             "2xx",
-		},
-		"when server does not report and ingester client reports grpc codes, successful push and query give success and OK": {
-			serverReportGRPCStatusCodes:         false,
-			ingesterClientReportGRPCStatusCodes: true,
-			expectedPushStatusCode:              "success",
-			expectedQueryStatusCode:             "OK",
-		},
-		"when server reports and ingester client does not report grpc codes, successful push and query give OK and 2xx": {
-			serverReportGRPCStatusCodes:         true,
+		"when ingester client does not report grpc codes, successful push and query give OK and 2xx": {
 			ingesterClientReportGRPCStatusCodes: false,
 			expectedPushStatusCode:              "OK",
 			expectedQueryStatusCode:             "2xx",
 		},
-		"when server and ingester client report grpc codes, successful push and query give OK and OK": {
-			serverReportGRPCStatusCodes:         true,
+		"when ingester client report grpc codes, successful push and query give OK and OK": {
 			ingesterClientReportGRPCStatusCodes: true,
 			expectedPushStatusCode:              "OK",
 			expectedQueryStatusCode:             "OK",
@@ -745,7 +730,6 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 				"-distributor.ingestion-tenant-shard-size":                            "0",
 				"-ingester.ring.heartbeat-period":                                     "1s",
 				"-ingester.client.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
-				"-server.report-grpc-codes-in-instrumentation-label-enabled":          strconv.FormatBool(testData.serverReportGRPCStatusCodes),
 			}
 
 			flags := mergeFlags(

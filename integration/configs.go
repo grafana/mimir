@@ -16,6 +16,8 @@ import (
 
 	e2e "github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 const (
@@ -208,6 +210,23 @@ blocks_storage:
 		MinioSecretKey: e2edb.MinioSecretKey,
 		MinioEndpoint:  fmt.Sprintf("%s-minio-9000:9000", networkName),
 	})
+
+	IngestStorageFlags = func() map[string]string {
+		return map[string]string{
+			"-ingest-storage.enabled":       "true",
+			"-ingest-storage.kafka.topic":   "ingest",
+			"-ingest-storage.kafka.address": fmt.Sprintf("%s-kafka:9092", networkName),
+
+			// To simplify integration tests, we use strong read consistency by default.
+			// Integration tests that want to test the eventual consistency can override it.
+			"-ingest-storage.read-consistency": api.ReadConsistencyStrong,
+
+			// Frequently poll last produced offset in order to have a low end-to-end latency
+			// and faster integration tests.
+			"-ingest-storage.kafka.last-produced-offset-poll-interval": "50ms",
+			"-ingest-storage.kafka.last-produced-offset-retry-timeout": "1s",
+		}
+	}
 )
 
 func buildConfigFromTemplate(tmpl string, data interface{}) string {

@@ -37,6 +37,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -alertmanager-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -alertmanager-storage.swift.auth-url string
@@ -195,6 +197,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -blocks-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -blocks-storage.swift.auth-url string
@@ -265,6 +269,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -585,6 +591,8 @@ Usage of ./cmd/mimir/mimir:
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -ruler-storage.s3.sts-endpoint string
+    	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
   -ruler-storage.swift.auth-url string
@@ -674,7 +682,7 @@ Usage of ./cmd/mimir/mimir:
   -server.log-request-headers-exclude-list string
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
   -server.report-grpc-codes-in-instrumentation-label-enabled
-    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error".
+    	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string

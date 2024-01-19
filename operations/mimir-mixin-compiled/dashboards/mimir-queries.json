@@ -633,7 +633,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after migration to new memcached backend.\n    sum (\n      rate(cortex_cache_hits{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(cortex_cache_fetched_keys{name=~\"frontend.+\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
+                        "expr": "# Query the new metric introduced in Mimir 2.10.\n(\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_hits_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n  /\n  sum by(request_type) (rate(cortex_frontend_query_result_cache_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval]))\n)\n# Otherwise fallback to the previous general-purpose metrics.\nor\n(\n  label_replace(\n    # Query metrics before and after dskit cache refactor.\n    sum (\n      rate(thanos_cache_memcached_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_hits_total{name=\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    )\n    /\n    sum (\n      rate(thanos_cache_memcached_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n      or ignoring(backend)\n      rate(thanos_cache_requests_total{name=~\"frontend-cache\", cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}[$__rate_interval])\n    ),\n    \"request_type\", \"query_range\", \"\", \"\")\n)\n",
                         "format": "time_series",
                         "legendFormat": "{{request_type}}",
                         "legendLink": null
@@ -971,22 +971,19 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      },
                      {
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B",
-                        "step": 10
+                        "refId": "B"
                      },
                      {
                         "expr": "1 * sum(cluster_job:cortex_ingester_queried_series_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_series_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C",
-                        "step": 10
+                        "refId": "C"
                      }
                   ],
                   "thresholds": [ ],
@@ -1060,22 +1057,19 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      },
                      {
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_samples_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B",
-                        "step": 10
+                        "refId": "B"
                      },
                      {
                         "expr": "1 * sum(cluster_job:cortex_ingester_queried_samples_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_samples_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C",
-                        "step": 10
+                        "refId": "C"
                      }
                   ],
                   "thresholds": [ ],
@@ -1149,22 +1143,19 @@
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "99th percentile",
-                        "refId": "A",
-                        "step": 10
+                        "refId": "A"
                      },
                      {
                         "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_exemplars_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})) * 1",
                         "format": "time_series",
                         "legendFormat": "50th percentile",
-                        "refId": "B",
-                        "step": 10
+                        "refId": "B"
                      },
                      {
                         "expr": "1 * sum(cluster_job:cortex_ingester_queried_exemplars_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}) / sum(cluster_job:cortex_ingester_queried_exemplars_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "legendFormat": "Average",
-                        "refId": "C",
-                        "step": 10
+                        "refId": "C"
                      }
                   ],
                   "thresholds": [ ],

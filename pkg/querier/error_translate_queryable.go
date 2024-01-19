@@ -41,11 +41,18 @@ func TranslateToPromqlAPIError(err error) error {
 		return err
 	}
 
-	switch errors.Cause(err).(type) {
-	case promql.ErrStorage, promql.ErrTooManySamples, promql.ErrQueryCanceled, promql.ErrQueryTimeout:
+	var (
+		errStorage        promql.ErrStorage
+		errTooManySamples promql.ErrTooManySamples
+		errQueryCanceled  promql.ErrQueryCanceled
+		errQueryTimeout   promql.ErrQueryTimeout
+	)
+
+	switch {
+	case errors.As(err, &errStorage) || errors.As(err, &errTooManySamples) || errors.As(err, &errQueryCanceled) || errors.As(err, &errQueryTimeout):
 		// Don't translate those, just in case we use them internally.
 		return err
-	case validation.LimitError:
+	case validation.IsLimitError(err):
 		// This will be returned with status code 422 by Prometheus API.
 		return err
 	default:

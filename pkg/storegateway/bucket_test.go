@@ -876,31 +876,31 @@ type interceptedIndexReader struct {
 	onIndexVersionCalled       func() error
 }
 
-func (iir *interceptedIndexReader) LabelNames(ctx context.Context) ([]string, error) {
+func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	if iir.onLabelNamesCalled != nil {
 		if err := iir.onLabelNamesCalled(); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelNames(ctx)
+	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValuesOffsets(ctx context.Context, name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
+func (iir *interceptedIndexReader) LabelValuesOffsets(name string, prefix string, filter func(string) bool) ([]index.PostingListOffset, error) {
 	if iir.onLabelValuesOffsetsCalled != nil {
 		if err := iir.onLabelValuesOffsetsCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValuesOffsets(ctx, name, prefix, filter)
+	return iir.Reader.LabelValuesOffsets(name, prefix, filter)
 }
 
-func (iir *interceptedIndexReader) IndexVersion(ctx context.Context) (int, error) {
+func (iir *interceptedIndexReader) IndexVersion() (int, error) {
 	if iir.onIndexVersionCalled != nil {
 		if err := iir.onIndexVersionCalled(); err != nil {
 			return 0, err
 		}
 	}
-	return iir.Reader.IndexVersion(ctx)
+	return iir.Reader.IndexVersion()
 }
 
 func deadlineExceededIndexHeader() *interceptedIndexReader {
@@ -1093,7 +1093,7 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
-	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil, true)
+	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))

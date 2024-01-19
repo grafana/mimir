@@ -4,7 +4,6 @@ package v2
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -85,12 +84,12 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 			return nil, err
 		}
 		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path):
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:
 		// no query time params to parse; cannot infer query component
-		level.Warn(a.log).Log("msg", "unsupported request type", "query", fmt.Sprintf("%+v", httpRequest))
+		level.Debug(a.log).Log("msg", "unsupported request type for additional queue dimensions", "query", httpRequest.URL.String())
 		return nil, nil
 	}
 }

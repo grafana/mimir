@@ -29,17 +29,18 @@
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
       'store-gateway.sharding-ring.wait-stability-min-duration': '1m',
+
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
       'store-gateway.sharding-ring.unregister-on-shutdown': false,
+
+      // Relax pressure on KV store when running at scale.
+      'store-gateway.sharding-ring.heartbeat-period': '1m',
     } +
     (if $._config.store_gateway_lazy_loading_enabled then {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'true',
        'blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout': '60m',
      } else {
        'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'false',
-       // Force fewer random disk reads; this increases throughoput and reduces i/o wait on HDDs.
-       'blocks-storage.bucket-store.block-sync-concurrency': 4,
-       'blocks-storage.bucket-store.tenant-sync-concurrency': 1,
      }) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
@@ -61,6 +62,8 @@
     ),
     // Dynamically set GOMEMLIMIT based on memory request.
     GOMEMLIMIT: std.toString(std.floor($.util.siToBytes($.store_gateway_container.resources.requests.memory))),
+
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
   },
 
   store_gateway_node_affinity_matchers:: [],

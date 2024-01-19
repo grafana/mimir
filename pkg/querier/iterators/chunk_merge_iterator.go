@@ -192,7 +192,7 @@ func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
 
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	if c.currValueType == chunkenc.ValHistogram {
-		return c.currTime, c.currHistogram.ToFloat()
+		return c.currTime, c.currHistogram.ToFloat(nil)
 	}
 	if c.currValueType != chunkenc.ValFloatHistogram {
 		panic(fmt.Errorf("chunkMergeIterator: calling AtFloatHistogram when cursor is at different type %v", c.currValueType))
