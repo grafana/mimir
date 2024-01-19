@@ -2807,7 +2807,7 @@
               "fieldDefaultValue": "random",
               "fieldFlag": "ingester.ring.token-generation-strategy",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2818,7 +2818,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2829,7 +2829,7 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,

@@ -55,9 +55,9 @@ type RingConfig struct {
 	MinReadyDuration time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	FinalSleep       time.Duration `yaml:"final_sleep" category:"advanced"`
 
-	TokenGenerationStrategy         string                 `yaml:"token_generation_strategy" category:"experimental"`
-	SpreadMinimizingJoinRingInOrder bool                   `yaml:"spread_minimizing_join_ring_in_order" category:"experimental"`
-	SpreadMinimizingZones           flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"experimental"`
+	TokenGenerationStrategy         string                 `yaml:"token_generation_strategy" category:"advanced"`
+	SpreadMinimizingJoinRingInOrder bool                   `yaml:"spread_minimizing_join_ring_in_order" category:"advanced"`
+	SpreadMinimizingZones           flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"advanced"`
 
 	// Injected internally
 	ListenPort int `yaml:"-"`
