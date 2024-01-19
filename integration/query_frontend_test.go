@@ -423,7 +423,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	// When the ingest storage is used, we expect that each query issued by this test was processed
 	// with strong read consistency by the ingester.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}))
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(expectedIngesterQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
 	} else {
 		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 	}
