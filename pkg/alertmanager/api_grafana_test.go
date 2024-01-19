@@ -319,7 +319,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaConfig(t *testing.T) {
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 		require.Len(t, storage.Objects(), 1)
-		_, ok := storage.Objects()["grafana_alertmanager/grafana_config"]
+		_, ok := storage.Objects()["grafana_alertmanager/test_user/grafana_config"]
 		require.True(t, ok)
 	}
 }
@@ -383,7 +383,7 @@ func TestMultitenantAlertmanager_SetUserGrafanaState(t *testing.T) {
 		require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
 
 		require.Len(t, storage.Objects(), 1)
-		_, ok := storage.Objects()["grafana_alertmanager/grafana_fullstate"]
+		_, ok := storage.Objects()["grafana_alertmanager/test_user/grafana_fullstate"]
 		require.True(t, ok)
 	}
 }
