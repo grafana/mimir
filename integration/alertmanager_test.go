@@ -540,8 +540,6 @@ func TestAlertmanagerSharding(t *testing.T) {
 					require.Contains(t, groups, "group_2")
 					assert.ElementsMatch(t, []string{"alert_3"}, alertNames(groups["group_2"]))
 				}
-
-				// Note: /v1/alerts/groups does not exist.
 			}
 
 			// Check the alerts were eventually written to every replica.
