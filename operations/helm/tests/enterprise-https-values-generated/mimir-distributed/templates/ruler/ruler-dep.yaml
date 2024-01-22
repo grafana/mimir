@@ -53,6 +53,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
           volumeMounts:
               
             - mountPath: /certs

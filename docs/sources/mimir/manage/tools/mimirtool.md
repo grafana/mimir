@@ -187,6 +187,13 @@ The commands in this section enable you to perform the following actions:
 Some of the functionality that `mimirtool rules` offers is also available as a GitHub Action.
 For more information, refer to the [documentation of Mimirtool Github Action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
 
+Configuration options relevant to rules commands:
+
+| Flag              | Description                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `--auth-token`    | Authentication token for bearer token or JWT auth.                                        |
+| `--extra-headers` | Extra headers to add to the requests in header=value format. (Can specify multiple times) |
+
 #### List rules
 
 The following command retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.

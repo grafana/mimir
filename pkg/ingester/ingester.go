@@ -116,6 +116,8 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	deprecatedReturnOnlyGRPCErrorsFlag = "ingester.return-only-grpc-errors" // Deprecated. TODO: Remove in Mimir 2.14.
 )
 
 var (
@@ -176,7 +178,7 @@ type Config struct {
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
-	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
+	DeprecatedReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"deprecated"`
 
 	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
@@ -202,15 +204,24 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
-	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+
+	// The ingester.return-only-grpc-errors flag has been deprecated.
+	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
+	// the default behaviour of Mimir should be as this flag were set to true.
+	// TODO: Remove in Mimir 2.14.0
+	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(logger log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
+	if !cfg.DeprecatedReturnOnlyGRPCErrors {
+		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
 	return cfg.IngesterRing.Validate()
@@ -466,6 +477,31 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.closeAllTSDB()
 
 		return errors.Wrap(err, "opening existing TSDBs")
+	}
+
+	if i.ownedSeriesService != nil {
+		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
+		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
+		// than BasicLifecycler) there is no deterministic way to delay the ACTIVE state until we finish the calculations.
+		//
+		// Since we don't actually need to be ACTIVE in the ring to calculate owned series (just present, with tokens) we instead
+		// calculate owned series before we start the lifecycler at all. Once we move the ingester to the BasicLifecycler and
+		// have better control over the ring states, we could perform the calculation while in JOINING state, and move to
+		// ACTIVE once we finish.
+
+		oss := i.ownedSeriesService
+
+		// Fetch and cache current ring state
+		_, err := oss.checkRingForChanges()
+		switch {
+		case errors.Is(err, ring.ErrEmptyRing):
+			level.Warn(i.logger).Log("msg", "ingester ring is empty")
+		case err != nil:
+			return fmt.Errorf("can't read ring: %v", err)
+		default:
+			// We pass ringChanged=true, but all TSDBs at this point (after opening TSDBs, but before ingester switched to Running state) also have "new user" trigger set anyway.
+			oss.updateAllTenants(ctx, true)
+		}
 	}
 
 	// Important: we want to keep lifecycler running until we ask it to stop, so we need to give it independent context
@@ -2380,7 +2416,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		EnableMemorySnapshotOnShutdown:        i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:                     true,
 		HeadChunksWriteQueueSize:              i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingCompaction:            false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableOverlappingCompaction:           false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:                  oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		HeadPostingsForMatchersCacheTTL:       i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
@@ -3336,7 +3372,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
-	if i.cfg.ReturnOnlyGRPCErrors {
+	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
 		return mapPushErrorToErrorWithStatus(err)
 	}
 	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
@@ -3351,7 +3387,7 @@ func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
 		return err
 	}
 
-	if i.cfg.ReturnOnlyGRPCErrors {
+	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
 		return mapReadErrorToErrorWithStatus(err)
 	}
 	return mapReadErrorToErrorWithHTTPOrGRPCStatus(err)

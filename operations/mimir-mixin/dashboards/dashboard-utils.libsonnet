@@ -1073,7 +1073,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         intervalFactor: 2,
         legendFormat: '99th Percentile',
         refId: 'A',
-        step: 10,
       },
       {
         expr: |||
@@ -1088,7 +1087,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         intervalFactor: 2,
         legendFormat: '50th Percentile',
         refId: 'B',
-        step: 10,
       },
       {
         expr: |||
@@ -1120,7 +1118,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         intervalFactor: 2,
         legendFormat: 'Average',
         refId: 'C',
-        step: 10,
       },
     ],
     yaxes: $.yaxes('ms'),

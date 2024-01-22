@@ -411,7 +411,7 @@
           "required": false,
           "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "server.report-grpc-codes-in-instrumentation-label-enabled",
           "fieldType": "boolean"
         },
@@ -1632,7 +1632,7 @@
           "required": false,
           "desc": "Enable pooling of buffers used for marshaling write requests.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -2272,10 +2272,10 @@
           "required": false,
           "desc": "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.client.report-grpc-codes-in-instrumentation-label-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         }
       ],
       "fieldValue": null,
@@ -2807,7 +2807,7 @@
               "fieldDefaultValue": "random",
               "fieldFlag": "ingester.ring.token-generation-strategy",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2818,7 +2818,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2829,7 +2829,7 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -3038,10 +3038,10 @@
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -3526,7 +3526,7 @@
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.max-cache-freshness",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -6366,7 +6366,7 @@
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",
               "fieldValue": null,
-              "fieldDefaultValue": 10,
+              "fieldDefaultValue": 1,
               "fieldFlag": "blocks-storage.bucket-store.tenant-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -6377,7 +6377,7 @@
               "required": false,
               "desc": "Maximum number of concurrent blocks synching per tenant.",
               "fieldValue": null,
-              "fieldDefaultValue": 20,
+              "fieldDefaultValue": 4,
               "fieldFlag": "blocks-storage.bucket-store.block-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -13301,6 +13301,17 @@
           "fieldFlag": "alertmanager.enable-api",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "grafana_alertmanager_compatibility_enabled",
+          "required": false,
+          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

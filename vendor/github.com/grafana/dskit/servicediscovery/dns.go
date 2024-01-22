@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/dns_watcher.go
-// Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
 package servicediscovery
@@ -10,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/services"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/services"
 )
 
 // Instance notified by the service discovery.
@@ -51,8 +49,8 @@ type dnsServiceDiscovery struct {
 }
 
 // NewDNS creates a new DNS-based service discovery.
-func NewDNS(address string, dnsLookupPeriod time.Duration, notifications Notifications) (services.Service, error) {
-	resolver, err := grpcutil.NewDNSResolverWithFreq(dnsLookupPeriod, util_log.Logger)
+func NewDNS(logger log.Logger, address string, dnsLookupPeriod time.Duration, notifications Notifications) (services.Service, error) {
+	resolver, err := grpcutil.NewDNSResolverWithFreq(dnsLookupPeriod, logger)
 	if err != nil {
 		return nil, err
 	}
