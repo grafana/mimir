@@ -61,8 +61,8 @@ func NewRuleDetail(r Rule) RuleDetail {
 		Labels: r.Labels(),
 		Kind:   kind,
 
-		NoDependentRules:  r.GetNoDependentRules(),
-		NoDependencyRules: r.GetNoDependencyRules(),
+		NoDependentRules:  r.NoDependentRules(),
+		NoDependencyRules: r.NoDependencyRules(),
 	}
 }
 

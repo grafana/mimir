@@ -177,7 +177,7 @@ func (rule *RecordingRule) SetNoDependentRules(noDependentRules bool) {
 	rule.noDependentRules.Store(noDependentRules)
 }
 
-func (rule *RecordingRule) GetNoDependentRules() bool {
+func (rule *RecordingRule) NoDependentRules() bool {
 	return rule.noDependentRules.Load()
 }
 
@@ -185,6 +185,6 @@ func (rule *RecordingRule) SetNoDependencyRules(noDependencyRules bool) {
 	rule.noDependencyRules.Store(noDependencyRules)
 }
 
-func (rule *RecordingRule) GetNoDependencyRules() bool {
+func (rule *RecordingRule) NoDependencyRules() bool {
 	return rule.noDependencyRules.Load()
 }

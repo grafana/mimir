@@ -327,7 +327,7 @@ func (r *AlertingRule) SetNoDependentRules(noDependentRules bool) {
 	r.noDependentRules.Store(noDependentRules)
 }
 
-func (r *AlertingRule) GetNoDependentRules() bool {
+func (r *AlertingRule) NoDependentRules() bool {
 	return r.noDependentRules.Load()
 }
 
@@ -335,7 +335,7 @@ func (r *AlertingRule) SetNoDependencyRules(noDependencyRules bool) {
 	r.noDependencyRules.Store(noDependencyRules)
 }
 
-func (r *AlertingRule) GetNoDependencyRules() bool {
+func (r *AlertingRule) NoDependencyRules() bool {
 	return r.noDependencyRules.Load()
 }
 
