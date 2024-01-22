@@ -81,6 +81,8 @@ type Options struct {
 	// Option to enable the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
+	// if UTF8 is not allowed, use this method 
+	NameEscapingScheme string
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -88,6 +90,8 @@ type Options struct {
 	// private option for testability.
 	skipOffsetting bool
 }
+
+const DefaultNameEscapingScheme = model.ValueEncodingEscaping
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups from the discovery manager.
@@ -156,6 +160,26 @@ func (m *Manager) reloader() {
 
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
+	defer m.mtxScrape.Unlock()
+	// var err error
+	// if m.opts.UTF8Names {
+	// 	model.NameValidationScheme = model.UTF8Validation
+	// } else {
+	// 	model.NameValidationScheme = model.LegacyValidation
+	// }
+	// level.Info(m.logger).Log("msg", "validation scheme", "scheme", model.NameValidationScheme, "arg", m.opts.UTF8Names)
+	// XXXXX the problem with this is that agent does not really use scrape.Options.  Also too, this is like per-scrape not per-instance, so it's not really the right place for this at all.
+	// if m.opts.NameEscapingScheme != "" {
+	// 	model.NameEscapingScheme, err = model.ToEscapingScheme(m.opts.NameEscapingScheme)
+	// 	if err != nil {
+	// 		level.Error(m.logger).Log("msg", "error setting escaping scheme", "err", err)
+	// 		return
+	// 	}
+	// } else {
+	// 	model.NameEscapingScheme = DefaultNameEscapingScheme
+	// }
+	level.Info(m.logger).Log("msg", "ESCAPING SCHEME", "scheme", model.NameEscapingScheme.String())
+
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
 		if _, ok := m.scrapePools[setName]; !ok {
@@ -182,7 +206,6 @@ func (m *Manager) reload() {
 		}(m.scrapePools[setName], groups)
 
 	}
-	m.mtxScrape.Unlock()
 	wg.Wait()
 }
 

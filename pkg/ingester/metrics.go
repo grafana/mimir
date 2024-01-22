@@ -94,13 +94,13 @@ func newIngesterMetrics(
 	inflightRequestsBytes *atomic.Int64,
 ) *ingesterMetrics {
 	const (
-		instanceLimits     = "cortex_ingester_instance_limits"
+		instanceLimits     = "cortex.ingester_instance_limits"
 		instanceLimitsHelp = "Instance limits used by this ingester." // Must be same for all registrations.
 		limitLabel         = "limit"
 	)
 
 	idleTsdbChecks := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_ingester_idle_tsdb_checks_total",
+		Name: "cortex.ingester_idle_tsdb_checks_total",
 		Help: "The total number of various results for idle TSDB checks.",
 	}, []string{"result"})
 
@@ -123,74 +123,74 @@ func newIngesterMetrics(
 
 	m := &ingesterMetrics{
 		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_samples_total",
+			Name: "cortex.ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
 		}, []string{"user"}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_exemplars_total",
+			Name: "cortex.ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
 		}),
 		ingestedMetadata: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_metadata_total",
+			Name: "cortex.ingester_ingested_metadata_total",
 			Help: "The total number of metadata ingested.",
 		}),
 		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_samples_failures_total",
+			Name: "cortex.ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
 		}, []string{"user"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_exemplars_failures_total",
+			Name: "cortex.ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
 		}),
 		ingestedMetadataFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_ingested_metadata_failures_total",
+			Name: "cortex.ingester_ingested_metadata_failures_total",
 			Help: "The total number of metadata that errored on ingestion.",
 		}),
 		queries: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_queries_total",
+			Name: "cortex.ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
 		}),
 		queriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_ingester_queried_samples",
+			Name: "cortex.ingester_queried_samples",
 			Help: "The total number of samples returned from queries.",
 			// Could easily return 10m samples per query - 10*(8^(8-1)) = 20.9m.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
 		}),
 		queriedExemplars: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_ingester_queried_exemplars",
+			Name: "cortex.ingester_queried_exemplars",
 			Help: "The total number of exemplars returned from queries.",
 			// A reasonable upper bound is around 6k - 10*(5^(5-1)) = 6250.
 			Buckets: prometheus.ExponentialBuckets(10, 5, 5),
 		}),
 		queriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_ingester_queried_series",
+			Name: "cortex.ingester_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
 		}),
 		memMetadata: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ingester_memory_metadata",
+			Name: "cortex.ingester_memory_metadata",
 			Help: "The current number of metadata in memory.",
 		}),
 		memUsers: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ingester_memory_users",
+			Name: "cortex.ingester_memory_users",
 			Help: "The current number of users in memory.",
 		}),
 		memMetadataCreatedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_memory_metadata_created_total",
+			Name: "cortex.ingester_memory_metadata_created_total",
 			Help: "The total number of metadata that were created per user",
 		}, []string{"user"}),
 		memMetadataRemovedTotal: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_memory_metadata_removed_total",
+			Name: "cortex.ingester_memory_metadata_removed_total",
 			Help: "The total number of metadata that were removed per user.",
 		}, []string{"user"}),
 		utilizationLimitedRequests: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_utilization_limited_read_requests_total",
+			Name: "cortex.ingester_utilization_limited_read_requests_total",
 			Help: "Total number of times read requests have been rejected due to utilization based limiting.",
 		}, []string{"reason"}),
 
 		ownedSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_owned_series",
+			Name: "cortex.ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
 
@@ -250,7 +250,7 @@ func newIngesterMetrics(
 		}),
 
 		ingestionRate: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_ingestion_rate_samples_per_second",
+			Name: "cortex.ingester_ingestion_rate_samples_per_second",
 			Help: "Current ingestion rate in samples/sec that ingester is using to limit access.",
 		}, func() float64 {
 			if ingestionRate != nil {
@@ -260,7 +260,7 @@ func newIngesterMetrics(
 		}),
 
 		inflightRequests: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_inflight_push_requests",
+			Name: "cortex.ingester_inflight_push_requests",
 			Help: "Current number of inflight push requests in ingester.",
 		}, func() float64 {
 			if inflightRequests != nil {
@@ -270,7 +270,7 @@ func newIngesterMetrics(
 		}),
 
 		inflightRequestsBytes: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
-			Name: "cortex_ingester_inflight_push_requests_bytes",
+			Name: "cortex.ingester_inflight_push_requests_bytes",
 			Help: "Total sum of inflight push request sizes in ingester in bytes.",
 		}, func() float64 {
 			if inflightRequestsBytes != nil {
@@ -280,7 +280,7 @@ func newIngesterMetrics(
 		}),
 
 		inflightRequestsSummary: promauto.With(r).NewSummary(prometheus.SummaryOpts{
-			Name:       "cortex_ingester_inflight_push_requests_summary",
+			Name:       "cortex.ingester_inflight_push_requests_summary",
 			Help:       "Number of inflight requests sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001, 1.00: 0.001},
 			MaxAge:     time.Minute,
@@ -288,69 +288,69 @@ func newIngesterMetrics(
 		}),
 
 		maxLocalSeriesPerUser: promauto.With(r).NewGaugeVec(prometheus.GaugeOpts{
-			Name:        "cortex_ingester_local_limits",
+			Name:        "cortex.ingester_local_limits",
 			Help:        "Local per-user limits used by this ingester.",
 			ConstLabels: map[string]string{"limit": "max_global_series_per_user"},
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_series_loading",
+			Name: "cortex.ingester_active_series_loading",
 			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_series",
+			Name: "cortex.ingester_active_series",
 			Help: "Number of currently active series per user.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_series_custom_tracker",
+			Name: "cortex.ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_native_histogram_series",
+			Name: "cortex.ingester_active_native_histogram_series",
 			Help: "Number of currently active native histogram series per user.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUserNativeHistograms: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_native_histogram_series_custom_tracker",
+			Name: "cortex.ingester_active_native_histogram_series_custom_tracker",
 			Help: "Number of currently active native histogram series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeNativeHistogramBucketsPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_native_histogram_buckets",
+			Name: "cortex.ingester_active_native_histogram_buckets",
 			Help: "Number of currently active native histogram buckets per user.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeNativeHistogramBucketsCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ingester_active_native_histogram_buckets_custom_tracker",
+			Name: "cortex.ingester_active_native_histogram_buckets_custom_tracker",
 			Help: "Number of currently active native histogram buckets matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
 
 		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_triggered_total",
+			Name: "cortex.ingester_tsdb_compactions_triggered_total",
 			Help: "Total number of triggered compactions.",
 		}),
 
 		compactionsFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_failed_total",
+			Name: "cortex.ingester_tsdb_compactions_failed_total",
 			Help: "Total number of compactions that failed.",
 		}),
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
+			Name:    "cortex.ingester_tsdb_appender_add_duration_seconds",
 			Help:    "The total time it takes for a push request to add samples to the TSDB appender.",
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
 		appenderCommitDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_appender_commit_duration_seconds",
+			Name:    "cortex.ingester_tsdb_appender_commit_duration_seconds",
 			Help:    "The total time it takes for a push request to commit samples appended to TSDB.",
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}),
@@ -358,13 +358,13 @@ func newIngesterMetrics(
 		idleTsdbChecks: idleTsdbChecks,
 
 		openExistingTSDB: promauto.With(r).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_open_duration_seconds_total",
+			Name: "cortex.ingester_tsdb_open_duration_seconds_total",
 			Help: "The total time it takes to open all existing TSDBs at ingester startup. This time also includes the TSDBs WAL replay duration.",
 		}),
 
 		discarded: newDiscardedMetrics(r),
 		rejected: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingester_instance_rejected_requests_total",
+			Name: "cortex.ingester_instance_rejected_requests_total",
 			Help: "Requests rejected for hitting per-instance limits",
 		}, []string{"reason"}),
 
@@ -372,7 +372,7 @@ func newIngesterMetrics(
 		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
 
 		shutdownMarker: promauto.With(r).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_ingester_prepare_shutdown_requested",
+			Name: "cortex.ingester_prepare_shutdown_requested",
 			Help: "If the ingester has been requested to prepare for shutdown via endpoint or marker file.",
 		}),
 	}
@@ -520,175 +520,175 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 		regs: dskit_metrics.NewTenantRegistries(logger),
 
 		tsdbCompactionsTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_compactions_total",
+			"cortex.ingester_tsdb_compactions_total",
 			"Total number of TSDB compactions that were executed.",
 			nil, nil),
 		tsdbCompactionDuration: prometheus.NewDesc(
-			"cortex_ingester_tsdb_compaction_duration_seconds",
+			"cortex.ingester_tsdb_compaction_duration_seconds",
 			"Duration of TSDB compaction runs.",
 			nil, nil),
 		tsdbFsyncDuration: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_fsync_duration_seconds",
+			"cortex.ingester_tsdb_wal_fsync_duration_seconds",
 			"Duration of TSDB WAL fsync.",
 			nil, nil),
 		tsdbPageFlushes: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_page_flushes_total",
+			"cortex.ingester_tsdb_wal_page_flushes_total",
 			"Total number of TSDB WAL page flushes.",
 			nil, nil),
 		tsdbPageCompletions: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_completed_pages_total",
+			"cortex.ingester_tsdb_wal_completed_pages_total",
 			"Total number of TSDB WAL completed pages.",
 			nil, nil),
 		tsdbWALTruncateFail: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_truncations_failed_total",
+			"cortex.ingester_tsdb_wal_truncations_failed_total",
 			"Total number of TSDB WAL truncations that failed.",
 			nil, nil),
 		tsdbWALTruncateTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_truncations_total",
+			"cortex.ingester_tsdb_wal_truncations_total",
 			"Total number of TSDB  WAL truncations attempted.",
 			nil, nil),
 		tsdbWALTruncateDuration: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_truncate_duration_seconds",
+			"cortex.ingester_tsdb_wal_truncate_duration_seconds",
 			"Duration of TSDB WAL truncation.",
 			nil, nil),
 		tsdbWALCorruptionsTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_corruptions_total",
+			"cortex.ingester_tsdb_wal_corruptions_total",
 			"Total number of TSDB WAL corruptions.",
 			nil, nil),
 		tsdbWALWritesFailed: prometheus.NewDesc(
-			"cortex_ingester_tsdb_wal_writes_failed_total",
+			"cortex.ingester_tsdb_wal_writes_failed_total",
 			"Total number of TSDB WAL writes that failed.",
 			nil, nil),
 		tsdbHeadTruncateFail: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_truncations_failed_total",
+			"cortex.ingester_tsdb_head_truncations_failed_total",
 			"Total number of TSDB head truncations that failed.",
 			nil, nil),
 		tsdbHeadTruncateTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_truncations_total",
+			"cortex.ingester_tsdb_head_truncations_total",
 			"Total number of TSDB head truncations attempted.",
 			nil, nil),
 		tsdbHeadGcDuration: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_gc_duration_seconds",
+			"cortex.ingester_tsdb_head_gc_duration_seconds",
 			"Runtime of garbage collection in the TSDB head.",
 			nil, nil),
 		tsdbActiveAppenders: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_active_appenders",
+			"cortex.ingester_tsdb_head_active_appenders",
 			"Number of currently active TSDB appender transactions.",
 			nil, nil),
 		tsdbSeriesNotFound: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_series_not_found_total",
+			"cortex.ingester_tsdb_head_series_not_found_total",
 			"Total number of TSDB requests for series that were not found.",
 			nil, nil),
 		tsdbChunks: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_chunks",
+			"cortex.ingester_tsdb_head_chunks",
 			"Total number of chunks in the TSDB head block.",
 			nil, nil),
 		tsdbChunksCreatedTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_chunks_created_total",
+			"cortex.ingester_tsdb_head_chunks_created_total",
 			"Total number of series created in the TSDB head.",
 			[]string{"user"}, nil),
 		tsdbChunksRemovedTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_head_chunks_removed_total",
+			"cortex.ingester_tsdb_head_chunks_removed_total",
 			"Total number of series removed in the TSDB head.",
 			[]string{"user"}, nil),
 		tsdbMmapChunkCorruptionTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_mmap_chunk_corruptions_total",
+			"cortex.ingester_tsdb_mmap_chunk_corruptions_total",
 			"Total number of memory-mapped TSDB chunk corruptions.",
 			nil, nil),
 		tsdbMmapChunkQueueOperationsTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total",
+			"cortex.ingester_tsdb_mmap_chunk_write_queue_operations_total",
 			"Total number of memory-mapped TSDB chunk operations.",
 			[]string{"operation"}, nil),
 		tsdbMmapChunksTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_mmap_chunks_total",
+			"cortex.ingester_tsdb_mmap_chunks_total",
 			"Total number of chunks that were memory-mapped.",
 			nil, nil),
 		tsdbOOOHistogram: prometheus.NewDesc(
-			"cortex_ingester_tsdb_sample_out_of_order_delta_seconds",
+			"cortex.ingester_tsdb_sample_out_of_order_delta_seconds",
 			"Delta in seconds by which a sample is considered out-of-order.",
 			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
-			"cortex_ingester_tsdb_blocks_loaded",
+			"cortex.ingester_tsdb_blocks_loaded",
 			"Number of currently loaded data blocks",
 			nil, nil),
 		tsdbReloads: prometheus.NewDesc(
-			"cortex_ingester_tsdb_reloads_total",
+			"cortex.ingester_tsdb_reloads_total",
 			"Number of times the database reloaded block data from disk.",
 			nil, nil),
 		tsdbReloadsFailed: prometheus.NewDesc(
-			"cortex_ingester_tsdb_reloads_failures_total",
+			"cortex.ingester_tsdb_reloads_failures_total",
 			"Number of times the database failed to reloadBlocks block data from disk.",
 			nil, nil),
 		tsdbSymbolTableSize: prometheus.NewDesc(
-			"cortex_ingester_tsdb_symbol_table_size_bytes",
+			"cortex.ingester_tsdb_symbol_table_size_bytes",
 			"Size of symbol table in memory for loaded blocks",
 			[]string{"user"}, nil),
 		tsdbBlocksBytes: prometheus.NewDesc(
-			"cortex_ingester_tsdb_storage_blocks_bytes",
+			"cortex.ingester_tsdb_storage_blocks_bytes",
 			"The number of bytes that are currently used for local storage by all blocks.",
 			[]string{"user"}, nil),
 		tsdbTimeRetentionCount: prometheus.NewDesc(
-			"cortex_ingester_tsdb_time_retentions_total",
+			"cortex.ingester_tsdb_time_retentions_total",
 			"The number of times that blocks were deleted because the maximum time limit was exceeded.",
 			nil, nil),
 		checkpointDeleteFail: prometheus.NewDesc(
-			"cortex_ingester_tsdb_checkpoint_deletions_failed_total",
+			"cortex.ingester_tsdb_checkpoint_deletions_failed_total",
 			"Total number of TSDB checkpoint deletions that failed.",
 			nil, nil),
 		checkpointDeleteTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_checkpoint_deletions_total",
+			"cortex.ingester_tsdb_checkpoint_deletions_total",
 			"Total number of TSDB checkpoint deletions attempted.",
 			nil, nil),
 		checkpointCreationFail: prometheus.NewDesc(
-			"cortex_ingester_tsdb_checkpoint_creations_failed_total",
+			"cortex.ingester_tsdb_checkpoint_creations_failed_total",
 			"Total number of TSDB checkpoint creations that failed.",
 			nil, nil),
 		checkpointCreationTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_checkpoint_creations_total",
+			"cortex.ingester_tsdb_checkpoint_creations_total",
 			"Total number of TSDB checkpoint creations attempted.",
 			nil, nil),
 
 		// The most useful exemplar metrics are per-user. The rest
 		// are global to reduce metrics overhead.
 		tsdbExemplarsTotal: prometheus.NewDesc(
-			"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+			"cortex.ingester_tsdb_exemplar_exemplars_appended_total",
 			"Total number of TSDB exemplars appended.",
 			[]string{"user"}, nil), // see distributor_exemplars_in for per-user rate
 		tsdbExemplarsInStorage: prometheus.NewDesc(
-			"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+			"cortex.ingester_tsdb_exemplar_exemplars_in_storage",
 			"Number of TSDB exemplars currently in storage.",
 			nil, nil),
 		tsdbExemplarSeriesInStorage: prometheus.NewDesc(
-			"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+			"cortex.ingester_tsdb_exemplar_series_with_exemplars_in_storage",
 			"Number of TSDB series with exemplars currently in storage.",
 			[]string{"user"}, nil),
 		tsdbExemplarLastTs: prometheus.NewDesc(
-			"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+			"cortex.ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
 			"The timestamp of the oldest exemplar stored in circular storage. "+
 				"Useful to check for what time range the current exemplar buffer limit allows. "+
 				"This usually means the last timestamp for all exemplars for a typical setup. "+
 				"This is not true though if one of the series timestamp is in future compared to rest series.",
 			[]string{"user"}, nil),
 		tsdbExemplarsOutOfOrder: prometheus.NewDesc(
-			"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			"cortex.ingester_tsdb_exemplar_out_of_order_exemplars_total",
 			"Total number of out-of-order exemplar ingestion failed attempts.",
 			nil, nil),
 
 		tsdbOOOAppendedSamples: prometheus.NewDesc(
-			"cortex_ingester_tsdb_out_of_order_samples_appended_total",
+			"cortex.ingester_tsdb_out_of_order_samples_appended_total",
 			"Total number of out-of-order samples appended.",
 			[]string{"user"}, nil),
 
 		memSeries: prometheus.NewDesc(
-			"cortex_ingester_memory_series",
+			"cortex.ingester_memory_series",
 			"The current number of series in memory.",
 			nil, nil),
 		memSeriesCreatedTotal: prometheus.NewDesc(
-			"cortex_ingester_memory_series_created_total",
+			"cortex.ingester_memory_series_created_total",
 			"The total number of series that were created per user.",
 			[]string{"user"}, nil),
 		memSeriesRemovedTotal: prometheus.NewDesc(
-			"cortex_ingester_memory_series_removed_total",
+			"cortex.ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
 	}

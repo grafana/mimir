@@ -20,10 +20,15 @@ services:
       - .data-minio:/data:delegated
 
   prometheus:
-    profiles:
-      - prometheus
-    image: prom/prometheus:v2.48.1
-    command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
+    build:
+      context:  /home/owilliams/src/grafana/prometheus
+      dockerfile: Dockerfile
+    image: mimir-prometheus
+    command: [
+      "--config.file=/etc/prometheus/prometheus.yaml", 
+      "--enable-feature=native-histograms,utf8-names",
+      "--scrape.name-escaping-scheme=dots",
+      "--log.level=debug"]
     volumes:
       - ./config:/etc/prometheus
     ports:
@@ -42,10 +47,18 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is supported by Prometheus).
   grafana-agent:
-    profiles:
-      - grafana-agent-static
-    image: grafana/agent:v0.39.1
-    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
+    environment:
+      - DOCKER_BUILDKIT=1
+    build:
+      context:  /home/owilliams/src/grafana/agent/
+      dockerfile: cmd/grafana-agent/Dockerfile
+    image: grafana-agent
+    command: [
+      "-config.file=/etc/agent-config/grafana-agent.yaml", 
+      "-metrics.wal-directory=/tmp",
+      "-server.http.address=127.0.0.1:9091"
+      "-metrics.utf8-names",
+      "-metrics.name-escaping-scheme=dots"]
     volumes:
       - ./config:/etc/agent-config
     ports:
@@ -74,7 +87,8 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
+    # can't disable utf8 here because then my hacked internal bad metrics don't work.
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001 -api.utf8-names-enabled -log.level=debug"]
     depends_on:
       - consul
       - minio
@@ -96,7 +110,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002 -api.utf8-names-enabled -log.level=debug"]
     depends_on:
       - consul
       - minio

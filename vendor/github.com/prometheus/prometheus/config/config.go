@@ -421,6 +421,8 @@ type GlobalConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names
+	AllowUTF8Names bool `yaml:"utf8_names,omitempty"`
 }
 
 // ScrapeProtocol represents supported protocol for scraping metrics.
@@ -444,21 +446,28 @@ func (s ScrapeProtocol) Validate() error {
 var (
 	PrometheusProto      ScrapeProtocol = "PrometheusProto"
 	PrometheusText0_0_4  ScrapeProtocol = "PrometheusText0.0.4"
+	PrometheusText1_0_0  ScrapeProtocol = "PrometheusText1.0.0"
 	OpenMetricsText0_0_1 ScrapeProtocol = "OpenMetricsText0.0.1"
 	OpenMetricsText1_0_0 ScrapeProtocol = "OpenMetricsText1.0.0"
+	OpenMetricsText2_0_0 ScrapeProtocol = "OpenMetricsText2.0.0"
+	UTF8NamesHeader      string         = "validchars=utf8"
 
 	ScrapeProtocolsHeaders = map[ScrapeProtocol]string{
 		PrometheusProto:      "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited",
 		PrometheusText0_0_4:  "text/plain;version=0.0.4",
+		PrometheusText1_0_0:  "text/plain;version=1_0_0",
 		OpenMetricsText0_0_1: "application/openmetrics-text;version=0.0.1",
 		OpenMetricsText1_0_0: "application/openmetrics-text;version=1.0.0",
+		OpenMetricsText2_0_0: "application/openmetrics-text;version=2.0.0",
 	}
 
 	// DefaultScrapeProtocols is the set of scrape protocols that will be proposed
 	// to scrape target, ordered by priority.
 	DefaultScrapeProtocols = []ScrapeProtocol{
+		OpenMetricsText2_0_0,
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
+		PrometheusText1_0_0,
 		PrometheusText0_0_4,
 	}
 
@@ -468,6 +477,7 @@ var (
 	// "native-histograms" and "created-timestamp-zero-ingestion".
 	DefaultProtoFirstScrapeProtocols = []ScrapeProtocol{
 		PrometheusProto,
+		OpenMetricsText2_0_0,
 		OpenMetricsText1_0_0,
 		OpenMetricsText0_0_1,
 		PrometheusText0_0_4,
@@ -616,6 +626,8 @@ type ScrapeConfig struct {
 	// Keep no more than this many dropped targets per job.
 	// 0 means no limit.
 	KeepDroppedTargets uint `yaml:"keep_dropped_targets,omitempty"`
+	// Allow UTF8 Metric and Label Names
+	AllowUTF8Names bool `yaml:"utf8_names,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -720,6 +732,13 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	}
 	if err := validateAcceptScrapeProtocols(c.ScrapeProtocols); err != nil {
 		return fmt.Errorf("%w for scrape config with job name %q", err, c.JobName)
+	}
+
+	if globalConfig.AllowUTF8Names {
+		if model.NameValidationScheme != model.UTF8Validation {
+			return fmt.Errorf("utf8 name support requested but feature not enabled via --enable-feature=utf8-names")
+		}
+		c.AllowUTF8Names = true
 	}
 
 	return nil

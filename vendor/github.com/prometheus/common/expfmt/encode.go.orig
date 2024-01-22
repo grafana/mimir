@@ -18,10 +18,17 @@ import (
 	"io"
 	"net/http"
 
-	"google.golang.org/protobuf/encoding/protodelim"
-	"google.golang.org/protobuf/encoding/prototext"
-
+<<<<<<< HEAD
+	"github.com/matttproud/golang_protobuf_extensions/v2/pbutil"
+	"github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg"
 	"github.com/prometheus/common/model"
+||||||| 0940b71
+	"github.com/matttproud/golang_protobuf_extensions/v2/pbutil"
+	"github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg"
+=======
+	"google.golang.org/protobuf/encoding/protodelim"
+>>>>>>> owilliams/quoted-metric-name
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg"
 
@@ -126,15 +133,15 @@ func NegotiateIncludingOpenMetrics(h http.Header) Format {
 		}
 		if ac.Type+"/"+ac.SubType == OpenMetricsType && (ver == OpenMetricsVersion_0_0_1 || ver == OpenMetricsVersion_1_0_0 || ver == OpenMetricsVersion_2_0_0 || ver == "") {
 			switch ver {
-			case OpenMetricsVersion_2_0_0:
-				if ac.Params["validchars"] == UTF8Valid {
-					return FmtOpenMetrics_2_0_0 + FmtUTF8Param
-				}
-				return FmtOpenMetrics_2_0_0
-			case OpenMetricsVersion_1_0_0:
-				return FmtOpenMetrics_1_0_0
-			default:
-				return FmtOpenMetrics_0_0_1
+				case OpenMetricsVersion_2_0_0:
+					if ac.Params["validchars"] == UTF8Valid {
+						return FmtOpenMetrics_2_0_0 + FmtUTF8Param
+					}
+					return FmtOpenMetrics_2_0_0
+				case OpenMetricsVersion_1_0_0:
+					return FmtOpenMetrics_1_0_0
+				default:
+					return FmtOpenMetrics_0_0_1
 			}
 		}
 	}
@@ -155,18 +162,24 @@ func NewEncoder(w io.Writer, format Format) Encoder {
 		escapingScheme = model.NoEscaping
 	}
 	switch format.FormatType() {
-	case TypeProtoDelim:
-		return encoderCloser{
-			encode: func(v *dto.MetricFamily) error {
-				_, err := protodelim.MarshalTo(w, model.EscapeMetricFamily(v, escapingScheme))
-				return err
-			},
-			close: func() error { return nil },
-		}
+		case TypeProtoDelim:
+			return encoderCloser{
+				encode: func(v *dto.MetricFamily) error {
+					_, err := pbutil.WriteDelimited(w, model.EscapeMetricFamily(v, escapingScheme))
+					return err
+				},
+				close: func() error { return nil },
+			}
 	case TypeProtoCompact:
 		return encoderCloser{
 			encode: func(v *dto.MetricFamily) error {
-				_, err := protodelim.MarshalTo(w, model.EscapeMetricFamily(v, escapingScheme))
+<<<<<<< HEAD
+				_, err := fmt.Fprintln(w, model.EscapeMetricFamily(v, escapingScheme).String())
+||||||| 0940b71
+				_, err := pbutil.WriteDelimited(w, v)
+=======
+				_, err := protodelim.MarshalTo(w, v)
+>>>>>>> owilliams/quoted-metric-name
 				return err
 			},
 			close: func() error { return nil },
