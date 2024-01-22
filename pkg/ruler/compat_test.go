@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -491,7 +492,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 	tests := map[string]struct {
 		ruleGroup               rulespb.RuleGroupDesc
-		expectedReadConsistency string
+		expectedReadConsistency map[string]string
 	}{
 		"should inject strong read consistency if the rule is not independent": {
 			ruleGroup: rulespb.RuleGroupDesc{
@@ -501,17 +502,23 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 					createRecordingRule("sum:up:2", "sum:up:1"),
 				},
 			},
-			expectedReadConsistency: api.ReadConsistencyStrong,
+			expectedReadConsistency: map[string]string{
+				`__name__="up"`:       "", // Does not depend on any other rule in the group.
+				`__name__="sum:up:1"`: api.ReadConsistencyStrong,
+			},
 		},
 		"should not inject read consistency level if the rule is independent, to let run with the per-tenant default": {
 			ruleGroup: rulespb.RuleGroupDesc{
 				Name: "independent-rules",
 				Rules: []*rulespb.RuleDesc{
-					createRecordingRule("sum:up:1", "sum(up)"),
-					createRecordingRule("sum:up:2", "sum(up)"),
+					createRecordingRule("sum:up:1", "sum(up_1)"),
+					createRecordingRule("sum:up:2", "sum(up_2)"),
 				},
 			},
-			expectedReadConsistency: "",
+			expectedReadConsistency: map[string]string{
+				`__name__="up_1"`: "",
+				`__name__="up_2"`: "",
+			},
 		},
 	}
 
@@ -537,10 +544,19 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 			// Mock the querier.
 			querier := newQuerierMock()
-			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				// Stringify the matchers.
+				matchersStrings := make([]string, 0, len(matchers))
+				for _, m := range matchers {
+					matchersStrings = append(matchersStrings, m.String())
+				}
+				matchersString := strings.Join(matchersStrings, ",")
+
 				// Ensure the read consistency injected in the context is the expected one.
 				actual, _ := api.ReadConsistencyFromContext(ctx)
-				assert.Equal(t, testData.expectedReadConsistency, actual)
+				expected, hasExpected := testData.expectedReadConsistency[matchersString]
+				assert.Truef(t, hasExpected, "missing expected read consistency for matchers: %s", matchersString)
+				assert.Equal(t, expected, actual)
 
 				if ruleEvaluationsCount.Inc() == int64(len(testData.ruleGroup.Rules)) {
 					close(ruleEvaluationsDone)
