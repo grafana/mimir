@@ -31,6 +31,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -163,13 +164,13 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + readEndpointPath,
 		Body:   snappy.Encode(nil, data),
-		Headers: []*httpgrpc.Header{
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
 			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -270,12 +271,12 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		Method: http.MethodPost,
 		Url:    q.promHTTPPrefix + queryEndpointPath,
 		Body:   body,
-		Headers: []*httpgrpc.Header{
+		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
 			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},
-		},
+		}),
 	}
 
 	for _, mdw := range q.middlewares {
@@ -349,4 +350,18 @@ func getHeader(headers []*httpgrpc.Header, name string) string {
 	}
 
 	return ""
+}
+
+// injectHTTPGrpcReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
+// it as an HTTP header to the list of input headers. This is required to propagate the read consistency
+// through the network when issuing an HTTPgRPC request.
+func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
+	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+		headers = append(headers, &httpgrpc.Header{
+			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
+			Values: []string{level},
+		})
+	}
+
+	return headers
 }

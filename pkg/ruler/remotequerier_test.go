@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -35,35 +36,64 @@ func (c mockHTTPGRPCClient) Handle(ctx context.Context, req *httpgrpc.HTTPReques
 	return c(ctx, req, opts...)
 }
 
-func TestRemoteQuerier_ReadReq(t *testing.T) {
-	var inReq *httpgrpc.HTTPRequest
-	var body []byte
+func TestRemoteQuerier_Read(t *testing.T) {
+	// setup returns a mocked HTTPgRPC client and a pointer to the received HTTPRequest
+	// that will be valued after the request is received.
+	setup := func() (mockHTTPGRPCClient, *httpgrpc.HTTPRequest) {
+		var inReq httpgrpc.HTTPRequest
 
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-		inReq = req
+		mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			inReq = *req
 
-		b, err := proto.Marshal(&prompb.ReadResponse{
-			Results: []*prompb.QueryResult{
-				{},
-			},
-		})
+			b, err := proto.Marshal(&prompb.ReadResponse{
+				Results: []*prompb.QueryResult{
+					{},
+				},
+			})
+			require.NoError(t, err)
+
+			return &httpgrpc.HTTPResponse{
+				Code: http.StatusOK,
+				Body: snappy.Encode(nil, b),
+			}, nil
+		}
+
+		return mockClientFn, &inReq
+	}
+
+	t.Run("should issue a remote read request", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		_, err := q.Read(context.Background(), &prompb.Query{})
 		require.NoError(t, err)
 
-		body = snappy.Encode(nil, b)
-		return &httpgrpc.HTTPResponse{
-			Code: http.StatusOK,
-			Body: snappy.Encode(nil, b),
-		}, nil
-	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		require.NotNil(t, inReq)
+		require.Equal(t, http.MethodPost, inReq.Method)
+		require.Equal(t, "/prometheus/api/v1/read", inReq.Url)
+	})
 
-	_, err := q.Read(context.Background(), &prompb.Query{})
-	require.NoError(t, err)
+	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
 
-	require.NotNil(t, inReq)
-	require.Equal(t, http.MethodPost, inReq.Method)
-	require.Equal(t, body, inReq.Body)
-	require.Equal(t, "/prometheus/api/v1/read", inReq.Url)
+		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		_, err := q.Read(context.Background(), &prompb.Query{})
+		require.NoError(t, err)
+
+		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
+	})
+
+	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+
+		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
+		_, err := q.Read(ctx, &prompb.Query{})
+		require.NoError(t, err)
+
+		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
+	})
 }
 
 func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
@@ -77,46 +107,82 @@ func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRemoteQuerier_QueryReq(t *testing.T) {
-	for _, format := range allFormats {
-		t.Run(format, func(t *testing.T) {
-			var inReq *httpgrpc.HTTPRequest
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-				inReq = req
-				return &httpgrpc.HTTPResponse{
-					Code: http.StatusOK,
-					Headers: []*httpgrpc.Header{
-						{Key: "Content-Type", Values: []string{"application/json"}},
-					},
-					Body: []byte(`{
+func TestRemoteQuerier_Query(t *testing.T) {
+	var (
+		tm = time.Unix(1649092025, 515834)
+	)
+
+	// setup returns a mocked HTTPgRPC client and a pointer to the received HTTPRequest
+	// that will be valued after the request is received.
+	setup := func() (mockHTTPGRPCClient, *httpgrpc.HTTPRequest) {
+		var inReq httpgrpc.HTTPRequest
+
+		mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			inReq = *req
+
+			return &httpgrpc.HTTPResponse{
+				Code: http.StatusOK,
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/json"}},
+				},
+				Body: []byte(`{
 						"status": "success","data": {"resultType":"vector","result":[]}
 					}`),
-				}, nil
-			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, format, "/prometheus", log.NewNopLogger())
+			}, nil
+		}
 
-			tm := time.Unix(1649092025, 515834)
-			_, err := q.Query(context.Background(), "qs", tm)
-			require.NoError(t, err)
-
-			require.NotNil(t, inReq)
-			require.Equal(t, http.MethodPost, inReq.Method)
-			require.Equal(t, "query=qs&time="+url.QueryEscape(tm.Format(time.RFC3339Nano)), string(inReq.Body))
-			require.Equal(t, "/prometheus/api/v1/query", inReq.Url)
-
-			acceptHeader := getHeader(inReq.Headers, "Accept")
-
-			switch format {
-			case formatJSON:
-				require.Equal(t, "application/json", acceptHeader)
-			case formatProtobuf:
-				require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", acceptHeader)
-			default:
-				t.Fatalf("unknown format '%s'", format)
-			}
-		})
+		return mockClientFn, &inReq
 	}
 
+	t.Run("should issue a instant query request with the configured format", func(t *testing.T) {
+		for _, format := range allFormats {
+			t.Run(fmt.Sprintf("format = %s", format), func(t *testing.T) {
+				client, inReq := setup()
+
+				q := NewRemoteQuerier(client, time.Minute, format, "/prometheus", log.NewNopLogger())
+				_, err := q.Query(context.Background(), "qs", tm)
+				require.NoError(t, err)
+
+				require.NotNil(t, inReq)
+				require.Equal(t, http.MethodPost, inReq.Method)
+				require.Equal(t, "query=qs&time="+url.QueryEscape(tm.Format(time.RFC3339Nano)), string(inReq.Body))
+				require.Equal(t, "/prometheus/api/v1/query", inReq.Url)
+
+				acceptHeader := getHeader(inReq.Headers, "Accept")
+
+				switch format {
+				case formatJSON:
+					require.Equal(t, "application/json", acceptHeader)
+				case formatProtobuf:
+					require.Equal(t, "application/vnd.mimir.queryresponse+protobuf,application/json", acceptHeader)
+				default:
+					t.Fatalf("unknown format '%s'", format)
+				}
+			})
+		}
+	})
+
+	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		_, err := q.Query(context.Background(), "qs", tm)
+		require.NoError(t, err)
+
+		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
+	})
+
+	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+
+		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
+		_, err := q.Query(ctx, "qs", tm)
+		require.NoError(t, err)
+
+		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
+	})
 }
 
 func TestRemoteQuerier_SendRequest(t *testing.T) {
