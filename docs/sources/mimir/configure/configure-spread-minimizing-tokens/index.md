@@ -9,18 +9,18 @@ title: Migrate ingesters to spread-minimizing tokens
 
 # Migrate ingesters to spread-minimizing tokens
 
-Using this guide, you can configure Mimir's ingesters to use the _spread-minimizing token generation strategy_ .
+Using this guide, you can configure Mimir's ingesters to use the _spread-minimizing token generation strategy_.
 
 ## Before you begin
 
 The ingester time series replication should be [configured with enabled zone-awareness](https://grafana.com/docs/mimir/latest/configure/configure-zone-aware-replication/#configuring-ingester-time-series-replication).
 
-{{% admonition type="note" %}}Use spread-mimizing tokens are recommended if [shuffle sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) is disabled in your ingesters, or, if shuffle-sharding is enabled, but most of the tenants of your system use all available ingesters.
+{{% admonition type="note" %}}Spread-mimizing tokens are recommended if [shuffle sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/#ingesters-shuffle-sharding) is disabled in your ingesters, or, if shuffle-sharding is enabled, but most of the tenants of your system use all available ingesters.
 {{% /admonition %}}
 
 For simplicity, let’s assume that there are three configured availability zones named `zone-a`, `zone-b`, and `zone-c`. Migration to the _spread-minimizing token generation strategy_ is a complex process performed zone by zone to prevent any data loss.
 
-## Step 1: Disable write requests to ingesters from zone-a
+## Step 1: Disable write requests to ingesters from `zone-a`
 
 To disable write requests, configure the following flag on the distributor and the ruler:
 
@@ -46,14 +46,14 @@ You should see something like this:
 
 ![No More Write Requests](no-more-write-requests.png)
 
-## Step 2: Shut down ingesters from zone-a
+## Step 2: Shut down ingesters from `zone-a`
 
 Next, ensure that all the in-memory series of all ingesters from `zone-a` have been flushed to long-term storage, as well as that the ingesters from `zone-a` have been forgotten from the ring.
 To do this, invoke the [/ingester/shutdown](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/references/http-api/index.md#shutdown) endpoint on all the ingesters from `zone-a`.
 
 Before proceeding to the next step, ensure that all the calls completed successfully completed.
 
-## Step 3: Enable spread-minimizing tokens for ingesters in zone-a
+## Step 3: Enable spread-minimizing tokens for ingesters in `zone-a`
 
 Configure the following flags on the ingesters from `zone-a`:
 
@@ -71,9 +71,9 @@ Before proceeding to the next step, ensure that all the ingester pods related to
 
 ### Optional step: In-order registration of ingesters
 
-Mimir can force the ring to perform an in-order registration of ingesters, for example, to allow an ingester to register its tokens within the ring only after all previous ingesters (with ID lower than its own ID) have already been registered.
-Enabling this feature minimizes a probability that a write request that should be handled by an ingester actually arrives to the ring before the ingester is registered within the ring. In this case, the request gets handled by another ingester.
-This situation that would introduce some deviation from an optimal load distribution.
+Mimir can force the ring to perform an in-order registration of ingesters. When this feature is enabled, an ingester can register its tokens within the ring only after all previous ingesters (with ID lower than its own ID) have already been registered.
+This feature minimizes a probability that a write request that should be handled by an ingester actually arrives to the ring before the ingester is registered within the ring. In this case, the request gets handled by another ingester.
+This situation could introduce some deviation from an optimal load distribution.
 
 To configure this capability:
 
