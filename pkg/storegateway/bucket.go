@@ -400,7 +400,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 			if err2 := os.RemoveAll(dir); err2 != nil {
 				level.Warn(s.logger).Log("msg", "failed to remove block we cannot load", "err", err2)
 			}
-			level.Warn(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
+			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
 		}
