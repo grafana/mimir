@@ -4,7 +4,12 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Alertmanager: Updated to latest main. It deprecates Alertmanager APIv1, and replaces all APIv1 endpoints with a deprecation notice. You should replace all use of the /v1/alerts, /v1/silences, /v1/receivers and /v1/status endpoints with their APIv2 equivalent.
+* [CHANGE] Alertmanager: Deprecates the `v1` API. All `v1` API endpoints now respond with a JSON deprecation notice and a status code of `410`. All endpoints have a `v2` equivalent. The list of endpoints is:
+  * `<alertmanager-web.external-url>/api/v1/alerts`
+  * `<alertmanager-web.external-url>/api/v1/receivers`
+  * `<alertmanager-web.external-url>/api/v1/silence/{id}`
+  * `<alertmanager-web.external-url>/api/v1/silences`
+  * `<alertmanager-web.external-url>/api/v1/status`
 * [CHANGE] Ingester: Increase default value of `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes` and `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes` to 100 MiB (previous default value was 10 MiB). #6764
 * [CHANGE] Validate tenant IDs according to [documented behavior](https://grafana.com/docs/mimir/latest/configure/about-tenant-ids/) even when tenant federation is not enabled. Note that this will cause some previously accepted tenant IDs to be rejected such as those longer than 150 bytes or containing `|` characters. #6959
 * [CHANGE] Ruler: don't use backoff retry on remote evaluation in case of `4xx` errors. #7004
