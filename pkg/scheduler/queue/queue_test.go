@@ -110,9 +110,9 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 	numProducers := 10
 	numConsumers := 1
 
-	normalQueueDimension := storeGatewayQueueDimension
+	normalQueueDimension := "normal-request"
 	slowConsumerLatency := 20 * time.Millisecond
-	slowConsumerQueueDimension := ingesterQueueDimension
+	slowConsumerQueueDimension := "slow-request"
 	normalQueueDimensionFunc := func() []string { return []string{normalQueueDimension} }
 	slowQueueDimensionFunc := func() []string { return []string{slowConsumerQueueDimension} }
 
