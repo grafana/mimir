@@ -934,10 +934,14 @@ func (c *mockedRemoteCacheClient) GetMulti(_ context.Context, keys []string, _ .
 	return hits
 }
 
-func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) error {
+func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) {
 	c.cache[key] = value
+}
 
-	return nil
+func (c *mockedRemoteCacheClient) SetMultiAsync(data map[string][]byte, _ time.Duration) {
+	for key, value := range data {
+		c.cache[key] = value
+	}
 }
 
 func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {

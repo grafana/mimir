@@ -41,6 +41,10 @@
       'compactor.ring.prefix': '',
       'compactor.ring.wait-stability-min-duration': '1m',  // Wait until ring is stable before switching to ACTIVE.
 
+      // Relax pressure on KV store when running at scale.
+      'compactor.ring.heartbeat-period': '1m',
+      'compactor.ring.heartbeat-timeout': '4m',
+
       // The compactor wait period is the amount of time that compactors will wait before compacting
       // 1st level blocks (uploaded by ingesters) since the last block was uploaded. In the worst
       // case scenario, we have 1 ingester whose TSDB head compaction started at time 0 and another

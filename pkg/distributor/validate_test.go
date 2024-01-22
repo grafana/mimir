@@ -81,6 +81,11 @@ func TestValidateLabels(t *testing.T) {
 			fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
+			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
+			false,
+			fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+		},
+		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
 			false,
 			fmt.Errorf(
@@ -162,7 +167,7 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
-			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
 			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
 
 			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1

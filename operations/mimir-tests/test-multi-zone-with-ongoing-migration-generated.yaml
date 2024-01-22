@@ -752,6 +752,8 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
@@ -860,6 +862,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -941,11 +944,16 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "5000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
@@ -969,6 +977,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -1069,7 +1078,7 @@ spec:
       containers:
       - args:
         - -kubernetes.namespace=default
-        image: grafana/rollout-operator:v0.9.0
+        image: grafana/rollout-operator:v0.10.1
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -1083,7 +1092,6 @@ spec:
           timeoutSeconds: 1
         resources:
           limits:
-            cpu: "1"
             memory: 200Mi
           requests:
             cpu: 100m
@@ -1123,6 +1131,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -1145,12 +1154,16 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ruler
@@ -1311,6 +1324,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -1414,6 +1429,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
@@ -1430,6 +1446,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1530,6 +1549,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
@@ -1548,6 +1568,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1648,6 +1671,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
@@ -1666,6 +1690,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1766,6 +1793,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
@@ -1784,6 +1812,9 @@ spec:
         - -server.http-listen-port=8080
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
+        env:
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -2110,6 +2141,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -2123,6 +2156,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2244,6 +2279,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2259,6 +2296,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2380,6 +2419,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2395,6 +2436,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2516,6 +2559,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2531,6 +2576,8 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: store-gateway

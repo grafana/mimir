@@ -229,6 +229,28 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	}
 }
 
+func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		querySchedulerEnabled:       true,
+		querySchedulerDiscoveryMode: "dns",
+		queryStatsEnabled:           true,
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				IngestStorageFlags(),
+			)
+
+			kafka := e2edb.NewKafka()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+
+			return "", flags
+		},
+		withHistograms: true,
+	})
+}
+
 func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	const numUsers = 10
 	const numQueriesPerUser = 10
@@ -275,7 +297,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
@@ -283,8 +305,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
 	// Wait until distributor and querier have updated the ingesters ring.
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
@@ -759,8 +781,8 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_cache_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_cache_dns_lookups_total"))
 
 	// Wait until distributor and querier have updated the ingesters ring.
 	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(

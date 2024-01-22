@@ -29,6 +29,8 @@ const (
 )
 
 type clientMetrics struct {
+	requests   prometheus.Counter
+	hits       prometheus.Counter
 	operations *prometheus.CounterVec
 	failures   *prometheus.CounterVec
 	skipped    *prometheus.CounterVec
@@ -36,9 +38,21 @@ type clientMetrics struct {
 	dataSize   *prometheus.HistogramVec
 }
 
+// newClientMetrics creates a new bundle of metrics about an instance of a cache client. Note
+// that there may be multiple cache clients at any given time so the prometheus.Registerer passed
+// to this method should include labels unique to this particular client (e.g. a name for each
+// different cache being used).
 func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm := &clientMetrics{}
 
+	cm.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "requests_total",
+		Help: "Total number of items requests to cache.",
+	})
+	cm.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "hits_total",
+		Help: "Total number of items requests to the cache that were a hit.",
+	})
 	cm.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operations_total",
 		Help: "Total number of operations against cache.",
@@ -115,10 +129,16 @@ func newBaseClient(
 	}
 }
 
-func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) error {
+func (c *baseClient) setMultiAsync(data map[string][]byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
+	for key, val := range data {
+		c.setAsync(key, val, ttl, f)
+	}
+}
+
+func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f func(key string, buf []byte, ttl time.Duration) error) {
 	if c.maxItemSize > 0 && uint64(len(value)) > c.maxItemSize {
 		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
-		return nil
+		return
 	}
 
 	err := c.asyncQueue.submit(func() {
@@ -140,12 +160,10 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 		c.metrics.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
 	})
 
-	if errors.Is(err, errAsyncQueueFull) {
+	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.asyncBuffSize)
-		return nil
 	}
-	return err
 }
 
 // wait submits an async task and blocks until it completes. This can be used during

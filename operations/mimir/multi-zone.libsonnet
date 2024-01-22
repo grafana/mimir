@@ -356,7 +356,7 @@
       $.core.v1.containerPort.new('http-metrics', 8001),
     ]) +
     $.util.resourcesRequests('100m', '100Mi') +
-    $.util.resourcesLimits('1', '200Mi') +
+    $.util.resourcesLimits(null, '200Mi') +
     container.mixin.readinessProbe.httpGet.withPath('/ready') +
     container.mixin.readinessProbe.httpGet.withPort(8001) +
     container.mixin.readinessProbe.withInitialDelaySeconds(5) +

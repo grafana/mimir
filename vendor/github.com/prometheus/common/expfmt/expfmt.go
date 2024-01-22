@@ -14,126 +14,36 @@
 // Package expfmt contains tools for reading and writing Prometheus metrics.
 package expfmt
 
-import (
-	"strings"
-)
-
 // Format specifies the HTTP content type of the different wire protocols.
 type Format string
 
-// Constants to assemble the Content-Type values for the different wire protocols.
+// Constants to assemble the Content-Type values for the different wire
+// protocols. The Content-Type strings here are all for the legacy exposition
+// formats, where valid characters for metric names and label names are limited.
+// Support for arbitrary UTF-8 characters in those names is already partially
+// implemented in this module (see model.ValidationScheme), but to actually use
+// it on the wire, new content-type strings will have to be agreed upon and
+// added here.
 const (
-	TextVersion_1_0_0        = "1.0.0"
-	TextVersion_0_0_4        = "0.0.4"
+	TextVersion              = "0.0.4"
 	ProtoType                = `application/vnd.google.protobuf`
 	ProtoProtocol            = `io.prometheus.client.MetricFamily`
 	ProtoFmt                 = ProtoType + "; proto=" + ProtoProtocol + ";"
-	UTF8Valid                = "utf8"
 	OpenMetricsType          = `application/openmetrics-text`
-	OpenMetricsVersion_2_0_0 = "2.0.0"
-	OpenMetricsVersion_1_0_0 = "1.0.0"
 	OpenMetricsVersion_0_0_1 = "0.0.1"
+	OpenMetricsVersion_1_0_0 = "1.0.0"
 
-	// The Content-Type values for the different wire protocols. Do not do direct
-	// to comparisons to these constants, instead use the comparison functions.
+	// The Content-Type values for the different wire protocols.
 	FmtUnknown           Format = `<unknown>`
-	FmtText_0_0_4        Format = `text/plain; version=` + TextVersion_0_0_4 + `; charset=utf-8`
-	FmtText_1_0_0        Format = `text/plain; version=` + TextVersion_1_0_0 + `; charset=utf-8`
+	FmtText              Format = `text/plain; version=` + TextVersion + `; charset=utf-8`
 	FmtProtoDelim        Format = ProtoFmt + ` encoding=delimited`
 	FmtProtoText         Format = ProtoFmt + ` encoding=text`
 	FmtProtoCompact      Format = ProtoFmt + ` encoding=compact-text`
-	FmtOpenMetrics_0_0_1 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_0_0_1 + `; charset=utf-8`
 	FmtOpenMetrics_1_0_0 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_1_0_0 + `; charset=utf-8`
-	FmtOpenMetrics_2_0_0 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_2_0_0 + `; charset=utf-8`
-
-	// UTF8 and Escaping Formats
-	FmtUTF8Param Format = `; validchars=utf8`
+	FmtOpenMetrics_0_0_1 Format = OpenMetricsType + `; version=` + OpenMetricsVersion_0_0_1 + `; charset=utf-8`
 )
 
 const (
 	hdrContentType = "Content-Type"
 	hdrAccept      = "Accept"
 )
-
-// FormatType is a Go enum representing the overall category for the given
-// Format. As the number of Format permutations increases, doing basic string
-// comparisons are not feasible, so this enum captures the most useful
-// high-level attribute of the Format string.
-type FormatType int
-
-const (
-	TypeUnknown = iota
-	TypeProtoCompact
-	TypeProtoDelim
-	TypeProtoText
-	TypeTextPlain
-	TypeOpenMetrics
-)
-
-// FormatType deduces an overall FormatType for the given format.
-func (f Format) FormatType() FormatType {
-	toks := strings.Split(string(f), ";")
-	if len(toks) < 2 {
-		return TypeUnknown
-	}
-
-	params := make(map[string]string)
-	for i, t := range toks {
-		if i == 0 {
-			continue
-		}
-		args := strings.Split(t, "=")
-		if len(args) != 2 {
-			continue
-		}
-		params[strings.TrimSpace(args[0])] = strings.TrimSpace(args[1])
-	}
-
-	switch strings.TrimSpace(toks[0]) {
-	case ProtoType:
-		if params["proto"] != ProtoProtocol {
-			return TypeUnknown
-		}
-		switch params["encoding"] {
-		case "delimited":
-			return TypeProtoDelim
-		case "text":
-			return TypeProtoText
-		case "compact-text":
-			return TypeProtoCompact
-		default:
-			return TypeUnknown
-		}
-	case OpenMetricsType:
-		if params["charset"] != "utf-8" {
-			return TypeUnknown
-		}
-		return TypeOpenMetrics
-	case "text/plain":
-		v, ok := params["version"]
-		if !ok {
-			return TypeTextPlain
-		}
-		if v == TextVersion_0_0_4 || v == TextVersion_1_0_0 {
-			return TypeTextPlain
-		}
-		return TypeUnknown
-	default:
-		return TypeUnknown
-	}
-}
-
-// SupportsUTF8 returns true iff the Format contains a validchars=utf8 term.
-func (format Format) SupportsUTF8() bool {
-	for _, p := range strings.Split(string(format), ";") {
-		toks := strings.Split(p, "=")
-		if len(toks) != 2 {
-			continue
-		}
-		key, value := strings.TrimSpace(toks[0]), strings.TrimSpace(toks[1])
-		if key == "validchars" && value == "utf8" {
-			return true
-		}
-	}
-	return false
-}

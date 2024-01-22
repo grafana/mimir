@@ -67,7 +67,8 @@ spec:
             readOnlyRootFilesystem: true
           volumeMounts:
             - name: config
-              mountPath: /etc/nginx
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
             - name: tmp
               mountPath: /tmp
             - name: docker-entrypoint-d-override

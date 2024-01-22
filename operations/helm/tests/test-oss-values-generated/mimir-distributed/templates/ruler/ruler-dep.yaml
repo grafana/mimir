@@ -54,6 +54,7 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-distributor.remote-timeout=10s"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -92,6 +93,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
             - secretRef:
                 name: mimir-minio-secret

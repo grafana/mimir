@@ -2595,7 +2595,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 			if len(testData.expectedError) == 0 {
 				require.NoError(t, err)
 			} else {
@@ -2728,7 +2728,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// Assert on metric metadata
 			timeBeforeExecution := time.Now()
-			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 			require.NoError(t, err)
 			if len(testData.zonesResponseDelay) > 0 {
 				executionDuration := time.Since(timeBeforeExecution)
@@ -2762,7 +2762,7 @@ func TestDistributor_LabelValuesCardinality_ExpectedAllIngestersResponsesToBeCom
 // Also, it simulates delay from zone C to verify that there is no race condition. must be run with `-race` flag (race detection).
 func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesToBeReturned(t *testing.T) {
 	ctx, ds := prepareWithZoneAwarenessAndZoneDelay(t, createSeries(10000))
-	response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+	response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{}, cardinality.InMemoryMethod)
 	require.NoError(t, err)
 	require.Len(t, response.Items, 1)
 	require.Equal(t, 10000, len(response.Items[0].Values))
@@ -3144,6 +3144,12 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				cleanupCallCount++
 			}
 
+			duplicateCleanup := func() {
+				// If we get here, that means the middleware called `next`
+				// (which will call `CleanUp`) and then called `CleanUp` again.
+				assert.Fail(t, "cleanup called twice")
+			}
+
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
 			next := func(ctx context.Context, pushReq *Request) error {
@@ -3152,6 +3158,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
+				pushReq.AddCleanup(duplicateCleanup)
 				return nil
 			}
 
@@ -3387,12 +3394,19 @@ func TestRelabelMiddleware(t *testing.T) {
 				cleanupCallCount++
 			}
 
+			duplicateCleanup := func() {
+				// If we get here, that means the middleware called `next`
+				// (which will call `CleanUp`) and then called `CleanUp` again.
+				assert.Fail(t, "cleanup called twice")
+			}
+
 			var gotReqs []*mimirpb.WriteRequest
 			next := func(ctx context.Context, pushReq *Request) error {
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
 				pushReq.CleanUp()
+				pushReq.AddCleanup(duplicateCleanup)
 				return nil
 			}
 

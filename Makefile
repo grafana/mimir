@@ -212,7 +212,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr6944-d9052be8ba
+LATEST_BUILD_IMAGE_TAG ?= pr7185-6a8507c909
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -372,6 +372,11 @@ lint: check-makefiles
 	faillint -ignore-tests -paths \
 		"context.{WithCancel}=context.WithCancelCause" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Do not use the object storage client intended only for tools within Mimir itself
+	faillint -paths \
+		"github.com/grafana/mimir/pkg/util/objtools" \
+		./pkg/... ./cmd/... ./integration/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;

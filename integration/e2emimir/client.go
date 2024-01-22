@@ -20,6 +20,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
@@ -29,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -374,6 +376,87 @@ func (c *Client) LabelValuesCardinality(labelNames []string, selector string, li
 	return &lvalsResp, nil
 }
 
+type activeSeriesRequestConfig struct {
+	method         string
+	useCompression bool
+	header         http.Header
+}
+
+type ActiveSeriesOption func(*activeSeriesRequestConfig)
+
+func WithEnableCompression() ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.useCompression = true
+		c.header.Set("Accept-Encoding", "x-snappy-framed")
+	}
+}
+
+func WithRequestMethod(m string) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.method = m
+	}
+}
+
+func WithQueryShards(n int) ActiveSeriesOption {
+	return func(c *activeSeriesRequestConfig) {
+		c.header.Set("Sharding-Control", strconv.Itoa(n))
+	}
+}
+
+func (c *Client) ActiveSeries(selector string, options ...ActiveSeriesOption) (*api.ActiveSeriesResponse, error) {
+	cfg := activeSeriesRequestConfig{method: http.MethodGet, header: http.Header{"X-Scope-OrgID": []string{c.orgID}}}
+	for _, option := range options {
+		option(&cfg)
+	}
+
+	req, err := http.NewRequest(cfg.method, fmt.Sprintf("http://%s/prometheus/api/v1/cardinality/active_series", c.querierAddress), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header = cfg.header
+
+	q := req.URL.Query()
+	q.Set("selector", selector)
+	switch cfg.method {
+	case http.MethodGet:
+		req.URL.RawQuery = q.Encode()
+	case http.MethodPost:
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Body = io.NopCloser(strings.NewReader(q.Encode()))
+	default:
+		return nil, fmt.Errorf("invalid method %s", cfg.method)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer func(body io.ReadCloser) {
+		_, _ = io.ReadAll(body)
+		_ = body.Close()
+	}(resp.Body)
+
+	var bodyReader io.Reader = resp.Body
+	if resp.Header.Get("Content-Encoding") == "x-snappy-framed" {
+		bodyReader = s2.NewReader(bodyReader)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(bodyReader)
+		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, body)
+	}
+
+	res := &api.ActiveSeriesResponse{}
+	err = json.NewDecoder(bodyReader).Decode(res)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding active series response: %w", err)
+	}
+	return res, nil
+}
+
 // GetPrometheusMetadata fetches the metadata from the Prometheus endpoint /api/v1/metadata.
 func (c *Client) GetPrometheusMetadata() (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://%s/prometheus/api/v1/metadata", c.querierAddress), nil)
@@ -406,6 +489,11 @@ type ServerStatus struct {
 	Data struct {
 		ConfigYaml string `json:"configYAML"`
 	} `json:"data"`
+}
+
+type successResult struct {
+	Status string          `json:"status"`
+	Data   json.RawMessage `json:"data,omitempty"`
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
@@ -737,6 +825,190 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("deleting config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanager.UserGrafanaConfig, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugc *alertmanager.UserGrafanaConfig
+	err = json.Unmarshal(sr.Data, &ugc)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugc, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, id, createdAtTimestamp int64, cfg, hash string, isDefault bool) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+
+	data, err := json.Marshal(&alertmanager.UserGrafanaConfig{
+		ID:                        id,
+		GrafanaAlertmanagerConfig: cfg,
+		Hash:                      hash,
+		CreatedAt:                 createdAtTimestamp,
+		Default:                   isDefault,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerConfig(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/config", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting grafana config failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) GetGrafanaAlertmanagerState(ctx context.Context) (*alertmanager.UserGrafanaState, error) {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("getting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	var sr *successResult
+	err = json.Unmarshal(body, &sr)
+	if err != nil {
+		return nil, err
+	}
+
+	var ugs *alertmanager.UserGrafanaState
+	err = json.Unmarshal(sr.Data, &ugs)
+	if err != nil {
+		return nil, err
+	}
+
+	return ugs, err
+}
+
+func (c *Client) SetGrafanaAlertmanagerState(ctx context.Context, state string) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+
+	data, err := json.Marshal(&alertmanager.UserGrafanaState{
+		State: state,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("setting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+func (c *Client) DeleteGrafanaAlertmanagerState(ctx context.Context) error {
+	u := c.alertmanagerClient.URL("/api/v1/grafana/state", nil)
+	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return ErrNotFound
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("deleting grafana state failed with status %d and error %v", resp.StatusCode, string(body))
 	}
 
 	return nil

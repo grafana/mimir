@@ -30,6 +30,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 var (
@@ -124,6 +125,18 @@ func TestPrometheusCodec_EncodeRequest_AcceptHeader(t *testing.T) {
 			default:
 				t.Fatalf(fmt.Sprintf("unknown query result payload format: %v", queryResultPayloadFormat))
 			}
+		})
+	}
+}
+
+func TestPrometheusCodec_EncodeRequest_ReadConsistency(t *testing.T) {
+	for _, consistencyLevel := range api.ReadConsistencies {
+		t.Run(consistencyLevel, func(t *testing.T) {
+			codec := NewPrometheusCodec(prometheus.NewPedanticRegistry(), formatProtobuf)
+			ctx := api.ContextWithReadConsistency(context.Background(), consistencyLevel)
+			encodedRequest, err := codec.EncodeRequest(ctx, &PrometheusInstantQueryRequest{})
+			require.NoError(t, err)
+			require.Equal(t, consistencyLevel, encodedRequest.Header.Get(api.ReadConsistencyHeader))
 		})
 	}
 }

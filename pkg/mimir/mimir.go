@@ -56,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -239,7 +240,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.IngestStorage.Enabled && !c.Ingester.ReturnOnlyGRPCErrors {
+	if c.isAnyModuleEnabled(Ingester, Write, All) && c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
 		return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics, log); err != nil {
@@ -255,10 +256,10 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(); err != nil {
+	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
-	if err := c.Ingester.Validate(); err != nil {
+	if err := c.Ingester.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester config")
 	}
 	if err := c.Worker.Validate(); err != nil {
@@ -537,12 +538,14 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
-		"server.http-write-timeout":                         "2m",
-		"server.grpc.keepalive.min-time-between-pings":      "10s",
-		"server.grpc.keepalive.ping-without-stream-allowed": "true",
-		"server.http-listen-port":                           "8080",
-		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
-		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-recv-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":                       strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc.keepalive.min-time-between-pings":              "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed":         "true",
+		"server.grpc.num-workers":                                   "100",
+		"server.http-listen-port":                                   "8080",
+		"server.http-write-timeout":                                 "2m",
+		"server.report-grpc-codes-in-instrumentation-label-enabled": "true",
 	}
 
 	throwaway.VisitAll(func(f *flag.Flag) {
@@ -728,6 +731,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
 	}
+	cfg.Server.GRPCMiddleware = append(cfg.Server.GRPCMiddleware, querierapi.ReadConsistencyServerUnaryInterceptor)
+	cfg.Server.GRPCStreamMiddleware = append(cfg.Server.GRPCStreamMiddleware, querierapi.ReadConsistencyServerStreamInterceptor)
 
 	cfg.API.HTTPAuthMiddleware = noauth.SetupAuthMiddleware(
 		&cfg.Server,

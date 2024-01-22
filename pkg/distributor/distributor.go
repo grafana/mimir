@@ -207,7 +207,7 @@ type Config struct {
 
 	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
 	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"experimental"`
-	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"experimental"`
+	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -222,9 +222,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
-	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", false, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
-	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 0, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
+	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -784,6 +784,7 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if !d.limits.MetricRelabelingEnabled(userID) {
+			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -1509,13 +1510,13 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 }
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
-func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
+func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesResponse, error) {
 	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := toLabelNamesCardinalityRequest(matchers)
+	req, err := toLabelNamesCardinalityRequest(matchers, countMethod)
 	if err != nil {
 		return nil, err
 	}
@@ -1546,12 +1547,19 @@ type labelNamesAndValuesResponseMerger struct {
 	currentSizeBytes int
 }
 
-func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesRequest, error) {
+func toLabelNamesCardinalityRequest(matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelNamesAndValuesRequest, error) {
 	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
-	return &ingester_client.LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
+	ingesterCountMethod, err := toIngesterCountMethod(countMethod)
+	if err != nil {
+		return nil, err
+	}
+	return &ingester_client.LabelNamesAndValuesRequest{
+		Matchers:    matchersProto,
+		CountMethod: ingesterCountMethod,
+	}, nil
 }
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
@@ -1832,26 +1840,39 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
+		// This function is invoked purely for its side effects on the captured
+		// activeSeriesResponse, its return value is never used.
+		type ignored struct{}
+
 		log, ctx := spanlogger.NewWithLogger(ctx, d.log, "Distributor.ActiveSeries.queryIngester")
 		defer log.Finish()
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
+			if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+				return ignored{}, nil
+			}
+			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
+			ext.Error.Set(log.Span, true)
 			return nil, err
 		}
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil {
+			if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
 
 		for {
 			msg, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				break
-			} else if err != nil {
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+					return ignored{}, nil
+				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
 				ext.Error.Set(log.Span, true)
 				return nil, err
@@ -1863,7 +1884,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 			}
 		}
 
-		return nil, nil
+		return ignored{}, nil
 	}
 
 	_, err = forReplicationSet(ctx, d, replicationSet, ingesterQuery)

@@ -22,7 +22,8 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
+    "github.com/prometheus/common/model"
+	jaegercfg "github.com/uber/jaeger-client-go/config"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
@@ -194,7 +195,7 @@ func main() {
 		}
 
 		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name); err != nil {
+		if trace, err := tracing.NewFromEnv(name, jaegercfg.MaxTagValueLength(16e3)); err != nil {
 			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
 		} else {
 			defer trace.Close()

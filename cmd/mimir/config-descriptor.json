@@ -411,7 +411,7 @@
           "required": false,
           "desc": "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "server.report-grpc-codes-in-instrumentation-label-enabled",
           "fieldType": "boolean"
         },
@@ -595,10 +595,10 @@
           "required": false,
           "desc": "If non-zero, configures the amount of GRPC server workers used to serve the requests.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 100,
           "fieldFlag": "server.grpc.num-workers",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -1632,7 +1632,7 @@
           "required": false,
           "desc": "Enable pooling of buffers used for marshaling write requests.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -1654,10 +1654,10 @@
           "required": false,
           "desc": "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 2000,
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -1922,7 +1922,7 @@
           "kind": "field",
           "name": "promql_experimental_functions_enabled",
           "required": false,
-          "desc": "True to enable support for experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "querier.promql-experimental-functions-enabled",
@@ -2272,10 +2272,10 @@
           "required": false,
           "desc": "If set to true, gRPC status codes will be reported in \"status_code\" label of \"cortex_ingester_client_request_duration_seconds\" metric. Otherwise, they will be reported as \"error\"",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.client.report-grpc-codes-in-instrumentation-label-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "deprecated"
         }
       ],
       "fieldValue": null,
@@ -2807,7 +2807,7 @@
               "fieldDefaultValue": "random",
               "fieldFlag": "ingester.ring.token-generation-strategy",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2818,7 +2818,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2829,7 +2829,7 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -3038,10 +3038,10 @@
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -3526,7 +3526,7 @@
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.max-cache-freshness",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -5624,10 +5624,10 @@
           "required": false,
           "desc": "Maximum time to wait for the query-frontend to become ready before rejecting requests received before the frontend was ready. 0 to disable (i.e. fail immediately if a request is received while the frontend is still starting up)",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "query-frontend.not-running-timeout",
           "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5834,6 +5834,16 @@
               "fieldFlag": "blocks-storage.s3.send-content-md5",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "blocks-storage.s3.sts-endpoint",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -6356,7 +6366,7 @@
               "required": false,
               "desc": "Maximum number of concurrent tenants synching blocks.",
               "fieldValue": null,
-              "fieldDefaultValue": 10,
+              "fieldDefaultValue": 1,
               "fieldFlag": "blocks-storage.bucket-store.tenant-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -6367,7 +6377,7 @@
               "required": false,
               "desc": "Maximum number of concurrent blocks synching per tenant.",
               "fieldValue": null,
-              "fieldDefaultValue": 20,
+              "fieldDefaultValue": 4,
               "fieldFlag": "blocks-storage.bucket-store.block-sync-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
@@ -11700,6 +11710,16 @@
               "fieldCategory": "experimental"
             },
             {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "ruler-storage.s3.sts-endpoint",
+              "fieldType": "string"
+            },
+            {
               "kind": "block",
               "name": "sse",
               "required": false,
@@ -13284,6 +13304,17 @@
         },
         {
           "kind": "field",
+          "name": "grafana_alertmanager_compatibility_enabled",
+          "required": false,
+          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_get_requests_per_tenant",
           "required": false,
           "desc": "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
@@ -13740,6 +13771,16 @@
               "fieldFlag": "alertmanager-storage.s3.send-content-md5",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sts_endpoint",
+              "required": false,
+              "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "alertmanager-storage.s3.sts-endpoint",
+              "fieldType": "string"
             },
             {
               "kind": "block",
@@ -14307,7 +14348,7 @@
           "required": false,
           "desc": "The timeout for establishing a connection with a remote node, and for read/write operations.",
           "fieldValue": null,
-          "fieldDefaultValue": 10000000000,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "memberlist.stream-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -16037,6 +16078,16 @@
                   "fieldFlag": "common.storage.s3.send-content-md5",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "sts_endpoint",
+                  "required": false,
+                  "desc": "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "common.storage.s3.sts-endpoint",
+                  "fieldType": "string"
                 },
                 {
                   "kind": "block",

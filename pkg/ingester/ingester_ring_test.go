@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +28,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected := ring.LifecyclerConfig{}
 	flagext.DefaultValues(&cfg, &expected)
 
-	// The default config of the compactor ring must be the exact same
+	// The default config of the ingester ring must be the exact same
 	// of the default lifecycler config, except few options which are
 	// intentionally overridden
 	expected.ListenPort = cfg.ListenPort
@@ -43,7 +42,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.HeartbeatPeriod = 15 * time.Second
 	expected.RingTokenGenerator = nil
 
-	result := cfg.ToLifecyclerConfig(log.NewNopLogger())
+	result := cfg.ToLifecyclerConfig()
 	assert.IsType(t, &ring.RandomTokenGenerator{}, result.RingTokenGenerator)
 	result.RingTokenGenerator = nil
 
@@ -106,12 +105,11 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	expected.Addr = cfg.InstanceAddr
 	expected.ListenPort = cfg.ListenPort
 
-	logger := log.NewNopLogger()
-	tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(expected.ID, expected.Zone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder, logger)
+	tokenGenerator, err := ring.NewSpreadMinimizingTokenGenerator(expected.ID, expected.Zone, cfg.SpreadMinimizingZones, cfg.SpreadMinimizingJoinRingInOrder)
 	require.NoError(t, err)
 	expected.RingTokenGenerator = tokenGenerator
 
-	assert.Equal(t, expected, cfg.ToLifecyclerConfig(logger))
+	assert.Equal(t, expected, cfg.ToLifecyclerConfig())
 }
 
 func TestRingConfig_Validate(t *testing.T) {
@@ -218,7 +216,7 @@ func TestRingConfig_CustomTokenGenerator(t *testing.T) {
 		cfg.InstanceZone = testData.zone
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingZones = testData.spreadMinimizingZones
-		lifecyclerConfig := cfg.ToLifecyclerConfig(log.NewNopLogger())
+		lifecyclerConfig := cfg.ToLifecyclerConfig()
 		if testData.expectedResultStrategy == randomTokenGeneration {
 			tokenGenerator, ok := lifecyclerConfig.RingTokenGenerator.(*ring.RandomTokenGenerator)
 			assert.True(t, ok)
@@ -266,7 +264,7 @@ func TestRingConfig_SpreadMinimizingJoinRingInOrder(t *testing.T) {
 		cfg.TokenGenerationStrategy = testData.tokenGenerationStrategy
 		cfg.SpreadMinimizingJoinRingInOrder = testData.spreadMinimizingJoinRingInOrder
 		cfg.SpreadMinimizingZones = spreadMinimizingZones
-		lifecyclerConfig := cfg.ToLifecyclerConfig(log.NewNopLogger())
+		lifecyclerConfig := cfg.ToLifecyclerConfig()
 		tokenGenerator := lifecyclerConfig.RingTokenGenerator
 		assert.NotNil(t, tokenGenerator)
 		assert.Equal(t, testData.spreadMinimizingJoinRingInOrder, tokenGenerator.CanJoinEnabled())

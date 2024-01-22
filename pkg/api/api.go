@@ -34,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
@@ -160,6 +161,10 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 }
 
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
+	// Propagate the consistency level on all HTTP routes.
+	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
+	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
+
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
@@ -180,7 +185,7 @@ func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip b
 }
 
 // RegisterAlertmanager registers endpoints that are associated with the alertmanager.
-func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, buildInfoHandler http.Handler) {
+func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, apiEnabled bool, grafanaCompatEnabled bool, buildInfoHandler http.Handler) {
 	alertmanagerpb.RegisterAlertmanagerServer(a.server.GRPC, am)
 
 	a.indexPage.AddLinks(defaultWeight, "Alertmanager", []IndexPageLink{
@@ -205,6 +210,19 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, api
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.GetUserConfig), true, true, "GET")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.SetUserConfig), true, true, "POST")
 		a.RegisterRoute("/api/v1/alerts", http.HandlerFunc(am.DeleteUserConfig), true, true, "DELETE")
+
+		if grafanaCompatEnabled {
+			level.Info(a.logger).Log("msg", "enabled experimental grafana routes")
+
+			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.GetUserGrafanaConfig), true, true, http.MethodGet)
+			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.SetUserGrafanaConfig), true, true, http.MethodPost)
+			a.RegisterRoute("/api/v1/grafana/config", http.HandlerFunc(am.DeleteUserGrafanaConfig), true, true, http.MethodDelete)
+
+			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.GetUserGrafanaState), true, true, http.MethodGet)
+			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.SetUserGrafanaState), true, true, http.MethodPost)
+			a.RegisterRoute("/api/v1/grafana/state", http.HandlerFunc(am.DeleteUserGrafanaState), true, true, http.MethodDelete)
+
+		}
 	}
 }
 
