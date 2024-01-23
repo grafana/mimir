@@ -161,9 +161,9 @@ local filename = 'mimir-slow-queries.json';
           targets: [
             {
               local extraFields = [
-                'response_time_seconds="{{ duration .response_time }}"',
-                'param_step_seconds="{{ div .param_step 1000 }}"',
-                'length_seconds="{{ duration .length }}"',
+                'response_time_seconds="{{ if .response_time }} {{ duration .response_time }} {{ end }}"',
+                'param_step_seconds="{{ if .param_step }} {{ div .param_step 1000 }} {{ end }}"',
+                'length_seconds="{{ if .length }} {{ duration .length }} {{ end }}"',
               ],
               // Filter out the remote read endpoint.
               expr: '{%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | label_format %s' % [$._config.per_cluster_label, $._config.per_namespace_label, std.join(',', extraFields)],
