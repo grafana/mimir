@@ -26,6 +26,8 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/alertmanager/featurecontrol"
+	"github.com/prometheus/alertmanager/matchers/compat"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -881,6 +883,13 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
+	// Initialize the compat package in classic mode. This has the same behavior as if
+	// the compat package was not initialized, however we now have debug logs and metrics
+	// registered with this registerer instead of the default registerer.
+	f, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
+	util_log.CheckFatal("initializing Alertmanager feature flags", err)
+	compat.InitFromFlags(util_log.Logger, compat.NewMetrics(t.Registerer), f)
+
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
