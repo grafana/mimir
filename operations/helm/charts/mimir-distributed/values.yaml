@@ -457,6 +457,31 @@ rbac:
     runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
+  
+  # -- PSP configuration
+  podSecurityPolicy:
+    seccompProfile: runtime/default
+    privileged: false
+    allowPrivilegeEscalation: false
+    hostNetwork: false
+    hostIPC: false
+    hostPID: false
+    readOnlyRootFilesystem: false
+    runAsUser:
+      rule: 'MustRunAsNonRoot'
+    seLinux:
+      rule: 'RunAsAny'
+    supplementalGroups:
+      rule: 'MustRunAs'
+      ranges:
+      - min: 1
+        max: 65535
+    fsGroup:
+      rule: 'MustRunAs'
+      ranges:
+      - min: 1
+        max: 65535
+    additionalVolumes: []
 
 alertmanager:
   enabled: true

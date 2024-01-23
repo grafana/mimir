@@ -22,19 +22,19 @@ spec:
   hostIPC: false
   hostPID: false
   runAsUser:
-    rule: 'MustRunAsNonRoot'
+    rule: MustRunAsNonRoot
   seLinux:
-    rule: 'RunAsAny'
+    rule: RunAsAny
   supplementalGroups:
-    rule: 'MustRunAs'
+    rule: MustRunAs
     ranges:
-    - min: 1
-      max: 65535
+    - min: 
+      max: 
   fsGroup:
-    rule: 'MustRunAs'
+    rule: MustRunAs
     ranges:
-    - min: 1
-      max: 65535
-  readOnlyRootFilesystem: true
+    - min: 
+      max: 
+  readOnlyRootFilesystem: false
   requiredDropCapabilities:
     - ALL
