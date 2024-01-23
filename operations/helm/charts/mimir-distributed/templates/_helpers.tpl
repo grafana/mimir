@@ -78,11 +78,11 @@ Create the name of the general service account
 Create the name of the ruler service account
 */}}
 {{- define "mimir.ruler.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create -}}
+{{- if .Values.ruler.serviceAccount.create -}}
 {{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
 {{- printf "%s-%s" $sa "ruler" }}
 {{- else -}}
-    {{ default (include "mimir.serviceAccountName" .) .Values.serviceAccount.name }}
+    {{ include "mimir.serviceAccountName" . }}
 {{- end -}}
 {{- end -}}
 

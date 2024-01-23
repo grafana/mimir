@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ template "mimir.serviceAccountName" . }}
+  name: {{ template "mimir.ruler.serviceAccountName" . }}
   labels:
     {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
     {{- with .Values.ruler.serviceAccount.labels }}
