@@ -886,9 +886,9 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	// Initialize the compat package in classic mode. This has the same behavior as if
 	// the compat package was not initialized, however we now have debug logs and metrics
 	// registered with this registerer instead of the default registerer.
-	f, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
+	features, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
-	compat.InitFromFlags(util_log.Logger, compat.RegisteredMetrics, f)
+	compat.InitFromFlags(util_log.Logger, compat.RegisteredMetrics, features)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
@@ -898,7 +898,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 		return
 	}
 
-	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, t.Registerer)
+	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, features, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
