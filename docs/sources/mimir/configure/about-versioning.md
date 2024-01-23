@@ -46,6 +46,9 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Alertmanager
+  - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
+    - `-alertmanager.grafana-alertmanager-compatibility-enabled`
 - Compactor
   - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
     - `-compactor.no-blocks-file-cleanup-enabled`
@@ -104,11 +107,6 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
-  - Spread minimizing token generation strategy:
-    - `ingester.ring.token-generation-strategy`
-    - `ingester.ring.spread-minimizing-zones`
-    - `ingester.ring.spread-minimizing-join-ring-in-order`
-  - Allow ingester's `Push()` to return gRPC errors only: `-ingester.return-only-grpc-errors`.
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`
@@ -158,7 +156,6 @@ The following features are currently experimental:
     - `-<prefix>.memcached.read-buffer-size-bytes`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
-- Using a worker pool for handling GRPC requests (`-server.grpc.num-workers`)
 - Limiting inflight requests to Distributor and Ingester via gRPC limiter:
   - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
   - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
@@ -177,3 +174,10 @@ The following features or configuration parameters are currently deprecated and 
 
 - Logging
   - `-log.buffered`
+
+The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
+
+- Ingester
+  - `-ingester.return-only-grpc-errors`
+- Ingester client
+  - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`

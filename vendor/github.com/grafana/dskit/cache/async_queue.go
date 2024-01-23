@@ -29,6 +29,7 @@ func newAsyncQueue(length, maxConcurrency int) *asyncQueue {
 	return q
 }
 
+// submit adds an operation to the queue or returns an error if the queue is full
 func (q *asyncQueue) submit(op func()) error {
 	select {
 	case q.queueCh <- op:

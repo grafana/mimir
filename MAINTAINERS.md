@@ -32,7 +32,6 @@ Some parts of the codebase have other maintainers, the package paths also includ
 
 - `docs`:
   - Jack Baldry - [@jdbaldry](https://github.com/jdbaldry) ([Grafana Labs](https://grafana.com/))
-  - Ursula Kallio — [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
 - `pkg/alertmanager`:
   - Josh Abreu Mesa — [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
   - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))

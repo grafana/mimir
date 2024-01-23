@@ -37,12 +37,12 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 			// No query to execute, so wait until terminated.
 			<-processClient.Context().Done()
-			return nil, processClient.Context().Err()
+			return nil, toRPCErr(processClient.Context().Err())
 		})
 
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
 
-		fp.processQueriesOnSingleStream(workerCtx, nil, "12.0.0.1")
+		fp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
 
 		// We expect at this point, the execution context has been canceled too.
 		require.Error(t, processClient.Context().Err())
@@ -66,7 +66,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
-				return nil, processClient.Context().Err()
+				return nil, toRPCErr(processClient.Context().Err())
 			}
 		})
 
@@ -94,6 +94,7 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 		processClient.AssertNumberOfCalls(t, "Send", 1)
 	})
 }
+
 func TestFrontendProcessor_QueryTime(t *testing.T) {
 	runTest := func(t *testing.T, statsEnabled bool) {
 		fp, processClient, requestHandler := prepareFrontendProcessor()
@@ -113,7 +114,7 @@ func TestFrontendProcessor_QueryTime(t *testing.T) {
 			default:
 				// No more messages to process, so waiting until terminated.
 				<-processClient.Context().Done()
-				return nil, processClient.Context().Err()
+				return nil, toRPCErr(processClient.Context().Err())
 			}
 		})
 

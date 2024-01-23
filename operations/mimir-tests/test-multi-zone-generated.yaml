@@ -684,6 +684,8 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.ring.heartbeat-period=1m
+        - -distributor.ring.heartbeat-timeout=4m
         - -distributor.ring.prefix=
         - -distributor.ring.store=memberlist
         - -ingester.ring.heartbeat-timeout=10m
@@ -792,6 +794,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -873,9 +876,11 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
         env:
@@ -904,6 +909,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 390
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -1057,6 +1063,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -1079,6 +1086,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -1248,6 +1256,8 @@ spec:
         - -compactor.first-level-compaction-wait-period=25m
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
+        - -compactor.ring.heartbeat-period=1m
+        - -compactor.ring.heartbeat-timeout=4m
         - -compactor.ring.prefix=
         - -compactor.ring.store=memberlist
         - -compactor.ring.wait-stability-min-duration=1m
@@ -1362,6 +1372,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
@@ -1491,6 +1502,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
@@ -1614,6 +1626,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.ring.heartbeat-period=2m
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
@@ -1974,6 +1987,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2114,6 +2129,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -2256,6 +2273,8 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
+        - -store-gateway.sharding-ring.heartbeat-period=1m
+        - -store-gateway.sharding-ring.heartbeat-timeout=4m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3

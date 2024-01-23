@@ -20,7 +20,11 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.8.0   | 2023-04-17 | Jon Kartago Lamida |
 | 2.9.0   | 2023-05-29 | Felix Beuke        |
 | 2.10.0  | 2023-09-06 | Oleg Zaytsev       |
-| 2.11.0  | 2023-12-06 | _To be announced_  |
+| 2.11.0  | 2023-12-06 | Justin Lei         |
+| 2.12.0  | 2024-03-11 | Yuri Nikolic       |
+| 2.13.0  | 2024-06-10 | _To be announced_  |
+| 2.14.0  | 2024-09-09 | _To be announced_  |
+| 2.15.0  | 2024-12-09 | _To be announced_  |
 
 ## Release shepherd responsibilities
 

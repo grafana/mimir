@@ -8,7 +8,9 @@ package distributor
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -310,6 +312,25 @@ type labelValidationConfig interface {
 	MaxLabelValueLength(userID string) int
 }
 
+func removeNonASCIIChars(in string) (out string) {
+	foundNonASCII := false
+
+	out = strings.Map(func(r rune) rune {
+		if r <= unicode.MaxASCII {
+			return r
+		}
+
+		foundNonASCII = true
+		return -1
+	}, in)
+
+	if foundNonASCII {
+		out = out + " (non-ascii characters removed)"
+	}
+
+	return out
+}
+
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
 func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) error {
@@ -321,7 +342,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
-		return fmt.Errorf(invalidMetricNameMsgFormat, unsafeMetricName)
+		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
 
 	numLabelNames := len(ls)

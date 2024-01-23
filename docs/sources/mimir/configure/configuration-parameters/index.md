@@ -595,7 +595,7 @@ grpc_tls_config:
 # If set to true, gRPC statuses will be reported in instrumentation labels with
 # their string representations. Otherwise, they will be reported as "error".
 # CLI flag: -server.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 
 # (advanced) Timeout for graceful shutdowns
 # CLI flag: -server.graceful-shutdown-timeout
@@ -674,10 +674,10 @@ grpc_tls_config:
 # CLI flag: -server.grpc.keepalive.ping-without-stream-allowed
 [grpc_server_ping_without_stream_allowed: <boolean> | default = true]
 
-# (experimental) If non-zero, configures the amount of GRPC server workers used
-# to serve the requests.
+# (advanced) If non-zero, configures the amount of GRPC server workers used to
+# serve the requests.
 # CLI flag: -server.grpc.num-workers
-[grpc_server_num_workers: <int> | default = 0]
+[grpc_server_num_workers: <int> | default = 100]
 
 # Output log messages in the given format. Valid formats: [logfmt, json]
 # CLI flag: -log.format
@@ -921,7 +921,7 @@ instance_limits:
 
 # (experimental) Enable pooling of buffers used for marshaling write requests.
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
-[write_requests_buffer_pooling_enabled: <boolean> | default = false]
+[write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
 # (experimental) Use experimental method of limiting push requests.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
@@ -1069,23 +1069,22 @@ ring:
   # CLI flag: -ingester.ring.final-sleep
   [final_sleep: <duration> | default = 0s]
 
-  # (experimental) Specifies the strategy used for generating tokens for
-  # ingesters. Supported values are: random,spread-minimizing.
+  # (advanced) Specifies the strategy used for generating tokens for ingesters.
+  # Supported values are: random,spread-minimizing.
   # CLI flag: -ingester.ring.token-generation-strategy
   [token_generation_strategy: <string> | default = "random"]
 
-  # (experimental) True to allow this ingester registering tokens in the ring
-  # only after all previous ingesters (with ID lower than the current one) have
+  # (advanced) True to allow this ingester registering tokens in the ring only
+  # after all previous ingesters (with ID lower than the current one) have
   # already been registered. This configuration option is supported only when
   # the token generation strategy is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-join-ring-in-order
   [spread_minimizing_join_ring_in_order: <boolean> | default = false]
 
-  # (experimental) Comma-separated list of zones in which spread minimizing
-  # strategy is used for token generation. This value must include all zones in
-  # which ingesters are deployed, and must not change over time. This
-  # configuration is used only when "token-generation-strategy" is set to
-  # "spread-minimizing".
+  # (advanced) Comma-separated list of zones in which spread minimizing strategy
+  # is used for token generation. This value must include all zones in which
+  # ingesters are deployed, and must not change over time. This configuration is
+  # used only when "token-generation-strategy" is set to "spread-minimizing".
   # CLI flag: -ingester.ring.spread-minimizing-zones
   [spread_minimizing_zones: <string> | default = ""]
 
@@ -1172,9 +1171,9 @@ instance_limits:
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 0]
 
-# (experimental) When enabled only gRPC errors will be returned by the ingester.
+# (deprecated) When enabled only gRPC errors will be returned by the ingester.
 # CLI flag: -ingester.return-only-grpc-errors
-[return_only_grpc_errors: <boolean> | default = false]
+[return_only_grpc_errors: <boolean> | default = true]
 
 # (experimental) When enabled, only series currently owned by ingester according
 # to the ring are used when checking user per-tenant series limit.
@@ -2088,6 +2087,11 @@ sharding_ring:
 # CLI flag: -alertmanager.enable-api
 [enable_api: <boolean> | default = true]
 
+# (experimental) Enable routes to support the migration and operation of the
+# Grafana Alertmanager.
+# CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
+[grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
+
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
 # whichever is larger. Status code 503 is served for GET requests that would
@@ -2341,11 +2345,11 @@ circuit_breaker:
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 1m]
 
-# (advanced) If set to true, gRPC status codes will be reported in "status_code"
-# label of "cortex_ingester_client_request_duration_seconds" metric. Otherwise,
-# they will be reported as "error"
+# (deprecated) If set to true, gRPC status codes will be reported in
+# "status_code" label of "cortex_ingester_client_request_duration_seconds"
+# metric. Otherwise, they will be reported as "error"
 # CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = false]
+[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 ```
 
 ### grpc_client
@@ -3135,7 +3139,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
-[max_cache_freshness: <duration> | default = 1m]
+[max_cache_freshness: <duration> | default = 10m]
 
 # Maximum number of queriers that can handle requests for a single tenant. If
 # set to 0 or value higher than number of available queriers, *all* queriers
@@ -3474,11 +3478,11 @@ bucket_store:
 
   # (advanced) Maximum number of concurrent tenants synching blocks.
   # CLI flag: -blocks-storage.bucket-store.tenant-sync-concurrency
-  [tenant_sync_concurrency: <int> | default = 10]
+  [tenant_sync_concurrency: <int> | default = 1]
 
   # (advanced) Maximum number of concurrent blocks synching per tenant.
   # CLI flag: -blocks-storage.bucket-store.block-sync-concurrency
-  [block_sync_concurrency: <int> | default = 20]
+  [block_sync_concurrency: <int> | default = 4]
 
   # (advanced) Number of Go routines to use when syncing block meta files from
   # object storage per tenant.

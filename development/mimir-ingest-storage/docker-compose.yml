@@ -31,6 +31,12 @@
       - "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,ORBSTACK:PLAINTEXT"
       - "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT"
       - "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1"
+    "healthcheck":
+      "interval": "1s"
+      "retries": "30"
+      "start_period": "1s"
+      "test": "nc -z localhost 9092 || exit -1"
+      "timeout": "1s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
       - "29092:29092"
@@ -46,8 +52,10 @@
       - "-target=backend"
       - "-activity-tracker.filepath=/activity/mimir-backend-1"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-backend-1"
     "image": "mimir"
@@ -66,8 +74,10 @@
       - "-target=backend"
       - "-activity-tracker.filepath=/activity/mimir-backend-2"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-backend-2"
     "image": "mimir"
@@ -86,8 +96,10 @@
       - "-target=read"
       - "-activity-tracker.filepath=/activity/mimir-read-1"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-read-1"
     "image": "mimir"
@@ -106,8 +118,10 @@
       - "-target=read"
       - "-activity-tracker.filepath=/activity/mimir-read-2"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-read-2"
     "image": "mimir"
@@ -126,8 +140,10 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-1"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-write-1"
     "image": "mimir"
@@ -147,8 +163,10 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-2"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-write-2"
     "image": "mimir"
@@ -168,8 +186,10 @@
       - "-target=write"
       - "-activity-tracker.filepath=/activity/mimir-write-3"
     "depends_on":
-      - "minio"
-      - "kafka"
+      "kafka":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
     "environment": []
     "hostname": "mimir-write-3"
     "image": "mimir"

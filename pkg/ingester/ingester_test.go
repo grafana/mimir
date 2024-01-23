@@ -15,7 +15,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -1795,7 +1794,6 @@ func TestIngester_Push(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
-			cfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -2530,7 +2528,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2594,7 +2592,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2795,7 +2793,7 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2915,7 +2913,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -3447,7 +3445,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -3845,7 +3843,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		err = i.QueryStream(&client.QueryRequest{}, nil)
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -4304,7 +4302,7 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -5619,7 +5617,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
 		stat, ok := status.FromError(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -6268,7 +6266,6 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.ReturnOnlyGRPCErrors = true
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
 
@@ -7307,7 +7304,6 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -7411,7 +7407,6 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -9376,7 +9371,6 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			ingesterCfg := defaultIngesterTestConfig(t)
 			ingesterCfg.IngesterRing.ReplicationFactor = 1
 			ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-			ingesterCfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms

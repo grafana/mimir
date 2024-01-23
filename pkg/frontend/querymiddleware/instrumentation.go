@@ -32,7 +32,7 @@ func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics) 
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
 				sp := opentracing.SpanFromContext(ctx)
 				if sp != nil {
-					req.LogToSpan(sp)
+					req.AddSpanTags(sp)
 				}
 
 				var err error

@@ -231,7 +231,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	}
 
 	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.LogToSpan(span)
+		request.AddSpanTags(span)
 	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
