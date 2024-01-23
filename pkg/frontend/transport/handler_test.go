@@ -32,6 +32,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 )
 
@@ -61,12 +62,13 @@ func TestWriteError(t *testing.T) {
 
 func TestHandler_ServeHTTP(t *testing.T) {
 	for _, tt := range []struct {
-		name             string
-		cfg              HandlerConfig
-		request          func() *http.Request
-		expectedParams   url.Values
-		expectedMetrics  int
-		expectedActivity string
+		name                    string
+		cfg                     HandlerConfig
+		request                 func() *http.Request
+		expectedParams          url.Values
+		expectedMetrics         int
+		expectedActivity        string
+		expectedReadConsistency string
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -85,8 +87,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  5,
-			expectedActivity: "12345 POST /api/v1/query query=some_metric&time=42",
+			expectedMetrics:         5,
+			expectedActivity:        "12345 POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
@@ -98,8 +101,24 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  5,
-			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedMetrics:         5,
+			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+		},
+		{
+			name: "handler with stats enabled, GET request with params and read consistency specified",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				return r.WithContext(api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong))
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: api.ReadConsistencyStrong,
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
@@ -107,9 +126,10 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			request: func() *http.Request {
 				return httptest.NewRequest("GET", "/api/v1/query", nil)
 			},
-			expectedParams:   url.Values{},
-			expectedMetrics:  5,
-			expectedActivity: "12345 GET /api/v1/query (no params)",
+			expectedParams:          url.Values{},
+			expectedMetrics:         5,
+			expectedActivity:        "12345 GET /api/v1/query (no params)",
+			expectedReadConsistency: "",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
@@ -121,8 +141,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:  0,
-			expectedActivity: "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedMetrics:         0,
+			expectedActivity:        "12345 GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,7 +173,8 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			logger := &testLogger{}
 			handler := NewHandler(tt.cfg, roundTripper, logger, reg, at)
 
-			req := tt.request().WithContext(user.InjectOrgID(context.Background(), "12345"))
+			req := tt.request()
+			req = req.WithContext(user.InjectOrgID(req.Context(), "12345"))
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
@@ -179,7 +201,6 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.Len(t, logger.logMessages, 1)
 
 				msg := logger.logMessages[0]
-				require.Len(t, msg, 21+len(tt.expectedParams))
 				require.Equal(t, level.InfoValue(), msg["level"])
 				require.Equal(t, "query stats", msg["msg"])
 				require.Equal(t, "query-frontend", msg["component"])
@@ -199,6 +220,13 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
+
+				if tt.expectedReadConsistency != "" {
+					require.Equal(t, tt.expectedReadConsistency, msg["read_consistency"])
+				} else {
+					_, ok := msg["read_consistency"]
+					require.False(t, ok)
+				}
 			} else {
 				require.Empty(t, logger.logMessages)
 			}
