@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
-	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -87,8 +86,8 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 			continue
 		}
 
-		if err := fp.process(c, address, inflightQuery); err != nil {
-			if !grpcutil.IsCanceled(err) {
+		if err := fp.process(execCtx, c, address, inflightQuery); err != nil {
+			if !isErrCancel(err, log.With(fp.log, "address", address)) {
 				level.Error(fp.log).Log("msg", "error processing requests", "address", address, "err", err)
 				backoff.Wait()
 				continue
@@ -100,9 +99,9 @@ func (fp *frontendProcessor) processQueriesOnSingleStream(workerCtx context.Cont
 }
 
 // process loops processing requests on an established stream.
-func (fp *frontendProcessor) process(c frontendv1pb.Frontend_ProcessClient, address string, inflightQuery *atomic.Bool) (err error) {
+func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Frontend_ProcessClient, address string, inflightQuery *atomic.Bool) (err error) {
 	// Build a child context so we can cancel a query when the stream is closed.
-	ctx, cancel := context.WithCancelCause(c.Context())
+	ctx, cancel := context.WithCancelCause(execCtx)
 	defer cancel(cancellation.NewErrorf("query-frontend loop in querier for query-frontend %v terminated with error: %v", address, err))
 
 	for ctx.Err() == nil {

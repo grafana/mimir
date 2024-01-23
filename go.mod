@@ -34,7 +34,7 @@ require (
 	github.com/prometheus/alertmanager v0.26.1-0.20231117200754-ca5089d33eab
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/client_model v0.5.0
-	github.com/prometheus/common v0.45.1-0.20231122191551-832cd6e99f99
+	github.com/prometheus/common v0.46.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -104,7 +104,6 @@ require (
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.19 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.1 // indirect
@@ -258,7 +257,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240116133529-e3a486e7f801
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240122165117-baa5d82b5bc8
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

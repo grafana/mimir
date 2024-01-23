@@ -323,6 +323,13 @@ func (m *Manager) LoadGroups(
 				))
 			}
 
+			// Check dependencies between rules and store it on the Rule itself.
+			depMap := buildDependencyMap(rules)
+			for _, r := range rules {
+				r.SetNoDependentRules(depMap.dependents(r) == 0)
+				r.SetNoDependencyRules(depMap.dependencies(r) == 0)
+			}
+
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
 				Name:                          rg.Name,
 				File:                          fn,
