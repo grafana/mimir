@@ -884,8 +884,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	// Initialize the compat package in classic mode. This has the same behavior as if
-	// the compat package was not initialized, however we now have debug logs and metrics
-	// registered with this registerer instead of the default registerer.
+	// the compat package was not initialized, but with debug logs when a configuration
+	// is loaded or a new configuration is submitted.
 	features, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
 	compat.InitFromFlags(util_log.Logger, compat.RegisteredMetrics, features)
