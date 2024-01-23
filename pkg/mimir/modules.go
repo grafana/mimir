@@ -888,7 +888,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	// registered with this registerer instead of the default registerer.
 	f, err := featurecontrol.NewFlags(util_log.Logger, featurecontrol.FeatureClassicMode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
-	compat.InitFromFlags(util_log.Logger, compat.NewMetrics(t.Registerer), f)
+	compat.InitFromFlags(util_log.Logger, compat.RegisteredMetrics, f)
 
 	t.Cfg.Alertmanager.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
