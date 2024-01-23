@@ -61,6 +61,25 @@ local filename = 'mimir-slow-queries.json';
           unit='s',
         )
       )
+      .addPanel(
+        $.panel('Query wall time') +
+        $.lokiMetricsQueryPanel(
+          [
+            'quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
+            'quantile_over_time(0.5, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          ],
+          ['p99', 'p50'],
+          unit='s',
+        )
+        + $.panelDescription(
+          'Query wall time',
+          |||
+            Seconds per second spent by queriers evaluating queries.
+            This is roughly the product of the number of subqueries for a query and how long they took.
+            In increase in this metric means that queries take more resources from the query path to evaluate.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Top 10 tenants') { collapse: true }
@@ -102,6 +121,22 @@ local filename = 'mimir-slow-queries.json';
           '{{user}}',
           unit='s',
         )
+      )
+      .addPanel(
+        $.panel('P99 query wall time') +
+        $.lokiMetricsQueryPanel(
+          'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+          '{{user}}',
+          unit='s',
+        )
+        + $.panelDescription(
+          'Query wall time',
+          |||
+            Seconds per second spent by queriers evaluating queries.
+            This is roughly the product of the number of subqueries for a query and how long they took.
+            In increase in this metric means that queries take more resources from the query path to evaluate.
+          |||
+        ),
       )
     )
     .addRow(
@@ -145,6 +180,22 @@ local filename = 'mimir-slow-queries.json';
             '{{user_agent}}',
             unit='s',
           )
+        )
+        .addPanel(
+          $.panel('P99 query wall time') +
+          $.lokiMetricsQueryPanel(
+            'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user_agent))' % [$._config.per_cluster_label, $._config.per_namespace_label],
+            '{{user_agent}}',
+            unit='s',
+          )
+          + $.panelDescription(
+            'Query wall time',
+            |||
+              Seconds per second spent by queriers evaluating queries.
+              This is roughly the product of the number of subqueries for a query and how long they took.
+              In increase in this metric means that queries take more resources from the query path to evaluate.
+            |||
+          ),
         )
       )
     )
