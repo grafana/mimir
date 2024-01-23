@@ -43,7 +43,7 @@ spec:
         vault.hashicorp.com/agent-inject-secret-root.crt: 'ca-cert-path'
       namespace: "citestns"
     spec:
-      serviceAccountName: test-vault-agent-values-mimir-ruler
+      serviceAccountName: test-vault-agent-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

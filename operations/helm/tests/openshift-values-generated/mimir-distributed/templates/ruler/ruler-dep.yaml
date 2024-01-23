@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: openshift-values-mimir-ruler
+      serviceAccountName: openshift-values-mimir
       securityContext:
         runAsNonRoot: true
         seccompProfile:

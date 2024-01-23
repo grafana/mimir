@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: scheduler-name-values-mimir-ruler
+      serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

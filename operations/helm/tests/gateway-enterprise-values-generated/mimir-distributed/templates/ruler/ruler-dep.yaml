@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: gateway-enterprise-values-mimir-ruler
+      serviceAccountName: gateway-enterprise-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: metamonitoring-values-mimir-ruler
+      serviceAccountName: metamonitoring-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

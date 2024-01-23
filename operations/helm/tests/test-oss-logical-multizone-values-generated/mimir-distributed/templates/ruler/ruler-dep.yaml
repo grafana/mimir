@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-logical-multizone-values-mimir-ruler
+      serviceAccountName: test-oss-logical-multizone-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

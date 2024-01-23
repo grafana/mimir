@@ -36,7 +36,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-ingress-values-mimir-ruler
+      serviceAccountName: test-ingress-values-mimir
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
