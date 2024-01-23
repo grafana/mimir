@@ -126,8 +126,8 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 
 		// production code uses a histogram for queue duration, but the counter is a more direct metric for test cases
 		queueDuration := promauto.With(promRegistry).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_scheduler_queue_duration_total_seconds",
-			Help: "Total time spent by requests in queue before getting picked up by a querier.",
+			Name: "test_query_scheduler_queue_duration_total_seconds",
+			Help: "[test] total time spent by items in queue before getting picked up by a consumer",
 		}, []string{"additional_queue_dimensions"})
 
 		queue := NewRequestQueue(
@@ -162,9 +162,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 			}
 			close(startProducersChan)
 			err := producersErrGroup.Wait()
-			if err != nil {
-				require.NoError(t, err)
-			}
+			require.NoError(t, err)
 		}
 
 		// emulate delay when consuming the slow queries
@@ -194,9 +192,7 @@ func TestMultiDimensionalQueueFairnessSlowConsumerEffects(t *testing.T) {
 
 		close(startConsumersChan)
 		err := queueConsumerErrGroup.Wait()
-		if err != nil {
-			require.NoError(t, err)
-		}
+		require.NoError(t, err)
 
 		// record total queue duration by queue dimensions and whether the queue splitting was enabled
 		for _, queueDimension := range []string{normalQueueDimension, slowConsumerQueueDimension} {
