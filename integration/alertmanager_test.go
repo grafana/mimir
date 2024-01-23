@@ -154,7 +154,6 @@ func TestAlertmanagerV1Deprecated(t *testing.T) {
 		"status",
 	}
 	for _, endpoint := range endpoints {
-		// Test compression by inspecting the response Headers
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/alertmanager/api/v1/%s", alertmanager.HTTPEndpoint(), endpoint), nil)
 		require.NoError(t, err)
 		req.Header.Set("X-Scope-OrgID", "user-1")
