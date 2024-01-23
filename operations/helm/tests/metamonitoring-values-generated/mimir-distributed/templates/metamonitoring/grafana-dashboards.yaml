@@ -33163,6 +33163,18 @@ data:
                                      "value": "s"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "query_wall_time_seconds"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "s"
+                                  }
+                               ]
                             }
                          ]
                       },
@@ -33212,7 +33224,6 @@ data:
                                   "path": true,
                                   "pod": true,
                                   "pod_template_hash": true,
-                                  "query_wall_time_seconds": true,
                                   "response_time": true,
                                   "stream": true,
                                   "traceID": true,
@@ -33251,7 +33262,11 @@ data:
                                "conversions": [
                                   {
                                      "destinationType": "number",
-                                     "targetField": "estimated_series_count"
+                                     "targetField": "sharded_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "split_queries"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33259,19 +33274,7 @@ data:
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "fetched_chunks_count"
-                                  },
-                                  {
-                                     "destinationType": "number",
                                      "targetField": "fetched_index_bytes"
-                                  },
-                                  {
-                                     "destinationType": "number",
-                                     "targetField": "fetched_series_count"
-                                  },
-                                  {
-                                     "destinationType": "number",
-                                     "targetField": "queue_time_seconds"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33287,11 +33290,15 @@ data:
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "sharded_queries"
+                                     "targetField": "estimated_series_count"
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "split_queries"
+                                     "targetField": "fetched_chunks_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_series_count"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33308,6 +33315,10 @@ data:
                                   {
                                      "destinationType": "number",
                                      "targetField": "queue_time_seconds"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "query_wall_time_seconds"
                                   }
                                ]
                             }

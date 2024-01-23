@@ -174,6 +174,10 @@ local filename = 'mimir-slow-queries.json';
             },
           ],
 
+          local bytesFields = ['fetched_chunk_bytes', 'fetched_index_bytes', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes'],
+          local shortFields = ['estimated_series_count', 'fetched_chunks_count', 'fetched_series_count'],
+          local secondsFields = ['Time span', 'Duration', 'Step', 'queue_time_seconds', 'query_wall_time_seconds'],
+
           // Use Grafana transformations to display fields in a table.
           transformations: [
             {
@@ -187,7 +191,7 @@ local filename = 'mimir-slow-queries.json';
               id: 'organize',
               options: {
                 // Hide fields we don't care.
-                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time', 'gossip_ring_member', 'component', 'response_time', 'param_step', 'length'],
+                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'path', 'pod', 'pod_template_hash', 'stream', 'traceID', 'tsNs', 'labels', 'Line', 'Time', 'gossip_ring_member', 'component', 'response_time', 'param_step', 'length'],
 
                 excludeByName: {
                   [field]: true
@@ -221,7 +225,7 @@ local filename = 'mimir-slow-queries.json';
               // Transforma some fields into numbers so sorting in the table doesn't sort them lexicographically.
               id: 'convertFieldType',
               options: {
-                local numericFields = ['estimated_series_count', 'fetched_chunk_bytes', 'fetched_chunks_count', 'fetched_index_bytes', 'fetched_series_count', 'queue_time_seconds', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes', 'sharded_queries', 'split_queries', 'Time span', 'Duration', 'Step', 'queue_time_seconds'],
+                local numericFields = ['sharded_queries', 'split_queries'] + bytesFields + shortFields + secondsFields,
 
                 conversions: [
                   {
@@ -237,7 +241,6 @@ local filename = 'mimir-slow-queries.json';
           fieldConfig: {
             // Configure overrides to nicely format field values.
             overrides:
-              local bytesFields = ['fetched_chunk_bytes', 'fetched_index_bytes', 'response_size_bytes', 'results_cache_hit_bytes', 'results_cache_miss_bytes'];
               [
                 {
                   matcher: { id: 'byName', options: fieldName },
@@ -245,7 +248,6 @@ local filename = 'mimir-slow-queries.json';
                 }
                 for fieldName in bytesFields
               ] +
-              local shortFields = ['estimated_series_count', 'fetched_chunks_count', 'fetched_series_count'];
               [
                 {
                   matcher: { id: 'byName', options: fieldName },
@@ -253,7 +255,6 @@ local filename = 'mimir-slow-queries.json';
                 }
                 for fieldName in shortFields
               ] +
-              local secondsFields = ['Time span', 'Duration', 'Step', 'queue_time_seconds'];
               [
                 {
                   matcher: { id: 'byName', options: fieldName },
