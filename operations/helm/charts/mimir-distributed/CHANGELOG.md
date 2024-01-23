@@ -43,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
+* [ENHANCEMENT] Make the PSP template configurable. #7190
 
 ## 5.2.0
 
@@ -58,7 +59,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Let the unified gateway/nginx config listen on IPv6 as well. Followup to #5948. #6204
 * [BUGFIX] Quote `checksum/config` when using external config. This allows setting `externalConfigVersion` to numeric values. #6407
 * [BUGFIX] Update memcached-exporter to 0.14.1 due to CVE-2023-39325. #6861
-* [ENHANCEMENT] Make the PSP template configurable.
 
 ## 5.1.4
 
