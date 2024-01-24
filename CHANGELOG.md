@@ -92,6 +92,7 @@
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `4m`
   * `-compactor.ring.heartbeat-period` set to `1m`
   * `-compactor.ring.heartbeat-timeout` set to `4m`
+* [CHANGE] Ruler-querier: the topology spread constrain max skew is now configured through the configuration option `ruler_querier_topology_spread_max_skew` instead of `querier_topology_spread_max_skew`. #7204
 * [FEATURE] Added support for the following root-level settings to configure the list of matchers to apply to node affinity: #6782 #6829
   * `alertmanager_node_affinity_matchers`
   * `compactor_node_affinity_matchers`
