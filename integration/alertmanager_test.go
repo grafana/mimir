@@ -283,6 +283,88 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 	}))
 }
 
+// This test asserts that the correct metrics are incremented when configurations are uploaded,
+// including configurations with disagreement, incompatible and invalid matchers. It can be deleted
+// when the -alertmanager.utf8-strict-mode flag is removed.
+func TestAlertmanagerMatchersMetrics(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Upload the default configuration for two users.
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-2", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(2), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c1, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+	c2, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-2")
+	require.NoError(t, err)
+
+	// The metrics should all be zero as no configurations contain matchers.
+	metricNames := []string{
+		"alertmanager_matchers_parse",
+		"alertmanager_matchers_disagree",
+		"alertmanager_matchers_incompatible",
+		"alertmanager_matchers_invalid",
+	}
+	metrics, err := alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{0, 0, 0, 0}, metrics)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Upload a configuration for user1.
+	require.NoError(t, c1.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	// The sum for alertmanager_matchers_parse should be 4 as there are two matchers for origin=api
+	// and another two matchers for origin=config.
+	require.Equal(t, []float64{4, 0, 0, 0}, metrics)
+
+	// Upload a configuration for user2.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	// The sum for alertmanager_matchers_parse should be 8 as there are two matchers for origin=api
+	// and another two matchers for origin=config, and 4 from the previous sum.
+	require.Equal(t, []float64{8, 0, 0, 0}, metrics)
+
+	// Upload a configuration with disagreement.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerDisagreementConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{10, 1, 0, 0}, metrics)
+
+	// Upload a configuration with incompatible matchers.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerIncompatibleConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{12, 1, 1, 0}, metrics)
+
+	// Upload a configuration with invalid matchers.
+	require.EqualError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerInvalidConfigYaml, nil), "setting config failed with status 400 and error error validating Alertmanager config: bad matcher format: \n")
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{14, 1, 1, 2}, metrics)
+}
+
 func TestAlertmanagerV1Deprecated(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
