@@ -9,6 +9,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -123,6 +124,56 @@ func TestAlertmanager(t *testing.T) {
 	// We assert on the Vary header as the minimum response size for enabling compression is 1500 bytes.
 	// This is enough to know whenever the handler for compression is enabled or not.
 	require.Equal(t, "Accept-Encoding", res.Header.Get("Vary"))
+}
+
+func TestAlertmanagerV1Deprecated(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
+
+	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerLocalFlags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+
+	endpoints := []string{
+		"alerts",
+		"receivers",
+		"silence/id",
+		"silences",
+		"status",
+	}
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/alertmanager/api/v1/%s", alertmanager.HTTPEndpoint(), endpoint), nil)
+		require.NoError(t, err)
+		req.Header.Set("X-Scope-OrgID", "user-1")
+		req.Header.Set("Accept-Encoding", "gzip")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// Execute HTTP request
+		res, err := http.DefaultClient.Do(req.WithContext(ctx))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusGone, res.StatusCode)
+
+		var response = struct {
+			Status string `json:"status"`
+			Error  string `json:"error"`
+		}{}
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&response))
+		require.Equal(t, "deprecated", response.Status)
+		require.Equal(t, "The Alertmanager v1 API was deprecated in version 0.16.0 and is removed as of version 0.28.0 - please use the equivalent route in the v2 API", response.Error)
+	}
 }
 
 func TestAlertmanagerLocalStore(t *testing.T) {
@@ -387,58 +438,29 @@ func TestAlertmanagerSharding(t *testing.T) {
 				assert.Equal(t, s3, ids[id3].Status.State)
 			}
 
-			// Endpoint: GET /v1/silences
-			{
-				for _, c := range clients {
-					list, err := c.GetSilencesV1(context.Background())
-					require.NoError(t, err)
-					assertSilences(list, types.SilenceStateActive, types.SilenceStateActive, types.SilenceStateActive)
-				}
-			}
-
 			// Endpoint: GET /v2/silences
 			{
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateActive, types.SilenceStateActive)
-				}
-			}
-
-			// Endpoint: GET /v1/silence/{id}
-			{
-				for _, c := range clients {
-					sil1, err := c.GetSilenceV1(context.Background(), id1)
-					require.NoError(t, err)
-					assert.Equal(t, comment(1), sil1.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil1.Status.State)
-
-					sil2, err := c.GetSilenceV1(context.Background(), id2)
-					require.NoError(t, err)
-					assert.Equal(t, comment(2), sil2.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil2.Status.State)
-
-					sil3, err := c.GetSilenceV1(context.Background(), id3)
-					require.NoError(t, err)
-					assert.Equal(t, comment(3), sil3.Comment)
-					assert.Equal(t, types.SilenceStateActive, sil3.Status.State)
 				}
 			}
 
 			// Endpoint: GET /v2/silence/{id}
 			{
 				for _, c := range clients {
-					sil1, err := c.GetSilenceV2(context.Background(), id1)
+					sil1, err := c.GetSilence(context.Background(), id1)
 					require.NoError(t, err)
 					assert.Equal(t, comment(1), sil1.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil1.Status.State)
 
-					sil2, err := c.GetSilenceV2(context.Background(), id2)
+					sil2, err := c.GetSilence(context.Background(), id2)
 					require.NoError(t, err)
 					assert.Equal(t, comment(2), sil2.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil2.Status.State)
 
-					sil3, err := c.GetSilenceV2(context.Background(), id3)
+					sil3, err := c.GetSilence(context.Background(), id3)
 					require.NoError(t, err)
 					assert.Equal(t, comment(3), sil3.Comment)
 					assert.Equal(t, types.SilenceStateActive, sil3.Status.State)
@@ -483,7 +505,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 1*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateActive)
 				}
@@ -493,7 +515,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 2*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateActive, types.SilenceStateExpired, types.SilenceStateExpired)
 				}
@@ -503,7 +525,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				require.NoError(t, waitForSilences("expired", 3*testCfg.replicationFactor))
 
 				for _, c := range clients {
-					list, err := c.GetSilencesV2(context.Background())
+					list, err := c.GetSilences(context.Background())
 					require.NoError(t, err)
 					assertSilences(list, types.SilenceStateExpired, types.SilenceStateExpired, types.SilenceStateExpired)
 				}
@@ -543,22 +565,10 @@ func TestAlertmanagerSharding(t *testing.T) {
 					e2e.SkipMissingMetrics))
 			}
 
-			// Endpoint: GET /v1/alerts
-			{
-				// Reads will query at least two replicas and merge the results.
-				// Therefore, the alerts we posted should always be visible.
-
-				for _, c := range clients {
-					list, err := c.GetAlertsV1(context.Background())
-					require.NoError(t, err)
-					assert.ElementsMatch(t, []string{"alert_1", "alert_2", "alert_3"}, alertNames(list))
-				}
-			}
-
 			// Endpoint: GET /v2/alerts
 			{
 				for _, c := range clients {
-					list, err := c.GetAlertsV2(context.Background())
+					list, err := c.GetAlerts(context.Background())
 					require.NoError(t, err)
 					assert.ElementsMatch(t, []string{"alert_1", "alert_2", "alert_3"}, alertNames(list))
 				}
@@ -581,8 +591,6 @@ func TestAlertmanagerSharding(t *testing.T) {
 					require.Contains(t, groups, "group_2")
 					assert.ElementsMatch(t, []string{"alert_3"}, alertNames(groups["group_2"]))
 				}
-
-				// Note: /v1/alerts/groups does not exist.
 			}
 
 			// Check the alerts were eventually written to every replica.

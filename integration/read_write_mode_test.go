@@ -287,7 +287,7 @@ receivers:
 	// Verify alert is firing
 	require.NoError(t, cluster.backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_alertmanager_alerts_received_total"}, e2e.WaitMissingMetrics))
 
-	alerts, err := client.GetAlertsV1(context.Background())
+	alerts, err := client.GetAlerts(context.Background())
 	require.NoError(t, err)
 	require.Len(t, alerts, 1)
 	require.Equal(t, testAlertName, alerts[0].Name())
