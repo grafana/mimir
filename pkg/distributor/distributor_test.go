@@ -3542,13 +3542,6 @@ func (c prepConfig) totalZones() int {
 	return len(c.ingesterStateByZone)
 }
 
-func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
-	if len(c.ingesterStateByZone[zone].ringStates) == 0 {
-		return ring.ACTIVE
-	}
-	return c.ingesterStateByZone[zone].ringStates[id]
-}
-
 func (c prepConfig) validate(t testing.TB) {
 	if len(c.ingesterStateByZone) != 0 {
 		require.Zero(t, c.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
