@@ -3640,7 +3640,7 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 	return ingesters
 }
 
-func prepareRingInstances(ingesters []mockIngester) *ring.Desc {
+func prepareRingInstances(cfg prepConfig, ingesters []mockIngester) *ring.Desc {
 	ingesterDescs := map[string]ring.InstanceDesc{}
 
 	for i := range ingesters {
@@ -3649,7 +3649,7 @@ func prepareRingInstances(ingesters []mockIngester) *ring.Desc {
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
-			State:               ring.ACTIVE,
+			State:               cfg.ingesterRingState(ingesters[i].zone, i),
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
 			Tokens:              tokens,
@@ -3669,7 +3669,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
-			return prepareRingInstances(ingesters), true, nil
+			return prepareRingInstances(cfg, ingesters), true, nil
 		},
 	)
 	require.NoError(t, err)
