@@ -33,6 +33,7 @@ func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, logger log.Logger) rul
 		// otherwise we'll fallback to the per-tenant default.
 		if !detail.NoDependencyRules {
 			spanLog := spanlogger.FromContext(ctx, logger)
+			spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 			spanLog.DebugLog("msg", "forced strong read consistency because the rule depends on other rules in the same rule group")
 
 			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
@@ -125,6 +126,7 @@ func isQueryingAlertsForStateMetric(metricName string, matchers ...*labels.Match
 func forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx context.Context, matchers []*labels.Matcher, logger log.Logger) context.Context {
 	if isQueryingAlertsForStateMetric("", matchers...) {
 		spanLog := spanlogger.FromContext(ctx, logger)
+		spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 		spanLog.DebugLog("msg", fmt.Sprintf("forced strong read consistency because %s metric has been queried", alertForStateMetricName))
 
 		ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
