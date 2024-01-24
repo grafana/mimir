@@ -13,3 +13,14 @@ datasources:
       basicAuthPassword: $DATASOURCE_PASSWORD
     version: 1
     editable: true
+  - name: Loki
+    type: loki
+    access: proxy
+    orgId: 1
+    url: $LOKI_DATASOURCE_URL
+    basicAuth: true
+    basicAuthUser: $LOKI_DATASOURCE_USERNAME
+    secureJsonData:
+      basicAuthPassword: $LOKI_DATASOURCE_PASSWORD
+    version: 1
+    editable: true
