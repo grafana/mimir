@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Alertmanager: CLI flag `-utf8-strict-mode` has been added, and its default value is set to `true`. #6898
 * [CHANGE] Alertmanager: Deprecates the `v1` API. All `v1` API endpoints now respond with a JSON deprecation notice and a status code of `410`. All endpoints have a `v2` equivalent. The list of endpoints is: #7103
   * `<alertmanager-web.external-url>/api/v1/alerts`
   * `<alertmanager-web.external-url>/api/v1/receivers`
