@@ -306,12 +306,12 @@ func DefaultTenantManagerFactory(
 		}
 
 		// Wrap the query function with our custom logic.
-		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc)
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
 		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
 
 		// Wrap the queryable with our custom logic.
-		wrappedQueryable := WrapQueryableWithReadConsistency(queryable)
+		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
