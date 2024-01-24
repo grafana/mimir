@@ -20,6 +20,7 @@ data:
       external_url: /alertmanager
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
     blocks_storage:
+      backend: s3
       bucket_store:
         chunks_cache:
           backend: memcached
