@@ -28,6 +28,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 5.2.1
+
+* [BUGFIX] Revert [PR 6999](https://github.com/grafana/mimir/pull/6999), introduced in 5.2.0, which broke installations relying on the default value of `blocks_storage.backend: s3`. If `mimir.structuredConfig.blocks_storage.backend: s3` wasn't explicitly set, then Mimir would fail to connect to S3 and will instead try to read and write blocks to the local filesystem. #7199
+
 ## 5.2.0
 
 * [CHANGE] Remove deprecated configuration parameter `blocks_storage.bucket_store.max_chunk_pool_bytes`. #6673
