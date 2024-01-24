@@ -1197,7 +1197,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
 			if tc.expectedError == nil {
-				assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "QueryStream"))
+				assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "QueryStream"))
 			}
 		})
 	}
@@ -2258,7 +2258,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			// Due to the quorum the distributor could cancel the last request towards ingesters
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "MetricsForLabelMatchers"))
+			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
 		})
 	}
 }
@@ -2356,7 +2356,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			assert.Equal(t, uint64(len(test.expectedSeries)), qStats.GetFetchedSeriesCount())
 
 			// Check that the correct number of ingesters have been queried.
-			assert.Contains(t, []int{test.expectedNumQueriedIngesters, test.expectedNumQueriedIngesters - 1}, countMockIngestersCalls(ingesters, "ActiveSeries"))
+			assert.Contains(t, []int{test.expectedNumQueriedIngesters, test.expectedNumQueriedIngesters - 1}, countMockIngestersCalled(ingesters, "ActiveSeries"))
 		})
 	}
 
@@ -2484,7 +2484,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			// Due to the quorum the distributor could cancel the last request towards ingesters
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "LabelNames"))
+			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
 		})
 	}
 }
@@ -2955,7 +2955,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			})
 
 			// Make sure enough ingesters were queried
-			assert.GreaterOrEqual(t, countMockIngestersCalls(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
+			assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
@@ -4960,7 +4960,7 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 	}
 }
 
-func countMockIngestersCalls(ingesters []mockIngester, name string) int {
+func countMockIngestersCalled(ingesters []mockIngester, name string) int {
 	count := 0
 	for i := 0; i < len(ingesters); i++ {
 		if ingesters[i].countCalls(name) > 0 {
