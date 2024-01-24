@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -3458,18 +3459,53 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
 }
 
-type prepConfig struct {
+type ingesterState int
+
+const (
+	ingesterStateHappy = ingesterState(iota)
+	ingesterStateFailed
+)
+
+type ingesterZoneState struct {
+	// numIngesters and happyIngesters are superseded by states
 	numIngesters, happyIngesters int
-	queryDelay                   time.Duration
-	pushDelay                    time.Duration
-	shuffleShardSize             int
-	limits                       *validation.Limits
-	numDistributors              int
+
+	// states explicitly sets the state of each ingester.
+	// states takes precedence over numIngesters and happyIngesters
+	states []ingesterState
+
+	// ringStates explicitly sets the state of each ingester in the ring.
+	// If unset, instances will be in ring.ACTIVE state.
+	ringStates []ring.InstanceState
+}
+
+type prepConfig struct {
+	// numIngesters, happyIngesters, and ingesterZones are superseded by ingesterStateByZone
+	numIngesters, happyIngesters int
+	ingesterZones                []string
+
+	// ingesterStateByZone supersedes numIngesters, happyIngesters, and ingesterZones
+	ingesterStateByZone map[string]ingesterZoneState
+
+	// ingesterDataPerZone:
+	//   map[zone-a][0] -> ingester-zone-a-0 write request
+	//   map[zone-a][1] -> ingester-zone-a-1 write request
+	// Each zone in ingesterDataPerZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
+	// If a request is nil, sending a request to the ingester is skipped.
+	ingesterDataPerZone map[string][]*mimirpb.WriteRequest
+	// ingesterDataTenantID is the tenant under which ingesterDataPerZone is pushed
+	ingesterDataTenantID string
+
+	queryDelay       time.Duration
+	pushDelay        time.Duration
+	shuffleShardSize int
+	limits           *validation.Limits
+	numDistributors  int
+	useIngestStorage bool
 
 	replicationFactor                  int
 	enableTracker                      bool
 	ingestersSeriesCountTotal          uint64
-	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 
 	configure func(*Config)
@@ -3477,19 +3513,122 @@ type prepConfig struct {
 	timeOut bool
 }
 
-func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
-	ingesters := []mockIngester{}
-	for i := 0; i < cfg.happyIngesters; i++ {
-		zone := ""
-		if len(cfg.ingesterZones) > 0 {
-			zone = cfg.ingesterZones[i%len(cfg.ingesterZones)]
+// totalIngesters takes into account ingesterStateByZone and numIngesters.
+func (c prepConfig) totalIngesters() int {
+	if len(c.ingesterStateByZone) == 0 {
+		return c.numIngesters
+	}
+	n := 0
+	for _, s := range c.ingesterStateByZone {
+		if s.states != nil {
+			n += len(s.states)
+		} else {
+			n += s.numIngesters
 		}
+	}
+	return n
+}
+
+// totalZones takes into account ingesterStateByZone and ingesterZones.
+// If there were no explicit zones, then totalZones returns 1.
+func (c prepConfig) totalZones() int {
+	if len(c.ingesterStateByZone) == 0 {
+		evenlyAssignedZones := len(c.ingesterZones)
+		if evenlyAssignedZones == 0 {
+			return 1
+		}
+		return evenlyAssignedZones
+	}
+	return len(c.ingesterStateByZone)
+}
+
+func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
+	if len(c.ingesterStateByZone[zone].ringStates) == 0 {
+		return ring.ACTIVE
+	}
+	return c.ingesterStateByZone[zone].ringStates[id]
+}
+
+func (c prepConfig) validate(t testing.TB) {
+	if len(c.ingesterStateByZone) != 0 {
+		require.Zero(t, c.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+		require.Zero(t, c.happyIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+		require.Nil(t, c.ingesterZones, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+
+		for zone, state := range c.ingesterStateByZone {
+			ingestersInZone := state.numIngesters
+			if state.states != nil {
+				require.Zero(t, state.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+				require.Zero(t, state.happyIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+				ingestersInZone = len(state.states)
+			}
+			if len(state.ringStates) > 0 {
+				require.Len(t, state.ringStates, ingestersInZone, "ringStates cannot be longer than the number of ingesters in the zone")
+			}
+			require.LessOrEqual(t, len(c.ingesterDataPerZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
+		}
+	}
+}
+
+func prepareIngesters(cfg prepConfig) []mockIngester {
+	if len(cfg.ingesterStateByZone) != 0 {
+		ingesters := []mockIngester(nil)
+		for zone, state := range cfg.ingesterStateByZone {
+			ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+		}
+		return ingesters
+	}
+	ingesters := []mockIngester(nil)
+	numZones := len(cfg.ingesterZones)
+	if numZones == 0 {
+		return prepareIngesterZone("", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
+	}
+	for zoneIdx, zone := range cfg.ingesterZones {
+		state := ingesterZoneState{
+			numIngesters:   cfg.numIngesters / numZones,
+			happyIngesters: cfg.happyIngesters / numZones,
+		}
+		if zoneIdx < cfg.happyIngesters%numZones {
+			// Account for cases where the number of happy ingesters isn't divisible by numZones.
+			// For example, when there are 3 zones, 9 ingesters, and 8 happy ingesters.
+			// In this case ingester-zone-c-2 (the last ingester) is the unhappy ingester.
+			state.happyIngesters++
+		}
+
+		if zoneIdx < cfg.numIngesters%numZones {
+			// Account for cases where the number of ingesters isn't divisible by numZones.
+			// For example, when there are 3 zones and 11 ingesters.
+			// In this case the distribution of replicas is zone-a: 4, zone-b: 4, zone-c: 3.
+			state.numIngesters++
+		}
+
+		ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+	}
+	return ingesters
+
+}
+
+func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []mockIngester {
+	ingesters := []mockIngester(nil)
+
+	if state.states == nil {
+		state.states = make([]ingesterState, state.numIngesters)
+		for i := 0; i < state.happyIngesters; i++ {
+			state.states[i] = ingesterStateHappy
+		}
+		for i := state.happyIngesters; i < state.numIngesters; i++ {
+			state.states[i] = ingesterStateFailed
+		}
+	}
+
+	for i, s := range state.states {
 		var labelNamesStreamResponseDelay time.Duration
 		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
 			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
 		ingesters = append(ingesters, mockIngester{
-			happy:                         true,
+			id:                            i,
+			happy:                         s == ingesterStateHappy,
 			queryDelay:                    cfg.queryDelay,
 			pushDelay:                     cfg.pushDelay,
 			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
@@ -3498,40 +3637,39 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			timeOut:                       cfg.timeOut,
 		})
 	}
-	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
-		ingesters = append(ingesters, mockIngester{
-			queryDelay:       cfg.queryDelay,
-			pushDelay:        cfg.pushDelay,
-			seriesCountTotal: cfg.ingestersSeriesCountTotal,
-		})
-	}
+	return ingesters
+}
 
-	// Use a real ring with a mock KV store to test ring RF logic.
+func prepareRingInstances(ingesters []mockIngester) *ring.Desc {
 	ingesterDescs := map[string]ring.InstanceDesc{}
-	ingestersByAddr := map[string]*mockIngester{}
+
 	for i := range ingesters {
-		addr := fmt.Sprintf("%d", i)
-		tokens := []uint32{uint32((math.MaxUint32 / cfg.numIngesters) * i)}
+		addr := ingesters[i].address()
+		tokens := []uint32{uint32((math.MaxUint32 / len(ingesters)) * i)}
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
 			State:               ring.ACTIVE,
 			Timestamp:           time.Now().Unix(),
-			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(),
+			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
 			Tokens:              tokens,
 		}
-		ingestersByAddr[addr] = &ingesters[i]
 		ingesters[i].tokens = tokens
 	}
+	return &ring.Desc{Ingesters: ingesterDescs}
+}
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
+	cfg.validate(t)
+
+	logger := log.NewNopLogger()
+	ingesters := prepareIngesters(cfg)
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
-			return &ring.Desc{
-				Ingesters: ingesterDescs,
-			}, true, nil
+			return prepareRingInstances(ingesters), true, nil
 		},
 	)
 	require.NoError(t, err)
@@ -3548,17 +3686,23 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		},
 		HeartbeatTimeout:     60 * time.Minute,
 		ReplicationFactor:    rf,
-		ZoneAwarenessEnabled: len(cfg.ingesterZones) > 0,
-	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+		ZoneAwarenessEnabled: cfg.totalZones() > 1,
+	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 
-	test.Poll(t, time.Second, cfg.numIngesters, func() interface{} {
+	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
 	})
 
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return ingestersByAddr[inst.Addr], nil
+		for i := range ingesters {
+			ing := &ingesters[i] // Take a pointer, so we don't copy the sync.Mutex in the mockIngester
+			if ing.address() == inst.Addr {
+				return ing, nil
+			}
+		}
+		return nil, fmt.Errorf("ingester with address %s not found", inst.Addr)
 	})
 
 	if cfg.limits == nil {
@@ -3571,9 +3715,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
 	for i := 0; i < cfg.numDistributors; i++ {
 
-		var distributorCfg Config
-		var clientConfig client.Config
-		flagext.DefaultValues(&distributorCfg, &clientConfig)
+		var (
+			distributorCfg Config
+			clientConfig   client.Config
+			ingestCfg      ingest.Config
+		)
+		flagext.DefaultValues(&distributorCfg, &clientConfig, &ingestCfg)
 
 		distributorCfg.IngesterClientFactory = factory
 		distributorCfg.DistributorRing.Common.HeartbeatPeriod = 100 * time.Millisecond
@@ -3582,6 +3729,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
+		distributorCfg.IngestStorageConfig = ingestCfg
+		distributorCfg.IngestStorageConfig.Enabled = cfg.useIngestStorage
 
 		if cfg.configure != nil {
 			cfg.configure(&distributorCfg)
@@ -3589,7 +3738,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 
 		if cfg.enableTracker {
 			codec := GetReplicaDescCodec()
-			ringStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+			ringStore, closer := consul.NewInMemoryClient(codec, logger, nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 			mock := kv.PrefixClient(ringStore, "prefix")
 			distributorCfg.HATrackerConfig = HATrackerConfig{
@@ -3624,9 +3773,37 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		})
 	}
 
+	if len(cfg.ingesterDataPerZone) != 0 {
+		populateIngesterData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
+	}
+
 	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
 
 	return distributors, ingesters, registries
+}
+
+func populateIngesterData(t testing.TB, ingesters []mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+
+	findIngester := func(zone string, id int) *mockIngester {
+		for i := range ingesters {
+			if ingesters[i].zone == zone && ingesters[i].id == id {
+				return &ingesters[i]
+			}
+		}
+		panic("pushing to non-existent ingester; prepConfig.validate() should have caught this")
+	}
+
+	for zone, requests := range dataPerZone {
+		for ingesterID, request := range requests {
+			if request == nil {
+				continue
+			}
+			ing := findIngester(zone, ingesterID)
+			_, err := ing.Push(ctx, request)
+			require.NoErrorf(t, err, "pushing to ingester %s", ing.address())
+		}
+	}
 }
 
 func stopAll(ds []*Distributor, r *ring.Ring) {
@@ -3882,32 +4059,37 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 	}
 }
 
-func expectedResponse(start, end int, histograms bool) model.Matrix {
+func expectedResponse(start, end int, histograms bool, metrics ...string) model.Matrix {
+	if len(metrics) == 0 {
+		metrics = []string{"foo"}
+	}
 	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
-	for i := start; i < end; i++ {
-		ss := &model.SampleStream{
-			Metric: model.Metric{
-				model.MetricNameLabel: "foo",
-				"bar":                 "baz",
-				"sample":              model.LabelValue(fmt.Sprintf("%d", i)),
-			},
-			Values: []model.SamplePair{
-				{
-					Value:     model.SampleValue(i),
-					Timestamp: model.Time(i),
+	for _, metricName := range metrics {
+		for i := start; i < end; i++ {
+			ss := &model.SampleStream{
+				Metric: model.Metric{
+					model.MetricNameLabel: model.LabelValue(metricName),
+					"bar":                 "baz",
+					"sample":              model.LabelValue(fmt.Sprintf("%d", i)),
 				},
-			},
-		}
-		if histograms {
-			ss.Histograms = []model.SampleHistogramPair{
-				{
-					Histogram: util_test.GenerateTestSampleHistogram(i),
-					Timestamp: model.Time(i),
+				Values: []model.SamplePair{
+					{
+						Value:     model.SampleValue(i),
+						Timestamp: model.Time(i),
+					},
 				},
 			}
+			if histograms {
+				ss.Histograms = []model.SampleHistogramPair{
+					{
+						Histogram: util_test.GenerateTestSampleHistogram(i),
+						Timestamp: model.Time(i),
+					},
+				}
+			}
+			result = append(result, ss)
 		}
-		result = append(result, ss)
 	}
 	return result
 }
@@ -3936,6 +4118,11 @@ type mockIngester struct {
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
+	id                            int
+}
+
+func (i *mockIngester) address() string {
+	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -4138,13 +4325,11 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		}
 		if hexists {
 			for _, c := range hchunks {
-				// panic("got hist")
 				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
 		}
 		if fhexists {
 			for _, c := range fhchunks {
-				// panic("got fhist")
 				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
 		}
