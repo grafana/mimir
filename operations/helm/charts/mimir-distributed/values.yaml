@@ -175,6 +175,7 @@ mimir:
 
     # This configures how the store-gateway synchronizes blocks stored in the bucket. It uses Minio by default for getting started (configured via flags) but this should be changed for production deployments.
     blocks_storage:
+      backend: s3
       bucket_store:
         {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
@@ -204,7 +205,6 @@ mimir:
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
-      backend: s3
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
