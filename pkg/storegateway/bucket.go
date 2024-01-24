@@ -1152,7 +1152,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
 		for sl, count := range blocksQueriedBySourceAndLevel {
-			stats.blocksQueriedBySourceAndLevel[sl] += count
+			stats.blocksQueriedBySourceAndLevel[sl] = count
 		}
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
@@ -1385,7 +1385,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
 		for sl, count := range blocksQueriedBySourceAndLevel {
-			stats.blocksQueriedBySourceAndLevel[sl] += count
+			stats.blocksQueriedBySourceAndLevel[sl] = count
 		}
 	})
 
