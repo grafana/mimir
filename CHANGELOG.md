@@ -66,6 +66,13 @@
 * [BUGFIX] Querier: return 499 status code instead of 500 when a request to remote read endpoint gets canceled. #6934
 * [BUGFIX] Querier: fix issue where `-querier.max-fetched-series-per-query` is not applied to `/series` endpoint if the series are loaded from ingesters. #7055
 * [BUGFIX] Distributor: fix issue where `-distributor.metric-relabeling-enabled` may cause distributors to panic and corrupt ingested data #7176
+* [BUGFIX] Query-frontend: the `cortex_query_frontend_queries_total` report incorrectly reported `op="query"` for any request which wasn't a range query. Now the `op` label value can be one of the following: #7207
+  * `query`: instant query
+  * `query_range`: range query
+  * `cardinality`: cardinality query
+  * `label_names_and_values`: label names / values query
+  * `active_series`: active series query
+  * `other`: any other request
 
 ### Mixin
 

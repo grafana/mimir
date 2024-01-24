@@ -8,7 +8,6 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -251,22 +250,118 @@ func TestInstantTripperware(t *testing.T) {
 
 func TestTripperware_Metrics(t *testing.T) {
 	tests := map[string]struct {
-		path                    string
-		expectedNotAlignedCount int
-		stepAlignEnabled        bool
+		path             string
+		stepAlignEnabled bool
+		expectedMetrics  string
 	}{
-		"start/end is aligned to step": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
-			expectedNotAlignedCount: 0,
+		"range query, start/end is aligned to step": {
+			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
 		},
-		"start/end is not aligned to step, aligning disabled": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
-			expectedNotAlignedCount: 1,
+		"range query, start/end is not aligned to step, aligning disabled": {
+			path: "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 1
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
 		},
-		"start/end is not aligned to step, aligning enabled": {
-			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
-			expectedNotAlignedCount: 1,
-			stepAlignEnabled:        true,
+		"range query, start/end is not aligned to step, aligning enabled": {
+			path:             "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			stepAlignEnabled: true,
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 1
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query_range",user="user-1"} 1
+			`,
+		},
+		"instant query": {
+			path: "/api/v1/query?query=up&time=1536673680",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="query",user="user-1"} 1
+			`,
+		},
+		"label names": {
+			path: "/api/v1/labels?start=1536673680&end=1536716880",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="label_names_and_values",user="user-1"} 1
+			`,
+		},
+		"label values": {
+			path: "/api/v1/label/test/values?start=1536673680&end=1536716880",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="label_names_and_values",user="user-1"} 1
+			`,
+		},
+		"cardinality label names": {
+			path: "/api/v1/cardinality/label_names?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="cardinality",user="user-1"} 1
+			`,
+		},
+		"cardinality active series": {
+			path: "/api/v1/cardinality/active_series?selector=%7Bjob%3D%22test%22%7D",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="active_series",user="user-1"} 1
+			`,
+		},
+		"unknown query type": {
+			path: "/api/v1/unknown",
+			expectedMetrics: `
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total 0
+
+				# HELP cortex_query_frontend_queries_total Total queries sent per tenant.
+				# TYPE cortex_query_frontend_queries_total counter
+				cortex_query_frontend_queries_total{op="other",user="user-1"} 1
+			`,
 		},
 	}
 
@@ -320,16 +415,9 @@ func TestTripperware_Metrics(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
 
-			body, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, `{"status":""}`, string(body))
-
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
-				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
-				cortex_query_frontend_non_step_aligned_queries_total %d
-			`, testData.expectedNotAlignedCount)),
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
 				"cortex_query_frontend_non_step_aligned_queries_total",
+				"cortex_query_frontend_queries_total",
 			))
 		})
 	}
