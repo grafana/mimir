@@ -119,10 +119,14 @@ func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, re
 			Help:    "Number of tenants queried for a single standard query.",
 			Buckets: []float64{1, 2, 4, 8, 16, 32},
 		}),
+
+		// Experimental: Observe time to kick off upstream query jobs as a native histogram
 		upstreamQueryWaitDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "mimir_querier_federation_upstream_query_wait_duration_seconds",
-			Help:    "Time spent waiting to run upstream queries",
-			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
+			Name:                            "mimir_querier_federation_upstream_query_wait_duration_seconds",
+			Help:                            "Time spent waiting to run upstream queries",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
 }
