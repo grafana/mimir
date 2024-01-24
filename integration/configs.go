@@ -55,6 +55,28 @@ receivers:
   - name: "example_receiver"
 `
 
+	mimirAlertmanagerUserClassicConfigYaml = `route:
+  receiver: test
+  group_by: [foo]
+  routes:
+    - matchers:
+      - foo=bar
+      - bar=baz
+receivers:
+  - name: test
+`
+
+	mimirAlertmanagerUserUTF8ConfigYaml = `route:
+  receiver: test
+  group_by: [bar🙂]
+  routes:
+    - matchers:
+      - foo=bar
+      - bar🙂=baz
+receivers:
+  - name: test
+`
+
 	mimirRulerUserConfigYaml = `groups:
 - name: rule
   interval: 100s
