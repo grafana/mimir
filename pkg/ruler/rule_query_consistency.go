@@ -30,7 +30,7 @@ func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, logger log.Logger) rul
 		detail := rules.FromOriginContext(ctx)
 
 		// If the rule has dependencies then we should enforce strong read consistency,
-		// otherwise we'll fallback to the per-tenant default.
+		// otherwise we leave it empty to have Mimir falling back to the per-tenant default.
 		if !detail.NoDependencyRules {
 			spanLog := spanlogger.FromContext(ctx, logger)
 			spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
@@ -121,8 +121,8 @@ func isQueryingAlertsForStateMetric(metricName string, matchers ...*labels.Match
 }
 
 // forceStrongReadConsistencyIfQueryingAlertsForStateMetric enforces strong read consistency if from matchers we
-// detect that the query is querying the ALERTS_FOR_STATE metric, otherwise we don't inject any specific read
-// consistency level and we fallback to the tenant's default.
+// detect that the query is querying the ALERTS_FOR_STATE metric, otherwise we leave it empty to have Mimir falling
+// back to the per-tenant default.
 func forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx context.Context, matchers []*labels.Matcher, logger log.Logger) context.Context {
 	if isQueryingAlertsForStateMetric("", matchers...) {
 		spanLog := spanlogger.FromContext(ctx, logger)
