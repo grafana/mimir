@@ -36,8 +36,8 @@
     distributor_topology_spread_max_skew: 1,
     query_frontend_topology_spread_max_skew: 1,
     querier_topology_spread_max_skew: 1,
-    ruler_querier_topology_spread_max_skew: 1,
     ruler_topology_spread_max_skew: 1,
+    ruler_querier_topology_spread_max_skew: 1,
 
     // Controls how many concurrent queries are run in the querier.
     querier_max_concurrency: 8,
