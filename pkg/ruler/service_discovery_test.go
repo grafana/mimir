@@ -126,11 +126,14 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 			resolver.expectResolveCalledWith(tc.expectedAddress)
 			resolver.returnAddresses(nil)
 
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			cfg := dnsServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           tc.qType,
 				Host:            tc.host,
+				refreshMetrics:  refreshMetrics,
 			}
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)
