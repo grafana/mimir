@@ -2252,8 +2252,8 @@ alertmanager_client:
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
 
-# (advanced) Enable UTF-8 strict mode. Allows UTF-8 in the matchers for routes
-# and inhibition rules, in silences, and in the labels for alerts. It is
+# (experimental) Enable UTF-8 strict mode. Allows UTF-8 in the matchers for
+# routes and inhibition rules, in silences, and in the labels for alerts. It is
 # recommended to check both alertmanager_matchers_disagree and
 # alertmanager_matchers_incompatible metrics before using this mode as otherwise
 # some tenant configurations might fail to load.

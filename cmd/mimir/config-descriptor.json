@@ -13628,7 +13628,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-strict-mode",
           "fieldType": "boolean",
-          "fieldCategory": "advanced"
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
