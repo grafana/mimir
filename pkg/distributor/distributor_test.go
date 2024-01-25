@@ -1398,7 +1398,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
 			if tc.errExpected {
-				fromError, _ := status.FromError(err)
+				fromError, _ := grpcutil.ErrorToStatus(err)
 				assert.Equal(t, tc.errMessage, fromError.Message())
 			} else {
 				assert.Nil(t, err)
@@ -1468,7 +1468,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			})
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
+				fromError, _ := grpcutil.ErrorToStatus(err)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
 			} else {
@@ -5537,7 +5537,7 @@ func searchToken(tokens []uint32, key uint32) int {
 }
 
 func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails *mimirpb.ErrorDetails, err error) {
-	stat, ok := status.FromError(err)
+	stat, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok)
 	require.Equal(t, expectedStatus.Code(), stat.Code())
 	require.Equal(t, expectedStatus.Message(), stat.Message())
@@ -5747,7 +5747,7 @@ func TestStartFinishRequest(t *testing.T) {
 					// Verify that errors returned by StartPushRequest method are NOT gRPC status errors.
 					// They will be converted to gRPC status by grpcInflightMethodLimiter.
 					require.Error(t, err)
-					_, ok := status.FromError(err)
+					_, ok := grpcutil.ErrorToStatus(err)
 					require.False(t, ok)
 				}
 			}

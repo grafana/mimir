@@ -306,6 +306,18 @@ lint: check-makefiles
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
+	# gogo/status allows to easily customize error details while grpc/status doesn't:
+	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
+	# doesn't support wrapped errors, while grpc/status.FromError() does.
+	#
+	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
+	# on which status package is imported, we don't allow .FromError() from both packages
+	# and we require to use grpcutil.ErrorToStatus() instead.
+	faillint -paths "\
+		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
 		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \

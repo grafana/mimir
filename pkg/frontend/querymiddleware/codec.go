@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/munnerz/goautoneg"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -692,7 +692,7 @@ func encodeDurationMs(d int64) string {
 
 func decorateWithParamName(err error, field string) error {
 	errTmpl := "invalid parameter %q: %v"
-	if status, ok := status.FromError(err); ok {
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
