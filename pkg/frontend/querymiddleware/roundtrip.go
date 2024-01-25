@@ -43,6 +43,13 @@ const (
 	// DefaultDeprecatedAlignQueriesWithStep is the default value for the deprecated querier frontend config DeprecatedAlignQueriesWithStep
 	// which has been moved to a per-tenant limit; TODO remove in Mimir 2.14
 	DefaultDeprecatedAlignQueriesWithStep = false
+
+	queryTypeInstant      = "query"
+	queryTypeRange        = "query_range"
+	queryTypeCardinality  = "cardinality"
+	queryTypeLabels       = "label_names_and_values"
+	queryTypeActiveSeries = "active_series"
+	queryTypeOther        = "other"
 )
 
 var (
@@ -194,7 +201,7 @@ func NewTripperware(
 		return nil, err
 	}
 	return MergeTripperwares(
-		newActiveUsersTripperware(registerer),
+		newQueryCountTripperware(registerer),
 		queryRangeTripperware,
 	), err
 }
@@ -379,7 +386,7 @@ func newQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripp
 	})
 }
 
-func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
+func newQueryCountTripperware(registerer prometheus.Registerer) Tripperware {
 	// Per tenant query metrics.
 	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_total",
@@ -394,9 +401,18 @@ func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			op := "query"
-			if IsRangeQuery(r.URL.Path) {
-				op = "query_range"
+			op := queryTypeOther
+			switch {
+			case IsRangeQuery(r.URL.Path):
+				op = queryTypeRange
+			case IsInstantQuery(r.URL.Path):
+				op = queryTypeInstant
+			case IsCardinalityQuery(r.URL.Path):
+				op = queryTypeCardinality
+			case IsActiveSeriesQuery(r.URL.Path):
+				op = queryTypeActiveSeries
+			case IsLabelsQuery(r.URL.Path):
+				op = queryTypeLabels
 			}
 
 			tenantIDs, err := tenant.TenantIDs(r.Context())
