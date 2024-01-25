@@ -927,7 +927,7 @@ func shouldStopQueryFunc(err error) bool {
 		return true
 	}
 
-	if st, ok := status.FromError(errors.Cause(err)); ok {
+	if st, ok := status.FromError(err); ok {
 		if int(st.Code()) == http.StatusUnprocessableEntity {
 			return true
 		}

@@ -548,7 +548,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			return
 		}
 		code := codes.Internal
-		if st, ok := status.FromError(errors.Cause(err)); ok {
+		if st, ok := status.FromError(err); ok {
 			code = st.Code()
 		} else if errors.Is(err, context.Canceled) {
 			code = codes.Canceled
