@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/api"
 )
@@ -63,7 +62,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		m.returnError = errors.New("hello there")
 		ctx, err := l.RPCCallStarting(context.Background(), ingesterPushMethod, nil)
 		require.Error(t, err)
-		_, ok := status.FromError(err)
+		_, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
 	})
@@ -170,7 +169,7 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 			grpcutil.MetadataMessageSize: "123456",
 		}))
 		require.Error(t, err)
-		_, ok := status.FromError(err)
+		_, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Nil(t, ctx.Value(pushTypeCtxKey)) // Original context expected in case of errors.
 	})

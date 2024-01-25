@@ -306,6 +306,10 @@ lint: check-makefiles
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
+	# Do not use grpc/status.FromError() because doesn't support wrapped errors.
+	# Use grpcutil.ErrorToStatus() instead.
+	faillint -paths "google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" ./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
 		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -290,7 +291,15 @@ func TestErrorWithStatus(t *testing.T) {
 			require.Equal(t, stat.Message(), data.expectedErrorMessage)
 			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
 
+			// Ensure dskit's grpcutil.ErrorToStatus recognizes errWithHTTPStatus.
+			stat, ok = grpcutil.ErrorToStatus(errWithStatus)
+			require.True(t, ok)
+			require.Equal(t, codes.Unimplemented, stat.Code())
+			require.Equal(t, stat.Message(), data.expectedErrorMessage)
+			checkErrorWithStatusDetails(t, stat.Details(), data.expectedErrorDetails)
+
 			// Ensure grpc's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
 			st, ok := grpcstatus.FromError(errWithStatus)
 			require.True(t, ok)
 			require.Equal(t, codes.Unimplemented, st.Code())
@@ -315,6 +324,7 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	err := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	errWithHTTPStatus := newErrorWithHTTPStatus(err, http.StatusBadRequest)
 	require.Error(t, errWithHTTPStatus)
+
 	// Ensure gogo's status.FromError recognizes errWithHTTPStatus.
 	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
@@ -322,7 +332,14 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	require.Errorf(t, err, stat.Message())
 	require.NotEmpty(t, stat.Details())
 
+	// Ensure dskit's grpcutil.ErrorToStatus recognizes errWithHTTPStatus.
+	stat, ok = grpcutil.ErrorToStatus(errWithHTTPStatus)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
+	require.Errorf(t, err, stat.Message())
+
 	// Ensure grpc's status.FromError recognizes errWithHTTPStatus.
+	//lint:ignore faillint We want to explicitly assert on status.FromError()
 	st, ok := grpcstatus.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(st.Code()))

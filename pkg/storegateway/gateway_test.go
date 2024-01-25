@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/consul"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/ring"
@@ -1480,9 +1481,9 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					if testData.expectedErr != nil {
 						require.Error(t, err)
 						assert.IsType(t, testData.expectedErr, err)
-						s1, ok := status.FromError(err)
+						s1, ok := grpcutil.ErrorToStatus(err)
 						assert.True(t, ok)
-						s2, ok := status.FromError(testData.expectedErr)
+						s2, ok := grpcutil.ErrorToStatus(testData.expectedErr)
 						assert.True(t, ok)
 						assert.Contains(t, s1.Message(), s2.Message())
 						assert.Equal(t, s1.Code(), s2.Code())
