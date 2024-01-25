@@ -183,27 +183,21 @@ func (c *chunkMergeIterator) At() (t int64, v float64) {
 	return c.currTime, c.currValue
 }
 
-func (c *chunkMergeIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+func (c *chunkMergeIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if c.currValueType != chunkenc.ValHistogram {
 		panic(fmt.Errorf("chunkMergeIterator: calling AtHistogram when cursor is at different type %v", c.currValueType))
 	}
-	if h != nil {
-		c.currHistogram.CopyTo(h)
-	}
-	return c.currTime, c.currHistogram.Copy()
+	return c.currTime, c.currHistogram
 }
 
-func (c *chunkMergeIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (c *chunkMergeIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.currValueType == chunkenc.ValHistogram {
 		return c.currTime, c.currHistogram.ToFloat(nil)
 	}
 	if c.currValueType != chunkenc.ValFloatHistogram {
 		panic(fmt.Errorf("chunkMergeIterator: calling AtFloatHistogram when cursor is at different type %v", c.currValueType))
 	}
-	if fh != nil {
-		c.currFloatHistogram.CopyTo(fh)
-	}
-	return c.currTime, c.currFloatHistogram.Copy()
+	return c.currTime, c.currFloatHistogram
 }
 
 func (c *chunkMergeIterator) AtT() int64 {
