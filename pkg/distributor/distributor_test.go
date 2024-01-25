@@ -3571,15 +3571,15 @@ func (c prepConfig) validate(t testing.TB) {
 	}
 }
 
-func prepareIngesters(cfg prepConfig) []mockIngester {
+func prepareIngesters(cfg prepConfig) []*mockIngester {
 	if len(cfg.ingesterStateByZone) != 0 {
-		ingesters := []mockIngester(nil)
+		ingesters := []*mockIngester(nil)
 		for zone, state := range cfg.ingesterStateByZone {
 			ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
 		}
 		return ingesters
 	}
-	ingesters := []mockIngester(nil)
+	ingesters := []*mockIngester(nil)
 	numZones := len(cfg.ingesterZones)
 	if numZones == 0 {
 		return prepareIngesterZone("", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
@@ -3609,8 +3609,8 @@ func prepareIngesters(cfg prepConfig) []mockIngester {
 
 }
 
-func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []mockIngester {
-	ingesters := []mockIngester(nil)
+func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
+	ingesters := []*mockIngester(nil)
 
 	if state.states == nil {
 		state.states = make([]ingesterState, state.numIngesters)
@@ -3627,7 +3627,7 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
 			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
-		ingesters = append(ingesters, mockIngester{
+		ingesters = append(ingesters, &mockIngester{
 			id:                            i,
 			happy:                         s == ingesterStateHappy,
 			queryDelay:                    cfg.queryDelay,
@@ -3641,7 +3641,7 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 	return ingesters
 }
 
-func prepareRingInstances(cfg prepConfig, ingesters []mockIngester) *ring.Desc {
+func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc {
 	ingesterDescs := map[string]ring.InstanceDesc{}
 
 	for i := range ingesters {
@@ -3660,7 +3660,7 @@ func prepareRingInstances(cfg prepConfig, ingesters []mockIngester) *ring.Desc {
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
-func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry) {
 	cfg.validate(t)
 
 	logger := log.NewNopLogger()
@@ -3697,8 +3697,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	})
 
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-		for i := range ingesters {
-			ing := &ingesters[i] // Take a pointer, so we don't copy the sync.Mutex in the mockIngester
+		for _, ing := range ingesters {
 			if ing.address() == inst.Addr {
 				return ing, nil
 			}
@@ -3783,13 +3782,13 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	return distributors, ingesters, registries
 }
 
-func populateIngestersData(t testing.TB, ingesters []mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
+func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
 	ctx := user.InjectOrgID(context.Background(), tenantID)
 
 	findIngester := func(zone string, id int) *mockIngester {
-		for i := range ingesters {
-			if ingesters[i].zone == zone && ingesters[i].id == id {
-				return &ingesters[i]
+		for _, ing := range ingesters {
+			if ing.zone == zone && ing.id == id {
+				return ing
 			}
 		}
 		panic("pushing to non-existent ingester; prepConfig.validate() should have caught this")
@@ -4953,10 +4952,10 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 	}
 }
 
-func countMockIngestersCalled(ingesters []mockIngester, name string) int {
+func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 	count := 0
-	for i := 0; i < len(ingesters); i++ {
-		if ingesters[i].countCalls(name) > 0 {
+	for _, i := range ingesters {
+		if i.countCalls(name) > 0 {
 			count++
 		}
 	}
@@ -5383,7 +5382,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, ing, _ := prepare(t, config)
+	d, ingesters, _ := prepare(t, config)
 
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
@@ -5417,20 +5416,20 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	// Verify that each ingester only received series and metadata that it should receive.
 	totalSeries := 0
 	totalMetadata := 0
-	for ix := range ing {
-		totalSeries += len(ing[ix].timeseries)
-		totalMetadata += len(ing[ix].metadata)
+	for ix, ing := range ingesters {
+		totalSeries += len(ing.timeseries)
+		totalMetadata += len(ing.metadata)
 
-		for _, ts := range ing[ix].timeseries {
+		for _, ts := range ing.timeseries {
 			token := tokenForLabels(userName, ts.Labels)
-			ingIx := getIngesterIndexForToken(token, ing)
+			ingIx := getIngesterIndexForToken(token, ingesters)
 			assert.Equal(t, ix, ingIx)
 		}
 
-		for _, metadataMap := range ing[ix].metadata {
+		for _, metadataMap := range ing.metadata {
 			for m := range metadataMap {
 				token := tokenForMetadata(userName, m.MetricFamilyName)
-				ingIx := getIngesterIndexForToken(token, ing)
+				ingIx := getIngesterIndexForToken(token, ingesters)
 				assert.Equal(t, ix, ingIx)
 			}
 		}
@@ -5439,9 +5438,9 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
 		token := tokenForLabels(userName, ts.Labels)
-		ingIx := getIngesterIndexForToken(token, ing)
+		ingIx := getIngesterIndexForToken(token, ingesters)
 
-		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
+		assert.Equal(t, ts.Labels, ingesters[ingIx].timeseries[token].Labels)
 	}
 
 	assert.Equal(t, series, totalSeries)
@@ -5510,13 +5509,13 @@ func TestHandlePushError(t *testing.T) {
 	}
 }
 
-func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
+func getIngesterIndexForToken(key uint32, ings []*mockIngester) int {
 	tokens := []uint32{}
 	tokensMap := map[uint32]int{}
 
-	for ix := range ings {
-		tokens = append(tokens, ings[ix].tokens...)
-		for _, t := range ings[ix].tokens {
+	for ix, ing := range ings {
+		tokens = append(tokens, ing.tokens...)
+		for _, t := range ing.tokens {
 			tokensMap[t] = ix
 		}
 	}
@@ -5560,11 +5559,11 @@ func createStatusWithDetails(t *testing.T, code codes.Code, message string, caus
 	return statWithDetails
 }
 
-func countCalls(ingesters []mockIngester, name string) int {
+func countCalls(ingesters []*mockIngester, name string) int {
 	count := 0
 
-	for i := range ingesters {
-		count += ingesters[i].countCalls(name)
+	for _, ing := range ingesters {
+		count += ing.countCalls(name)
 	}
 
 	return count
