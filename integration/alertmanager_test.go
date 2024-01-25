@@ -126,6 +126,245 @@ func TestAlertmanager(t *testing.T) {
 	require.Equal(t, "Accept-Encoding", res.Header.Get("Vary"))
 }
 
+// This test asserts that in classic mode it is not possible to upload configurations,
+// create silences, or post alerts that contain UTF-8 on the left hand side of label
+// matchers or label names. It can be deleted when the -alertmanager.utf8-strict-mode
+// flag is removed.
+func TestAlertmanagerClassicMode(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+			map[string]string{"-alertmanager.utf8-strict-mode": "false"},
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Should be able to use classic config, but not UTF-8 configuration.
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	require.EqualError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil), "setting config failed with status 400 and error error validating Alertmanager config: bad matcher format: bar🙂=baz\n")
+
+	// Should be able to create a silence with classic matchers, but not UTF-8 matchers.
+	silenceID, err := c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "foo", Value: "bar"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	silenceID, err = c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "bar🙂", Value: "baz"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.EqualError(t, err, "creating the silence failed with status 400 and error \"silence invalid: invalid label matcher 0: invalid label name \\\"bar🙂\\\"\"\n")
+	require.Empty(t, silenceID)
+
+	// Should be able to post alerts with classic labels but not UTF-8 labels.
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"foo": "bar",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+	require.EqualError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"bar🙂": "baz",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}), "sending alert failed with status 400 and error \"invalid label set: invalid name \\\"bar🙂\\\"\"\n")
+}
+
+// This test asserts that in UTF-8 strict mode it is possible to upload configurations,
+// create silences, and post alerts that contain UTF-8 on the left hand side of label
+// matchers and label names. It is the opposite of TestAlertmanagerClassicMode. It should
+// be merged with the TestAlertmanager test when the -alertmanager.utf8-strict-mode flag
+// is removed.
+func TestAlertmanagerUTF8StrictMode(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+			map[string]string{"-alertmanager.utf8-strict-mode": "true"},
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(1), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Should be able to use classic and UTF-8 configurations without error.
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	require.NoError(t, c.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserUTF8ConfigYaml, nil))
+
+	// Should be able to create a silence with both classic matchers and UTF-8 matchers.
+	silenceID, err := c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "foo", Value: "bar"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	silenceID, err = c.CreateSilence(ctx, types.Silence{
+		Matchers: amlabels.Matchers{
+			{Name: "bar🙂", Value: "baz"},
+		},
+		Comment:  "This is a test silence.",
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, silenceID)
+
+	// Should be able to post alerts with both classic labels and UTF-8 labels.
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"foo": "bar",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+	require.NoError(t, c.SendAlertToAlermanager(ctx, &model.Alert{
+		Labels: model.LabelSet{
+			"bar🙂": "baz",
+		},
+		StartsAt: time.Now(),
+		EndsAt:   time.Now().Add(time.Minute),
+	}))
+}
+
+// This test asserts that the correct metrics are incremented when configurations are uploaded,
+// including configurations with disagreement, incompatible and invalid matchers. It can be deleted
+// when the -alertmanager.utf8-strict-mode flag is removed.
+func TestAlertmanagerMatchersMetrics(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Upload the default configuration for two users.
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-2", mimirAlertmanagerUserConfigYaml))
+
+	alertmanager := e2emimir.NewAlertmanager(
+		"alertmanager",
+		mergeFlags(
+			AlertmanagerFlags(),
+			AlertmanagerS3Flags(),
+			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		),
+	)
+	require.NoError(t, s.StartAndWaitReady(alertmanager))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Equals(2), "cortex_alertmanager_config_last_reload_successful"))
+	require.NoError(t, alertmanager.WaitSumMetrics(e2e.Greater(0), "cortex_alertmanager_config_hash"))
+
+	c1, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+	c2, err := e2emimir.NewClient("", "", alertmanager.HTTPEndpoint(), "", "user-2")
+	require.NoError(t, err)
+
+	// The metrics should all be zero as no configurations contain matchers.
+	metricNames := []string{
+		"alertmanager_matchers_parse",
+		"alertmanager_matchers_disagree",
+		"alertmanager_matchers_incompatible",
+		"alertmanager_matchers_invalid",
+	}
+	metrics, err := alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{0, 0, 0, 0}, metrics)
+
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelFunc()
+
+	// Upload a configuration for user1.
+	require.NoError(t, c1.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	// The sum for alertmanager_matchers_parse should be 4 as there are two matchers for origin=api
+	// and another two matchers for origin=config.
+	require.Equal(t, []float64{4, 0, 0, 0}, metrics)
+
+	// Upload a configuration for user2.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	// The sum for alertmanager_matchers_parse should be 8 as there are two matchers for origin=api
+	// and another two matchers for origin=config, and 4 from the previous sum.
+	require.Equal(t, []float64{8, 0, 0, 0}, metrics)
+
+	// Upload a configuration with disagreement.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerDisagreementConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{10, 1, 0, 0}, metrics)
+
+	// Upload a configuration with incompatible matchers.
+	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerIncompatibleConfigYaml, nil))
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{12, 1, 1, 0}, metrics)
+
+	// Upload a configuration with invalid matchers.
+	require.EqualError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerInvalidConfigYaml, nil), "setting config failed with status 400 and error error validating Alertmanager config: bad matcher format: \n")
+	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
+	require.NoError(t, err)
+	require.Equal(t, []float64{14, 1, 1, 2}, metrics)
+}
+
 func TestAlertmanagerV1Deprecated(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
