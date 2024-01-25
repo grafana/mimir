@@ -1050,7 +1050,7 @@ type requestState struct {
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
-	ctx, _, err := d.startPushRequest(ctx, httpgrpcRequestSize)
+	ctx, _, err := d.startPushRequest(ctx, true, httpgrpcRequestSize)
 	return ctx, err
 }
 
@@ -1065,7 +1065,7 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 // This method creates requestState object and stores it in the context.
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
-func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+func (d *Distributor) startPushRequest(ctx context.Context, checkInflightBytesForUnknownHttpgrpcRequestSize bool, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if alreadyInContext {
@@ -1099,7 +1099,16 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 
 	// If we know the httpgrpcRequestSize, we can check it.
 	if httpgrpcRequestSize > 0 {
-		if err := d.checkHttpgrpcRequestSize(rs, httpgrpcRequestSize); err != nil {
+		rs.httpgrpcRequestSize = httpgrpcRequestSize
+		inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
+
+		if err := d.checkInflightBytes(inflightBytes); err != nil {
+			return ctx, nil, err
+		}
+	} else if checkInflightBytesForUnknownHttpgrpcRequestSize {
+		// If we don't know httpgrpcRequestSize, we can at least check if distributor already has too many inflight bytes.
+		inflightBytes := d.inflightPushRequestsBytes.Load()
+		if err := d.checkInflightBytes(inflightBytes); err != nil {
 			return ctx, nil, err
 		}
 	}
@@ -1108,17 +1117,6 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 
 	cleanupInDefer = false
 	return ctx, rs, nil
-}
-
-func (d *Distributor) checkHttpgrpcRequestSize(rs *requestState, httpgrpcRequestSize int64) error {
-	// If httpgrpcRequestSize was already checked, don't check it again.
-	if rs.httpgrpcRequestSize > 0 {
-		return nil
-	}
-
-	rs.httpgrpcRequestSize = httpgrpcRequestSize
-	inflightBytes := d.inflightPushRequestsBytes.Add(httpgrpcRequestSize)
-	return d.checkInflightBytes(inflightBytes)
 }
 
 func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize int64) error {
@@ -1135,7 +1133,7 @@ func (d *Distributor) checkWriteRequestSize(rs *requestState, writeRequestSize i
 func (d *Distributor) checkInflightBytes(inflightBytes int64) error {
 	il := d.getInstanceLimits()
 
-	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(il.MaxInflightPushRequestsBytes) {
+	if il.MaxInflightPushRequestsBytes > 0 && inflightBytes >= int64(il.MaxInflightPushRequestsBytes) {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequestsBytes).Inc()
 		return errMaxInflightRequestsBytesReached
 	}
@@ -1171,7 +1169,7 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
 		// We don't know request size yet, will check it later.
-		ctx, rs, err := d.startPushRequest(ctx, -1)
+		ctx, rs, err := d.startPushRequest(ctx, false, -1)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
