@@ -127,7 +127,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 
-	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode", false, "Enable UTF-8 strict mode. Allows UTF-8 in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree and alertmanager_matchers_incompatible metrics before using this mode as otherwise some tenant configurations might fail to load.")
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree and alertmanager_matchers_incompatible metrics before using this mode as otherwise some tenant configurations might fail to load.")
 }
 
 // Validate config and returns error on failure

@@ -128,7 +128,7 @@ func TestAlertmanager(t *testing.T) {
 
 // This test asserts that in classic mode it is not possible to upload configurations,
 // create silences, or post alerts that contain UTF-8 on the left hand side of label
-// matchers or label names. It can be deleted when the -alertmanager.utf8-strict-mode
+// matchers or label names. It can be deleted when the -alertmanager.utf8-strict-mode-enabled
 // flag is removed.
 func TestAlertmanagerClassicMode(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
@@ -147,7 +147,7 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 			AlertmanagerFlags(),
 			AlertmanagerS3Flags(),
 			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
-			map[string]string{"-alertmanager.utf8-strict-mode": "false"},
+			map[string]string{"-alertmanager.utf8-strict-mode-enabled": "false"},
 		),
 	)
 	require.NoError(t, s.StartAndWaitReady(alertmanager))
@@ -207,7 +207,7 @@ func TestAlertmanagerClassicMode(t *testing.T) {
 // This test asserts that in UTF-8 strict mode it is possible to upload configurations,
 // create silences, and post alerts that contain UTF-8 on the left hand side of label
 // matchers and label names. It is the opposite of TestAlertmanagerClassicMode. It should
-// be merged with the TestAlertmanager test when the -alertmanager.utf8-strict-mode flag
+// be merged with the TestAlertmanager test when the -alertmanager.utf8-strict-mode-enabled flag
 // is removed.
 func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
@@ -226,7 +226,7 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 			AlertmanagerFlags(),
 			AlertmanagerS3Flags(),
 			AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
-			map[string]string{"-alertmanager.utf8-strict-mode": "true"},
+			map[string]string{"-alertmanager.utf8-strict-mode-enabled": "true"},
 		),
 	)
 	require.NoError(t, s.StartAndWaitReady(alertmanager))
@@ -285,7 +285,7 @@ func TestAlertmanagerUTF8StrictMode(t *testing.T) {
 
 // This test asserts that the correct metrics are incremented when configurations are uploaded,
 // including configurations with disagreement, incompatible and invalid matchers. It can be deleted
-// when the -alertmanager.utf8-strict-mode flag is removed.
+// when the -alertmanager.utf8-strict-mode-enabled flag is removed.
 func TestAlertmanagerMatchersMetrics(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
