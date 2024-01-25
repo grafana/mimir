@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -664,7 +664,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 					} else {
 						assert.Error(t, err)
 						assert.Contains(t, err.Error(), testData.expectedErr)
-						status, ok := status.FromError(err)
+						status, ok := grpcutil.ErrorToStatus(err)
 						assert.Equal(t, true, ok)
 						assert.Equal(t, testData.expectedCode, status.Code())
 					}

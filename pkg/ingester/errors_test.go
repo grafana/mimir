@@ -285,6 +285,7 @@ func TestErrorWithStatus(t *testing.T) {
 			require.Errorf(t, errWithStatus, data.expectedErrorMessage)
 
 			// Ensure gogo's status.FromError recognizes errWithStatus.
+			//lint:ignore faillint We want to explicitly assert on status.FromError()
 			stat, ok := status.FromError(errWithStatus)
 			require.True(t, ok)
 			require.Equal(t, codes.Unimplemented, stat.Code())
@@ -326,6 +327,7 @@ func TestErrorWithHTTPStatus(t *testing.T) {
 	require.Error(t, errWithHTTPStatus)
 
 	// Ensure gogo's status.FromError recognizes errWithHTTPStatus.
+	//lint:ignore faillint We want to explicitly assert on status.FromError()
 	stat, ok := status.FromError(errWithHTTPStatus)
 	require.True(t, ok)
 	require.Equal(t, http.StatusBadRequest, int(stat.Code()))
@@ -526,7 +528,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			handledErr := mapPushErrorToErrorWithStatus(tc.err)
-			stat, ok := status.FromError(handledErr)
+			stat, ok := grpcutil.ErrorToStatus(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
 			require.Equal(t, tc.expectedMessage, stat.Message())
@@ -745,7 +747,7 @@ func TestMapReadErrorToErrorWithStatus(t *testing.T) {
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			handledErr := mapReadErrorToErrorWithStatus(tc.err)
-			stat, ok := status.FromError(handledErr)
+			stat, ok := grpcutil.ErrorToStatus(handledErr)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedCode, stat.Code())
 			require.Equal(t, tc.expectedMessage, stat.Message())

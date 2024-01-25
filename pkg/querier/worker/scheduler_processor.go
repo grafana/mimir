@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
@@ -127,7 +126,7 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 		if err := sp.querierLoop(execCtx, c, address, inflightQuery); err != nil {
 			if !isErrCancel(err, log.With(sp.log, "addr", address)) {
 				// Do not log an error if the query-scheduler is shutting down.
-				if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
+				if s, ok := grpcutil.ErrorToStatus(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
 					level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
 				}
 				backoff.Wait()

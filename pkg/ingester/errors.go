@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -80,7 +81,7 @@ func newErrorWithStatus(originalErr error, code codes.Code) errorWithStatus {
 // and containing the given HTTP status code.
 func newErrorWithHTTPStatus(err error, code int) errorWithStatus {
 	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
-	stat, _ := status.FromError(errWithHTTPStatus)
+	stat, _ := grpcutil.ErrorToStatus(errWithHTTPStatus)
 	return errorWithStatus{
 		err:    err,
 		status: stat,
