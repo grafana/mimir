@@ -90,7 +90,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		for _, chk := range spec.Chunks {
 			it := chk.Chunk.Iterator(nil)
 			for it.Next() != chunkenc.ValNone {
-				ts, h := it.AtHistogram()
+				ts, h := it.AtHistogram(nil)
 				samples = append(samples, sample{t: ts, h: h})
 			}
 		}
@@ -161,7 +161,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 					if valType == chunkenc.ValNone {
 						break
 					} else if valType == chunkenc.ValHistogram {
-						ts, h := it.AtHistogram()
+						ts, h := it.AtHistogram(nil)
 						samples = append(samples, sample{
 							t: ts,
 							h: h,

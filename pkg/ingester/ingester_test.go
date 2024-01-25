@@ -3806,7 +3806,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValHistogram, it.Next())
-					actualTs, actualHist := it.AtHistogram()
+					actualTs, actualHist := it.AtHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestHistogram(seriesID), actualHist)
 
@@ -3820,7 +3820,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-					actualTs, actualHist := it.AtFloatHistogram()
+					actualTs, actualHist := it.AtFloatHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestFloatHistogram(seriesID), actualHist)
 

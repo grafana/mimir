@@ -174,6 +174,17 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return index.NewListPostings(out)
 }
 
+// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+func (h *headIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return h.head.postings.LabelValuesFor(postings, name)
+}
+
+// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+func (h *headIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return h.head.postings.LabelValuesExcluding(postings, name)
+}
+
 // Series returns the series for the given reference.
 func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))

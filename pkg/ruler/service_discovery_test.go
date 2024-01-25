@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/dns"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -75,7 +74,7 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 				QType:           dns.A,
 				Host:            sourceAddress,
 			}
-			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Registerer: prometheus.NewPedanticRegistry()})
+			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -130,7 +129,7 @@ func TestConfig_ConstructsLookupNamesCorrectly(t *testing.T) {
 				QType:           tc.qType,
 				Host:            tc.host,
 			}
-			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Registerer: prometheus.NewPedanticRegistry()})
+			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)
 
 			ctx, cancel := context.WithCancel(context.Background())

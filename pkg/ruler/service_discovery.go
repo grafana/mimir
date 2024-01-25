@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -39,9 +40,18 @@ func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (di
 		Mech:     mechanismName,
 		Interval: c.RefreshInterval,
 		RefreshF: c.resolve,
-		Registry: opts.Registerer,
 	}), nil
 }
+
+func (c dnsServiceDiscovery) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
+	return dnsMetrics{}
+}
+
+// Currently this serive does not provide metrics.
+type dnsMetrics struct{}
+
+func (d dnsMetrics) Register() error { return nil }
+func (d dnsMetrics) Unregister()     {}
 
 func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err := c.Resolver.Resolve(ctx, []string{string(c.QType) + "+" + c.Host}); err != nil {

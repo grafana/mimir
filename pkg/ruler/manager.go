@@ -294,7 +294,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	n = newRulerNotifier(&notifier.Options{
+	n, err := newRulerNotifier(&notifier.Options{
 		QueueCapacity: r.cfg.NotificationQueueCapacity,
 		Registerer:    reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
@@ -313,6 +313,10 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			return ctxhttp.Do(ctx, client, req)
 		},
 	}, log.With(r.logger, "user", userID))
+
+	if err != nil {
+		return nil, err
+	}
 
 	n.run()
 

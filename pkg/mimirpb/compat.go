@@ -265,6 +265,7 @@ func fromSpansProtoToSpans(s []BucketSpan) []histogram.Span {
 	return *(*[]histogram.Span)(unsafe.Pointer(&s))
 }
 
+// FromHistogramToHistogramProto does not make a deepcopy, slices are referenced
 func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
 	if h == nil {
 		panic("FromHistogramToHistogramProto called on nil histogram")
@@ -286,6 +287,7 @@ func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Hist
 	}
 }
 
+// FromFloatHistogramToHistogramProto does not make a deepcopy, slices are referenced
 func FromFloatHistogramToHistogramProto(timestamp int64, fh *histogram.FloatHistogram) Histogram {
 	if fh == nil {
 		panic("FromFloatHistogramToHistogramProto called on nil histogram")

@@ -51,14 +51,18 @@ type rulerNotifier struct {
 	logger    gklog.Logger
 }
 
-func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
+func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
 	sdCtx, sdCancel := context.WithCancelCause(context.Background())
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
+	if err != nil {
+		return nil, err
+	}
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, l),
 		sdCancel:  sdCancel,
-		sdManager: discovery.NewManager(sdCtx, l, o.Registerer),
+		sdManager: discovery.NewManager(sdCtx, l, o.Registerer, sdMetrics),
 		logger:    l,
-	}
+	}, nil
 }
 
 // run starts the notifier. This function doesn't block and returns immediately.
