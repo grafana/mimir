@@ -164,9 +164,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.Equal(t, 500, res.StatusCode)
 
 	// check metric label values for total queries in the query frontend
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
 		labels.MustNewMatcher(labels.MatchEqual, "op", "query"))))
+
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_query_frontend_queries_total"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "user", strings.Join(tenantIDs, "|")),
+		labels.MustNewMatcher(labels.MatchEqual, "op", "other"))))
 
 	// check metric label values for query queue length in either query frontend or query scheduler
 	queueComponent := queryFrontend
