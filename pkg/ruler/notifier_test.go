@@ -12,7 +12,6 @@ import (
 
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -290,7 +289,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ncfg, err := buildNotifierConfig(tt.cfg, nil, prometheus.NewRegistry())
+			ncfg, err := buildNotifierConfig(tt.cfg, nil, nil)
 			if tt.err == nil {
 				require.NoError(t, err)
 				require.Equal(t, tt.ncfg, ncfg)
