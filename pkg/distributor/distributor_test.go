@@ -3775,7 +3775,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	}
 
 	if len(cfg.ingesterDataPerZone) != 0 {
-		populateIngesterData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
+		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
 	}
 
 	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
@@ -3783,7 +3783,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	return distributors, ingesters, registries
 }
 
-func populateIngesterData(t testing.TB, ingesters []mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
+func populateIngestersData(t testing.TB, ingesters []mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
 	ctx := user.InjectOrgID(context.Background(), tenantID)
 
 	findIngester := func(zone string, id int) *mockIngester {
