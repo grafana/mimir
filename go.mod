@@ -20,8 +20,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	//github.com/grafana/dskit partitions-ring
-	github.com/grafana/dskit v0.0.0-20240115091407-0d507f67be2a
+	github.com/grafana/dskit v0.0.0-20240125181757-0c1257ba0bfc
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12

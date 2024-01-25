@@ -160,7 +160,7 @@ func (d *Distributor) GetIngesters(ctx context.Context) ([]ring.ReplicationSet, 
 				return nil, err
 			}
 		}
-		return r.ReplicationSetsForQuerying(readNoExtend, 10*time.Minute)
+		return r.GetReplicationSetsForOperation(readNoExtend)
 	} else {
 		var rs ring.ReplicationSet
 		if shardSize > 0 && lookbackPeriod > 0 {

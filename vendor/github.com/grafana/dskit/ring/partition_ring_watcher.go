@@ -3,6 +3,7 @@ package ring
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -13,13 +14,14 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-type PartitionRingWatcherConfig struct {
+type PartitionRingConfig struct {
+	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 }
 
 type PartitionRingWatcher struct {
 	services.Service
 
-	cfg    PartitionRingWatcherConfig
+	cfg    PartitionRingConfig
 	key    string
 	logger log.Logger
 
@@ -29,7 +31,7 @@ type PartitionRingWatcher struct {
 	ring   *PartitionRing
 }
 
-func NewPartitionRingWatcher(cfg PartitionRingWatcherConfig, kv kv.Client, key string, logger log.Logger, reg prometheus.Registerer) (*PartitionRingWatcher, error) {
+func NewPartitionRingWatcher(cfg PartitionRingConfig, kv kv.Client, key string, logger log.Logger, reg prometheus.Registerer) (*PartitionRingWatcher, error) {
 	r := &PartitionRingWatcher{
 		key:    key,
 		cfg:    cfg,
@@ -72,7 +74,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
-	newRing := NewPartitionRing(*desc)
+	newRing := NewPartitionRing(*desc, w.cfg.HeartbeatTimeout)
 
 	w.ringMx.Lock()
 	defer w.ringMx.Unlock()

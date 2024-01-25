@@ -17,16 +17,19 @@ type PartitionRing struct {
 	ringTokens      Tokens
 	tokenPartitions map[Token]int32
 	partitionOwners map[int32][]string
+
+	heartbeatTimeout time.Duration
 }
 
-func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
+func NewPartitionRing(desc PartitionRingDesc, heartbeatTimeout time.Duration) *PartitionRing {
 	tokens, tokenPartitions := desc.TokensAndTokenPartitions()
 
 	pr := PartitionRing{
-		desc:            desc,
-		ringTokens:      tokens,
-		tokenPartitions: tokenPartitions,
-		partitionOwners: desc.PartitionOwners(),
+		desc:             desc,
+		ringTokens:       tokens,
+		tokenPartitions:  tokenPartitions,
+		partitionOwners:  desc.PartitionOwners(),
+		heartbeatTimeout: heartbeatTimeout,
 	}
 	return &pr
 }
@@ -75,7 +78,7 @@ func (pr *PartitionRing) ShuffleRingPartitions(identifier string, size int, look
 		return pr, nil
 	}
 
-	return NewPartitionRing(pr.desc.WithPartitions(partitions)), nil
+	return NewPartitionRing(pr.desc.WithPartitions(partitions), pr.heartbeatTimeout), nil
 }
 
 func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (map[int32]struct{}, error) {
@@ -146,12 +149,18 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	return result, nil
 }
 
-// ReplicationSetsForQuerying returns replica sets for querying all partitions.
+// GetReplicationSetsForOperation returns one ReplicationSet for each partition and returns ReplicationSet for all partitions.
 // If there are not enough owners for partitions, error is returned.
 //
-// For querying, basic idea is that we need to query *ALL* partitions in the ring (or subring). For each partition,
-// each owner is a full replica, so it's enough to query single instance only.
-func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeout time.Duration) ([]ReplicationSet, error) {
+// For querying instances, basic idea is that we need to query *ALL* partitions in the ring (or subring).
+// For each partition, each owner is a full replica, so it's enough to query single instance only.
+// GetReplicationSetsForOperation returns all healthy owners for each partition according to op and the heartbeat timeout.
+// GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
+// GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
+func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
+	if len(pr.desc.Partitions) == 0 {
+		return nil, ErrEmptyRing
+	}
 	now := time.Now()
 
 	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
@@ -165,7 +174,7 @@ func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeo
 				return nil, ErrInstanceNotFound
 			}
 
-			if !own.IsHealthy(op, heartbeatTimeout, now) {
+			if !own.IsHealthy(op, pr.heartbeatTimeout, now) {
 				continue
 			}
 
@@ -179,14 +188,13 @@ func (pr *PartitionRing) ReplicationSetsForQuerying(op Operation, heartbeatTimeo
 		}
 
 		if len(instances) == 0 {
-			return nil, fmt.Errorf("no healthy owners found for partition %d", pid)
+			return nil, fmt.Errorf("partition %d: %w", pid, ErrTooManyUnhealthyInstances)
 		}
 
 		result = append(result, ReplicationSet{
 			Instances:            instances,
-			MaxErrors:            len(instances) - 1, // We need response from at least 1 owner.
-			MaxUnavailableZones:  0,
-			ZoneAwarenessEnabled: false,
+			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
+			ZoneAwarenessEnabled: true,
 		})
 	}
 	return result, nil

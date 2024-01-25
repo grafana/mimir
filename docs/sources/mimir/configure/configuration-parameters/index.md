@@ -1190,6 +1190,11 @@ instance_limits:
 # owned series as a result of detected change.
 # CLI flag: -ingester.owned-series-update-interval
 [owned_series_update_interval: <duration> | default = 15s]
+
+# At what point should inactive (read-only) partitions be removed from the
+# partitions ring.
+# CLI flag: -ingester.remove-inactive-partitions-after-interval
+[remove_inactive_partitions_after_interval: <duration> | default = 12h]
 ```
 
 ### querier
