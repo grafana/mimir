@@ -13,12 +13,14 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	gogoStatus "github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
@@ -40,6 +42,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -2513,6 +2516,60 @@ func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
+}
+
+func TestShouldStopQueryFunc(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		expected bool
+	}{
+		"should return true on context canceled": {
+			err:      context.Canceled,
+			expected: true,
+		},
+		"should return true on wrapped context canceled": {
+			err:      errors.Wrap(context.Canceled, "test"),
+			expected: true,
+		},
+		"should return true on deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: true,
+		},
+		"should return true on wrapped deadline exceeded": {
+			err:      errors.Wrap(context.DeadlineExceeded, "test"),
+			expected: true,
+		},
+		"should return true on gRPC error with status code = 422": {
+			err:      status.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gRPC error with status code = 422": {
+			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return true on gogo error with status code = 422": {
+			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gogo error with status code = 422": {
+			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return false on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
+			expected: false,
+		},
+		"should return false on generic error": {
+			err:      errors.New("test"),
+			expected: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
 		})
 	}
 }

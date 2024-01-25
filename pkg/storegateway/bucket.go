@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
@@ -548,7 +549,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 			return
 		}
 		code := codes.Internal
-		if st, ok := status.FromError(err); ok {
+		if st, ok := grpcutil.ErrorToStatus(err); ok {
 			code = st.Code()
 		} else if errors.Is(err, context.Canceled) {
 			code = codes.Canceled
