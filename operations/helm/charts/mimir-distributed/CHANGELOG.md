@@ -43,6 +43,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
+* [ENHANCEMENT] Gateway: ingress/route host is templateable. #7198
 
 ## 5.2.1
 
