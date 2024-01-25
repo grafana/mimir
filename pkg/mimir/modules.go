@@ -885,10 +885,10 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	mode := featurecontrol.FeatureClassicMode
 	if t.Cfg.Alertmanager.UTF8StrictMode {
-		level.Debug(util_log.Logger).Log("msg", "Starting Alertmanager in UTF-8 strict mode")
+		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in UTF-8 strict mode")
 		mode = featurecontrol.FeatureUTF8StrictMode
 	} else {
-		level.Debug(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
+		level.Info(util_log.Logger).Log("msg", "Starting Alertmanager in classic mode")
 	}
 	features, err := featurecontrol.NewFlags(util_log.Logger, mode)
 	util_log.CheckFatal("initializing Alertmanager feature flags", err)
