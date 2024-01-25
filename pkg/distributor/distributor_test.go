@@ -365,7 +365,7 @@ func TestDistributor_Push(t *testing.T) {
 				configure:       tc.configure,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
+			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
@@ -423,7 +423,7 @@ func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
 		originalIngesterDoBatchPushWorkers(f)
 	}
 
-	request := makeWriteRequest(123456789000, 3, 5, false, false)
+	request := makeWriteRequest(123456789000, 3, 5, false, false, "foo")
 	ctx := user.InjectOrgID(context.Background(), "user")
 	response, err := distributor.Push(ctx, request)
 
@@ -454,7 +454,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	request := makeWriteRequest(123456789000, 1, 1, false, true)
+	request := makeWriteRequest(123456789000, 1, 1, false, true, "foo")
 	_, err := ds[0].Push(ctx, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -646,7 +646,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, 1, 1, false, true)
+				request := makeWriteRequest(0, 1, 1, false, true, "foo")
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -754,7 +754,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 			// Push samples in multiple requests to only the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false, "foo")
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -934,7 +934,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			d.ingestionRate.Tick()
 
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false, "foo")
 				resp, err := d.Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -1045,8 +1045,9 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 }
 
 func TestDistributor_PushQuery(t *testing.T) {
+	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
-	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
+	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
 	type testcase struct {
@@ -1115,7 +1116,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, barMatcher},
-					expectedResponse:  expectedResponse(0, 10, true),
+					expectedResponse:  expectedResponse(0, 10, true, metricName),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -1127,7 +1128,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-					expectedResponse:  expectedResponse(0, 0, true),
+					expectedResponse:  expectedResponse(0, 0, true, metricName),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -1140,7 +1141,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 						happyIngesters:    happyIngesters,
 						samples:           10,
 						matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-						expectedResponse:  expectedResponse(i, i+1, true),
+						expectedResponse:  expectedResponse(i, i+1, true, metricName),
 						expectedIngesters: expectedIngesters,
 						shuffleShardSize:  shuffleShardSize,
 					})
@@ -1165,7 +1166,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			ds, ingesters, reg := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true)
+			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true, metricName)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
@@ -2520,7 +2521,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Push metadata
 			ctx := user.InjectOrgID(context.Background(), "test")
 
-			req := makeWriteRequest(0, 0, 10, false, true)
+			req := makeWriteRequest(0, 0, 10, false, true, "foo")
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
@@ -3817,11 +3818,6 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 
 func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
-
-	if len(metrics) == 0 {
-		metrics = []string{"foo"}
-	}
-
 	for _, metric := range metrics {
 		for i := 0; i < samples; i++ {
 			req := makeWriteRequestTimeseries(
@@ -4060,9 +4056,6 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 }
 
 func expectedResponse(start, end int, histograms bool, metrics ...string) model.Matrix {
-	if len(metrics) == 0 {
-		metrics = []string{"foo"}
-	}
 	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
 	for _, metricName := range metrics {

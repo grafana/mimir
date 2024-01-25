@@ -75,7 +75,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 							// Push a number of series below the max chunks limit. Each series has 1 sample,
 							// so expect 1 chunk per series when querying back.
 							initialSeries := limit / 3
-							writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
+							writeReq := makeWriteRequest(0, initialSeries, 0, false, false, "foo")
 							writeRes, err := ds[0].Push(userCtx, writeReq)
 							require.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 							require.Nil(t, err)
@@ -159,7 +159,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 			// Push a number of series below the max series limit.
 			initialSeries := maxSeriesLimit
-			writeReq := makeWriteRequest(0, initialSeries, 0, false, true)
+			writeReq := makeWriteRequest(0, initialSeries, 0, false, true, "foo")
 			writeRes, err := ds[0].Push(userCtx, writeReq)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 			assert.Nil(t, err)
@@ -252,7 +252,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
-	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
+	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false, "foo")
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
