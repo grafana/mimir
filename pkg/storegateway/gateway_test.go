@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/dskit/services"
 	dstest "github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1481,9 +1480,9 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 					if testData.expectedErr != nil {
 						require.Error(t, err)
 						assert.IsType(t, testData.expectedErr, err)
-						s1, ok := status.FromError(errors.Cause(err))
+						s1, ok := status.FromError(err)
 						assert.True(t, ok)
-						s2, ok := status.FromError(errors.Cause(testData.expectedErr))
+						s2, ok := status.FromError(testData.expectedErr)
 						assert.True(t, ok)
 						assert.Contains(t, s1.Message(), s2.Message())
 						assert.Equal(t, s1.Code(), s2.Code())

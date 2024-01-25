@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -34,7 +35,6 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -927,7 +927,7 @@ func shouldStopQueryFunc(err error) bool {
 		return true
 	}
 
-	if st, ok := status.FromError(errors.Cause(err)); ok {
+	if st, ok := grpcutil.ErrorToStatus(err); ok {
 		if int(st.Code()) == http.StatusUnprocessableEntity {
 			return true
 		}
