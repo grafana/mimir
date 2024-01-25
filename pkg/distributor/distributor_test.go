@@ -444,11 +444,11 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	})
 
 	// Lock all mockIngester instances, so they will be waiting
-	for i := range ings {
-		ings[i].Lock()
+	for _, ing := range ings {
+		ing.Lock()
 		defer func(ing *mockIngester) {
 			ing.Unlock()
-		}(&ings[i])
+		}(ing)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "user")
