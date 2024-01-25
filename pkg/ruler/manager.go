@@ -60,7 +60,7 @@ type DefaultMultiTenantManager struct {
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, reg)
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,8 @@ const (
 )
 
 type dnsServiceDiscovery struct {
+	refreshMetrics discovery.RefreshMetricsInstantiator
+
 	Resolver cache.AddressProvider
 
 	RefreshInterval time.Duration
@@ -36,22 +38,17 @@ func (dnsServiceDiscovery) Name() string {
 
 func (c dnsServiceDiscovery) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return refresh.NewDiscovery(refresh.Options{
-		Logger:   opts.Logger,
-		Mech:     mechanismName,
-		Interval: c.RefreshInterval,
-		RefreshF: c.resolve,
+		Logger:              opts.Logger,
+		Mech:                mechanismName,
+		Interval:            c.RefreshInterval,
+		RefreshF:            c.resolve,
+		MetricsInstantiator: c.refreshMetrics,
 	}), nil
 }
 
 func (c dnsServiceDiscovery) NewDiscovererMetrics(prometheus.Registerer, discovery.RefreshMetricsInstantiator) discovery.DiscovererMetrics {
-	return dnsMetrics{}
+	return &discovery.NoopDiscovererMetrics{}
 }
-
-// Currently this serive does not provide metrics.
-type dnsMetrics struct{}
-
-func (d dnsMetrics) Register() error { return nil }
-func (d dnsMetrics) Unregister()     {}
 
 func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err := c.Resolver.Resolve(ctx, []string{string(c.QType) + "+" + c.Host}); err != nil {
@@ -74,12 +71,13 @@ func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group,
 	return []*targetgroup.Group{tg}, nil
 }
 
-func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL) discovery.Config {
+func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
 	return dnsServiceDiscovery{
 		Resolver:        resolver,
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,
 		Host:            url.Host,
 		QType:           qType,
+		refreshMetrics:  rmi,
 	}
 }
 

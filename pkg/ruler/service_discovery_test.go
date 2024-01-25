@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/dns"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -67,12 +68,14 @@ func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
 			resolver := &mockResolver{}
 			resolver.expectAnyResolveCall()
 			resolver.returnAddresses(tc.resolvedAddresses)
-
+			reg := prometheus.NewRegistry()
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
 			cfg := dnsServiceDiscovery{
 				RefreshInterval: time.Millisecond,
 				Resolver:        resolver,
 				QType:           dns.A,
 				Host:            sourceAddress,
+				refreshMetrics:  refreshMetrics,
 			}
 			discoverer, err := cfg.NewDiscoverer(discovery.DiscovererOptions{})
 			require.NoError(t, err)

@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/crypto/tls"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
@@ -100,7 +101,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, reg prometheus.Registerer) (*config.Config, error) {
 	if rulerConfig.AlertmanagerURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -117,7 +118,8 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 
 		var sdConfig discovery.Config
 		if isSD {
-			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
+			refreshMetrics := discovery.NewRefreshMetrics(reg)
+			sdConfig = dnsSD(rulerConfig, resolver, qType, url, refreshMetrics)
 		} else {
 			sdConfig = staticTarget(url)
 		}
