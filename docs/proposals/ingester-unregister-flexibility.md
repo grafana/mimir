@@ -45,7 +45,7 @@ ingester ring.
 By default, an ingester will leave the ingester ring when it is shut down
 (controlled by the [unregister_on_shutdown](https://grafana.com/docs/mimir/v2.11.x/references/configuration-parameters/#ingester) configuration option).
 
-Ingesters leaving the ring on shutdown causes churn during rollouts as series get re-sharded across all ingesters
+Ingesters leaving the ring on shutdown cause churn during rollouts as series get re-sharded across all ingesters
 (see [grafana/helm-charts#1313](https://github.com/grafana/helm-charts/issues/1313)). This proliferation of series leads
 to excessive ingester CPU usage, and ultimately results in unstable rollouts.
 
@@ -94,7 +94,7 @@ Using a request body supports both of these use cases:
 1. Disabling unregister for an ingester that has it enabled by default.
 2. Enabling unregister for an ingester that has it disabled by default.
 
-When called with the `DELETE` method, the endpoint sets the ingester's unregister state to what was passed via the `-ingester.ring.unregister-on-shutdown` option. After doing so, it returns the current unregister value with a `200` status code:
+When called with the `DELETE` method, the endpoint sets the ingester's unregister state to what was passed via the `unregister_on_shutdown` configuration option. After doing so, it returns the current unregister value with a `200` status code:
 ```json
 {"unregister": false}
 ```
@@ -108,7 +108,7 @@ The `/ingester/prepare-unregister` endpoint allows operators to run ingesters in
 ring on shutdown.
 
 Most cloud platforms offer an "eviction notice" prior to node eviction. A helper service can be set up to react to
-the eviction notice by updating evicted ingesters to unregister from the ring when evicted.
+the eviction notice by updating evicted ingesters to unregister from the ring.
 
 Concrete example:
 1. Ingesters `a-1` and `a-7` run on node `zone1-snkq`. Ingesters `b-4` and `b-9` run on node `zone2-iqmd`.
