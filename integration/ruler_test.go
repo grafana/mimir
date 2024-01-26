@@ -293,6 +293,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
 
 	// query all results to verify rules have been evaluated correctly
+	t.Log("querying from ", now.Add(-evaluationDelay), "to", now)
 	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, result.Type())
@@ -310,7 +311,13 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 
 			expectedValue := model.SampleValue(2 * (inputPos + 1))
-			require.Equal(t, expectedValue, v.Value)
+			assert.Equal(t, expectedValue, v.Value)
+			t.Log(
+				"expected value", expectedValue,
+				"actual value", v.Value,
+				"actual timestamp", v.Timestamp,
+				"expected timestamp", now.Add(-evaluationDelay).Add(time.Duration(inputPos)*time.Second),
+			)
 
 			// Look for next value
 			inputPos++
@@ -321,7 +328,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
+	assert.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
 }
 
 func TestRulerSharding(t *testing.T) {
