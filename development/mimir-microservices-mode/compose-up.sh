@@ -25,3 +25,6 @@ cd "$SCRIPT_DIR" && make
 CGO_ENABLED=0 GOOS=linux go build -mod=vendor -tags=stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" distributor-1
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up "$@"
+
+
+GOEXPERIMENT=boringcrypto CGO_ENABLED=1 GOOS=linux go build -mod=vendor -tags=stringlabels -gcflags "all=-N -l" -o "${SCRIPT_DIR}"/mimir "${SCRIPT_DIR}"/../../cmd/mimir

@@ -49,6 +49,7 @@ GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
 UPTODATE_RACE := .uptodate_race
+UPTODATE_BORINGCRYPTO := .uptodate_race
 
 # path to jsonnetfmt
 JSONNET_FMT := jsonnetfmt
@@ -111,6 +112,17 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@touch $@
 
 %/$(UPTODATE_RACE): GOOS=linux
+%/$(UPTODATE_RACE): %/Dockerfile
+	@echo
+	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
+	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race --build-arg=EXTRA_PACKAGES="gcompat" -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
+	@echo
+	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
+	@echo
+	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE)
+	@echo
+	@touch $@
+
 %/$(UPTODATE_RACE): %/Dockerfile
 	@echo
 	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
@@ -252,6 +264,11 @@ exes_race: $(EXES_RACE)
 
 $(EXES_RACE):
 	CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -race $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
+
+exes_boringcrypto: $(EXES_BORINGCRYPTO)
+
+$(EXES_BORINGCRYPTO):
+	GOEXPERIMENT=boringcrypto CGO_ENABLED=1 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)

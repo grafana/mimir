@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Provenance-includes-location: https://github.com/cortexproject/cortex/build-image/Dockerfile
+# Provenance-includes-location: https://github.com/cortexprojec t/cortex/build-image/Dockerfile
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
