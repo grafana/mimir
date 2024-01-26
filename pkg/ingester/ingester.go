@@ -434,7 +434,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
 		}
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+		// Use the zone as the consumer group
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i.lifecycler.Zone, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}

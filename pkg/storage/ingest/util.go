@@ -65,7 +65,7 @@ func IngesterPartition(ingesterID string) (int32, error) {
 	return partitionID, nil
 }
 
-// IngesterID returns ID from ingester. (TODO dimitarvdimitrov replace IngesterPartition with this)
+// IngesterID returns ID from ingester. (TODO replace IngesterPartition with this)
 func IngesterID(ingesterID string) (int32, error) {
 	match := ingesterIDRegexp.FindStringSubmatch(ingesterID)
 	if len(match) == 0 {
