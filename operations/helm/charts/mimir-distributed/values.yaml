@@ -2448,8 +2448,9 @@ nginx:
         access_log   {{ .Values.nginx.nginxConfig.accessLogEnabled | ternary "/dev/stderr  main  if=$loggable;" "off;" }}
         {{- end }}
 
-        sendfile     on;
-        tcp_nopush   on;
+        sendfile           on;
+        tcp_nopush         on;
+        proxy_http_version 1.1;
 
         {{- if .Values.nginx.nginxConfig.resolver }}
         resolver {{ .Values.nginx.nginxConfig.resolver }};
@@ -2830,8 +2831,9 @@ gateway:
           access_log   {{ .Values.gateway.nginx.config.accessLogEnabled | ternary "/dev/stderr  main  if=$loggable;" "off;" }}
           {{- end }}
 
-          sendfile     on;
-          tcp_nopush   on;
+          sendfile           on;
+          tcp_nopush         on;
+          proxy_http_version 1.1;
 
           {{- if .Values.gateway.nginx.config.resolver }}
           resolver {{ .Values.gateway.nginx.config.resolver }};
