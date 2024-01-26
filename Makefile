@@ -548,7 +548,8 @@ clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
 list-image-targets: ## List all images building make targets.
-	@echo $(UPTODATE_FILES) | tr " " "\n"
+	@echo "./tools/copyblocks/.uptodate"
+	# @echo $(UPTODATE_FILES) | tr " " "\n"
 
 clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
