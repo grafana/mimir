@@ -130,7 +130,7 @@
             },
             "targets": [
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_updated\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
                   "format": "table",
                   "instant": true,
                   "intervalFactor": null,
@@ -139,7 +139,7 @@
                   "step": null
                },
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_ready\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
                   "format": "table",
                   "instant": true,
                   "intervalFactor": null,
@@ -153,7 +153,7 @@
                {
                   "id": "joinByField",
                   "options": {
-                     "byField": "cortex_service",
+                     "byField": "workload",
                      "mode": "outer"
                   }
                },
@@ -167,7 +167,7 @@
                      "renameByName": {
                         "Value #A": "Updated",
                         "Value #B": "Ready",
-                        "cortex_service": "Workload"
+                        "workload": "Workload"
                      }
                   }
                },
