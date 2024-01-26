@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/grafana/e2e"
 )
@@ -81,8 +82,94 @@ func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]stri
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
 	)
+}
+
+func newMimirDebugServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
+	orderedServiceArgs := e2e.BuildArgs(serviceFlags)
+
+	//binaryName := getBinaryNameForBackwardsCompatibility()
+	delveListenPort := o.HTTPPort + 10000
+	//delveCommand := "dlv"
+	//_ = map[string]string{
+	//	//"exec":                 "./mimir",
+	//	"./mimir":              "",
+	//	"--listen":             strconv.Itoa(delveListenPort),
+	//	"--headless":           "true",
+	//	"--api-version":        "2",
+	//	"--accept-multiclient": "",
+	//	"--continue":           "",
+	//	//"--":                   "",
+	//}
+
+	//orderedCommandArgs := []string{"exec", "mimir", "--listen", "0.0.0.0:" + strconv.Itoa(delveListenPort), "--headless", "true", "--api-version", "2", "--accept-multiclient", "--continue", "--"}
+	orderedCommandArgs := []string{
+		"exec", "mimir",
+		"--listen=:" + strconv.Itoa(delveListenPort),
+		"--headless=true",
+		"--api-version=2",
+		"--accept-multiclient",
+		"--continue",
+		"--",
+	}
+	orderedCommandArgs = []string{
+
+		//"-x",
+		//"-c",
+		//"exec",
+		//"dlv exec mimir --listen=:18080 --headless=true --api-version=2 --accept-multiclient --accept-multiclient --continue --",
+		//"dlv",
+		"--log",
+		"exec",
+		"mimir",
+		//"--listen=:18080",
+		////+ "--listen=:" + strconv.Itoa(delveListenPort) + " --headless=true" + " --api-version=2" + " --accept-multiclient" + " --continue" + " --",
+		////"",
+		//"mimir",
+		"--listen=:" + strconv.Itoa(delveListenPort),
+		"--headless=true",
+		"--api-version=2",
+		"--accept-multiclient",
+		//"--continue",
+		"--",
+	}
+
+	orderedArgs := append(orderedCommandArgs, orderedServiceArgs...)
+
+	otherPorts := append(o.OtherPorts, delveListenPort)
+
+	cmd := e2e.NewCommandWithoutEntrypoint("dlv", orderedArgs...)
+	//cmd = e2e.NewCommand("/bin/sh", orderedArgs...)
+
+	return NewMimirService(
+		name,
+		o.Image,
+		cmd,
+		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
+		o.Environment,
+		o.HTTPPort,
+		o.GRPCPort,
+		otherPorts,
+		map[int]int{delveListenPort: delveListenPort, o.HTTPPort: o.HTTPPort},
+	)
+}
+
+func BuildArgs(flags map[string]string) []string {
+	args := make([]string, 0, len(flags))
+
+	for name, value := range flags {
+		if value != "" {
+			args = append(args, name+" "+value)
+		} else {
+			args = append(args, name)
+		}
+	}
+
+	return args
 }
 
 func NewDistributor(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
@@ -172,6 +259,16 @@ func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
+func getDelveCommand() string {
+	return "dlv"
+}
+
+//const delveCommandTmpl = "dlv exec %s --listen=:%d --headless=true --api-version=2 --accept-multiclient --continue --"
+
+//func makeDelveCommand(binaryName string, delveListenPort int) string {
+//	return fmt.Sprintf(delveCommandTmpl, binaryName, delveListenPort)
+//}
+
 func NewQueryFrontend(name string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
@@ -219,6 +316,24 @@ func NewCompactor(name string, consulAddress string, flags map[string]string, op
 
 func NewSingleBinary(name string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			// Do not pass any extra default flags (except few used to speed up the test)
+			// because the config could be driven by the config file.
+			"-target":    "all",
+			"-log.level": "warn",
+			// Speed up the startup.
+			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-ingestion-enabled": "true",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewSingleDebugBinary(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirDebugServiceFromOptions(
 		name,
 		map[string]string{
 			// Do not pass any extra default flags (except few used to speed up the test)
@@ -306,7 +421,8 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
 	)
 }
 

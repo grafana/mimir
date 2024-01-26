@@ -58,14 +58,18 @@ func NewConcreteService(
 	image string,
 	command *Command,
 	readiness ReadinessProbe,
-	networkPorts ...int,
+	networkPorts []int,
+	networkPortsContainerToLocal map[int]int,
 ) *ConcreteService {
+	if networkPortsContainerToLocal == nil {
+		networkPortsContainerToLocal = map[int]int{}
+	}
 	return &ConcreteService{
 		name:                         name,
 		image:                        image,
 		networkPorts:                 networkPorts,
 		command:                      command,
-		networkPortsContainerToLocal: map[int]int{},
+		networkPortsContainerToLocal: networkPortsContainerToLocal,
 		readiness:                    readiness,
 		retryBackoff: backoff.New(context.Background(), backoff.Config{
 			MinBackoff: 300 * time.Millisecond,
@@ -109,7 +113,8 @@ func (s *ConcreteService) Start(networkName, sharedDir string) (err error) {
 		}
 	}()
 
-	s.cmd = exec.Command("docker", s.buildDockerRunArgs(networkName, sharedDir)...)
+	dockerRunArgs := s.buildDockerRunArgs(networkName, sharedDir)
+	s.cmd = exec.Command("docker", dockerRunArgs...)
 	s.cmd.Stdout = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
 	s.cmd.Stderr = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
 	if err = s.cmd.Start(); err != nil {
@@ -324,8 +329,13 @@ func (s *ConcreteService) buildDockerRunArgs(networkName, sharedDir string) []st
 	}
 
 	// Published ports
-	for _, port := range s.networkPorts {
-		args = append(args, "-p", strconv.Itoa(port))
+	for _, containerPort := range s.networkPorts {
+		if localPort, ok := s.networkPortsContainerToLocal[containerPort]; ok {
+			args = append(args, "-p", strconv.Itoa(localPort) + ":" + strconv.Itoa(containerPort))
+		} else {
+			args = append(args, "-p", strconv.Itoa(containerPort))
+		}
+
 	}
 
 	// Disable entrypoint if required
@@ -560,10 +570,11 @@ func NewHTTPService(
 	command *Command,
 	readiness ReadinessProbe,
 	httpPort int,
-	otherPorts ...int,
+	otherPorts []int,
+	portMapContainerToLocal map[int]int,
 ) *HTTPService {
 	return &HTTPService{
-		ConcreteService: NewConcreteService(name, image, command, readiness, append(otherPorts, httpPort)...),
+		ConcreteService: NewConcreteService(name, image, command, readiness, append(otherPorts, httpPort), portMapContainerToLocal),
 		metricsTimeout:  time.Second,
 		httpPort:        httpPort,
 	}

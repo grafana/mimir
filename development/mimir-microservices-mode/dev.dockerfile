@@ -8,4 +8,5 @@ FROM alpine:3.19.0
 RUN     mkdir /mimir
 WORKDIR /mimir
 COPY     ./mimir ./
-COPY --from=0 /go/bin/dlv ./
+RUN ln -s ./mimir /usr/local/bin/mimir
+COPY --from=0 /go/bin/dlv  /usr/local/bin/dlv

@@ -16,7 +16,8 @@ func NewMemcached() *e2e.ConcreteService {
 		images.Memcached,
 		nil,
 		e2e.NewTCPReadinessProbe(MemcachedPort),
-		MemcachedPort,
+		[]int{MemcachedPort},
+		nil,
 	)
 }
 
@@ -35,6 +36,7 @@ func NewRedis() *e2e.ConcreteService {
 			"--appendonly", "no",
 		),
 		e2e.NewTCPReadinessProbe(RedisPort),
-		RedisPort,
+		[]int{RedisPort},
+		nil,
 	)
 }

@@ -73,9 +73,11 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 			filepath.Join(s.SharedDir(), clientKeyFile),
 		))
 
-		mimir1 = newSingleBinary("mimir-1", memberlistDNS, "", flags)
-		mimir2 = newSingleBinary("mimir-2", memberlistDNS, networkName+"-mimir-1:8000", flags)
-		mimir3 = newSingleBinary("mimir-3", memberlistDNS, networkName+"-mimir-1:8000", flags)
+		//mimir1 = newSingleBinary("mimir-1", memberlistDNS, "", flags)
+		mimir1 = newSingleDebugBinary("mimir-1", memberlistDNS, "", flags)
+
+		mimir2 = newSingleDebugBinary("mimir-2", memberlistDNS, networkName+"-mimir-1:8000", flags)
+		mimir3 = newSingleDebugBinary("mimir-3", memberlistDNS, networkName+"-mimir-1:8000", flags)
 	} else {
 		mimir1 = newSingleBinary("mimir-1", "", "", flags)
 		mimir2 = newSingleBinary("mimir-2", "", networkName+"-mimir-1:8000", flags)
@@ -84,7 +86,8 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 
 	// start mimir-1 first, as mimir-2 and mimir-3 both connect to mimir-1
 	require.NoError(t, s.StartAndWaitReady(mimir1))
-	require.NoError(t, s.StartAndWaitReady(mimir2, mimir3))
+	err = s.StartAndWaitReady(mimir2, mimir3)
+	require.NoError(t, err)
 
 	// All three Mimir serves should see each other.
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
@@ -138,6 +141,45 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 	}
 
 	serv := e2emimir.NewSingleBinary(
+		name,
+		mergeFlags(
+			DefaultSingleBinaryFlags(),
+			BlocksStorageFlags(),
+			BlocksStorageS3Flags(),
+			flags,
+			testFlags,
+			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),
+		),
+		e2emimir.WithOtherPorts(8000),
+	)
+
+	backOff := backoff.Config{
+		MinBackoff: 200 * time.Millisecond,
+		MaxBackoff: 500 * time.Millisecond, // Bump max backoff... things take little longer with memberlist.
+		MaxRetries: 100,
+	}
+
+	serv.SetBackoff(backOff)
+	return serv
+}
+
+func newSingleDebugBinary(name string, servername string, join string, testFlags map[string]string) *e2emimir.MimirService {
+	flags := map[string]string{
+		"-ingester.ring.min-ready-duration":  "0s",
+		"-ingester.ring.num-tokens":          "512",
+		"-ingester.ring.store":               "memberlist",
+		"-memberlist.bind-port":              "8000",
+		"-memberlist.left-ingesters-timeout": "600s", // effectively disable
+	}
+
+	if join != "" {
+		flags["-memberlist.join"] = join
+		flags["-ingester.ring.observe-period"] = "5s" // Observe ring tokens to avoid conflicts.
+	} else {
+		flags["-ingester.ring.observe-period"] = "0s" // No need to observe tokens because we're going to be the first instance.
+	}
+
+	serv := e2emimir.NewSingleDebugBinary(
 		name,
 		mergeFlags(
 			DefaultSingleBinaryFlags(),
