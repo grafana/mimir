@@ -306,6 +306,13 @@ lint: check-makefiles
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
+	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
+	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
+	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
+	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
+	# question whether the usage is safe or not.
+	faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# gogo/status allows to easily customize error details while grpc/status doesn't:
 	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
 	# doesn't support wrapped errors, while grpc/status.FromError() does.

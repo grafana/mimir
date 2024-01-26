@@ -248,7 +248,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 }
 
 func respondFromError(err error, w http.ResponseWriter, logger log.Logger) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		level.Error(logger).Log("msg", "failed to process the request to the alertmanager", "err", err)
 		http.Error(w, "Failed to process the request to the alertmanager", http.StatusInternalServerError)
