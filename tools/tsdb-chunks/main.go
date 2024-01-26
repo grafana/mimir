@@ -70,8 +70,10 @@ func printChunksFile(filename string, printSamples bool) error {
 	}
 
 	cix := 0
-	h := &histogram.Histogram{}       // reused in iteration as we just dump the value and move on
-	fh := &histogram.FloatHistogram{} // reused in iteration as we just dump the value and move on
+	var (
+		h  *histogram.Histogram      // reused in iteration as we just dump the value and move on
+		fh *histogram.FloatHistogram // reused in iteration as we just dump the value and move on
+	)
 	for c, err := nextChunk(cix, file); err == nil; c, err = nextChunk(cix, file) {
 		if printSamples {
 			minTS := int64(math.MaxInt64)
@@ -92,7 +94,7 @@ func printChunksFile(filename string, printSamples bool) error {
 
 					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %g\n", cix, six, ts, formatTimestamp(ts), val)
 				case chunkenc.ValHistogram:
-					ts, hBuffer := it.AtHistogram(h)
+					ts, h := it.AtHistogram(h)
 					if ts < minTS {
 						minTS = ts
 					}
@@ -100,9 +102,9 @@ func printChunksFile(filename string, printSamples bool) error {
 						maxTS = ts
 					}
 
-					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), hBuffer.String())
+					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), h.String())
 				case chunkenc.ValFloatHistogram:
-					ts, fhBuffer := it.AtFloatHistogram(fh)
+					ts, fh := it.AtFloatHistogram(fh)
 					if ts < minTS {
 						minTS = ts
 					}
@@ -110,7 +112,7 @@ func printChunksFile(filename string, printSamples bool) error {
 						maxTS = ts
 					}
 
-					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), fhBuffer.String())
+					fmt.Printf("Chunk #%d, sample #%d: ts: %d (%s), val: %s\n", cix, six, ts, formatTimestamp(ts), fh.String())
 				default:
 					fmt.Printf("Chunk #%d, sample #%d: ts: N/A (N/A), unsupported value type %v", cix, six, valType)
 				}

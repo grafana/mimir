@@ -62,8 +62,10 @@ func printChunks(blockDir string, chunkRefs []string) {
 		fmt.Println("Chunk ref:", ref, "samples:", ch.NumSamples(), "bytes:", len(ch.Bytes()))
 
 		it := ch.Iterator(nil)
-		h := &histogram.Histogram{}       // reused in iteration as we just dump the value and move on
-		fh := &histogram.FloatHistogram{} // reused in iteration as we just dump the value and move on
+		var (
+			h  *histogram.Histogram      // reused in iteration as we just dump the value and move on
+			fh *histogram.FloatHistogram // reused in iteration as we just dump the value and move on
+		)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
 			case chunkenc.ValFloat:
