@@ -580,10 +580,11 @@ func verifyChunks(cr *chunks.Reader, cm chunks.Meta) error {
 	for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 		samples++
 
-		ts := it.AtT()
 		if valType != chunkenc.ValFloat && valType != chunkenc.ValHistogram && valType != chunkenc.ValFloatHistogram {
 			return errors.Errorf("unsupported value type %v in chunk %d", valType, cm.Ref)
 		}
+
+		ts := it.AtT()
 
 		if firstSample {
 			firstSample = false
