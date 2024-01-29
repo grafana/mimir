@@ -33,6 +33,8 @@ message PrometheusRangeQueryRequest {
   // Hints that could be optionally attached to the request to pass down the stack.
   // These hints can be used to optimize the query execution.
   Hints hints = 9 [(gogoproto.nullable) = true];
+
+  google.protobuf.Duration lookback_delta = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
 }
 
 message PrometheusInstantQueryRequest {
@@ -47,6 +49,8 @@ message PrometheusInstantQueryRequest {
   // Hints that could be optionally attached to the request to pass down the stack.
   // These hints can be used to optimize the query execution.
   Hints hints = 6 [(gogoproto.nullable) = true];
+
+  google.protobuf.Duration lookback_delta = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
 }
 
 message PrometheusResponseHeader {
