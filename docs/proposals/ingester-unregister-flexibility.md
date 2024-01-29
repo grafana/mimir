@@ -71,7 +71,7 @@ The cost-conscious Mimir operator is now stuck between a rock and a hard place:
 
 ## Proposal
 
-A new `/ingester/prepare-unregister` HTTP endpoint is added.
+A new `/ingester/unregister-on-shutdown` HTTP endpoint is added.
 This endpoint can be used to control whether the ingester should unregister from the ring the next time it is stopped.
 
 The endpoint supports three HTTP methods: `GET`, `PUT` and `DELETE`.
@@ -104,7 +104,7 @@ All three behaviours of the endpoint are idempotent.
 
 ### Example usage
 
-The `/ingester/prepare-unregister` endpoint allows operators to run ingesters in a default mode of _not_ leaving the
+The `/ingester/unregister-on-shutdown` endpoint allows operators to run ingesters in a default mode of _not_ leaving the
 ring on shutdown.
 
 Most cloud platforms offer an "eviction notice" prior to node eviction. A helper service can be set up to react to
@@ -114,7 +114,7 @@ Concrete example:
 1. Ingesters `a-1` and `a-7` run on node `zone1-snkq`. Ingesters `b-4` and `b-9` run on node `zone2-iqmd`.
 2. An eviction notice is sent for nodes `zone1-snkq` and `zone2-iqmd` at the same time.
 3. Helper service picks up the eviction notice, figures out which ingesters run on the two nodes, and invokes the
-   `/ingester/prepare-unregister` endpoint to make each ingester leave the ring when evicted.
+   `/ingester/unregister-on-shutdown` endpoint to make each ingester leave the ring when evicted.
 4. The ingesters are evicted and leave the ring.
 5. Because the ingesters leave the ring, each ingester zone is left with exclusively `ACTIVE` ingesters, and availability
    is maintained.
