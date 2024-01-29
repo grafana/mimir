@@ -158,12 +158,13 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
+	sharded := hints != nil && hints.ShardCount > 0
+
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	sharded := hints != nil && hints.ShardCount > 0
 	p, err := q.index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)

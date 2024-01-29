@@ -72,21 +72,23 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:                        wlog.DefaultSegmentSize,
-		MaxBlockChunkSegmentSize:              chunks.DefaultChunkSegmentSize,
-		RetentionDuration:                     int64(15 * 24 * time.Hour / time.Millisecond),
-		MinBlockDuration:                      DefaultBlockDuration,
-		MaxBlockDuration:                      DefaultBlockDuration,
-		NoLockfile:                            false,
-		SamplesPerChunk:                       DefaultSamplesPerChunk,
-		WALCompression:                        wlog.CompressionNone,
-		StripeSize:                            DefaultStripeSize,
-		HeadChunksWriteBufferSize:             chunks.DefaultWriteBufferSize,
-		IsolationDisabled:                     defaultIsolationDisabled,
+		WALSegmentSize:              wlog.DefaultSegmentSize,
+		MaxBlockChunkSegmentSize:    chunks.DefaultChunkSegmentSize,
+		RetentionDuration:           int64(15 * 24 * time.Hour / time.Millisecond),
+		MinBlockDuration:            DefaultBlockDuration,
+		MaxBlockDuration:            DefaultBlockDuration,
+		NoLockfile:                  false,
+		SamplesPerChunk:             DefaultSamplesPerChunk,
+		WALCompression:              wlog.CompressionNone,
+		StripeSize:                  DefaultStripeSize,
+		HeadChunksWriteBufferSize:   chunks.DefaultWriteBufferSize,
+		IsolationDisabled:           defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:    chunks.DefaultWriteQueueSize,
+		OutOfOrderCapMax:            DefaultOutOfOrderCapMax,
+		EnableOverlappingCompaction: true,
+		EnableSharding:              false,
+
 		HeadChunksEndTimeVariance:             0,
-		HeadChunksWriteQueueSize:              chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMax:                      DefaultOutOfOrderCapMax,
-		EnableOverlappingCompaction:           true,
 		HeadPostingsForMatchersCacheTTL:       DefaultPostingsForMatchersCacheTTL,
 		HeadPostingsForMatchersCacheMaxItems:  DefaultPostingsForMatchersCacheMaxItems,
 		HeadPostingsForMatchersCacheMaxBytes:  DefaultPostingsForMatchersCacheMaxBytes,
@@ -205,6 +207,9 @@ type Options struct {
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
 	// For Prometheus, this will always be true.
 	EnableOverlappingCompaction bool
+
+	// EnableSharding enables query sharding support in TSDB.
+	EnableSharding bool
 
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
@@ -933,6 +938,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
+	headOpts.EnableSharding = opts.EnableSharding
 	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
 	headOpts.PostingsForMatchersCacheMaxItems = opts.HeadPostingsForMatchersCacheMaxItems
 	headOpts.PostingsForMatchersCacheMaxBytes = opts.HeadPostingsForMatchersCacheMaxBytes
