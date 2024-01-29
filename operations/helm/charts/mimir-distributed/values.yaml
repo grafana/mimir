@@ -1124,7 +1124,7 @@ ruler:
   # This service account can be used even if the default one is not set.
   serviceAccount:
     create: false
-    name:
+    name: ""
     annotations: {}
     labels: {}
 
