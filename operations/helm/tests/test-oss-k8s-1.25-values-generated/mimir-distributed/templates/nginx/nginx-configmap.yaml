@@ -34,8 +34,9 @@ data:
             '"$http_user_agent" "$http_x_forwarded_for"';
       access_log   /dev/stderr  main;
     
-      sendfile     on;
-      tcp_nopush   on;
+      sendfile           on;
+      tcp_nopush         on;
+      proxy_http_version 1.1;
       resolver kube-dns.kube-system.svc.cluster.local.;
     
       # Ensure that X-Scope-OrgID is always present, default to the no_auth_tenant for backwards compatibility when multi-tenancy was turned off.

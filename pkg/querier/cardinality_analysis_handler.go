@@ -129,7 +129,7 @@ func ActiveSeriesCardinalityHandler(d Distributor, limits *validation.Overrides)
 }
 
 func respondFromError(err error, w http.ResponseWriter) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

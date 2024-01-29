@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -26,7 +27,7 @@ func TestWrapQueryFuncWithReadConsistency(t *testing.T) {
 			return promql.Vector{}, nil
 		}
 
-		_, _ = WrapQueryFuncWithReadConsistency(orig)(ctx, "", time.Now())
+		_, _ = WrapQueryFuncWithReadConsistency(orig, log.NewNopLogger())(ctx, "", time.Now())
 		return
 	}
 
@@ -75,7 +76,7 @@ func TestWrapQueryableWithReadConsistency(t *testing.T) {
 			return storage.EmptySeriesSet()
 		}
 
-		wrappedQueryable := WrapQueryableWithReadConsistency(&storage.MockQueryable{MockQuerier: querier})
+		wrappedQueryable := WrapQueryableWithReadConsistency(&storage.MockQueryable{MockQuerier: querier}, log.NewNopLogger())
 		wrapperQuerier, err := wrappedQueryable.Querier(math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 

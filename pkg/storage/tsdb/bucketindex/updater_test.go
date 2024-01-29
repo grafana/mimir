@@ -250,6 +250,8 @@ func assertBucketIndexEqual(t testing.TB, idx *Index, bkt objstore.Bucket, userI
 			MaxTime:          b.MaxTime,
 			UploadedAt:       getBlockUploadedAt(t, bkt, userID, b.ULID),
 			CompactorShardID: b.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
+			Source:           "test",
+			CompactionLevel:  1,
 		})
 	}
 

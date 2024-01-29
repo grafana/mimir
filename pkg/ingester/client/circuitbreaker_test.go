@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -78,7 +79,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	// Failed request that should put the circuit breaker into "open"
 	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, failure)
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok, "expected to get gRPC status from error")
 	require.Equal(t, codes.Unavailable, s.Code())
 

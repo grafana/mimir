@@ -42,8 +42,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
+* [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [ENHANCEMENT] Make the PSP template configurable. #7190
+
+## 5.2.1
+
+* [BUGFIX] Revert [PR 6999](https://github.com/grafana/mimir/pull/6999), introduced in 5.2.0, which broke installations relying on the default value of `blocks_storage.backend: s3`. If `mimir.structuredConfig.blocks_storage.backend: s3` wasn't explicitly set, then Mimir would fail to connect to S3 and will instead try to read and write blocks to the local filesystem. #7199
 
 ## 5.2.0
 

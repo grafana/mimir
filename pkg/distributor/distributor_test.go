@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -364,7 +365,7 @@ func TestDistributor_Push(t *testing.T) {
 				configure:       tc.configure,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
+			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true, "foo")
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedErrorContains == nil && tc.expectedGRPCError == nil {
@@ -422,7 +423,7 @@ func TestDistributor_PushWithDoBatchWorkers(t *testing.T) {
 		originalIngesterDoBatchPushWorkers(f)
 	}
 
-	request := makeWriteRequest(123456789000, 3, 5, false, false)
+	request := makeWriteRequest(123456789000, 3, 5, false, false, "foo")
 	ctx := user.InjectOrgID(context.Background(), "user")
 	response, err := distributor.Push(ctx, request)
 
@@ -443,17 +444,17 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	})
 
 	// Lock all mockIngester instances, so they will be waiting
-	for i := range ings {
-		ings[i].Lock()
+	for _, ing := range ings {
+		ing.Lock()
 		defer func(ing *mockIngester) {
 			ing.Unlock()
-		}(&ings[i])
+		}(ing)
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	request := makeWriteRequest(123456789000, 1, 1, false, true)
+	request := makeWriteRequest(123456789000, 1, 1, false, true, "foo")
 	_, err := ds[0].Push(ctx, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -645,7 +646,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, 1, 1, false, true)
+				request := makeWriteRequest(0, 1, 1, false, true, "foo")
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -753,7 +754,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 			// Push samples in multiple requests to only the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false, "foo")
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -933,7 +934,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			d.ingestionRate.Tick()
 
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false, "foo")
 				resp, err := d.Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -1044,8 +1045,9 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 }
 
 func TestDistributor_PushQuery(t *testing.T) {
+	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
-	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
+	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
 	type testcase struct {
@@ -1114,7 +1116,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, barMatcher},
-					expectedResponse:  expectedResponse(0, 10, true),
+					expectedResponse:  expectedResponse(0, 10, true, metricName),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -1126,7 +1128,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					happyIngesters:    happyIngesters,
 					samples:           10,
 					matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-					expectedResponse:  expectedResponse(0, 0, true),
+					expectedResponse:  expectedResponse(0, 0, true, metricName),
 					expectedIngesters: expectedIngesters,
 					shuffleShardSize:  shuffleShardSize,
 				})
@@ -1139,7 +1141,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 						happyIngesters:    happyIngesters,
 						samples:           10,
 						matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-						expectedResponse:  expectedResponse(i, i+1, true),
+						expectedResponse:  expectedResponse(i, i+1, true, metricName),
 						expectedIngesters: expectedIngesters,
 						shuffleShardSize:  shuffleShardSize,
 					})
@@ -1164,7 +1166,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			ds, ingesters, reg := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true)
+			request := makeWriteRequest(0, tc.samples, tc.metadata, false, true, metricName)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
@@ -1196,7 +1198,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
 			if tc.expectedError == nil {
-				assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "QueryStream"))
+				assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "QueryStream"))
 			}
 		})
 	}
@@ -1396,7 +1398,7 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			req.SkipLabelNameValidation = tc.skipLabelNameValidationReq
 			_, err := ds[0].Push(ctx, req)
 			if tc.errExpected {
-				fromError, _ := status.FromError(err)
+				fromError, _ := grpcutil.ErrorToStatus(err)
 				assert.Equal(t, tc.errMessage, fromError.Message())
 			} else {
 				assert.Nil(t, err)
@@ -1466,7 +1468,7 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 			})
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
-				fromError, _ := status.FromError(err)
+				fromError, _ := grpcutil.ErrorToStatus(err)
 				assert.Contains(t, fromError.Message(), tc.errMsg)
 				assert.Contains(t, fromError.Message(), tc.errID)
 			} else {
@@ -2257,7 +2259,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			// Due to the quorum the distributor could cancel the last request towards ingesters
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "MetricsForLabelMatchers"))
+			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "MetricsForLabelMatchers"))
 		})
 	}
 }
@@ -2355,7 +2357,7 @@ func TestDistributor_ActiveSeries(t *testing.T) {
 			assert.Equal(t, uint64(len(test.expectedSeries)), qStats.GetFetchedSeriesCount())
 
 			// Check that the correct number of ingesters have been queried.
-			assert.Contains(t, []int{test.expectedNumQueriedIngesters, test.expectedNumQueriedIngesters - 1}, countMockIngestersCalls(ingesters, "ActiveSeries"))
+			assert.Contains(t, []int{test.expectedNumQueriedIngesters, test.expectedNumQueriedIngesters - 1}, countMockIngestersCalled(ingesters, "ActiveSeries"))
 		})
 	}
 
@@ -2483,7 +2485,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			// Due to the quorum the distributor could cancel the last request towards ingesters
 			// if all other ones are successful, so we're good either has been queried X or X-1
 			// ingesters.
-			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "LabelNames"))
+			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalled(ingesters, "LabelNames"))
 		})
 	}
 }
@@ -2519,7 +2521,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Push metadata
 			ctx := user.InjectOrgID(context.Background(), "test")
 
-			req := makeWriteRequest(0, 0, 10, false, true)
+			req := makeWriteRequest(0, 0, 10, false, true, "foo")
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
@@ -2954,7 +2956,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			})
 
 			// Make sure enough ingesters were queried
-			assert.GreaterOrEqual(t, countMockIngestersCalls(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
+			assert.GreaterOrEqual(t, countMockIngestersCalled(ingesters, "LabelValuesCardinality"), testData.expectedIngesters)
 		})
 	}
 }
@@ -3458,18 +3460,53 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 	return mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
 }
 
-type prepConfig struct {
+type ingesterState int
+
+const (
+	ingesterStateHappy = ingesterState(iota)
+	ingesterStateFailed
+)
+
+type ingesterZoneState struct {
+	// numIngesters and happyIngesters are superseded by states
 	numIngesters, happyIngesters int
-	queryDelay                   time.Duration
-	pushDelay                    time.Duration
-	shuffleShardSize             int
-	limits                       *validation.Limits
-	numDistributors              int
+
+	// states explicitly sets the state of each ingester.
+	// states takes precedence over numIngesters and happyIngesters
+	states []ingesterState
+
+	// ringStates explicitly sets the state of each ingester in the ring.
+	// If unset, instances will be in ring.ACTIVE state.
+	ringStates []ring.InstanceState
+}
+
+type prepConfig struct {
+	// numIngesters, happyIngesters, and ingesterZones are superseded by ingesterStateByZone
+	numIngesters, happyIngesters int
+	ingesterZones                []string
+
+	// ingesterStateByZone supersedes numIngesters, happyIngesters, and ingesterZones
+	ingesterStateByZone map[string]ingesterZoneState
+
+	// ingesterDataPerZone:
+	//   map[zone-a][0] -> ingester-zone-a-0 write request
+	//   map[zone-a][1] -> ingester-zone-a-1 write request
+	// Each zone in ingesterDataPerZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
+	// If a request is nil, sending a request to the ingester is skipped.
+	ingesterDataPerZone map[string][]*mimirpb.WriteRequest
+	// ingesterDataTenantID is the tenant under which ingesterDataPerZone is pushed
+	ingesterDataTenantID string
+
+	queryDelay       time.Duration
+	pushDelay        time.Duration
+	shuffleShardSize int
+	limits           *validation.Limits
+	numDistributors  int
+	useIngestStorage bool
 
 	replicationFactor                  int
 	enableTracker                      bool
 	ingestersSeriesCountTotal          uint64
-	ingesterZones                      []string
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 
 	configure func(*Config)
@@ -3477,19 +3514,122 @@ type prepConfig struct {
 	timeOut bool
 }
 
-func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
-	ingesters := []mockIngester{}
-	for i := 0; i < cfg.happyIngesters; i++ {
-		zone := ""
-		if len(cfg.ingesterZones) > 0 {
-			zone = cfg.ingesterZones[i%len(cfg.ingesterZones)]
+// totalIngesters takes into account ingesterStateByZone and numIngesters.
+func (c prepConfig) totalIngesters() int {
+	if len(c.ingesterStateByZone) == 0 {
+		return c.numIngesters
+	}
+	n := 0
+	for _, s := range c.ingesterStateByZone {
+		if s.states != nil {
+			n += len(s.states)
+		} else {
+			n += s.numIngesters
 		}
+	}
+	return n
+}
+
+// totalZones takes into account ingesterStateByZone and ingesterZones.
+// If there were no explicit zones, then totalZones returns 1.
+func (c prepConfig) totalZones() int {
+	if len(c.ingesterStateByZone) == 0 {
+		evenlyAssignedZones := len(c.ingesterZones)
+		if evenlyAssignedZones == 0 {
+			return 1
+		}
+		return evenlyAssignedZones
+	}
+	return len(c.ingesterStateByZone)
+}
+
+func (c prepConfig) ingesterRingState(zone string, id int) ring.InstanceState {
+	if len(c.ingesterStateByZone[zone].ringStates) == 0 {
+		return ring.ACTIVE
+	}
+	return c.ingesterStateByZone[zone].ringStates[id]
+}
+
+func (c prepConfig) validate(t testing.TB) {
+	if len(c.ingesterStateByZone) != 0 {
+		require.Zero(t, c.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+		require.Zero(t, c.happyIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+		require.Nil(t, c.ingesterZones, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+
+		for zone, state := range c.ingesterStateByZone {
+			ingestersInZone := state.numIngesters
+			if state.states != nil {
+				require.Zero(t, state.numIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+				require.Zero(t, state.happyIngesters, "ingesterStateByZone and numIngesters/happyIngesters are exclusive")
+				ingestersInZone = len(state.states)
+			}
+			if len(state.ringStates) > 0 {
+				require.Len(t, state.ringStates, ingestersInZone, "ringStates cannot be longer than the number of ingesters in the zone")
+			}
+			require.LessOrEqual(t, len(c.ingesterDataPerZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
+		}
+	}
+}
+
+func prepareIngesters(cfg prepConfig) []*mockIngester {
+	if len(cfg.ingesterStateByZone) != 0 {
+		ingesters := []*mockIngester(nil)
+		for zone, state := range cfg.ingesterStateByZone {
+			ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+		}
+		return ingesters
+	}
+	ingesters := []*mockIngester(nil)
+	numZones := len(cfg.ingesterZones)
+	if numZones == 0 {
+		return prepareIngesterZone("", ingesterZoneState{numIngesters: cfg.numIngesters, happyIngesters: cfg.happyIngesters}, cfg)
+	}
+	for zoneIdx, zone := range cfg.ingesterZones {
+		state := ingesterZoneState{
+			numIngesters:   cfg.numIngesters / numZones,
+			happyIngesters: cfg.happyIngesters / numZones,
+		}
+		if zoneIdx < cfg.happyIngesters%numZones {
+			// Account for cases where the number of happy ingesters isn't divisible by numZones.
+			// For example, when there are 3 zones, 9 ingesters, and 8 happy ingesters.
+			// In this case ingester-zone-c-2 (the last ingester) is the unhappy ingester.
+			state.happyIngesters++
+		}
+
+		if zoneIdx < cfg.numIngesters%numZones {
+			// Account for cases where the number of ingesters isn't divisible by numZones.
+			// For example, when there are 3 zones and 11 ingesters.
+			// In this case the distribution of replicas is zone-a: 4, zone-b: 4, zone-c: 3.
+			state.numIngesters++
+		}
+
+		ingesters = append(ingesters, prepareIngesterZone(zone, state, cfg)...)
+	}
+	return ingesters
+
+}
+
+func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) []*mockIngester {
+	ingesters := []*mockIngester(nil)
+
+	if state.states == nil {
+		state.states = make([]ingesterState, state.numIngesters)
+		for i := 0; i < state.happyIngesters; i++ {
+			state.states[i] = ingesterStateHappy
+		}
+		for i := state.happyIngesters; i < state.numIngesters; i++ {
+			state.states[i] = ingesterStateFailed
+		}
+	}
+
+	for i, s := range state.states {
 		var labelNamesStreamResponseDelay time.Duration
 		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
 			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
-		ingesters = append(ingesters, mockIngester{
-			happy:                         true,
+		ingesters = append(ingesters, &mockIngester{
+			id:                            i,
+			happy:                         s == ingesterStateHappy,
 			queryDelay:                    cfg.queryDelay,
 			pushDelay:                     cfg.pushDelay,
 			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
@@ -3498,40 +3638,39 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			timeOut:                       cfg.timeOut,
 		})
 	}
-	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
-		ingesters = append(ingesters, mockIngester{
-			queryDelay:       cfg.queryDelay,
-			pushDelay:        cfg.pushDelay,
-			seriesCountTotal: cfg.ingestersSeriesCountTotal,
-		})
-	}
+	return ingesters
+}
 
-	// Use a real ring with a mock KV store to test ring RF logic.
+func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc {
 	ingesterDescs := map[string]ring.InstanceDesc{}
-	ingestersByAddr := map[string]*mockIngester{}
+
 	for i := range ingesters {
-		addr := fmt.Sprintf("%d", i)
-		tokens := []uint32{uint32((math.MaxUint32 / cfg.numIngesters) * i)}
+		addr := ingesters[i].address()
+		tokens := []uint32{uint32((math.MaxUint32 / len(ingesters)) * i)}
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
-			State:               ring.ACTIVE,
+			State:               cfg.ingesterRingState(ingesters[i].zone, i),
 			Timestamp:           time.Now().Unix(),
-			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(),
+			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(), // registered before the shuffle sharding lookback period, so we don't start including other ingesters
 			Tokens:              tokens,
 		}
-		ingestersByAddr[addr] = &ingesters[i]
 		ingesters[i].tokens = tokens
 	}
+	return &ring.Desc{Ingesters: ingesterDescs}
+}
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*prometheus.Registry) {
+	cfg.validate(t)
+
+	logger := log.NewNopLogger()
+	ingesters := prepareIngesters(cfg)
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
-			return &ring.Desc{
-				Ingesters: ingesterDescs,
-			}, true, nil
+			return prepareRingInstances(cfg, ingesters), true, nil
 		},
 	)
 	require.NoError(t, err)
@@ -3548,17 +3687,22 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		},
 		HeartbeatTimeout:     60 * time.Minute,
 		ReplicationFactor:    rf,
-		ZoneAwarenessEnabled: len(cfg.ingesterZones) > 0,
-	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+		ZoneAwarenessEnabled: cfg.totalZones() > 1,
+	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 
-	test.Poll(t, time.Second, cfg.numIngesters, func() interface{} {
+	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
 	})
 
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-		return ingestersByAddr[inst.Addr], nil
+		for _, ing := range ingesters {
+			if ing.address() == inst.Addr {
+				return ing, nil
+			}
+		}
+		return nil, fmt.Errorf("ingester with address %s not found", inst.Addr)
 	})
 
 	if cfg.limits == nil {
@@ -3571,9 +3715,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	registries := make([]*prometheus.Registry, 0, cfg.numDistributors)
 	for i := 0; i < cfg.numDistributors; i++ {
 
-		var distributorCfg Config
-		var clientConfig client.Config
-		flagext.DefaultValues(&distributorCfg, &clientConfig)
+		var (
+			distributorCfg Config
+			clientConfig   client.Config
+			ingestCfg      ingest.Config
+		)
+		flagext.DefaultValues(&distributorCfg, &clientConfig, &ingestCfg)
 
 		distributorCfg.IngesterClientFactory = factory
 		distributorCfg.DistributorRing.Common.HeartbeatPeriod = 100 * time.Millisecond
@@ -3582,6 +3729,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
+		distributorCfg.IngestStorageConfig = ingestCfg
+		distributorCfg.IngestStorageConfig.Enabled = cfg.useIngestStorage
 
 		if cfg.configure != nil {
 			cfg.configure(&distributorCfg)
@@ -3589,7 +3738,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 
 		if cfg.enableTracker {
 			codec := GetReplicaDescCodec()
-			ringStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
+			ringStore, closer := consul.NewInMemoryClient(codec, logger, nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 			mock := kv.PrefixClient(ringStore, "prefix")
 			distributorCfg.HATrackerConfig = HATrackerConfig{
@@ -3624,9 +3773,37 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		})
 	}
 
+	if len(cfg.ingesterDataPerZone) != 0 {
+		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
+	}
+
 	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
 
 	return distributors, ingesters, registries
+}
+
+func populateIngestersData(t testing.TB, ingesters []*mockIngester, dataPerZone map[string][]*mimirpb.WriteRequest, tenantID string) {
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+
+	findIngester := func(zone string, id int) *mockIngester {
+		for _, ing := range ingesters {
+			if ing.zone == zone && ing.id == id {
+				return ing
+			}
+		}
+		panic("pushing to non-existent ingester; prepConfig.validate() should have caught this")
+	}
+
+	for zone, requests := range dataPerZone {
+		for ingesterID, request := range requests {
+			if request == nil {
+				continue
+			}
+			ing := findIngester(zone, ingesterID)
+			_, err := ing.Push(ctx, request)
+			require.NoErrorf(t, err, "pushing to ingester %s", ing.address())
+		}
+	}
 }
 
 func stopAll(ds []*Distributor, r *ring.Ring) {
@@ -3640,11 +3817,6 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 
 func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
-
-	if len(metrics) == 0 {
-		metrics = []string{"foo"}
-	}
-
 	for _, metric := range metrics {
 		for i := 0; i < samples; i++ {
 			req := makeWriteRequestTimeseries(
@@ -3882,32 +4054,34 @@ func makeFloatHistogramTimeseries(seriesLabels []string, timestamp int64, histog
 	}
 }
 
-func expectedResponse(start, end int, histograms bool) model.Matrix {
+func expectedResponse(start, end int, histograms bool, metrics ...string) model.Matrix {
 	// TODO(histograms): should we modify the tests so it doesn't return both float and histogram for the same timestamp? (but still test sending float alone, histogram alone, and mixed) but might not be worth fixing the mock ingester
 	result := model.Matrix{}
-	for i := start; i < end; i++ {
-		ss := &model.SampleStream{
-			Metric: model.Metric{
-				model.MetricNameLabel: "foo",
-				"bar":                 "baz",
-				"sample":              model.LabelValue(fmt.Sprintf("%d", i)),
-			},
-			Values: []model.SamplePair{
-				{
-					Value:     model.SampleValue(i),
-					Timestamp: model.Time(i),
+	for _, metricName := range metrics {
+		for i := start; i < end; i++ {
+			ss := &model.SampleStream{
+				Metric: model.Metric{
+					model.MetricNameLabel: model.LabelValue(metricName),
+					"bar":                 "baz",
+					"sample":              model.LabelValue(fmt.Sprintf("%d", i)),
 				},
-			},
-		}
-		if histograms {
-			ss.Histograms = []model.SampleHistogramPair{
-				{
-					Histogram: util_test.GenerateTestSampleHistogram(i),
-					Timestamp: model.Time(i),
+				Values: []model.SamplePair{
+					{
+						Value:     model.SampleValue(i),
+						Timestamp: model.Time(i),
+					},
 				},
 			}
+			if histograms {
+				ss.Histograms = []model.SampleHistogramPair{
+					{
+						Histogram: util_test.GenerateTestSampleHistogram(i),
+						Timestamp: model.Time(i),
+					},
+				}
+			}
+			result = append(result, ss)
 		}
-		result = append(result, ss)
 	}
 	return result
 }
@@ -3936,6 +4110,11 @@ type mockIngester struct {
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
 	tokens                        []uint32
+	id                            int
+}
+
+func (i *mockIngester) address() string {
+	return fmt.Sprintf("ingester-%s-%d", i.zone, i.id)
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -4138,13 +4317,11 @@ func (i *mockIngester) QueryStream(_ context.Context, req *client.QueryRequest, 
 		}
 		if hexists {
 			for _, c := range hchunks {
-				// panic("got hist")
 				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
 		}
 		if fhexists {
 			for _, c := range fhchunks {
-				// panic("got fhist")
 				wireChunks = append(wireChunks, makeWireChunk(c))
 			}
 		}
@@ -4775,10 +4952,10 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 	}
 }
 
-func countMockIngestersCalls(ingesters []mockIngester, name string) int {
+func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 	count := 0
-	for i := 0; i < len(ingesters); i++ {
-		if ingesters[i].countCalls(name) > 0 {
+	for _, i := range ingesters {
+		if i.countCalls(name) > 0 {
 			count++
 		}
 	}
@@ -5205,7 +5382,7 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 		numDistributors:   1,
 		replicationFactor: 1, // push each series to single ingester only
 	}
-	d, ing, _ := prepare(t, config)
+	d, ingesters, _ := prepare(t, config)
 
 	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
@@ -5239,20 +5416,20 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	// Verify that each ingester only received series and metadata that it should receive.
 	totalSeries := 0
 	totalMetadata := 0
-	for ix := range ing {
-		totalSeries += len(ing[ix].timeseries)
-		totalMetadata += len(ing[ix].metadata)
+	for ix, ing := range ingesters {
+		totalSeries += len(ing.timeseries)
+		totalMetadata += len(ing.metadata)
 
-		for _, ts := range ing[ix].timeseries {
+		for _, ts := range ing.timeseries {
 			token := tokenForLabels(userName, ts.Labels)
-			ingIx := getIngesterIndexForToken(token, ing)
+			ingIx := getIngesterIndexForToken(token, ingesters)
 			assert.Equal(t, ix, ingIx)
 		}
 
-		for _, metadataMap := range ing[ix].metadata {
+		for _, metadataMap := range ing.metadata {
 			for m := range metadataMap {
 				token := tokenForMetadata(userName, m.MetricFamilyName)
-				ingIx := getIngesterIndexForToken(token, ing)
+				ingIx := getIngesterIndexForToken(token, ingesters)
 				assert.Equal(t, ix, ingIx)
 			}
 		}
@@ -5261,9 +5438,9 @@ func TestSeriesAreShardedToCorrectIngesters(t *testing.T) {
 	// Verify that all timeseries were forwarded to ingesters.
 	for _, ts := range req.Timeseries {
 		token := tokenForLabels(userName, ts.Labels)
-		ingIx := getIngesterIndexForToken(token, ing)
+		ingIx := getIngesterIndexForToken(token, ingesters)
 
-		assert.Equal(t, ts.Labels, ing[ingIx].timeseries[token].Labels)
+		assert.Equal(t, ts.Labels, ingesters[ingIx].timeseries[token].Labels)
 	}
 
 	assert.Equal(t, series, totalSeries)
@@ -5332,13 +5509,13 @@ func TestHandlePushError(t *testing.T) {
 	}
 }
 
-func getIngesterIndexForToken(key uint32, ings []mockIngester) int {
+func getIngesterIndexForToken(key uint32, ings []*mockIngester) int {
 	tokens := []uint32{}
 	tokensMap := map[uint32]int{}
 
-	for ix := range ings {
-		tokens = append(tokens, ings[ix].tokens...)
-		for _, t := range ings[ix].tokens {
+	for ix, ing := range ings {
+		tokens = append(tokens, ing.tokens...)
+		for _, t := range ing.tokens {
 			tokensMap[t] = ix
 		}
 	}
@@ -5360,7 +5537,7 @@ func searchToken(tokens []uint32, key uint32) int {
 }
 
 func checkGRPCError(t *testing.T, expectedStatus *status.Status, expectedDetails *mimirpb.ErrorDetails, err error) {
-	stat, ok := status.FromError(err)
+	stat, ok := grpcutil.ErrorToStatus(err)
 	require.True(t, ok)
 	require.Equal(t, expectedStatus.Code(), stat.Code())
 	require.Equal(t, expectedStatus.Message(), stat.Message())
@@ -5382,11 +5559,11 @@ func createStatusWithDetails(t *testing.T, code codes.Code, message string, caus
 	return statWithDetails
 }
 
-func countCalls(ingesters []mockIngester, name string) int {
+func countCalls(ingesters []*mockIngester, name string) int {
 	count := 0
 
-	for i := range ingesters {
-		count += ingesters[i].countCalls(name)
+	for _, ing := range ingesters {
+		count += ing.countCalls(name)
 	}
 
 	return count
@@ -5570,7 +5747,7 @@ func TestStartFinishRequest(t *testing.T) {
 					// Verify that errors returned by StartPushRequest method are NOT gRPC status errors.
 					// They will be converted to gRPC status by grpcInflightMethodLimiter.
 					require.Error(t, err)
-					_, ok := status.FromError(err)
+					_, ok := grpcutil.ErrorToStatus(err)
 					require.False(t, ok)
 				}
 			}

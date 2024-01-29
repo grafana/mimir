@@ -27569,7 +27569,7 @@ data:
                 },
                 "targets": [
                    {
-                      "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_updated\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,
@@ -27578,7 +27578,7 @@ data:
                       "step": null
                    },
                    {
-                      "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas_ready\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      label_replace(\n        label_replace(\n          {__name__=~\"kube_(deployment|statefulset)_status_replicas\", cluster=~\"$cluster\", namespace=~\"$namespace\"},\n          \"cortex_service\", \"$1\", \"deployment\", \"(.+)\"\n        ),\n        \"cortex_service\", \"$1\", \"statefulset\", \"(.+)\"\n      ),\n      # Strip the -zone-X suffix, if there is one\n      \"cortex_service\", \"$1\", \"cortex_service\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                      "expr": "(\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas_ready{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  /\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n) and (\n  sum by (workload) (\n    label_replace(label_replace(label_replace(\n      kube_deployment_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n      or\n      kube_statefulset_status_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"}\n    , \"workload\", \"$1\", \"deployment\", \"(.+)\"), \"workload\", \"$1\", \"statefulset\", \"(.+)\"), \"workload\", \"$1\", \"workload\", \"(.*?)(?:-zone-[a-z])?\")\n  )\n  > 0\n)\n",
                       "format": "table",
                       "instant": true,
                       "intervalFactor": null,
@@ -27592,7 +27592,7 @@ data:
                    {
                       "id": "joinByField",
                       "options": {
-                         "byField": "cortex_service",
+                         "byField": "workload",
                          "mode": "outer"
                       }
                    },
@@ -27606,7 +27606,7 @@ data:
                          "renameByName": {
                             "Value #A": "Updated",
                             "Value #B": "Ready",
-                            "cortex_service": "Workload"
+                            "workload": "Workload"
                          }
                       }
                    },
@@ -32239,6 +32239,87 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "${loki_datasource}",
+                      "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                      "fill": 1,
+                      "id": 6,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 2,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                            "format": "time_series",
+                            "legendFormat": "p99",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "quantile_over_time(0.5, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by ()",
+                            "format": "time_series",
+                            "legendFormat": "p50",
+                            "legendLink": null
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Query wall time",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "s",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
                    }
                 ],
                 "repeat": null,
@@ -32259,7 +32340,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 6,
+                      "id": 7,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32333,7 +32414,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 7,
+                      "id": 8,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32407,7 +32488,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 8,
+                      "id": 9,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32481,7 +32562,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 9,
+                      "id": 10,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32555,7 +32636,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 10,
+                      "id": 11,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32621,6 +32702,81 @@ data:
                             "show": false
                          }
                       ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "${loki_datasource}",
+                      "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                      "fill": 1,
+                      "id": 12,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 2,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user))",
+                            "format": "time_series",
+                            "legendFormat": "{{user}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "P99 query wall time",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "s",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
                    }
                 ],
                 "repeat": null,
@@ -32641,7 +32797,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 11,
+                      "id": 13,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32715,7 +32871,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 12,
+                      "id": 14,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32789,7 +32945,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 13,
+                      "id": 15,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32863,7 +33019,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 14,
+                      "id": 16,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32937,7 +33093,7 @@ data:
                       "dashes": false,
                       "datasource": "${loki_datasource}",
                       "fill": 1,
-                      "id": 15,
+                      "id": 17,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -32972,6 +33128,81 @@ data:
                       "timeFrom": null,
                       "timeShift": null,
                       "title": "P99 time span",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "graph",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "s",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "${loki_datasource}",
+                      "description": "### Query wall time\nSeconds per second spent by queriers evaluating queries.\nThis is roughly the product of the number of subqueries for a query and how long they took.\nIn increase in this metric means that queries take more resources from the query path to evaluate.\n\n",
+                      "fill": 1,
+                      "id": 18,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 2,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "topk(10, quantile_over_time(0.99, {cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | unwrap query_wall_time_seconds [$__auto]) by (user_agent))",
+                            "format": "time_series",
+                            "legendFormat": "{{user_agent}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "P99 query wall time",
                       "tooltip": {
                          "shared": false,
                          "sort": 0,
@@ -33163,15 +33394,27 @@ data:
                                      "value": "s"
                                   }
                                ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "query_wall_time_seconds"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "unit",
+                                     "value": "s"
+                                  }
+                               ]
                             }
                          ]
                       },
                       "height": "500px",
-                      "id": 16,
+                      "id": 19,
                       "span": 12,
                       "targets": [
                          {
-                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ duration .response_time }}\",param_step_seconds=\"{{ div .param_step 1000 }}\",length_seconds=\"{{ duration .length }}\"",
+                            "expr": "{cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"query stats\" != \"/api/v1/read\" | logfmt | user=~\"${tenant_id}\" | user_agent=~\"${user_agent}\" | response_time > ${min_duration} | label_format response_time_seconds=\"{{ if .response_time }} {{ duration .response_time }} {{ end }}\",param_step_seconds=\"{{ if .param_step }} {{ div .param_step 1000 }} {{ end }}\",length_seconds=\"{{ if .length }} {{ duration .length }} {{ end }}\"",
                             "instant": false,
                             "legendFormat": "",
                             "range": true,
@@ -33212,7 +33455,6 @@ data:
                                   "path": true,
                                   "pod": true,
                                   "pod_template_hash": true,
-                                  "query_wall_time_seconds": true,
                                   "response_time": true,
                                   "stream": true,
                                   "traceID": true,
@@ -33251,7 +33493,11 @@ data:
                                "conversions": [
                                   {
                                      "destinationType": "number",
-                                     "targetField": "estimated_series_count"
+                                     "targetField": "sharded_queries"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "split_queries"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33259,19 +33505,7 @@ data:
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "fetched_chunks_count"
-                                  },
-                                  {
-                                     "destinationType": "number",
                                      "targetField": "fetched_index_bytes"
-                                  },
-                                  {
-                                     "destinationType": "number",
-                                     "targetField": "fetched_series_count"
-                                  },
-                                  {
-                                     "destinationType": "number",
-                                     "targetField": "queue_time_seconds"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33287,11 +33521,15 @@ data:
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "sharded_queries"
+                                     "targetField": "estimated_series_count"
                                   },
                                   {
                                      "destinationType": "number",
-                                     "targetField": "split_queries"
+                                     "targetField": "fetched_chunks_count"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "fetched_series_count"
                                   },
                                   {
                                      "destinationType": "number",
@@ -33308,6 +33546,10 @@ data:
                                   {
                                      "destinationType": "number",
                                      "targetField": "queue_time_seconds"
+                                  },
+                                  {
+                                     "destinationType": "number",
+                                     "targetField": "query_wall_time_seconds"
                                   }
                                ]
                             }

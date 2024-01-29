@@ -301,10 +301,13 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
 			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
 		)
-		if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
-			logMessage = append(logMessage, "read_consistency", consistency)
-		}
 	}
+
+	// Log the read consistency only when explicitly defined.
+	if consistency, ok := querierapi.ReadConsistencyFromContext(r.Context()); ok {
+		logMessage = append(logMessage, "read_consistency", consistency)
+	}
+
 	if len(f.cfg.LogQueryRequestHeaders) != 0 {
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
 	}
