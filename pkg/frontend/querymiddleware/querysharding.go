@@ -172,12 +172,15 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 }
 
 func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+	var opts promql.QueryOpts
+	opts = promql.NewPrometheusQueryOpts(false, r.GetLookbackDelta())
+
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
 			ctx,
 			queryable,
-			nil,
+			opts,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetStart()),
 			util.TimeFromMillis(r.GetEnd()),
@@ -187,7 +190,7 @@ func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable s
 		return engine.NewInstantQuery(
 			ctx,
 			queryable,
-			nil,
+			opts,
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)

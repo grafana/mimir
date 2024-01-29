@@ -35,6 +35,9 @@ type Limits interface {
 	// MaxQueryLookback returns the max lookback period of queries.
 	MaxQueryLookback(userID string) time.Duration
 
+	// QueryLookbackDelta returns the lookback-delta of queries.
+	QueryLookbackDelta(userID string) time.Duration
+
 	// MaxTotalQueryLength returns the limit of the length (in time) of a query.
 	MaxTotalQueryLength(userID string) time.Duration
 
@@ -237,6 +240,10 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
+
+	// Set the lookbackDelta of the first tenant to the requested lookbackDelta
+	lookbackDelta := rt.limits.QueryLookbackDelta(tenantIDs[0])
+	request = request.WithLookbackDelta(lookbackDelta)
 
 	// Limit the amount of parallel sub-requests according to the MaxQueryParallelism tenant setting.
 	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)

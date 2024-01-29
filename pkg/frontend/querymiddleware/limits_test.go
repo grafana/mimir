@@ -354,6 +354,11 @@ type multiTenantMockLimits struct {
 	byTenant map[string]mockLimits
 }
 
+func (m multiTenantMockLimits) MaxQueryLookbackDelta(userID string) string {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m multiTenantMockLimits) MaxQueryLookback(userID string) time.Duration {
 	return m.byTenant[userID].maxQueryLookback
 }
@@ -470,6 +475,11 @@ type mockLimits struct {
 	blockedQueries                       []*validation.BlockedQuery
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
+}
+
+func (m mockLimits) MaxQueryLookbackDelta(userID string) string {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {

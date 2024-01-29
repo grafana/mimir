@@ -156,6 +156,7 @@ type Limits struct {
 	QueryIngestersWithin                 model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
 
 	// Query-frontend limits.
+	QueryLookbackDelta                     model.Duration  `yaml:"query_lookback_delta" json:"query_lookback_delta"`
 	MaxTotalQueryLength                    model.Duration  `yaml:"max_total_query_length" json:"max_total_query_length"`
 	ResultsCacheTTL                        model.Duration  `yaml:"results_cache_ttl" json:"results_cache_ttl"`
 	ResultsCacheTTLForOutOfOrderTimeWindow model.Duration  `yaml:"results_cache_ttl_for_out_of_order_time_window" json:"results_cache_ttl_for_out_of_order_time_window"`
@@ -603,6 +604,11 @@ func (o *Overrides) MaxFetchedChunkBytesPerQuery(userID string) int {
 // MaxQueryLookback returns the max lookback period of queries.
 func (o *Overrides) MaxQueryLookback(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLookback)
+}
+
+// QueryLookbackDelta returns the lookback delta period of queries.
+func (o *Overrides) QueryLookbackDelta(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).QueryLookbackDelta)
 }
 
 // MaxPartialQueryLength returns the limit of the length (in time) of a (partial) query.

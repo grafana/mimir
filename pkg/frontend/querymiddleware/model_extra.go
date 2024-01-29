@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
@@ -76,6 +77,14 @@ func (q *PrometheusRangeQueryRequest) WithTotalQueriesHint(totalQueries int32) R
 	return &newRequest
 }
 
+// WithLookbackDelta clones the current `PrometheusRangeQueryRequest` with an
+// added lookbackDelta.
+func (q *PrometheusRangeQueryRequest) WithLookbackDelta(lookbackDelta time.Duration) Request {
+	newRequest := *q
+	newRequest.LookbackDelta = lookbackDelta
+	return &newRequest
+}
+
 // WithEstimatedSeriesCountHint clones the current `PrometheusRangeQueryRequest`
 // with an added Hint value for EstimatedCardinality.
 func (q *PrometheusRangeQueryRequest) WithEstimatedSeriesCountHint(count uint64) Request {
@@ -127,6 +136,12 @@ func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, _ int64) R
 func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
 	newRequest := *r
 	newRequest.Query = s
+	return &newRequest
+}
+
+func (r *PrometheusInstantQueryRequest) WithLookbackDelta(lookbackDelta time.Duration) Request {
+	newRequest := *r
+	newRequest.LookbackDelta = lookbackDelta
 	return &newRequest
 }
 
