@@ -470,7 +470,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -479,7 +479,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
