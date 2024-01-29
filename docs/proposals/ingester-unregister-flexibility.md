@@ -126,4 +126,4 @@ Concrete example:
 * Queries may return incomplete results as samples held by the evicted ingesters are temporarily inaccessible.
   The samples become accessible again when the ingesters join the ring after having replayed their WAL.
 * Ownership of evicted series (i.e., series whose owner was evicted) is split between two ingesters. This is likely
-  negligible unless the volume evictions is extreme.
+  negligible unless the volume of evictions is extreme.
