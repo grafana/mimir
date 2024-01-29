@@ -291,6 +291,8 @@ type MultitenantAlertmanager struct {
 	tenantsDiscovered prometheus.Gauge
 	syncTotal         *prometheus.CounterVec
 	syncFailures      *prometheus.CounterVec
+
+	compatLastReset time.Time
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -384,6 +386,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 			Name: "cortex_alertmanager_tenants_owned",
 			Help: "Current number of tenants owned by the Alertmanager instance.",
 		}),
+		compatLastReset: time.Now(),
 	}
 
 	// Initialize the top-level metrics.
@@ -548,6 +551,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 
 	am.syncConfigs(cfgs)
 	am.deleteUnusedLocalUserState()
+	am.resetCompatMetrics()
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
 	// in this instance. Therefore, pass the list of _all_ configured users to filter by.
@@ -556,6 +560,24 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 	}
 
 	return nil
+}
+
+// The Alertmanager has a number of gauges that it is using to detect incompatible
+// configurations as we look to support UTF-8 using a new parser in matchers/parse.
+// Due to how config.Load works in Alertmanager, it is not possible to reset the gauge
+// per tenant each time a configuration is reloaded in Mimir. In order to ensure
+// old metrics about incompatible configurations are aged out over time, we instead
+// reset the gauges using a 30 minute timer. This is not ideal, but it is a short-lived
+// measure until we can remove the --ut8-strict-mode-enabled flag in a few months time.
+// Delete this code when removing the flag.
+func (am *MultitenantAlertmanager) resetCompatMetrics() {
+	if time.Since(am.compatLastReset) >= 30*time.Minute {
+		compat.RegisteredMetrics.Total.Reset()
+		compat.RegisteredMetrics.DisagreeTotal.Reset()
+		compat.RegisteredMetrics.IncompatibleTotal.Reset()
+		compat.RegisteredMetrics.InvalidTotal.Reset()
+		am.compatLastReset = time.Now()
+	}
 }
 
 func (am *MultitenantAlertmanager) waitInitialStateSync(ctx context.Context) error {
