@@ -28,13 +28,17 @@ spec:
   supplementalGroups:
     rule: {{ .Values.rbac.podSecurityPolicy.supplementalGroups.rule }}
     ranges:
-    - min: {{ .Values.rbac.podSecurityPolicy.supplementalGroups.min }}
-      max: {{ .Values.rbac.podSecurityPolicy.supplementalGroups.max }}
+    {{- range $range := .Values.rbac.podSecurityPolicy.supplementalGroups.ranges }}
+    - min: {{ $range.min }}
+      max: {{ $range.max }}
+    {{- end }}
   fsGroup:
     rule: {{ .Values.rbac.podSecurityPolicy.fsGroup.rule }}
     ranges:
-    - min: {{ .Values.rbac.podSecurityPolicy.fsGroup.min }}
-      max: {{ .Values.rbac.podSecurityPolicy.fsGroup.max }}
+    {{- range $range := .Values.rbac.podSecurityPolicy.fsGroup.ranges }}
+    - min: {{ $range.min }}
+      max: {{ $range.max }}
+    {{- end }}
   readOnlyRootFilesystem: {{ .Values.rbac.podSecurityPolicy.readOnlyRootFilesystem }}
   requiredDropCapabilities:
     - ALL

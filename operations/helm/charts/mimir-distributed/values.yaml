@@ -464,9 +464,33 @@ runtimeConfig: {}
 
 # RBAC configuration
 rbac:
-  create: true
   # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
   # By default the PodSecurityPolicy is not rendered on version 1.24.
+  create: true
+  # -- PSP configuration
+  podSecurityPolicy:
+    seccompProfile: runtime/default
+    privileged: false
+    allowPrivilegeEscalation: false
+    hostNetwork: false
+    hostIPC: false
+    hostPID: false
+    readOnlyRootFilesystem: true
+    runAsUser:
+      rule: 'MustRunAsNonRoot'
+    seLinux:
+      rule: 'RunAsAny'
+    supplementalGroups:
+      rule: 'MustRunAs'
+      ranges:
+      - min: 1
+        max: 65535
+    fsGroup:
+      rule: 'MustRunAs'
+      ranges:
+      - min: 1
+        max: 65535
+    additionalVolumes: []
   forcePSPOnKubernetes124: false
   # -- For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
   type: psp
@@ -485,31 +509,6 @@ rbac:
     runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
-  
-  # -- PSP configuration
-  podSecurityPolicy:
-    seccompProfile: runtime/default
-    privileged: false
-    allowPrivilegeEscalation: false
-    hostNetwork: false
-    hostIPC: false
-    hostPID: false
-    readOnlyRootFilesystem: false
-    runAsUser:
-      rule: 'MustRunAsNonRoot'
-    seLinux:
-      rule: 'RunAsAny'
-    supplementalGroups:
-      rule: 'MustRunAs'
-      ranges:
-      - min: 1
-        max: 65535
-    fsGroup:
-      rule: 'MustRunAs'
-      ranges:
-      - min: 1
-        max: 65535
-    additionalVolumes: []
 
 alertmanager:
   enabled: true
