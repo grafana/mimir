@@ -398,7 +398,7 @@ github.com/go-openapi/spec
 # github.com/go-openapi/strfmt v0.22.0
 ## explicit; go 1.19
 github.com/go-openapi/strfmt
-# github.com/go-openapi/swag v0.22.7
+# github.com/go-openapi/swag v0.22.9
 ## explicit; go 1.19
 github.com/go-openapi/swag
 # github.com/go-openapi/validate v0.22.1
