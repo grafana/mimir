@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/pkg/errors"
@@ -333,7 +334,7 @@ func TestToGRPCError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			err := toGRPCError(tc.err, tc.serviceOverloadErrorEnabled)
 
-			stat, ok := status.FromError(err)
+			stat, ok := grpcutil.ErrorToStatus(err)
 			require.True(t, ok)
 			require.Equal(t, tc.expectedGRPCCode, stat.Code())
 			require.Equal(t, tc.expectedErrorMsg, stat.Message())

@@ -55,6 +55,58 @@ receivers:
   - name: "example_receiver"
 `
 
+	mimirAlertmanagerUserClassicConfigYaml = `route:
+  receiver: test
+  group_by: [foo]
+  routes:
+    - matchers:
+      - foo=bar
+      - bar=baz
+receivers:
+  - name: test
+`
+
+	mimirAlertmanagerUserUTF8ConfigYaml = `route:
+  receiver: test
+  group_by: [bar🙂]
+  routes:
+    - matchers:
+      - foo=bar
+      - bar🙂=baz
+receivers:
+  - name: test
+`
+
+	mimirAlertmanagerDisagreementConfigYaml = `route:
+  receiver: test
+  group_by: [foo]
+  routes:
+    - matchers:
+      - foo="\xf0\x9f\x99\x82"
+receivers:
+  - name: test
+`
+
+	mimirAlertmanagerIncompatibleConfigYaml = `route:
+  receiver: test
+  group_by: [foo]
+  routes:
+    - matchers:
+      - foo=
+receivers:
+  - name: test
+`
+
+	mimirAlertmanagerInvalidConfigYaml = `route:
+  receiver: test
+  group_by: [foo]
+  routes:
+    - matchers:
+      - foo=,,
+receivers:
+  - name: test
+`
+
 	mimirRulerUserConfigYaml = `groups:
 - name: rule
   interval: 100s

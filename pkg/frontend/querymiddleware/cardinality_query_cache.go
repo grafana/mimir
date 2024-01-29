@@ -28,7 +28,7 @@ func newCardinalityQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyG
 		limits: limits,
 	}
 
-	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics("cardinality", reg))
+	return newGenericQueryCacheRoundTripper(cache, generator.LabelValuesCardinality, ttl, next, logger, newResultsCacheMetrics(queryTypeCardinality, reg))
 }
 
 type cardinalityQueryTTL struct {
