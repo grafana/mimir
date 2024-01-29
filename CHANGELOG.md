@@ -75,6 +75,7 @@
   * `label_names_and_values`: label names / values query
   * `active_series`: active series query
   * `other`: any other request
+* [BUGFIX] Fix performance regression introduced in Mimir 2.11.0 when uploading blocks to AWS S3. #7240
 
 ### Mixin
 
