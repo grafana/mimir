@@ -1118,7 +1118,7 @@ ruler:
   service:
     annotations: {}
     labels: {}
-  
+
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
   # This service account can be used even if the default one is not set.
