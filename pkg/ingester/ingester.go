@@ -1924,10 +1924,10 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 				t, v := it.At()
 				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 			case chunkenc.ValHistogram:
-				t, v := it.AtHistogram()
+				t, v := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
 			case chunkenc.ValFloatHistogram:
-				t, v := it.AtFloatHistogram()
+				t, v := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			default:
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)

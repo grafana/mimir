@@ -208,10 +208,10 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 					Value:       v,
 				})
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
+				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
 			case chunkenc.ValFloatHistogram:
-				t, h := it.AtFloatHistogram()
+				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(t, h))
 			default:
 				return nil, fmt.Errorf("unsupported value type: %v", valType)
