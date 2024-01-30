@@ -1,0 +1,36 @@
+{{- /*gotype: github.com/grafana/dskit/ring.httpResponse */ -}}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Partitions Ring Status</title>
+</head>
+<body>
+    <h1>Partitions Ring Status</h1>
+
+    <table width="100%" border="1">
+        <thead>
+            <tr>
+                <th>Partition ID</th>
+                <th>State</th>
+                <th>State updated at</th>
+                <th>Owners</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{ range $partition := .Partitions }}
+            <tr {{ if mod $partition.ID 2 }}bgcolor="#BEBEBE"{{ end }}>
+                <td>{{ .ID }}</td>
+                <td>{{ .State }}</td>
+                <td>{{ .StateTimestamp | formatTimestamp }}</td>
+                <td>
+                    {{ range $ownerID := $partition.OwnerIDs }}
+                        {{$ownerID}} <br />
+                    {{ end }}
+                </td>
+            </tr>
+        {{ end }}
+        </tbody>
+    </table>
+</body>
+</html>

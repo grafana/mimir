@@ -688,7 +688,8 @@ type Mimir struct {
 	API                      *api.API
 	Server                   *server.Server
 	IngesterRing             *ring.Ring
-	PartitionsRing           *ring.PartitionRingWatcher
+	PartitionRingWatcher     *ring.PartitionRingWatcher
+	PartitionRing            *ring.PartitionInstanceRing
 	TenantLimits             validation.TenantLimits
 	Overrides                *validation.Overrides
 	ActiveGroupsCleanup      *util.ActiveGroupsCleanupService

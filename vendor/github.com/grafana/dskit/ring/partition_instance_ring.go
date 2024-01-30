@@ -6,7 +6,7 @@ import (
 )
 
 type PartitionInstanceRing struct {
-	// TODO doc: these are mutually exclusive. Access the partitions ring via .getPartitionsRing()
+	// TODO doc: these are mutually exclusive. Access the partitions ring via .PartitionRing()
 	partitionsRingWatcher *PartitionRingWatcher
 	partitionsRing        *PartitionRing
 
@@ -32,7 +32,7 @@ func NewPartitionInstanceRing(partitionsRingWatcher *PartitionRingWatcher, insta
 // GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
 func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
 	// TODO cleanup this design to avoid having to access to .desc
-	partitionsRing := pr.getPartitionsRing()
+	partitionsRing := pr.PartitionRing()
 	partitionsRingDesc := partitionsRing.desc
 	partitionsRingOwners := partitionsRing.PartitionOwners()
 
@@ -74,7 +74,7 @@ func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([
 
 func (pr *PartitionInstanceRing) InstancesCount() int {
 	// Number of partitions.
-	return len(pr.getPartitionsRing().PartitionOwners())
+	return len(pr.PartitionRing().PartitionOwners())
 }
 
 func (pr *PartitionInstanceRing) ReplicationFactor() int {
@@ -83,7 +83,7 @@ func (pr *PartitionInstanceRing) ReplicationFactor() int {
 }
 
 func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
-	partitionsRing := pr.getPartitionsRing()
+	partitionsRing := pr.PartitionRing()
 
 	pid, _, err := partitionsRing.ActivePartitionForKey(key)
 	if err != nil {
@@ -104,7 +104,7 @@ func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, e
 }
 
 func (pr *PartitionInstanceRing) ShuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionInstanceRing, error) {
-	subRing, err := pr.getPartitionsRing().ShuffleRingPartitions(identifier, size, lookbackPeriod, now)
+	subRing, err := pr.PartitionRing().ShuffleRingPartitions(identifier, size, lookbackPeriod, now)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (pr *PartitionInstanceRing) ShuffleRingPartitions(identifier string, size i
 	}, nil
 }
 
-func (pr *PartitionInstanceRing) getPartitionsRing() *PartitionRing {
+func (pr *PartitionInstanceRing) PartitionRing() *PartitionRing {
 	if pr.partitionsRingWatcher != nil {
 		return pr.partitionsRingWatcher.GetRing()
 	}

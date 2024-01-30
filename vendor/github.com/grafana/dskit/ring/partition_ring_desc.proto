@@ -28,8 +28,10 @@ enum PartitionState {
 
   // Active partition that can accept more data.
   PartitionActive = 1;
+
   // Inactive partition that is read-only. This partition will be deleted after grace period.
   PartitionInactive = 2;
+
   // This state is not visible to ring clients, it's only used for gossiping, and partitions in this state are removed before client can see them.
   PartitionDeleted = 3;
 }
@@ -37,6 +39,24 @@ enum PartitionState {
 
 // Owner handles given partition. Multiple owners can own the same partition.
 message OwnerDesc {
+  // Timestamp (with seconds precision) of when the data for the owner has been updated the last time.
+  // This timestamp is used to resolve conflicts when merging updates via memberlist (the most recent
+  // update wins).
+  int64 updatedTimestamp = 1;
+
+  OwnerState state = 2;
+
   // Partition that belongs to this owner.
-  int32 ownedPartition = 4;
+  int32 ownedPartition = 3;
+}
+
+enum OwnerState {
+  OwnerUnknown = 0;
+
+  // Active owner.
+  OwnerActive = 1;
+
+  // This state is not visible to ring clients. It's only used for gossiping, to propagate the information that a
+  // owner has been removed. Owners in this state are removed before client can see them.
+  OwnerDeleted = 2;
 }

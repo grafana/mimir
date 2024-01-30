@@ -573,7 +573,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	if i.cfg.IngestStorageConfig.Enabled {
-		s := services.NewBasicService(i.partitionRingStarting, nil, i.partitionRingStopping)
+		s := services.NewIdleService(i.partitionRingStarting, i.partitionRingStopping)
 		err := s.StartAsync(context.Background())
 		if err != nil {
 			return errors.Wrap(err, "partitions ring")
@@ -3695,7 +3695,7 @@ func (i *Ingester) partitionRingStarting(ctx context.Context) error {
 		}
 
 		// Also add partition owner (ingester) to the ring.
-		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.partitionID) {
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.partitionID, time.Now()) {
 			changed = true
 		}
 

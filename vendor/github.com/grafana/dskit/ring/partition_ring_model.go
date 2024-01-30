@@ -20,14 +20,6 @@ func (m *PartitionDesc) BecameActiveAfter(ts int64) bool {
 	return m.IsActive() && m.GetStateTimestamp() >= ts
 }
 
-/* TODO remove
-func (m *OwnerDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {
-	healthy := op.IsInstanceInStateHealthy(m.State)
-
-	return healthy && IsHeartbeatHealthy(time.Unix(m.Heartbeat, 0), heartbeatTimeout, now)
-}
-*/
-
 func NewPartitionRingDesc() *PartitionRingDesc {
 	return &PartitionRingDesc{
 		Partitions: map[int32]PartitionDesc{},
@@ -142,16 +134,20 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 }
 
 // AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
-func (m *PartitionRingDesc) AddOrUpdateOwner(id string, ownedPartition int32) bool {
+// TODO unit test
+func (m *PartitionRingDesc) AddOrUpdateOwner(id string, ownedPartition int32, now time.Time) bool {
 	prev, ok := m.Owners[id]
 	updated := OwnerDesc{
-		OwnedPartition: ownedPartition,
+		UpdatedTimestamp: now.Unix(),
+		State:            OwnerActive,
+		OwnedPartition:   ownedPartition,
 	}
 
 	if !ok || !prev.Equal(updated) {
 		m.Owners[id] = updated
 		return true
 	}
+
 	return false
 }
 
@@ -160,6 +156,10 @@ func (m *PartitionRingDesc) RemoveOwner(id string) {
 }
 
 func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {
+	return m.merge(mergeable, localCAS, time.Now())
+}
+
+func (m *PartitionRingDesc) merge(mergeable memberlist.Mergeable, localCAS bool, now time.Time) (memberlist.Mergeable, error) {
 	if mergeable == nil {
 		return nil, nil
 	}
@@ -211,20 +211,19 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 			if _, exists := other.Partitions[pid]; !exists && thisPart.State != PartitionDeleted {
 				// Partition was removed from the ring. We need to preserve it locally, but we set state to PartitionDeleted.
 				thisPart.State = PartitionDeleted
-				thisPart.StateTimestamp = time.Now().Unix()
+				thisPart.StateTimestamp = now.Unix()
 				m.Partitions[pid] = thisPart
 				change.Partitions[pid] = thisPart
 			}
 		}
 	}
 
-	/* TODO
 	// Now let's handle owners. Owners don't have tokens, which simplifies things compared to "normal" ring.
 	for id, otherOwner := range other.Owners {
 		thisOwner := m.Owners[id]
 
 		// ting.Heartbeat will be 0, if there was no such ingester in our version
-		if otherOwner.Heartbeat > thisOwner.Heartbeat || (otherOwner.Heartbeat == thisOwner.Heartbeat && otherOwner.State == LEFT && thisOwner.State != LEFT) {
+		if otherOwner.UpdatedTimestamp > thisOwner.UpdatedTimestamp || (otherOwner.UpdatedTimestamp == thisOwner.UpdatedTimestamp && otherOwner.State == OwnerDeleted && thisOwner.State != OwnerDeleted) {
 			m.Owners[id] = otherOwner
 			change.Owners[id] = otherOwner
 		}
@@ -234,20 +233,19 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 		// Mark all missing owners as deleted.
 		// This breaks commutativity! But we only do it locally, not when gossiping with others.
 		for id, thisOwner := range m.Owners {
-			if _, exists := other.Owners[id]; !exists && thisOwner.State != LEFT {
+			if _, exists := other.Owners[id]; !exists && thisOwner.State != OwnerDeleted {
 				// missing, let's mark our ingester as LEFT
-				thisOwner.State = LEFT
+				thisOwner.State = OwnerDeleted
 				// We are deleting entry "now", and should not keep old timestamp, because there may already be pending
 				// message in the gossip network with newer timestamp (but still older than "now").
 				// Such message would "resurrect" this deleted entry.
-				thisOwner.Heartbeat = time.Now().Unix()
+				thisOwner.UpdatedTimestamp = now.Unix()
 
 				m.Owners[id] = thisOwner
 				change.Owners[id] = thisOwner
 			}
 		}
 	}
-	*/
 
 	// If nothing changed, report nothing.
 	if len(change.Partitions) == 0 && len(change.Owners) == 0 {
@@ -271,6 +269,7 @@ func (m *PartitionRingDesc) MergeContent() []string {
 	return result
 }
 
+// TODO unit test
 func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed int) {
 	for pid, part := range m.Partitions {
 		if part.State == PartitionDeleted {
@@ -283,10 +282,9 @@ func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed in
 		}
 	}
 
-	/* TODO
-	for n, ing := range m.Owners {
-		if ing.State == LEFT {
-			if limit.IsZero() || time.Unix(ing.Heartbeat, 0).Before(limit) {
+	for n, owner := range m.Owners {
+		if owner.State == OwnerDeleted {
+			if limit.IsZero() || time.Unix(owner.UpdatedTimestamp, 0).Before(limit) {
 				delete(m.Owners, n)
 				removed++
 			} else {
@@ -294,11 +292,20 @@ func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed in
 			}
 		}
 	}
-	*/
 
 	return
 }
 
 func (m *PartitionRingDesc) Clone() memberlist.Mergeable {
-	return proto.Clone(m).(*PartitionRingDesc)
+	clone := proto.Clone(m).(*PartitionRingDesc)
+
+	// Ensure empty maps are preserved (easier to compare with a deep equal in tests).
+	if m.Partitions != nil && clone.Partitions == nil {
+		clone.Partitions = map[int32]PartitionDesc{}
+	}
+	if m.Owners != nil && clone.Owners == nil {
+		clone.Owners = map[string]OwnerDesc{}
+	}
+
+	return clone
 }

@@ -351,6 +351,14 @@ func (a *API) RegisterRing(r http.Handler) {
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
 }
 
+// TODO doc
+func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: "Ring status", Path: "/ingester/partition-ring"},
+	})
+	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
+}
+
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
 func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 	storegatewaypb.RegisterStoreGatewayServer(a.server.GRPC, s)

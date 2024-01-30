@@ -351,7 +351,7 @@ func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
 	return t.IngesterRing, nil
 }
 
-func (t *Mimir) initPartitionsRingWatcher() (services.Service, error) {
+func (t *Mimir) initPartitionRingWatcher() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
@@ -363,8 +363,18 @@ func (t *Mimir) initPartitionsRingWatcher() (services.Service, error) {
 	partitionsConfig := ring.PartitionRingConfig{
 		HeartbeatTimeout: t.Cfg.Ingester.IngesterRing.HeartbeatTimeout,
 	}
-	t.PartitionsRing, err = ring.NewPartitionRingWatcher(partitionsConfig, kvClient, ingester.PartitionRingKey, util_log.Logger, t.Registerer)
-	return t.PartitionsRing, err
+
+	t.PartitionRingWatcher, err = ring.NewPartitionRingWatcher(partitionsConfig, kvClient, ingester.PartitionRingKey, util_log.Logger, t.Registerer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.PartitionRing = ring.NewPartitionInstanceRing(t.PartitionRingWatcher, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	// Expose a web page to view the partitions ring state.
+	t.API.RegisterIngesterPartitionRing(ring.NewPartitionRingPageHandler(t.PartitionRing))
+
+	return t.PartitionRingWatcher, nil
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
@@ -474,9 +484,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	partitionsInstanceRing := ring.NewPartitionInstanceRing(t.PartitionsRing, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
-
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, partitionsInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.PartitionRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -1045,7 +1053,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
-	mm.RegisterModule(PartitionsRing, t.initPartitionsRingWatcher, modules.UserInvisibleModule)
+	mm.RegisterModule(PartitionsRing, t.initPartitionRingWatcher, modules.UserInvisibleModule)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
@@ -1080,7 +1088,7 @@ func (t *Mimir) setupModuleManager() error {
 		MemberlistKV:             {API, Vault},
 		RuntimeConfig:            {API},
 		IngesterRing:             {API, RuntimeConfig, MemberlistKV, Vault},
-		PartitionsRing:           {MemberlistKV},
+		PartitionsRing:           {MemberlistKV, IngesterRing, API},
 		Overrides:                {RuntimeConfig},
 		OverridesExporter:        {Overrides, MemberlistKV, Vault},
 		Distributor:              {DistributorService, API, ActiveGroupsCleanupService, Vault},
