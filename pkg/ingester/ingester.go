@@ -573,7 +573,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	if i.cfg.IngestStorageConfig.Enabled {
-		s := services.NewBasicService(i.partitionRingStarting, i.partitionRingRunning, i.partitionRingStopping)
+		s := services.NewBasicService(i.partitionRingStarting, nil, i.partitionRingStopping)
 		err := s.StartAsync(context.Background())
 		if err != nil {
 			return errors.Wrap(err, "partitions ring")
@@ -3695,7 +3695,7 @@ func (i *Ingester) partitionRingStarting(ctx context.Context) error {
 		}
 
 		// Also add partition owner (ingester) to the ring.
-		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
+		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.partitionID) {
 			changed = true
 		}
 
@@ -3705,59 +3705,6 @@ func (i *Ingester) partitionRingStarting(ctx context.Context) error {
 		return nil, false, nil
 	})
 	return errors.Wrap(err, "creating partition and owner in the partitions ring")
-}
-
-// This method periodically updates state of instance in partitions ring, based on lifecycler state.
-func (i *Ingester) partitionRingRunning(ctx context.Context) error {
-	t := time.NewTicker(i.cfg.IngesterRing.HeartbeatPeriod)
-	defer t.Stop()
-
-	lifecyclerStopping := make(chan struct{})
-
-	// When lifecycler terminates or fails (it can't do both), close lifecyclerStopping channel.
-	i.lifecycler.AddListener(services.NewListener(nil, nil, nil, func(from services.State) {
-		close(lifecyclerStopping)
-	}, func(from services.State, failure error) {
-		close(lifecyclerStopping)
-	}))
-
-	updateStateFromLifecycler := func(in interface{}) (out interface{}, retry bool, err error) {
-		var pr *ring.PartitionRingDesc
-		if in != nil {
-			if r, ok := in.(*ring.PartitionRingDesc); ok {
-				pr = r
-			}
-		}
-		if pr == nil {
-			pr = ring.NewPartitionRingDesc()
-		}
-
-		// Update entry in the ring with current state and heartbeat.
-		if pr.AddOrUpdateOwner(i.lifecycler.ID, i.lifecycler.Addr, i.lifecycler.Zone, i.partitionID, i.lifecycler.GetState(), time.Now()) {
-			return pr, true, nil
-		}
-		return nil, false, nil
-	}
-
-outer:
-	for {
-		select {
-		case <-t.C:
-			err := i.partitionRingKV.CAS(ctx, PartitionRingKey, updateStateFromLifecycler)
-			if err != nil {
-				level.Warn(i.logger).Log("msg", "failed to update ingester entry in partitions ring", "err", err)
-			}
-
-		case <-lifecyclerStopping:
-			break outer
-		}
-	}
-
-	err := i.partitionRingKV.CAS(ctx, PartitionRingKey, updateStateFromLifecycler)
-	if err != nil {
-		level.Warn(i.logger).Log("msg", "failed to update ingester entry in partitions ring", "err", err)
-	}
-	return nil
 }
 
 // This method is called after lifecycler has been stopped. If this ingester is shutting down, and partition is INACTIVE for enough,

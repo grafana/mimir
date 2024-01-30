@@ -25,13 +25,9 @@ func NewRingServiceDiscovery(r ring.ReadRing) PoolServiceDiscovery {
 	}
 }
 
-type PartitionRingGetter interface {
-	GetRing() *ring.PartitionRing
-}
-
-func NewPartitionRingServiceDiscovery(r PartitionRingGetter) PoolServiceDiscovery {
+func NewPartitionRingServiceDiscovery(r *ring.PartitionInstanceRing) PoolServiceDiscovery {
 	return func() ([]string, error) {
-		sets, err := r.GetRing().GetReplicationSetsForOperation(ring.Reporting)
+		sets, err := r.GetReplicationSetsForOperation(ring.Reporting)
 		if errors.Is(err, ring.ErrEmptyRing) {
 			return nil, nil
 		}

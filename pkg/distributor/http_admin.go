@@ -58,7 +58,7 @@ func (d *Distributor) AllUserStatsHandler(w http.ResponseWriter, r *http.Request
 
 	var replicationFactor int
 	if d.cfg.IngestStorageConfig.Enabled {
-		replicationFactor = d.partitionsRingWatcher.GetRing().BatchRing().ReplicationFactor()
+		replicationFactor = d.partitionsInstanceRing.ReplicationFactor()
 	} else {
 		replicationFactor = d.ingestersRing.ReplicationFactor()
 	}

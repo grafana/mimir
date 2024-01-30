@@ -866,8 +866,22 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 	return merged
 }
 
+func (r *Ring) GetInstance(instanceID string) (InstanceDesc, error) {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	instances := r.ringDesc.GetIngesters()
+	instance, ok := instances[instanceID]
+	if !ok {
+		return InstanceDesc{}, ErrInstanceNotFound
+	}
+
+	return instance, nil
+}
+
 // GetInstanceState returns the current state of an instance or an error if the
 // instance does not exist in the ring.
+// TODO use GetInstance()
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
@@ -1145,10 +1159,7 @@ type ReadRingBatchRingAdapter struct {
 
 func NewReadRingBatchAdapter(ring ReadRing) *ReadRingBatchRingAdapter {
 	return &ReadRingBatchRingAdapter{
-		ring:     ring,
-		bufDescs: [GetBufferSize]InstanceDesc{},
-		bufHosts: [GetBufferSize]string{},
-		bufZones: [GetBufferSize]string{},
+		ring: ring,
 	}
 }
 

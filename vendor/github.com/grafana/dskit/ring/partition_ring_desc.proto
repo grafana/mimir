@@ -3,7 +3,6 @@ syntax = "proto3";
 package ring;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "ring.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -38,16 +37,6 @@ enum PartitionState {
 
 // Owner handles given partition. Multiple owners can own the same partition.
 message OwnerDesc {
-  // ID of the instance. This value is the same as the key in the owners map in PartitionRingDesc.
-  string id = 1;
-
-  string addr = 2;
-  string zone = 3;
-
   // Partition that belongs to this owner.
   int32 ownedPartition = 4;
-
-  // Unix timestamp in seconds of the last heartbeat sent by this instance.
-  int64 heartbeat = 6;
-  InstanceState state = 7;
 }

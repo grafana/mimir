@@ -20,11 +20,13 @@ func (m *PartitionDesc) BecameActiveAfter(ts int64) bool {
 	return m.IsActive() && m.GetStateTimestamp() >= ts
 }
 
+/* TODO remove
 func (m *OwnerDesc) IsHealthy(op Operation, heartbeatTimeout time.Duration, now time.Time) bool {
 	healthy := op.IsInstanceInStateHealthy(m.State)
 
 	return healthy && IsHeartbeatHealthy(time.Unix(m.Heartbeat, 0), heartbeatTimeout, now)
 }
+*/
 
 func NewPartitionRingDesc() *PartitionRingDesc {
 	return &PartitionRingDesc{
@@ -140,15 +142,10 @@ func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) Partit
 }
 
 // AddOrUpdateOwner adds or updates owner entry in the ring. Returns true, if entry was added or updated, false if entry is unchanged.
-func (m *PartitionRingDesc) AddOrUpdateOwner(id, address, zone string, ownedPartition int32, state InstanceState, heartbeat time.Time) bool {
+func (m *PartitionRingDesc) AddOrUpdateOwner(id string, ownedPartition int32) bool {
 	prev, ok := m.Owners[id]
 	updated := OwnerDesc{
-		Id:             id,
-		Addr:           address,
-		Zone:           zone,
 		OwnedPartition: ownedPartition,
-		Heartbeat:      heartbeat.Unix(),
-		State:          state,
 	}
 
 	if !ok || !prev.Equal(updated) {
@@ -221,6 +218,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 		}
 	}
 
+	/* TODO
 	// Now let's handle owners. Owners don't have tokens, which simplifies things compared to "normal" ring.
 	for id, otherOwner := range other.Owners {
 		thisOwner := m.Owners[id]
@@ -249,6 +247,7 @@ func (m *PartitionRingDesc) Merge(mergeable memberlist.Mergeable, localCAS bool)
 			}
 		}
 	}
+	*/
 
 	// If nothing changed, report nothing.
 	if len(change.Partitions) == 0 && len(change.Owners) == 0 {
@@ -284,6 +283,7 @@ func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed in
 		}
 	}
 
+	/* TODO
 	for n, ing := range m.Owners {
 		if ing.State == LEFT {
 			if limit.IsZero() || time.Unix(ing.Heartbeat, 0).Before(limit) {
@@ -294,6 +294,8 @@ func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed in
 			}
 		}
 	}
+	*/
+
 	return
 }
 

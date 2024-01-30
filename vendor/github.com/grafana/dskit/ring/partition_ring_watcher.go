@@ -82,7 +82,6 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 	w.ring = newRing
 }
 
-// GetRing TODO: replace with more fine-grained methods.
 func (w *PartitionRingWatcher) GetRing() *PartitionRing {
 	w.ringMx.Lock()
 	defer w.ringMx.Unlock()

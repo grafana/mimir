@@ -3674,20 +3674,14 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 	return &ring.Desc{Ingesters: ingesterDescs}
 }
 
-func preparePartitionsRing(cfg prepConfig, ingesters []mockIngester) *ring.PartitionRingDesc {
+func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
 	// Use a real ring with a mock KV store to test ring RF logic.
 	ingesterDescs := map[string]ring.OwnerDesc{}
 	partitionDescs := map[int32]ring.PartitionDesc{}
-	for i := range ingesters {
-		ing := &ingesters[i] // take a pointer so we don't copy the sync.Mutex in the mockIngester
+	for _, ing := range ingesters {
 		addr := ing.address()
 		ingesterDescs[addr] = ring.OwnerDesc{
-			Id:             addr,
-			Addr:           addr,
-			Zone:           ing.zone,
-			State:          cfg.ingesterPartitionRingState(ing.zone, ing.id),
 			OwnedPartition: int32(ing.id),
-			Heartbeat:      time.Now().Unix(),
 		}
 	}
 	numPartitions := cfg.totalIngesters() / cfg.totalZones()
@@ -3712,30 +3706,6 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), logger, nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	var (
-		partitionsRing *ring.PartitionRingWatcher
-	)
-
-	if cfg.useIngestStorage {
-		partitionsKvStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
-		err := partitionsKvStore.CAS(context.Background(), ingester.PartitionRingKey,
-			func(_ interface{}) (interface{}, bool, error) {
-				return preparePartitionsRing(cfg, ingesters), true, nil
-			},
-		)
-		require.NoError(t, err)
-
-		ringCfg := ring.PartitionRingConfig{HeartbeatTimeout: time.Minute}
-		partitionsRing, err = ring.NewPartitionRingWatcher(ringCfg, partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
-		require.NoError(t, err)
-
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), partitionsRing))
-		expectedPartitions := cfg.totalIngesters() / cfg.totalZones() // assuming that 1 ingester hosts 1 partition
-		test.Poll(t, time.Second, expectedPartitions, func() interface{} {
-			return partitionsRing.GetRing().BatchRing().InstancesCount()
-		})
-	}
-
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return prepareRingInstances(cfg, ingesters), true, nil
@@ -3749,11 +3719,12 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		rf = 3
 	}
 
+	ingestersHeartbeatTimeout := 60 * time.Minute
 	ingestersRing, err := ring.New(ring.Config{
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
-		HeartbeatTimeout:     60 * time.Minute,
+		HeartbeatTimeout:     ingestersHeartbeatTimeout,
 		ReplicationFactor:    rf,
 		ZoneAwarenessEnabled: cfg.totalZones() > 1,
 	}, ingester.IngesterRingKey, ingester.IngesterRingKey, logger, nil)
@@ -3763,6 +3734,33 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 	test.Poll(t, time.Second, cfg.totalIngesters(), func() interface{} {
 		return ingestersRing.InstancesCount()
 	})
+
+	var (
+		partitionsRingWatcher  *ring.PartitionRingWatcher
+		partitionsInstanceRing *ring.PartitionInstanceRing
+	)
+
+	if cfg.useIngestStorage {
+		partitionsKvStore := kvStore.WithCodec(ring.GetPartitionRingCodec())
+		err := partitionsKvStore.CAS(context.Background(), ingester.PartitionRingKey,
+			func(_ interface{}) (interface{}, bool, error) {
+				return preparePartitionsRing(cfg, ingesters), true, nil
+			},
+		)
+		require.NoError(t, err)
+
+		ringCfg := ring.PartitionRingConfig{HeartbeatTimeout: time.Minute}
+		partitionsRingWatcher, err = ring.NewPartitionRingWatcher(ringCfg, partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), partitionsRingWatcher))
+
+		partitionsInstanceRing = ring.NewPartitionInstanceRing(partitionsRingWatcher, ingestersRing, ingestersHeartbeatTimeout)
+
+		expectedPartitions := cfg.totalIngesters() / cfg.totalZones() // assuming that 1 ingester hosts 1 partition
+		test.Poll(t, time.Second, expectedPartitions, func() interface{} {
+			return partitionsInstanceRing.InstancesCount()
+		})
+	}
 
 	factory := ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
 		for _, ing := range ingesters {
@@ -3824,7 +3822,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsRing, true, reg, logger)
+		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsInstanceRing, true, reg, logger)
 		require.NoError(t, err)
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
@@ -3845,7 +3843,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
 	}
 
-	t.Cleanup(func() { stopAll(distributors, ingestersRing, partitionsRing) })
+	t.Cleanup(func() { stopAll(distributors, ingestersRing, partitionsRingWatcher) })
 
 	return distributors, ingesters, registries
 }

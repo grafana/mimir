@@ -46,12 +46,12 @@ func NewPoolFromIngesters(cfg PoolConfig, ring ring.ReadRing, factory ring_clien
 	return ring_client.NewPool("ingester", poolCfg, ring_client.NewRingServiceDiscovery(ring), factory, clients, logger)
 }
 
-func NewPoolFromPartitions(cfg PoolConfig, watcher *ring.PartitionRingWatcher, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {
+func NewPoolFromPartitions(cfg PoolConfig, partitionsRing *ring.PartitionInstanceRing, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {
 	poolCfg := ring_client.PoolConfig{
 		CheckInterval:      cfg.ClientCleanupPeriod,
 		HealthCheckEnabled: cfg.HealthCheckIngesters,
 		HealthCheckTimeout: cfg.RemoteTimeout,
 	}
 
-	return ring_client.NewPool("ingester", poolCfg, ring_client.NewPartitionRingServiceDiscovery(watcher), factory, clients, logger)
+	return ring_client.NewPool("ingester", poolCfg, ring_client.NewPartitionRingServiceDiscovery(partitionsRing), factory, clients, logger)
 }

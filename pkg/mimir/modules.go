@@ -474,7 +474,9 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.PartitionsRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	partitionsInstanceRing := ring.NewPartitionInstanceRing(t.PartitionsRing, t.IngesterRing, t.Cfg.Ingester.IngesterRing.HeartbeatTimeout)
+
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, partitionsInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}

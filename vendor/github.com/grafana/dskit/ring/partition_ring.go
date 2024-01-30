@@ -149,59 +149,8 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	return result, nil
 }
 
-// GetReplicationSetsForOperation returns one ReplicationSet for each partition and returns ReplicationSet for all partitions.
-// If there are not enough owners for partitions, error is returned.
-//
-// For querying instances, basic idea is that we need to query *ALL* partitions in the ring (or subring).
-// For each partition, each owner is a full replica, so it's enough to query single instance only.
-// GetReplicationSetsForOperation returns all healthy owners for each partition according to op and the heartbeat timeout.
-// GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
-// GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
-func (pr *PartitionRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
-	if len(pr.desc.Partitions) == 0 {
-		return nil, ErrEmptyRing
-	}
-	now := time.Now()
-
-	result := make([]ReplicationSet, 0, len(pr.desc.Partitions))
-	for pid := range pr.desc.Partitions {
-		owners := pr.partitionOwners[pid]
-
-		instances := make([]InstanceDesc, 0, len(owners))
-		for _, o := range owners {
-			own, ok := pr.desc.Owners[o]
-			if !ok {
-				return nil, ErrInstanceNotFound
-			}
-
-			if !own.IsHealthy(op, pr.heartbeatTimeout, now) {
-				continue
-			}
-
-			instances = append(instances, InstanceDesc{
-				Addr:      own.Addr,
-				Timestamp: own.Heartbeat,
-				State:     own.State,
-				Zone:      own.Zone,
-				Id:        own.Id,
-			})
-		}
-
-		if len(instances) == 0 {
-			return nil, fmt.Errorf("partition %d: %w", pid, ErrTooManyUnhealthyInstances)
-		}
-
-		result = append(result, ReplicationSet{
-			Instances:            instances,
-			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
-			ZoneAwarenessEnabled: true,
-		})
-	}
-	return result, nil
-}
-
-func (pr *PartitionRing) BatchRing() PartitionBatchRing {
-	return PartitionBatchRing{ring: pr}
+func (pr *PartitionRing) PartitionOwners() map[int32][]string {
+	return pr.partitionOwners
 }
 
 func (pr *PartitionRing) String() string {
@@ -211,39 +160,4 @@ func (pr *PartitionRing) String() string {
 	}
 
 	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(pr.desc.Owners), len(pr.desc.Owners), buf.String())
-}
-
-// PartitionBatchRing implements BatchRingAdapter for use with DoBatch function.
-// Instances returned from Get method are partitions.
-type PartitionBatchRing struct {
-	ring *PartitionRing
-}
-
-func (p PartitionBatchRing) InstancesCount() int {
-	// Number of partitions.
-	return len(p.ring.partitionOwners)
-}
-
-func (p PartitionBatchRing) ReplicationFactor() int {
-	// Each key is always stored into single partition only.
-	return 1
-}
-
-func (p PartitionBatchRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
-	pid, _, err := p.ring.ActivePartitionForKey(key)
-	if err != nil {
-		return ReplicationSet{}, err
-	}
-
-	return ReplicationSet{
-		Instances: []InstanceDesc{{
-			Addr:      fmt.Sprintf("%d", pid),
-			Timestamp: time.Now().Unix(),
-			State:     ACTIVE,
-			Id:        fmt.Sprintf("%d", pid),
-		}},
-		MaxErrors:            0,
-		MaxUnavailableZones:  0,
-		ZoneAwarenessEnabled: false,
-	}, nil
 }

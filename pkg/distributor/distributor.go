@@ -164,8 +164,8 @@ type Distributor struct {
 	ingesterDoBatchPushWorkers func(func())
 
 	// ingestStorageWriter is the writer used when ingest storage is enabled.
-	ingestStorageWriter   *ingest.Writer
-	partitionsRingWatcher *ring.PartitionRingWatcher
+	ingestStorageWriter    *ingest.Writer
+	partitionsInstanceRing *ring.PartitionInstanceRing
 }
 
 // Config contains the configuration required to
@@ -254,7 +254,7 @@ const (
 )
 
 // New constructs a new Distributor
-func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRingWatcher *ring.PartitionRingWatcher, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
+func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsInstanceRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
@@ -274,7 +274,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	var clientPool *ring_client.Pool
 	if cfg.IngestStorageConfig.Enabled {
-		clientPool = NewPoolFromPartitions(cfg.PoolConfig, partitionsRingWatcher, cfg.IngesterClientFactory, log)
+		clientPool = NewPoolFromPartitions(cfg.PoolConfig, partitionsInstanceRing, cfg.IngesterClientFactory, log)
 	} else {
 		clientPool = NewPoolFromIngesters(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log)
 	}
@@ -487,10 +487,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		d.ingestStorageWriter = ingest.NewWriter(d.cfg.IngestStorageConfig.KafkaConfig, log, reg)
 		subservices = append(subservices, d.ingestStorageWriter)
 
-		if partitionsRingWatcher == nil {
+		if partitionsInstanceRing == nil {
 			return nil, errors.New("ingest storage requires partitions ring")
 		}
-		d.partitionsRingWatcher = partitionsRingWatcher
+		d.partitionsInstanceRing = partitionsInstanceRing
 		d.replicationFactor.Set(1)
 	} else {
 		d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
@@ -1327,13 +1327,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var targetRing ring.BatchRingAdapter
 	if d.cfg.IngestStorageConfig.Enabled {
-		r := d.partitionsRingWatcher.GetRing()
 		// TODO: this should be a method on partitionsRingWatchers, so that we can implement caching there.
-		subring, err := r.ShuffleRingPartitions(userID, d.limits.IngestionTenantShardSize(userID), 0, time.Time{})
+		targetRing, err = d.partitionsInstanceRing.ShuffleRingPartitions(userID, d.limits.IngestionTenantShardSize(userID), 0, time.Time{})
 		if err != nil {
 			return err
 		}
-		targetRing = subring.BatchRing()
 	} else {
 		// Get a subring if tenant has shuffle shard size configured.
 		subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
@@ -2371,7 +2369,7 @@ func (d *Distributor) AllUserStats(ctx context.Context) ([]UserIDStats, error) {
 		err             error
 	)
 	if d.cfg.IngestStorageConfig.Enabled {
-		replicationSets, err = d.partitionsRingWatcher.GetRing().GetReplicationSetsForOperation(readNoExtend)
+		replicationSets, err = d.partitionsInstanceRing.GetReplicationSetsForOperation(readNoExtend)
 		if err != nil {
 			return nil, err
 		}
