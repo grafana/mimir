@@ -305,6 +305,10 @@ func (c *MemcachedClient) Stop() {
 	c.client.Close()
 }
 
+func (c *MemcachedClient) Name() string {
+	return c.name
+}
+
 func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	c.setMultiAsync(data, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		return c.client.Set(&memcache.Item{
