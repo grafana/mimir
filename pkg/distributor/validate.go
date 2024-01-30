@@ -78,7 +78,7 @@ var (
 	invalidMetricNameMsgFormat            = globalerror.InvalidMetricName.Message("received a series with invalid metric name: '%.200s'")
 	maxNativeHistogramBucketsMsgFormat    = globalerror.MaxNativeHistogramBuckets.Message("received a native histogram sample with too many buckets, timestamp: %d series: %s, buckets: %d, limit: %d")
 	notReducibleNativeHistogramMsgFormat  = globalerror.NotReducibleNativeHistogram.Message("received a native histogram sample with too many buckets and cannot reduce, timestamp: %d series: %s, buckets: %d, limit: %d")
-	invalidSchemaNativeHistogramMsgFormat = globalerror.InvalidSchemaNativeHistogram.Message("received a native histogram sample with an invalid schema %d: valid schema numbers are %d <= n <= %d")
+	invalidSchemaNativeHistogramMsgFormat = globalerror.InvalidSchemaNativeHistogram.Message("received a native histogram sample with an invalid schema: %d")
 	sampleTimestampTooNewMsgFormat        = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 		"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 		validation.CreationGracePeriodFlag,
@@ -220,6 +220,11 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
+	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
+		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
+		return fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
+	}
+
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
 		var bucketCount int
 		if s.IsFloatHistogram() {
@@ -231,11 +236,6 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
 				return fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
-			}
-
-			if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
-				m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
-				return fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema, mimirpb.MinimumHistogramSchema, mimirpb.MaximumHistogramSchema)
 			}
 
 			for {

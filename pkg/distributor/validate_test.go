@@ -555,32 +555,22 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 		},
 		"a schema lower than the minimum causes an error": {
 			schema:        -5,
-			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema -5: valid schema numbers are -4 <= n <= 8 (err-mimir-invalid-native-histogram-schema)"),
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: -5 (err-mimir-invalid-native-histogram-schema)"),
 		},
 		"a schema higher than the maximum causes an error": {
 			schema:        10,
-			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema 10: valid schema numbers are -4 <= n <= 8 (err-mimir-invalid-native-histogram-schema)"),
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: 10 (err-mimir-invalid-native-histogram-schema)"),
 		},
 	}
 
 	registry := prometheus.NewRegistry()
 	metrics := newSampleValidationMetrics(registry)
-	cfg := sampleValidationCfg{
-		maxNativeHistogramBuckets:           3,
-		reduceNativeHistogramOverMaxBuckets: true,
-	}
+	cfg := sampleValidationCfg{}
+	hist := &mimirpb.Histogram{}
 	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			hist := &mimirpb.Histogram{
-				Schema:         testCase.schema,
-				NegativeSpans:  []mimirpb.BucketSpan{},
-				NegativeDeltas: []int64{},
-				PositiveSpans:  []mimirpb.BucketSpan{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}, {Offset: 3, Length: 1}, {Offset: 4, Length: 1}},
-				PositiveDeltas: []int64{1, 1, 1, 1},
-				ResetHint:      mimirpb.Histogram_UNKNOWN,
-				Timestamp:      0,
-			}
+			hist.Schema = testCase.schema
 			err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist)
 			require.Equal(t, testCase.expectedError, err)
 		})
