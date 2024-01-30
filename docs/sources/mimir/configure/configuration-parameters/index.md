@@ -2259,9 +2259,9 @@ alertmanager_client:
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended to check both alertmanager_matchers_disagree and
-# alertmanager_matchers_incompatible metrics before using this mode as otherwise
-# some tenant configurations might fail to load.
+# alerts. It is recommended to check both alertmanager_matchers_disagree_total
+# and alertmanager_matchers_incompatible_total metrics before using this mode as
+# otherwise some tenant configurations might fail to load.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```

@@ -119,7 +119,7 @@ inhibit_rules:
 	}
 }
 
-func requireMetric(t *testing.T, expected float64, m *prometheus.GaugeVec) {
+func requireMetric(t *testing.T, expected float64, m *prometheus.CounterVec) {
 	if expected == 0 {
 		require.Equal(t, 0, testutil.CollectAndCount(m))
 	} else {
