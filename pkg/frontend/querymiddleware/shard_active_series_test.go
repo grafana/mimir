@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -418,6 +419,42 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.
 	for i, body := range upstreamResponseBodies {
 		bytesRead := int(body.BytesRead())
 		assert.Equal(t, responseSize[i], bytesRead)
+	}
+}
+
+func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	bcs := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
+
+	for _, numResponses := range bcs {
+		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
+			benchResponses := make([][]*http.Response, b.N)
+
+			for i := 0; i < b.N; i++ {
+				var responses []*http.Response
+				for i := 0; i < numResponses; i++ {
+					body := fmt.Sprintf(fmt.Sprintf(`{"data": [{"__name__": "metric-%%0%dd"}]}`, 32), i)
+
+					responses = append(responses, &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{},
+						Body:       io.NopCloser(strings.NewReader(body)),
+					})
+				}
+				benchResponses[i] = responses
+			}
+
+			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				resp := s.mergeResponses(context.Background(), benchResponses[i], "")
+
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		})
 	}
 }
 
