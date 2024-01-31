@@ -43,6 +43,8 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 			Name:      "responses_compared_total",
 			Help:      "Total number of responses compared per route name by result.",
 		}, []string{"route", "result"}),
+		/// add in metrics for latency
+		// can have a label per backend
 	}
 
 	return m

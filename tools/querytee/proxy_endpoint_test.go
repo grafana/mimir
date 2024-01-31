@@ -104,7 +104,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+			endpoint := NewProxyEndpoint(testData.backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -148,7 +148,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false),
 	}
-	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil, 0)
 
 	for _, tc := range []struct {
 		name    string
@@ -322,7 +322,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator)
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, 0)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -350,6 +350,97 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 	}
 }
 
+func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
+	scenarios := map[string]struct {
+		slowResponseThreshold    time.Duration
+		preferredResponseLatency time.Duration
+		secondaryResponseLatency time.Duration
+	}{
+		"responses are below threshold": {
+			slowResponseThreshold:    100 * time.Millisecond,
+			preferredResponseLatency: 0 * time.Millisecond,
+			secondaryResponseLatency: 0 * time.Millisecond,
+		},
+		"one response above threshold": {
+			slowResponseThreshold:    100 * time.Millisecond,
+			preferredResponseLatency: 0 * time.Millisecond,
+			secondaryResponseLatency: 101 * time.Millisecond,
+		},
+		"responses are both above threshold, but lower than threshold between themselves": {
+			slowResponseThreshold:    100 * time.Millisecond,
+			preferredResponseLatency: 101 * time.Millisecond,
+			secondaryResponseLatency: 150 * time.Millisecond,
+		},
+		"responses are both above threshold, and above threshold between themselves": {
+			slowResponseThreshold:    100 * time.Millisecond,
+			preferredResponseLatency: 101 * time.Millisecond,
+			secondaryResponseLatency: 202 * time.Millisecond,
+		},
+	}
+
+	for name, scenario := range scenarios {
+		t.Run(name, func(t *testing.T) {
+			preferredBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(200)
+				time.Sleep(scenario.preferredResponseLatency)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+
+			defer preferredBackend.Close()
+			preferredBackendURL, err := url.Parse(preferredBackend.URL)
+			require.NoError(t, err)
+
+			secondaryBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(200)
+				time.Sleep(scenario.secondaryResponseLatency)
+				_, err := w.Write([]byte("preferred response"))
+				require.NoError(t, err)
+			}))
+
+			defer secondaryBackend.Close()
+			secondaryBackendURL, err := url.Parse(secondaryBackend.URL)
+			require.NoError(t, err)
+
+			backends := []*ProxyBackend{
+				NewProxyBackend("preferred-backend", preferredBackendURL, time.Second, true, false),
+				NewProxyBackend("secondary-backend", secondaryBackendURL, time.Second, false, false),
+			}
+
+			logger := newMockLogger()
+			reg := prometheus.NewPedanticRegistry()
+			comparator := &mockComparator{
+				comparisonResult: ComparisonSuccess,
+			}
+
+			endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold)
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+			require.NoError(t, err)
+			endpoint.ServeHTTP(resp, req)
+
+			// The HTTP request above will return as soon as the primary response is received, but this doesn't guarantee that the response comparison has been completed.
+			// Wait for the response comparison to complete before checking the logged messages.
+			waitForResponseComparisonMetric(t, reg, ComparisonSuccess)
+
+			for _, m := range logger.messages {
+				fmt.Println(m)
+			}
+			if (scenario.preferredResponseLatency >= scenario.secondaryResponseLatency &&
+				scenario.preferredResponseLatency-scenario.secondaryResponseLatency < scenario.slowResponseThreshold) ||
+				(scenario.secondaryResponseLatency >= scenario.preferredResponseLatency &&
+					scenario.secondaryResponseLatency-scenario.preferredResponseLatency < scenario.slowResponseThreshold) {
+				requireNoLogMessages(t, logger.messages, "response time between backends exceeded threshold")
+			} else {
+				requireLogMessage(t, logger.messages, "response time between backends exceeded threshold")
+			}
+		})
+	}
+}
+
 func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expectedResult ComparisonResult) {
 	started := time.Now()
 	timeoutAt := started.Add(2 * time.Second)
@@ -372,6 +463,19 @@ func waitForResponseComparisonMetric(t *testing.T, g prometheus.Gatherer, expect
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
+}
+
+func requireLogMessage(t *testing.T, messages []map[string]interface{}, expectedMessage string) {
+	sawMessage := false
+
+	for _, m := range messages {
+		if m["msg"] == expectedMessage {
+			sawMessage = true
+			break
+		}
+	}
+
+	require.True(t, sawMessage, "expected to find a '%s' message logged, but only these messages were logged: %v", expectedMessage, messages)
 }
 
 func requireNoLogMessages(t *testing.T, messages []map[string]interface{}, forbiddenMessages ...string) {
