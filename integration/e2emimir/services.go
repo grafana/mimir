@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	httpPort = 8080
-	grpcPort = 9095
+	httpPort        = 8080
+	grpcPort        = 9095
+	mimirBinaryName = "mimir"
+	delveBinaryName = "dlv"
 )
 
 // GetDefaultImage returns the Docker image to use to run Mimir.
@@ -71,12 +73,11 @@ func getExtraFlags() map[string]string {
 func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
 		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
+		e2e.NewCommandWithoutEntrypoint(mimirBinaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
 		o.Environment,
 		o.HTTPPort,
@@ -166,10 +167,6 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 		flags,
 		options...,
 	)
-}
-
-func getBinaryNameForBackwardsCompatibility() string {
-	return "mimir"
 }
 
 func NewQueryFrontend(name string, flags map[string]string, options ...Option) *MimirService {
@@ -296,12 +293,11 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		"-target":    "alertmanager",
 		"-log.level": "warn",
 	}, flags, getExtraFlags()))
-	binaryName := getBinaryNameForBackwardsCompatibility()
 
 	return NewMimirService(
 		name,
 		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
+		e2e.NewCommandWithoutEntrypoint(mimirBinaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewTCPReadinessProbe(o.HTTPPort),
 		o.Environment,
 		o.HTTPPort,
