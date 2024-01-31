@@ -423,7 +423,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.
 }
 
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
-	bcs := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
+	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
 
 	for _, numResponses := range bcs {
 		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
