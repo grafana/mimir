@@ -97,6 +97,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # in that case.
 %/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
+	if [ -f $(@D)/Dockerfile.distroless ]; then $(SUDO) docker build -f $(@D)/Dockerfile.distroless --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):distroless-$(IMAGE_TAG) $(@D)/; fi;
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
@@ -112,6 +113,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
+	if [ -f $(@D)/Dockerfile.distroless ]; then $(SUDO) docker build -f $(@D)/Dockerfile.distroless --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race --build-arg=EXTRA_PACKAGES="gcompat" -t $(IMAGE_PREFIX)$(shell basename $(@D)):distroless-$(IMAGE_TAG_RACE) $(@D)/; fi;
 	@echo
 	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true --build-arg=BINARY_SUFFIX=_race --build-arg=EXTRA_PACKAGES="gcompat" -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE) $(@D)/
@@ -138,6 +140,9 @@ push-multiarch-%/$(UPTODATE):
 		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
 	fi
 	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+
+	# Build Dockerfile.distroless if it exists
+	if [ -f $(DIR)/Dockerfile.distroless ]; then $(SUDO) docker buildx build -f $(DIR)/Dockerfile.distroless -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):distroless-$(IMAGE_TAG) $(DIR)/; fi;
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
@@ -682,7 +687,7 @@ integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker,stringlabels ./integration/...
 
 integration-tests-race: ## Run all integration tests with race-enabled Mimir docker image.
-integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE)
+integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:distroless-$(IMAGE_TAG_RACE)
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
