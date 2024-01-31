@@ -576,6 +576,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -745,6 +746,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -914,6 +916,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000

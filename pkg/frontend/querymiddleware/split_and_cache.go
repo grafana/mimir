@@ -606,7 +606,7 @@ func doRequests(ctx context.Context, downstream Handler, reqs []Request) ([]requ
 			partialStats, childCtx := stats.ContextWithEmptyStats(ctx)
 			var span opentracing.Span
 			span, childCtx = opentracing.StartSpanFromContext(childCtx, "doRequests")
-			req.LogToSpan(span)
+			req.AddSpanTags(span)
 			defer span.Finish()
 
 			resp, err := downstream.Do(childCtx, req)

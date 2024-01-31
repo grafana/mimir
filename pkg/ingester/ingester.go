@@ -116,6 +116,8 @@ const (
 	// Value used to track the limit between sequential and concurrent TSDB opernings.
 	// Below this value, TSDBs of different tenants are opened sequentially, otherwise concurrently.
 	maxTSDBOpenWithoutConcurrency = 10
+
+	deprecatedReturnOnlyGRPCErrorsFlag = "ingester.return-only-grpc-errors" // Deprecated. TODO: Remove in Mimir 2.14.
 )
 
 var (
@@ -176,7 +178,7 @@ type Config struct {
 
 	ErrorSampleRate int64 `yaml:"error_sample_rate" json:"error_sample_rate" category:"experimental"`
 
-	ReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"experimental"`
+	DeprecatedReturnOnlyGRPCErrors bool `yaml:"return_only_grpc_errors" json:"return_only_grpc_errors" category:"deprecated"`
 
 	UseIngesterOwnedSeriesForLimits bool          `yaml:"use_ingester_owned_series_for_limits" category:"experimental"`
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
@@ -202,15 +204,24 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.LogUtilizationBasedLimiterCPUSamples, "ingester.log-utilization-based-limiter-cpu-samples", false, "Enable logging of utilization based limiter CPU samples.")
 	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "ingester.limit-inflight-requests-using-grpc-method-limiter", false, "Use experimental method of limiting push requests.")
 	f.Int64Var(&cfg.ErrorSampleRate, "ingester.error-sample-rate", 0, "Each error will be logged once in this many times. Use 0 to log all of them.")
-	f.BoolVar(&cfg.ReturnOnlyGRPCErrors, "ingester.return-only-grpc-errors", false, "When enabled only gRPC errors will be returned by the ingester.")
 	f.BoolVar(&cfg.UseIngesterOwnedSeriesForLimits, "ingester.use-ingester-owned-series-for-limits", false, "When enabled, only series currently owned by ingester according to the ring are used when checking user per-tenant series limit.")
 	f.BoolVar(&cfg.UpdateIngesterOwnedSeries, "ingester.track-ingester-owned-series", false, "This option enables tracking of ingester-owned series based on ring state, even if -ingester.use-ingester-owned-series-for-limits is disabled.")
 	f.DurationVar(&cfg.OwnedSeriesUpdateInterval, "ingester.owned-series-update-interval", 15*time.Second, "How often to check for ring changes and possibly recompute owned series as a result of detected change.")
+
+	// The ingester.return-only-grpc-errors flag has been deprecated.
+	// According to the migration plan (https://github.com/grafana/mimir/issues/6008#issuecomment-1854320098)
+	// the default behaviour of Mimir should be as this flag were set to true.
+	// TODO: Remove in Mimir 2.14.0
+	f.BoolVar(&cfg.DeprecatedReturnOnlyGRPCErrors, deprecatedReturnOnlyGRPCErrorsFlag, true, "When enabled only gRPC errors will be returned by the ingester.")
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *Config) Validate(logger log.Logger) error {
 	if cfg.ErrorSampleRate < 0 {
 		return fmt.Errorf("error sample rate cannot be a negative number")
+	}
+
+	if !cfg.DeprecatedReturnOnlyGRPCErrors {
+		util.WarnDeprecatedConfig(deprecatedReturnOnlyGRPCErrorsFlag, logger)
 	}
 
 	return cfg.IngesterRing.Validate()
@@ -1913,10 +1924,10 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 				t, v := it.At()
 				ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 			case chunkenc.ValHistogram:
-				t, v := it.AtHistogram()
+				t, v := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				ts.Histograms = append(ts.Histograms, mimirpb.FromHistogramToHistogramProto(t, v))
 			case chunkenc.ValFloatHistogram:
-				t, v := it.AtFloatHistogram()
+				t, v := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 				ts.Histograms = append(ts.Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, v))
 			default:
 				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
@@ -2406,6 +2417,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		IsolationDisabled:                     true,
 		HeadChunksWriteQueueSize:              i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		EnableOverlappingCompaction:           false,                // always false since Mimir only uploads lvl 1 compacted blocks
+		EnableSharding:                        true,                 // Always enable query sharding support.
 		OutOfOrderTimeWindow:                  oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:                      int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 		HeadPostingsForMatchersCacheTTL:       i.cfg.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheTTL,
@@ -3361,7 +3373,7 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 }
 
 func (i *Ingester) mapPushErrorToErrorWithStatus(err error) error {
-	if i.cfg.ReturnOnlyGRPCErrors {
+	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
 		return mapPushErrorToErrorWithStatus(err)
 	}
 	return mapPushErrorToErrorWithHTTPOrGRPCStatus(err)
@@ -3376,7 +3388,7 @@ func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
 		return err
 	}
 
-	if i.cfg.ReturnOnlyGRPCErrors {
+	if i.cfg.DeprecatedReturnOnlyGRPCErrors {
 		return mapReadErrorToErrorWithStatus(err)
 	}
 	return mapReadErrorToErrorWithHTTPOrGRPCStatus(err)

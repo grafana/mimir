@@ -96,7 +96,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusHistogramChunk:
 		assertPoint = func(i int) {
 			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
-			ts, h := iter.AtHistogram()
+			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(nextExpectedTS)), h, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
@@ -104,7 +104,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(i int) {
 			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
-			ts, fh := iter.AtFloatHistogram()
+			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(nextExpectedTS)), fh, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
@@ -132,7 +132,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusHistogramChunk:
 		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
 			require.Equal(t, chunkenc.ValHistogram, valType)
-			ts, h := iter.AtHistogram()
+			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(expectedTS)), h)
 			require.NoError(t, iter.Err())
@@ -140,7 +140,7 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	case chunk.PrometheusFloatHistogramChunk:
 		assertPoint = func(expectedTS int64, valType chunkenc.ValueType) {
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
-			ts, fh := iter.AtFloatHistogram()
+			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
 			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(expectedTS)), fh)
 			require.NoError(t, iter.Err())

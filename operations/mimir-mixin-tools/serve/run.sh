@@ -38,6 +38,9 @@ if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "DATASOURCE_URL=\"<grafana-cloud-url ending with /prometheus>\""
   echo "DATASOURCE_USERNAME=\"<grafana-cloud-instance-id>\""
   echo "DATASOURCE_PASSWORD=\"<grafana-cloud-api-key>\""
+  echo "LOKI_DATASOURCE_URL=\"<grafana-cloud-url ending with (optional)>\""
+  echo "LOKI_DATASOURCE_USERNAME=\"<grafana-cloud-instance-id (optional)>\""
+  echo "LOKI_DATASOURCE_PASSWORD=\"<grafana-cloud-api-key (optional)>\""
   echo "GRAFANA_PUBLISHED_PORT=\"<grafana-port-on-the-host>\""
   echo ""
   exit 1
@@ -72,10 +75,12 @@ docker run \
   --env "DATASOURCE_URL=${DATASOURCE_URL}" \
   --env "DATASOURCE_USERNAME=${DATASOURCE_USERNAME}" \
   --env "DATASOURCE_PASSWORD=${DATASOURCE_PASSWORD}" \
+  --env "LOKI_DATASOURCE_URL=${LOKI_DATASOURCE_URL}" \
+  --env "LOKI_DATASOURCE_USERNAME=${LOKI_DATASOURCE_USERNAME}" \
+  --env "LOKI_DATASOURCE_PASSWORD=${LOKI_DATASOURCE_PASSWORD}" \
   -v "${SCRIPT_DIR}/../../mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards" \
   -v "${SCRIPT_DIR}/provisioning-dashboards.yaml:/etc/grafana/provisioning/dashboards/provisioning-dashboards.yaml" \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
-  --network=host \
   --expose 3000 \
   --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
   grafana/grafana:latest

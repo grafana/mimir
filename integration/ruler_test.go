@@ -35,13 +35,14 @@ import (
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func TestRulerAPI(t *testing.T) {
 	var (
 		namespaceOne = "test_/encoded_+namespace/?"
 		namespaceTwo = "test_/encoded_+namespace/?/two"
-		ruleGroup    = createTestRuleGroup(t)
+		ruleGroup    = createTestRuleGroup()
 	)
 
 	s, err := e2e.NewScenario(networkName)
@@ -292,6 +293,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
 
 	// query all results to verify rules have been evaluated correctly
+	t.Log("querying from ", now.Add(-evaluationDelay), "to", now)
 	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, result.Type())
@@ -309,7 +311,13 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 
 			expectedValue := model.SampleValue(2 * (inputPos + 1))
-			require.Equal(t, expectedValue, v.Value)
+			assert.Equal(t, expectedValue, v.Value)
+			t.Log(
+				"expected value", expectedValue,
+				"actual value", v.Value,
+				"actual timestamp", v.Timestamp,
+				"expected timestamp", now.Add(-evaluationDelay).Add(time.Duration(inputPos)*time.Second),
+			)
 
 			// Look for next value
 			inputPos++
@@ -320,7 +328,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
+	assert.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
 }
 
 func TestRulerSharding(t *testing.T) {
@@ -404,7 +412,7 @@ func TestRulerSharding(t *testing.T) {
 
 func TestRulerAlertmanager(t *testing.T) {
 	var namespaceOne = "test_/encoded_+namespace/?"
-	ruleGroup := createTestRuleGroup(t)
+	ruleGroup := createTestRuleGroup()
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -458,7 +466,7 @@ func TestRulerAlertmanager(t *testing.T) {
 
 func TestRulerAlertmanagerTLS(t *testing.T) {
 	var namespaceOne = "test_/encoded_+namespace/?"
-	ruleGroup := createTestRuleGroup(t)
+	ruleGroup := createTestRuleGroup()
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -1094,6 +1102,128 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	}
 }
 
+func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRulesWhenUsingTheIngestStorage(t *testing.T) {
+	const (
+		ruleGroupNamespace = "test"
+		ruleGroupName      = "test"
+	)
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		IngestStorageFlags(),
+		map[string]string{
+			"-ingester.ring.replication-factor": "1",
+
+			// No strong read consistency by default for this test. We want the ruler to enforce the strong
+			// consistency when required.
+			"-ingest-storage.read-consistency": api.ReadConsistencyEventual,
+		},
+	)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	kafka := e2edb.NewKafka()
+	require.NoError(t, s.StartAndWaitReady(minio, consul, kafka))
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Use query-frontend for rule evaluation.
+	flags["-ruler.query-frontend.address"] = fmt.Sprintf("dns:///%s", queryFrontend.NetworkGRPCEndpoint())
+
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Wait until the distributor is ready.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	// Push a test series.
+	now := time.Now()
+	series, _, _ := generateFloatSeries("series_1", now)
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	t.Run("evaluation of independent rules should not require strong consistency", func(t *testing.T) {
+		ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+		require.NoError(t, s.StartAndWaitReady(ruler))
+		t.Cleanup(func() {
+			require.NoError(t, s.Stop(ruler))
+		})
+
+		rulerClient, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), userID)
+		require.NoError(t, err)
+
+		// Create a rule group containing 2 independent rules.
+		group := ruleGroupWithRules(ruleGroupName, time.Second,
+			recordingRule("series_1:count", "count(series_1)"),
+			recordingRule("series_1:sum", "sum(series_1)"),
+		)
+		require.NoError(t, rulerClient.SetRuleGroup(group, ruleGroupNamespace))
+
+		// Cleanup the ruler config when the test will end, so that it doesn't interfere with other test cases.
+		t.Cleanup(func() {
+			require.NoError(t, rulerClient.DeleteRuleNamespace(ruleGroupNamespace))
+		})
+
+		// Wait until the rules are evaluated.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(len(group.Rules))), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+		// The rules have been evaluated at least once. We expect the rule queries
+		// have run with eventual consistency because they are independent.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
+	})
+
+	t.Run("evaluation of dependent rules should require strong consistency", func(t *testing.T) {
+		ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+		require.NoError(t, s.StartAndWaitReady(ruler))
+		t.Cleanup(func() {
+			require.NoError(t, s.Stop(ruler))
+		})
+
+		rulerClient, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), userID)
+		require.NoError(t, err)
+
+		// Create a rule group containing 2 rules: the 2nd one depends on the 1st one.
+		group := ruleGroupWithRules(ruleGroupName, time.Second,
+			recordingRule("series_1:count", "count(series_1)"),
+			recordingRule("series_1:count:sum", "sum(series_1:count)"),
+		)
+		require.NoError(t, rulerClient.SetRuleGroup(group, ruleGroupNamespace))
+
+		// Cleanup the ruler config when the test will end, so that it doesn't interfere with other test cases.
+		t.Cleanup(func() {
+			require.NoError(t, rulerClient.DeleteRuleNamespace(ruleGroupNamespace))
+		})
+
+		// Wait until the rules are evaluated.
+		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(float64(len(group.Rules))), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+		// The rules have been evaluated at least once. We expect the 2nd rule query
+		// has run with strong consistency because it depends on the 1st one.
+		require.NoError(t, ingester.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingest_storage_strong_consistency_requests_total"))
+	})
+}
+
 func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	const (
 		forGracePeriod    = 5 * time.Second
@@ -1304,58 +1434,48 @@ func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
 }
 
 func ruleGroupWithRecordingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	recordNode.SetString(ruleName)
-	exprNode.SetString(expression)
-
-	return rulefmt.RuleGroup{
-		Name:     groupName,
-		Interval: 10,
-		Rules: []rulefmt.RuleNode{{
-			Record: recordNode,
-			Expr:   exprNode,
-		}},
-	}
+	return ruleGroupWithRules(groupName, 10, recordingRule(ruleName, expression))
 }
 
 func ruleGroupWithAlertingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
+	return ruleGroupWithRules(groupName, 10, alertingRule(ruleName, expression))
+}
 
-	recordNode.SetString(ruleName)
-	exprNode.SetString(expression)
-
+func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulefmt.RuleNode) rulefmt.RuleGroup {
 	return rulefmt.RuleGroup{
 		Name:     groupName,
-		Interval: 10,
-		Rules: []rulefmt.RuleNode{{
-			Alert: recordNode,
-			Expr:  exprNode,
-			For:   30,
-		}},
+		Interval: model.Duration(interval),
+		Rules:    rules,
 	}
 }
 
-func createTestRuleGroup(t *testing.T) rulefmt.RuleGroup {
-	t.Helper()
+func createTestRuleGroup() rulefmt.RuleGroup {
+	return ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+}
 
-	var (
-		recordNode = yaml.Node{}
-		exprNode   = yaml.Node{}
-	)
+func recordingRule(record, expr string) rulefmt.RuleNode {
+	var recordNode = yaml.Node{}
+	var exprNode = yaml.Node{}
 
-	recordNode.SetString("test_rule")
-	exprNode.SetString("up")
-	return rulefmt.RuleGroup{
-		Name:     "test_encoded_+\"+group_name/?",
-		Interval: 100,
-		Rules: []rulefmt.RuleNode{
-			{
-				Record: recordNode,
-				Expr:   exprNode,
-			},
-		},
+	recordNode.SetString(record)
+	exprNode.SetString(expr)
+
+	return rulefmt.RuleNode{
+		Record: recordNode,
+		Expr:   exprNode,
+	}
+}
+
+func alertingRule(alert, expr string) rulefmt.RuleNode {
+	var alertNode = yaml.Node{}
+	var exprNode = yaml.Node{}
+
+	alertNode.SetString(alert)
+	exprNode.SetString(expr)
+
+	return rulefmt.RuleNode{
+		Alert: alertNode,
+		Expr:  exprNode,
+		For:   30,
 	}
 }

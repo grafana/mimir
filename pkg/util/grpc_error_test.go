@@ -75,10 +75,16 @@ func TestWrapContextError(t *testing.T) {
 				assert.True(t, errors.Is(wrapped, testData.expectedContextErr))
 				assert.Equal(t, testData.expectedGrpcCode, grpcutil.ErrorToStatusCode(wrapped))
 
+				//lint:ignore faillint We want to explicitly assert on status.FromError()
 				gogoStatus, ok := gogostatus.FromError(wrapped)
 				require.True(t, ok)
 				assert.Equal(t, testData.expectedGrpcCode, gogoStatus.Code())
 
+				gogoStatus, ok = grpcutil.ErrorToStatus(wrapped)
+				require.True(t, ok)
+				assert.Equal(t, testData.expectedGrpcCode, gogoStatus.Code())
+
+				//lint:ignore faillint We want to explicitly assert on status.FromError()
 				grpcStatus, ok := grpcstatus.FromError(wrapped)
 				require.True(t, ok)
 				assert.Equal(t, testData.expectedGrpcCode, grpcStatus.Code())

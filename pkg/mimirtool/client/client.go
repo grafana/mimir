@@ -41,19 +41,21 @@ type Config struct {
 	Address         string `yaml:"address"`
 	ID              string `yaml:"id"`
 	TLS             tls.ClientConfig
-	UseLegacyRoutes bool   `yaml:"use_legacy_routes"`
-	AuthToken       string `yaml:"auth_token"`
+	UseLegacyRoutes bool              `yaml:"use_legacy_routes"`
+	AuthToken       string            `yaml:"auth_token"`
+	ExtraHeaders    map[string]string `yaml:"extra_headers"`
 }
 
 // MimirClient is a client to the Mimir API.
 type MimirClient struct {
-	user      string
-	key       string
-	id        string
-	endpoint  *url.URL
-	Client    http.Client
-	apiPath   string
-	authToken string
+	user         string
+	key          string
+	id           string
+	endpoint     *url.URL
+	Client       http.Client
+	apiPath      string
+	authToken    string
+	extraHeaders map[string]string
 }
 
 // New returns a new MimirClient.
@@ -95,13 +97,14 @@ func New(cfg Config) (*MimirClient, error) {
 	}
 
 	return &MimirClient{
-		user:      cfg.User,
-		key:       cfg.Key,
-		id:        cfg.ID,
-		endpoint:  endpoint,
-		Client:    client,
-		apiPath:   path,
-		authToken: cfg.AuthToken,
+		user:         cfg.User,
+		key:          cfg.Key,
+		id:           cfg.ID,
+		endpoint:     endpoint,
+		Client:       client,
+		apiPath:      path,
+		authToken:    cfg.AuthToken,
+		extraHeaders: cfg.ExtraHeaders,
 	}, nil
 }
 
@@ -141,6 +144,10 @@ func (r *MimirClient) doRequest(ctx context.Context, path, method string, payloa
 
 	case r.authToken != "":
 		req.Header.Add("Authorization", "Bearer "+r.authToken)
+	}
+
+	for k, v := range r.extraHeaders {
+		req.Header.Add(k, v)
 	}
 
 	req.Header.Add(user.OrgIDHeaderName, r.id)

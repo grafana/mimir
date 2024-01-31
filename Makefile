@@ -212,7 +212,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr7117-99eea1ed8d
+LATEST_BUILD_IMAGE_TAG ?= pr7185-6a8507c909
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -305,6 +305,25 @@ lint: check-makefiles
 
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
+
+	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
+	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
+	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
+	# For this reason, we recommend to not use errors.Cause() anywhere, so that we don't have to
+	# question whether the usage is safe or not.
+	faillint -paths "github.com/pkg/errors.{Cause}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# gogo/status allows to easily customize error details while grpc/status doesn't:
+	# for this reason we use gogo/status in several places. However, gogo/status.FromError()
+	# doesn't support wrapped errors, while grpc/status.FromError() does.
+	#
+	# Since we want support for errors wrapping everywhere, to avoid subtle bugs depending
+	# on which status package is imported, we don't allow .FromError() from both packages
+	# and we require to use grpcutil.ErrorToStatus() instead.
+	faillint -paths "\
+		google.golang.org/grpc/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus,\
+		github.com/gogo/status.{FromError}=github.com/grafana/dskit/grpcutil.ErrorToStatus" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\

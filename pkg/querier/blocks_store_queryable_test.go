@@ -13,12 +13,14 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	gogoStatus "github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
@@ -40,6 +42,7 @@ import (
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -271,7 +274,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			storeSetResponses: []interface{}{
 				map[BlocksStoreClient][]ulid.ULID{
 					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-						mockSeriesResponse(series1Label, minT+1, 2),
+						mockSeriesResponse(series1Label, minT+1, 2), // a chunk is written for each mockSeriesResponse
 						mockSeriesResponse(series2Label, minT, 1),
 						mockHintsResponse(block1),
 					}}: {block1},
@@ -340,6 +343,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 6
 			`,
 		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
@@ -476,6 +482,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
 				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
 				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"max chunks per query limit greater then the number of chunks fetched": {
@@ -679,6 +688,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"all blocks are queried if shards don't match": {
@@ -746,6 +758,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 0
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 2
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -813,6 +828,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_refetches_per_query_sum 1
 					cortex_querier_storegateway_refetches_per_query_count 1
+					# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+					# TYPE cortex_querier_query_storegateway_chunks_total counter
+					cortex_querier_query_storegateway_chunks_total 1
 			`,
 		},
 	}
@@ -942,7 +960,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					if testData.expectedMetrics != "" {
 						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
 							"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
-							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
+							"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
+							"cortex_querier_query_storegateway_chunks_total"))
 					}
 				})
 			}
@@ -1618,6 +1637,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 2
 				cortex_querier_storegateway_refetches_per_query_count 1
+				# HELP cortex_querier_query_storegateway_chunks_total Number of chunks received from store gateways at query time.
+				# TYPE cortex_querier_query_storegateway_chunks_total counter
+				cortex_querier_query_storegateway_chunks_total 4
 			`,
 		},
 		"multiple store-gateways have the block, but one of them fails to return": {
@@ -2494,6 +2516,60 @@ func TestBlocksStoreQueryableErrMsgs(t *testing.T) {
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, tc.msg, tc.err.Error())
+		})
+	}
+}
+
+func TestShouldStopQueryFunc(t *testing.T) {
+	tests := map[string]struct {
+		err      error
+		expected bool
+	}{
+		"should return true on context canceled": {
+			err:      context.Canceled,
+			expected: true,
+		},
+		"should return true on wrapped context canceled": {
+			err:      errors.Wrap(context.Canceled, "test"),
+			expected: true,
+		},
+		"should return true on deadline exceeded": {
+			err:      context.DeadlineExceeded,
+			expected: true,
+		},
+		"should return true on wrapped deadline exceeded": {
+			err:      errors.Wrap(context.DeadlineExceeded, "test"),
+			expected: true,
+		},
+		"should return true on gRPC error with status code = 422": {
+			err:      status.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gRPC error with status code = 422": {
+			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return true on gogo error with status code = 422": {
+			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
+			expected: true,
+		},
+		"should return true on wrapped gogo error with status code = 422": {
+			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: true,
+		},
+		"should return false on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
+			expected: false,
+		},
+		"should return false on generic error": {
+			err:      errors.New("test"),
+			expected: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
 		})
 	}
 }

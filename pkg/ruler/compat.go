@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -180,7 +180,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			return result, origErr
 		} else if err != nil {
 			// When remote querier enabled, consider anything an error except those with 4xx status code.
-			st, ok := status.FromError(err)
+			st, ok := grpcutil.ErrorToStatus(err)
 			if !(ok && st.Code()/100 == 4) {
 				failedQueries.Inc()
 			}
@@ -263,7 +263,7 @@ type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.
 func DefaultTenantManagerFactory(
 	cfg Config,
 	p Pusher,
-	embeddedQueryable storage.Queryable,
+	queryable storage.Queryable,
 	queryFunc rules.QueryFunc,
 	overrides RulesLimits,
 	reg prometheus.Registerer,
@@ -304,14 +304,18 @@ func DefaultTenantManagerFactory(
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-		var wrappedQueryFunc rules.QueryFunc
 
-		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+		// Wrap the query function with our custom logic.
+		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, logger)
+		wrappedQueryFunc = MetricsQueryFunc(wrappedQueryFunc, totalQueries, failedQueries)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, zeroFetchedSeriesCount, logger)
+
+		// Wrap the queryable with our custom logic.
+		wrappedQueryable := WrapQueryableWithReadConsistency(queryable, logger)
 
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, totalWrites, failedWrites),
-			Queryable:                  embeddedQueryable,
+			Queryable:                  wrappedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,

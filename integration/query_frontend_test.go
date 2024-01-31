@@ -229,6 +229,28 @@ func TestQueryFrontendWithQueryResultPayloadFormats(t *testing.T) {
 	}
 }
 
+func TestQueryFrontendWithIngestStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		querySchedulerEnabled:       true,
+		querySchedulerDiscoveryMode: "dns",
+		queryStatsEnabled:           true,
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+				IngestStorageFlags(),
+			)
+
+			kafka := e2edb.NewKafka()
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio, kafka))
+
+			return "", flags
+		},
+		withHistograms: true,
+	})
+}
+
 func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	const numUsers = 10
 	const numQueriesPerUser = 10
@@ -275,7 +297,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	ingester := e2emimir.NewIngester("ingester-0", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 
@@ -372,18 +394,21 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	wg.Wait()
 
-	extra := float64(2)
+	// Compute the expected number of queries.
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 2
+	expectedIngesterQueriesCount := float64(numUsers * numQueriesPerUser) // The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
 	if cfg.queryStatsEnabled {
-		extra++
+		expectedQueriesCount++
+		expectedIngesterQueriesCount++
 	}
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numUsers*numQueriesPerUser+extra), "cortex_query_frontend_queries_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_query_frontend_queries_total"))
 
-	// The number of received request is greater then the query requests because include
+	// The number of received requests may be greater than the query requests because include
 	// requests to /metrics and /ready.
-	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Greater(numUsers*numQueriesPerUser), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_request_duration_seconds"}, e2e.WithMetricCount))
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedQueriesCount), []string{"cortex_querier_request_duration_seconds"}, e2e.WithMetricCount))
 
 	// Ensure query stats metrics are tracked only when enabled.
 	if cfg.queryStatsEnabled {
@@ -393,6 +418,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 	} else {
 		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_query_seconds_total"))
+	}
+
+	// When the ingest storage is used, we expect that each query issued by this test was processed
+	// with strong read consistency by the ingester.
+	if flags["-ingest-storage.enabled"] == "true" {
+		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(expectedIngesterQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+	} else {
+		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 	}
 
 	// Ensure no service-specific metrics prefix is used by the wrong service.

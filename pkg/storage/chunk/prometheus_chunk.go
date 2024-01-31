@@ -219,11 +219,11 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 }
 
 func (p *prometheusChunkIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return p.it.AtHistogram()
+	return p.it.AtHistogram(nil)
 }
 
 func (p *prometheusChunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return p.it.AtFloatHistogram()
+	return p.it.AtFloatHistogram(nil)
 }
 
 func (p *prometheusChunkIterator) Timestamp() int64 {
@@ -246,13 +246,13 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 		}
 	case chunkenc.ValHistogram:
 		populate = func(j int) {
-			t, h := p.it.AtHistogram()
+			t, h := p.it.AtHistogram(nil)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(h)
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
-			t, fh := p.it.AtFloatHistogram()
+			t, fh := p.it.AtFloatHistogram(nil)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(fh)
 		}

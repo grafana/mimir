@@ -15,7 +15,6 @@ import (
 	"io"
 	"math"
 	"net"
-	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -31,7 +30,7 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -1795,7 +1794,6 @@ func TestIngester_Push(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
-			cfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
@@ -2528,9 +2526,9 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2592,9 +2590,9 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2793,9 +2791,9 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -2913,9 +2911,9 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -3445,9 +3443,9 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -3808,7 +3806,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValHistogram, it.Next())
-					actualTs, actualHist := it.AtHistogram()
+					actualTs, actualHist := it.AtHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestHistogram(seriesID), actualHist)
 
@@ -3822,7 +3820,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-					actualTs, actualHist := it.AtFloatHistogram()
+					actualTs, actualHist := it.AtFloatHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestFloatHistogram(seriesID), actualHist)
 
@@ -3843,9 +3841,9 @@ func TestIngester_QueryStream(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		err = i.QueryStream(&client.QueryRequest{}, nil)
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -4302,9 +4300,9 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -5617,9 +5615,9 @@ func Test_Ingester_UserStats(t *testing.T) {
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
 		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
-		stat, ok := status.FromError(err)
+		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
-		require.Equal(t, http.StatusServiceUnavailable, int(stat.Code()))
+		require.Equal(t, codes.ResourceExhausted, stat.Code())
 		require.Equal(t, tooBusyErrorMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
@@ -6268,7 +6266,6 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 
 func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	cfg.ReturnOnlyGRPCErrors = true
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
 
@@ -6507,7 +6504,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 							assert.ErrorIs(t, err, testData.expectedErr)
 							var optional middleware.OptionalLogging
 							assert.ErrorAs(t, err, &optional)
-							s, ok := status.FromError(err)
+							s, ok := grpcutil.ErrorToStatus(err)
 							require.True(t, ok, "expected to be able to convert to gRPC status")
 							assert.Equal(t, codes.Unavailable, s.Code())
 						} else {
@@ -6693,7 +6690,7 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 						_, err := client.Push(ctx, req)
 						require.Error(t, err)
 						require.NotErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
-						s, ok := status.FromError(err)
+						s, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok, "expected to be able to convert to gRPC status")
 						require.Equal(t, codes.Unavailable, s.Code())
 						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
@@ -6827,7 +6824,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		require.ErrorAs(t, err, &optional)
 		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
 
-		s, ok := status.FromError(err)
+		s, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, "expected to be able to convert to gRPC status")
 		require.Equal(t, codes.Unavailable, s.Code())
 
@@ -6934,7 +6931,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		require.ErrorAs(t, err, &optional)
 		require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
 
-		s, ok := status.FromError(err)
+		s, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok, "expected to be able to convert to gRPC status")
 		require.Equal(t, codes.Unavailable, s.Code())
 
@@ -7307,7 +7304,6 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -7411,7 +7407,6 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.IngesterRing.ReplicationFactor = 1
-		cfg.ReturnOnlyGRPCErrors = true
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
@@ -9376,7 +9371,6 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			ingesterCfg := defaultIngesterTestConfig(t)
 			ingesterCfg.IngesterRing.ReplicationFactor = 1
 			ingesterCfg.ErrorSampleRate = int64(errorSampleRate)
-			ingesterCfg.ReturnOnlyGRPCErrors = true
 			limits := defaultLimitsTestConfig()
 			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
@@ -9442,13 +9436,13 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					for i := 0; i < errorSampleRate-1; i++ {
 						_, err = client.Push(ctxs[0], req)
 						require.Error(t, err)
-						status, ok := status.FromError(err)
+						status, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok)
 						require.ErrorContains(t, status.Err(), testData.expectedErrs[0].err.Error())
 					}
 					_, err = client.Push(ctxs[1], req)
 					require.Error(t, err)
-					status, ok := status.FromError(err)
+					status, ok := grpcutil.ErrorToStatus(err)
 					require.True(t, ok)
 					require.ErrorContains(t, status.Err(), testData.expectedErrs[1].err.Error())
 				}
@@ -9555,7 +9549,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
-		status, ok := status.FromError(err)
+		status, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Errorf(t, expectedError, status.Message())
 	}
@@ -9659,7 +9653,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 		// Append 2 series first, expect max-series-per-user error.
 		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
-		status, ok := status.FromError(err)
+		status, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Errorf(t, expectedError, status.Message())
 	}

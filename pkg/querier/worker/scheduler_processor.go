@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
@@ -125,13 +124,14 @@ func (sp *schedulerProcessor) processQueriesOnSingleStream(workerCtx context.Con
 		}
 
 		if err := sp.querierLoop(execCtx, c, address, inflightQuery); err != nil {
-			// Do not log an error if the query-scheduler is shutting down.
-			if s, ok := status.FromError(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
-				level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+			if !isErrCancel(err, log.With(sp.log, "addr", address)) {
+				// Do not log an error if the query-scheduler is shutting down.
+				if s, ok := grpcutil.ErrorToStatus(err); !ok || !strings.Contains(s.Message(), schedulerpb.ErrSchedulerIsNotRunning.Error()) {
+					level.Error(sp.log).Log("msg", "error processing requests from scheduler", "err", err, "addr", address)
+				}
+				backoff.Wait()
+				continue
 			}
-
-			backoff.Wait()
-			continue
 		}
 
 		backoff.Reset()
@@ -158,9 +158,9 @@ func (sp *schedulerProcessor) querierLoop(execCtx context.Context, c schedulerpb
 			return
 		default:
 			// Query is not complete.
-			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error, waiting for inflight query to complete...", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error, waiting for inflight query to complete...", "err", err, "addr", address)
 			<-queryComplete
-			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error and inflight query is complete, continuing", "err", err, "address", address)
+			level.Info(sp.log).Log("msg", "query-scheduler loop in querier received non-cancellation error and inflight query is complete, continuing", "err", err, "addr", address)
 		}
 	}
 

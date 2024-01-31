@@ -980,6 +980,8 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -1464,6 +1466,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
         - -ingester.ring.replication-factor=3
@@ -2396,6 +2399,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -2588,6 +2592,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
@@ -2780,6 +2785,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
+        - -distributor.remote-timeout=10s
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000

@@ -83,20 +83,11 @@ func (d *Distributor) isUnaryDeletePath(p string) bool {
 }
 
 func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
-	if strings.HasSuffix(p, "/v1/alerts") {
-		return true, merger.V1Alerts{}
-	}
 	if strings.HasSuffix(p, "/v2/alerts") {
 		return true, merger.V2Alerts{}
 	}
 	if strings.HasSuffix(p, "/v2/alerts/groups") {
 		return true, merger.V2AlertGroups{}
-	}
-	if strings.HasSuffix(p, "/v1/silences") {
-		return true, merger.V1Silences{}
-	}
-	if strings.HasSuffix(path.Dir(p), "/v1/silence") {
-		return true, merger.V1SilenceID{}
 	}
 	if strings.HasSuffix(p, "/v2/silences") {
 		return true, merger.V2Silences{}
@@ -257,7 +248,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 }
 
 func respondFromError(err error, w http.ResponseWriter, logger log.Logger) {
-	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 	if !ok {
 		level.Error(logger).Log("msg", "failed to process the request to the alertmanager", "err", err)
 		http.Error(w, "Failed to process the request to the alertmanager", http.StatusInternalServerError)

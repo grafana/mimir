@@ -147,6 +147,9 @@ type RedisClient struct {
 	client redis.UniversalClient
 	config RedisClientConfig
 
+	// Name provides an identifier for the instantiated Client
+	name string
+
 	// getMultiGate used to enforce the max number of concurrent GetMulti() operations.
 	getMultiGate gate.Gate
 
@@ -191,6 +194,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	c := &RedisClient{
 		baseClient: newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
 		client:     redis.NewUniversalClient(opts),
+		name:       name,
 		config:     config,
 		logger:     log.With(logger, "name", name),
 	}
@@ -301,6 +305,10 @@ func (c *RedisClient) Stop() {
 	if err := c.client.Close(); err != nil {
 		level.Error(c.logger).Log("msg", "failed to close redis client", "err", err)
 	}
+}
+
+func (c *RedisClient) Name() string {
+	return c.name
 }
 
 // stringToBytes converts string to byte slice (copied from vendor/github.com/go-redis/redis/v8/internal/util/unsafe.go).

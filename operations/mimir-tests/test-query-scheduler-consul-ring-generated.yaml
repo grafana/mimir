@@ -919,6 +919,8 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -1232,6 +1234,7 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
+        - -distributor.remote-timeout=10s
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local.:8500
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=

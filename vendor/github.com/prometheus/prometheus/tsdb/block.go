@@ -106,6 +106,13 @@ type IndexReader interface {
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 
+	// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+	LabelValuesFor(p index.Postings, name string) storage.LabelValues
+
+	// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+	// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+	LabelValuesExcluding(p index.Postings, name string) storage.LabelValues
+
 	// LabelNamesFor returns all the label names for the series referred to by IDs.
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, ids ...storage.SeriesRef) ([]string, error)
@@ -545,6 +552,17 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	return r.ir.ShardedPostings(p, shardIndex, shardCount)
+}
+
+// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
+func (r blockIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesFor(postings, name)
+}
+
+// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
+// This is useful for obtaining label values for other postings than the ones you wish to exclude.
+func (r blockIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
+	return r.ir.LabelValuesExcluding(postings, name)
 }
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {

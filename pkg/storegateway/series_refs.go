@@ -891,7 +891,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
 	// and then merge before returning from the function.
-	loadStats := &queryStats{}
+	loadStats := newQueryStats()
 	defer s.stats.merge(loadStats)
 
 	// We can't compute the series hash yet because we're still missing the series labels.

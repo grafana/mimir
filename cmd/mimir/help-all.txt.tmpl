@@ -167,6 +167,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable the alertmanager config API. (default true)
   -alertmanager.enable-state-cleanup
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
+  -alertmanager.grafana-alertmanager-compatibility-enabled
+    	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
   -alertmanager.max-alerts-count int
     	Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-alerts-size-bytes int
@@ -271,6 +273,8 @@ Usage of ./cmd/mimir/mimir:
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
   -alertmanager.storage.retention duration
     	How long should we store stateful data (notification logs and silences). For notification log entries, refers to how long should we keep entries before they expire and are deleted. For silences, refers to how long should tenants view silences after they expire and are deleted. (default 120h0m0s)
+  -alertmanager.utf8-strict-mode-enabled
+    	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.skip-label-name-validation-header-enabled
@@ -1238,7 +1242,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.service-overload-status-code-on-rate-limit-enabled
     	[experimental] If enabled, rate limit errors will be reported to the client with HTTP status code 529 (Service is overloaded). If disabled, status code 429 (Too Many Requests) is used. Enabling -distributor.retry-after-header.enabled before utilizing this option is strongly recommended as it helps prevent premature request retries by the client.
   -distributor.write-requests-buffer-pooling-enabled
-    	[experimental] Enable pooling of buffers used for marshaling write requests.
+    	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
   -flusher.exit-after-flush
@@ -1362,7 +1366,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.return-only-grpc-errors
-    	[experimental] When enabled only gRPC errors will be returned by the ingester.
+    	[deprecated] When enabled only gRPC errors will be returned by the ingester. (default true)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration
@@ -1442,13 +1446,13 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
   -ingester.ring.spread-minimizing-join-ring-in-order
-    	[experimental] True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
+    	True to allow this ingester registering tokens in the ring only after all previous ingesters (with ID lower than the current one) have already been registered. This configuration option is supported only when the token generation strategy is set to "spread-minimizing".
   -ingester.ring.spread-minimizing-zones comma-separated-list-of-strings
-    	[experimental] Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
+    	Comma-separated list of zones in which spread minimizing strategy is used for token generation. This value must include all zones in which ingesters are deployed, and must not change over time. This configuration is used only when "token-generation-strategy" is set to "spread-minimizing".
   -ingester.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ingester.ring.token-generation-strategy string
-    	[experimental] Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. (default "random")
+    	Specifies the strategy used for generating tokens for ingesters. Supported values are: random,spread-minimizing. (default "random")
   -ingester.ring.tokens-file-path string
     	File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup. Must be empty if -ingester.ring.token-generation-strategy is set to "spread-minimizing".
   -ingester.ring.unregister-on-shutdown
@@ -1866,7 +1870,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.max-body-size int
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
-    	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 1m)
+    	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
@@ -2637,6 +2641,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
   -server.log-source-ips-enabled
     	Optionally log the source IPs.
+  -server.log-source-ips-full
+    	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.log-source-ips-header string
     	Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used
   -server.log-source-ips-regex string

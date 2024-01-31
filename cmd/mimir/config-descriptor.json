@@ -633,6 +633,16 @@
         },
         {
           "kind": "field",
+          "name": "log_source_ips_full",
+          "required": false,
+          "desc": "Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.log-source-ips-full",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "log_source_ips_header",
           "required": false,
           "desc": "Header field storing the source IPs. Only used if server.log-source-ips-enabled is true. If not set the default Forwarded, X-Real-IP and X-Forwarded-For headers are used",
@@ -1632,7 +1642,7 @@
           "required": false,
           "desc": "Enable pooling of buffers used for marshaling write requests.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.write-requests-buffer-pooling-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -2807,7 +2817,7 @@
               "fieldDefaultValue": "random",
               "fieldFlag": "ingester.ring.token-generation-strategy",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2818,7 +2828,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.spread-minimizing-join-ring-in-order",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -2829,7 +2839,7 @@
               "fieldDefaultValue": "",
               "fieldFlag": "ingester.ring.spread-minimizing-zones",
               "fieldType": "string",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
@@ -3038,10 +3048,10 @@
           "required": false,
           "desc": "When enabled only gRPC errors will be returned by the ingester.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.return-only-grpc-errors",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -3526,7 +3536,7 @@
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
           "fieldValue": null,
-          "fieldDefaultValue": 60000000000,
+          "fieldDefaultValue": 600000000000,
           "fieldFlag": "query-frontend.max-cache-freshness",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -13304,6 +13314,17 @@
         },
         {
           "kind": "field",
+          "name": "grafana_alertmanager_compatibility_enabled",
+          "required": false,
+          "desc": "Enable routes to support the migration and operation of the Grafana Alertmanager.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_get_requests_per_tenant",
           "required": false,
           "desc": "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
@@ -13607,6 +13628,17 @@
           "fieldFlag": "alertmanager.enable-state-cleanup",
           "fieldType": "boolean",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "utf8_strict_mode",
+          "required": false,
+          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended to check both alertmanager_matchers_disagree_total and alertmanager_matchers_incompatible_total metrics before using this mode as otherwise some tenant configurations might fail to load.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
