@@ -72,8 +72,6 @@ type RuleCommand struct {
 	// Get Rule Groups Configs
 	Namespace string
 	RuleGroup string
-	// Used for both Get and Print
-	SaveFile  bool
 	OutputDir string
 
 	// Load Rules Config
@@ -207,8 +205,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup to retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
-	getRuleGroupCmd.Flag("save-file", "save file to directory").Default("false").BoolVar(&r.SaveFile)
-	getRuleGroupCmd.Flag("output-dir", "The directory where the rules will be written to.").Default(".").ExistingDirVar(&r.OutputDir)
+	getRuleGroupCmd.Flag("output-dir", "The directory where the rules will be written to.").ExistingDirVar(&r.OutputDir)
 
 	// Delete RuleGroup Command
 	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
@@ -439,7 +436,7 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
 	}
 
-	if r.SaveFile {
+	if r.OutputDir != "" {
 		log.Debugf("Writing to file %s.yaml", r.Namespace)
 		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir)
 		if err != nil {
