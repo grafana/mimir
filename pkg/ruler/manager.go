@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
@@ -60,7 +61,8 @@ type DefaultMultiTenantManager struct {
 }
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
+	refreshMetrics := discovery.NewRefreshMetrics(reg)
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +296,8 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	reg := prometheus.WrapRegistererWith(prometheus.Labels{"user": userID}, r.registry)
 	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
-	n = newRulerNotifier(&notifier.Options{
+	var err error
+	if n, err = newRulerNotifier(&notifier.Options{
 		QueueCapacity: r.cfg.NotificationQueueCapacity,
 		Registerer:    reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
@@ -312,7 +315,9 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 			_ = ot.GlobalTracer().Inject(sp.Context(), ot.HTTPHeaders, ot.HTTPHeadersCarrier(req.Header))
 			return ctxhttp.Do(ctx, client, req)
 		},
-	}, log.With(r.logger, "user", userID))
+	}, log.With(r.logger, "user", userID)); err != nil {
+		return nil, err
+	}
 
 	n.run()
 

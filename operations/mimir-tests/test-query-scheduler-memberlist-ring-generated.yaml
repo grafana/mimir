@@ -540,6 +540,8 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
+        - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
+          value: "1000"
         image: grafana/mimir:2.11.0
         imagePullPolicy: IfNotPresent
         name: distributor

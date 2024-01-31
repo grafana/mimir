@@ -51,14 +51,18 @@ type rulerNotifier struct {
 	logger    gklog.Logger
 }
 
-func newRulerNotifier(o *notifier.Options, l gklog.Logger) *rulerNotifier {
+func newRulerNotifier(o *notifier.Options, l gklog.Logger) (*rulerNotifier, error) {
 	sdCtx, sdCancel := context.WithCancelCause(context.Background())
+	sdMetrics, err := discovery.CreateAndRegisterSDMetrics(o.Registerer)
+	if err != nil {
+		return nil, err
+	}
 	return &rulerNotifier{
 		notifier:  notifier.NewManager(o, l),
 		sdCancel:  sdCancel,
-		sdManager: discovery.NewManager(sdCtx, l, o.Registerer),
+		sdManager: discovery.NewManager(sdCtx, l, o.Registerer, sdMetrics),
 		logger:    l,
-	}
+	}, nil
 }
 
 // run starts the notifier. This function doesn't block and returns immediately.
@@ -96,7 +100,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if rulerConfig.AlertmanagerURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -113,7 +117,7 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider) (*
 
 		var sdConfig discovery.Config
 		if isSD {
-			sdConfig = dnsSD(rulerConfig, resolver, qType, url)
+			sdConfig = dnsSD(rulerConfig, resolver, qType, url, rmi)
 		} else {
 			sdConfig = staticTarget(url)
 		}

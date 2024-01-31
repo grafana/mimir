@@ -318,10 +318,10 @@ func TestAlertmanagerMatchersMetrics(t *testing.T) {
 
 	// The metrics should all be zero as no configurations contain matchers.
 	metricNames := []string{
-		"alertmanager_matchers_parse",
-		"alertmanager_matchers_disagree",
-		"alertmanager_matchers_incompatible",
-		"alertmanager_matchers_invalid",
+		"alertmanager_matchers_parse_total",
+		"alertmanager_matchers_disagree_total",
+		"alertmanager_matchers_incompatible_total",
+		"alertmanager_matchers_invalid_total",
 	}
 	metrics, err := alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
 	require.NoError(t, err)
@@ -334,7 +334,7 @@ func TestAlertmanagerMatchersMetrics(t *testing.T) {
 	require.NoError(t, c1.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
 	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
 	require.NoError(t, err)
-	// The sum for alertmanager_matchers_parse should be 4 as there are two matchers for origin=api
+	// The sum for alertmanager_matchers_parse_total should be 4 as there are two matchers for origin=api
 	// and another two matchers for origin=config.
 	require.Equal(t, []float64{4, 0, 0, 0}, metrics)
 
@@ -342,7 +342,7 @@ func TestAlertmanagerMatchersMetrics(t *testing.T) {
 	require.NoError(t, c2.SetAlertmanagerConfig(ctx, mimirAlertmanagerUserClassicConfigYaml, nil))
 	metrics, err = alertmanager.SumMetrics(metricNames, e2e.SkipMissingMetrics)
 	require.NoError(t, err)
-	// The sum for alertmanager_matchers_parse should be 8 as there are two matchers for origin=api
+	// The sum for alertmanager_matchers_parse_total should be 8 as there are two matchers for origin=api
 	// and another two matchers for origin=config, and 4 from the previous sum.
 	require.Equal(t, []float64{8, 0, 0, 0}, metrics)
 

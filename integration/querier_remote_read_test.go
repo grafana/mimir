@@ -333,13 +333,13 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 							require.Equal(t, samples[sampleIdx].Timestamp, ts)
 							require.Equal(t, samples[sampleIdx].Value, val)
 						case chunkenc.ValHistogram:
-							ts, h := chkItr.AtHistogram()
+							ts, h := chkItr.AtHistogram(nil)
 							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
 
 							expected := remote.HistogramProtoToHistogram(histograms[sampleIdx])
 							test.RequireHistogramEqual(t, expected, h)
 						case chunkenc.ValFloatHistogram:
-							ts, fh := chkItr.AtFloatHistogram()
+							ts, fh := chkItr.AtFloatHistogram(nil)
 							require.Equal(t, histograms[sampleIdx].Timestamp, ts)
 
 							expected := remote.FloatHistogramProtoToFloatHistogram(histograms[sampleIdx])

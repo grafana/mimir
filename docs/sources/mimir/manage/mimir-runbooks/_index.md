@@ -1286,6 +1286,12 @@ This non-critical error occurs when Mimir receives a write request that contains
 
 > **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 
+### err-mimir-invalid-native-histogram-schema
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
+
+> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+
 ### err-mimir-label-invalid
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
