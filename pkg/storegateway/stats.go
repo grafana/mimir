@@ -14,8 +14,8 @@ import (
 
 // queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
-	blocksQueried                 int
-	blocksQueriedBySourceAndLevel map[blockSourceAndLevel]int
+	blocksQueried            int
+	blocksQueriedByBlockMeta map[blockQueriedMeta]int
 
 	postingsTouched          int
 	postingsTouchedSizeSum   int
@@ -81,20 +81,30 @@ type queryStats struct {
 
 func newQueryStats() *queryStats {
 	return &queryStats{
-		blocksQueriedBySourceAndLevel: make(map[blockSourceAndLevel]int),
+		blocksQueriedByBlockMeta: make(map[blockQueriedMeta]int),
 	}
 }
 
-// blockSourceAndLevel encapsulate a block's thanos source and compaction level
-type blockSourceAndLevel struct {
-	source block.SourceType
-	level  int
+// blockQueriedMeta encapsulate a block's thanos source, compaction level, and if it
+// was created from out-or-order samples
+type blockQueriedMeta struct {
+	source     block.SourceType
+	level      int
+	outOfOrder bool
+}
+
+func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
+	return blockQueriedMeta{
+		source:     meta.Thanos.Source,
+		level:      meta.Compaction.Level,
+		outOfOrder: meta.OutOfOrder,
+	}
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
 	s.blocksQueried += o.blocksQueried
-	for sl, count := range o.blocksQueriedBySourceAndLevel {
-		s.blocksQueriedBySourceAndLevel[sl] += count
+	for m, count := range o.blocksQueriedByBlockMeta {
+		s.blocksQueriedByBlockMeta[m] += count
 	}
 
 	s.postingsTouched += o.postingsTouched
