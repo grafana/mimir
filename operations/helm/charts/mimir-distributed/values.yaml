@@ -812,7 +812,7 @@ distributor:
 
   # -- Jaeger reporter queue size
   # Set to 'null' to use the Jaeger client's default value
-  jaegerReporterMaxQueueSize: null
+  jaegerReporterMaxQueueSize: 1000
 
 ingester:
   # -- Total number of replicas for the ingester across all availability zones

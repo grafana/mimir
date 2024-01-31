@@ -1934,6 +1934,7 @@ func (dec *Decoder) LabelValueFor(ctx context.Context, b []byte, label string) (
 
 // Series decodes a series entry from the given byte slice into builder and chks.
 // Previous contents of builder can be overwritten - make sure you copy before retaining.
+// Skips reading chunks metadata if chks is nil.
 func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	builder.Reset()
 	if chks != nil {
