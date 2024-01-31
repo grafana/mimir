@@ -3,9 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM       alpine:3.19.1
-ARG        EXTRA_PACKAGES
-RUN        apk add --no-cache ca-certificates tzdata $EXTRA_PACKAGES
+FROM       gcr.io/distroless/base-debian12
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH
@@ -14,6 +12,7 @@ ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 ARG        USE_BINARY_SUFFIX
 COPY       mimir${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimir
 EXPOSE     8080
+WORKDIR    /
 ENTRYPOINT [ "/bin/mimir" ]
 
 ARG revision
