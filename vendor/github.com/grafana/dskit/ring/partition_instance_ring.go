@@ -104,7 +104,7 @@ func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, e
 }
 
 func (pr *PartitionInstanceRing) ShuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionInstanceRing, error) {
-	subRing, err := pr.PartitionRing().ShuffleRingPartitions(identifier, size, lookbackPeriod, now)
+	subRing, err := pr.PartitionRing().ShuffleShardWithLookback(identifier, size, lookbackPeriod, now)
 	if err != nil {
 		return nil, err
 	}

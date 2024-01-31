@@ -360,11 +360,8 @@ func (t *Mimir) initPartitionRingWatcher() (services.Service, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "creating KV store for partition ring")
 	}
-	partitionsConfig := ring.PartitionRingConfig{
-		HeartbeatTimeout: t.Cfg.Ingester.IngesterRing.HeartbeatTimeout,
-	}
 
-	t.PartitionRingWatcher, err = ring.NewPartitionRingWatcher(partitionsConfig, kvClient, ingester.PartitionRingKey, util_log.Logger, t.Registerer)
+	t.PartitionRingWatcher, err = ring.NewPartitionRingWatcher(kvClient, ingester.PartitionRingKey, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}

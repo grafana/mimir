@@ -187,7 +187,7 @@ type Ring struct {
 	// Cache of shuffle-sharded subrings per identifier. Invalidated when topology changes.
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache             map[subringCacheKey]*Ring
-	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback
+	shuffledSubringWithLookbackCache map[subringCacheKey]cachedSubringWithLookback[*Ring]
 
 	numMembersGaugeVec      *prometheus.GaugeVec
 	totalTokensGauge        prometheus.Gauge
@@ -202,8 +202,8 @@ type subringCacheKey struct {
 	lookbackPeriod time.Duration
 }
 
-type cachedSubringWithLookback struct {
-	subring                               *Ring
+type cachedSubringWithLookback[R any] struct {
+	subring                               R
 	validForLookbackWindowsStartingAfter  int64 // if the lookback window is from T to S, validForLookbackWindowsStartingAfter is the earliest value of T this cache entry is valid for
 	validForLookbackWindowsStartingBefore int64 // if the lookback window is from T to S, validForLookbackWindowsStartingBefore is the latest value of T this cache entry is valid for
 }
@@ -237,7 +237,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		strategy:                         strategy,
 		ringDesc:                         &Desc{},
 		shuffledSubringCache:             map[subringCacheKey]*Ring{},
-		shuffledSubringWithLookbackCache: map[subringCacheKey]cachedSubringWithLookback{},
+		shuffledSubringWithLookbackCache: map[subringCacheKey]cachedSubringWithLookback[*Ring]{},
 		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "ring_members",
 			Help:        "Number of members in the ring",
@@ -349,7 +349,7 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 		r.shuffledSubringCache = make(map[subringCacheKey]*Ring)
 	}
 	if r.shuffledSubringWithLookbackCache != nil {
-		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback)
+		r.shuffledSubringWithLookbackCache = make(map[subringCacheKey]cachedSubringWithLookback[*Ring])
 	}
 
 	r.updateRingMetrics(rc)
@@ -661,7 +661,7 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	}
 
 	result := r.shuffleShard(identifier, size, 0, time.Now())
-	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
+	// Only cache subring if it is different from this ring, to avoid deadlocks in getSubring,
 	// when we update the cached ring.
 	if result != r {
 		r.setCachedShuffledSubring(identifier, size, result)
@@ -1031,7 +1031,7 @@ func (r *Ring) setCachedShuffledSubringWithLookback(identifier string, size int,
 	key := subringCacheKey{identifier: identifier, shardSize: size, lookbackPeriod: lookbackPeriod}
 
 	if existingEntry, haveCached := r.shuffledSubringWithLookbackCache[key]; !haveCached || existingEntry.validForLookbackWindowsStartingAfter < lookbackWindowStart {
-		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback{
+		r.shuffledSubringWithLookbackCache[key] = cachedSubringWithLookback[*Ring]{
 			subring:                               subring,
 			validForLookbackWindowsStartingAfter:  lookbackWindowStart,
 			validForLookbackWindowsStartingBefore: validForLookbackWindowsStartingBefore,

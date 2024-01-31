@@ -3749,8 +3749,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		)
 		require.NoError(t, err)
 
-		ringCfg := ring.PartitionRingConfig{HeartbeatTimeout: time.Minute}
-		partitionsRingWatcher, err = ring.NewPartitionRingWatcher(ringCfg, partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
+		partitionsRingWatcher, err = ring.NewPartitionRingWatcher(partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), partitionsRingWatcher))
 

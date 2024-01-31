@@ -343,18 +343,18 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHan
 	}
 }
 
-// RegisterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterRing(r http.Handler) {
+// RegisterIngesterRing registers the ring UI page associated with the distributor for writes.
+func (a *API) RegisterIngesterRing(r http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ingester/ring"},
 	})
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
 }
 
-// TODO doc
+// RegisterIngesterPartitionRing registers the ring UI page associated with the ingester partitions.
 func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
-		{Desc: "Ring status", Path: "/ingester/partition-ring"},
+		{Desc: "Partition ring status", Path: "/ingester/partition-ring"},
 	})
 	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }

@@ -11,6 +11,7 @@ import (
 
 var ErrNoActivePartitionFound = fmt.Errorf("no active partition found")
 
+// TODO doc
 type PartitionRing struct {
 	desc PartitionRingDesc
 
@@ -18,44 +19,44 @@ type PartitionRing struct {
 	tokenPartitions map[Token]int32
 	partitionOwners map[int32][]string
 
-	heartbeatTimeout time.Duration
+	shuffleShardCache *partitionRingShuffleShardCache
 }
 
-func NewPartitionRing(desc PartitionRingDesc, heartbeatTimeout time.Duration) *PartitionRing {
+func NewPartitionRing(desc PartitionRingDesc) *PartitionRing {
 	tokens, tokenPartitions := desc.TokensAndTokenPartitions()
 
 	pr := PartitionRing{
-		desc:             desc,
-		ringTokens:       tokens,
-		tokenPartitions:  tokenPartitions,
-		partitionOwners:  desc.PartitionOwners(),
-		heartbeatTimeout: heartbeatTimeout,
+		desc:              desc,
+		ringTokens:        tokens,
+		tokenPartitions:   tokenPartitions,
+		partitionOwners:   desc.PartitionOwners(),
+		shuffleShardCache: newPartitionRingShuffleShardCache(),
 	}
 	return &pr
 }
 
 // ActivePartitionForKey returns partition that should receive given key. Only active partitions are considered,
 // and only one partition is returned.
-func (pr *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc, error) {
-	start := searchToken(pr.ringTokens, key)
+func (r *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc, error) {
+	start := searchToken(r.ringTokens, key)
 	iterations := 0
 
-	tokensCount := len(pr.ringTokens)
-	for i := start; iterations < len(pr.ringTokens); i++ {
+	tokensCount := len(r.ringTokens)
+	for i := start; iterations < len(r.ringTokens); i++ {
 		iterations++
 
 		if i >= tokensCount {
-			i %= len(pr.ringTokens)
+			i %= len(r.ringTokens)
 		}
 
-		token := pr.ringTokens[i]
+		token := r.ringTokens[i]
 
-		pid, ok := pr.tokenPartitions[Token(token)]
+		pid, ok := r.tokenPartitions[Token(token)]
 		if !ok {
 			return 0, PartitionDesc{}, ErrInconsistentTokensInfo
 		}
 
-		p, ok := pr.desc.Partition(pid)
+		p, ok := r.desc.Partition(pid)
 		if !ok {
 			return 0, PartitionDesc{}, ErrInconsistentTokensInfo
 		}
@@ -67,22 +68,53 @@ func (pr *PartitionRing) ActivePartitionForKey(key uint32) (int32, PartitionDesc
 	return 0, PartitionDesc{}, ErrNoActivePartitionFound
 }
 
-func (pr *PartitionRing) ShuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
-	partitions, err := pr.shuffleRingPartitions(identifier, size, lookbackPeriod, now)
+// TODO doc
+// TODO unit test
+func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRing, error) {
+	if cached := r.shuffleShardCache.getSubring(identifier, size); cached != nil {
+		return cached, nil
+	}
+
+	subring, err := r.shuffleShard(identifier, size, 0, time.Now())
 	if err != nil {
 		return nil, err
 	}
 
-	// nil is a special value indicating all partitions
-	if partitions == nil {
-		return pr, nil
+	// The shuffleShard() function returns nil if the subring is equal to this ring.
+	// We don't cache it in that case, since it was shortcut by shuffleShard().
+	if subring == nil {
+		return r, nil
 	}
 
-	return NewPartitionRing(pr.desc.WithPartitions(partitions), pr.heartbeatTimeout), nil
+	r.shuffleShardCache.setSubring(identifier, size, subring)
+	return subring, nil
 }
 
-func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (map[int32]struct{}, error) {
-	if size <= 0 || size >= len(pr.desc.Partitions) {
+// TODO doc
+// TODO unit test (including the fuzzy one)
+func (r *PartitionRing) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
+	if cached := r.shuffleShardCache.getSubringWithLookback(identifier, size, lookbackPeriod, now); cached != nil {
+		return cached, nil
+	}
+
+	subring, err := r.shuffleShard(identifier, size, lookbackPeriod, now)
+	if err != nil {
+		return nil, err
+	}
+
+	// The shuffleShard() function returns nil if the subring is equal to this ring.
+	// We don't cache it in that case, since it was shortcut by shuffleShard().
+	if subring == nil {
+		return r, nil
+	}
+
+	r.shuffleShardCache.setSubringWithLookback(identifier, size, lookbackPeriod, now, subring)
+	return subring, nil
+}
+
+func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionRing, error) {
+	// Nothing to do if the shard size is not smaller then the actual ring.
+	if size <= 0 || size >= len(r.desc.Partitions) {
 		return nil, nil
 	}
 
@@ -95,11 +127,11 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 	// To select one more instance while guaranteeing the "consistency" property,
 	// we do pick a random value from the generator and resolve uniqueness collisions
 	// (if any) continuing walking the ring.
-	tokensCount := len(pr.ringTokens)
+	tokensCount := len(r.ringTokens)
 
 	result := make(map[int32]struct{}, size)
 	for len(result) < size {
-		start := searchToken(pr.ringTokens, random.Uint32())
+		start := searchToken(r.ringTokens, random.Uint32())
 		iterations := 0
 
 		found := false
@@ -110,7 +142,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 				p %= tokensCount
 			}
 
-			pid, ok := pr.tokenPartitions[Token(pr.ringTokens[p])]
+			pid, ok := r.tokenPartitions[Token(r.ringTokens[p])]
 			if !ok {
 				return nil, ErrInconsistentTokensInfo
 			}
@@ -123,7 +155,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 			// Include found partition in the result.
 			result[pid] = struct{}{}
 
-			p, ok := pr.desc.Partition(pid)
+			p, ok := r.desc.Partition(pid)
 			if !ok {
 				return nil, ErrInconsistentTokensInfo
 			}
@@ -133,7 +165,7 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 				size++
 
 				// If we now need to find all partitions, just return nil to indicate that.
-				if size >= len(pr.desc.Partitions) {
+				if size >= len(r.desc.Partitions) {
 					return nil, nil
 				}
 			}
@@ -146,18 +178,18 @@ func (pr *PartitionRing) shuffleRingPartitions(identifier string, size int, look
 			break
 		}
 	}
-	return result, nil
+	return NewPartitionRing(r.desc.WithPartitions(result)), nil
 }
 
-func (pr *PartitionRing) PartitionOwners() map[int32][]string {
-	return pr.partitionOwners
+func (r *PartitionRing) PartitionOwners() map[int32][]string {
+	return r.partitionOwners
 }
 
-func (pr *PartitionRing) String() string {
+func (r *PartitionRing) String() string {
 	buf := bytes.Buffer{}
-	for pid, pd := range pr.desc.Partitions {
+	for pid, pd := range r.desc.Partitions {
 		buf.WriteString(fmt.Sprintf(" %d:%v", pid, pd.State.String()))
 	}
 
-	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(pr.desc.Owners), len(pr.desc.Owners), buf.String())
+	return fmt.Sprintf("PartitionRing{ownersCount: %d, partitionsCount: %d, partitions: {%s}}", len(r.desc.Owners), len(r.desc.Owners), buf.String())
 }
