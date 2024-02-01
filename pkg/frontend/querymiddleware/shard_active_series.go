@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -38,7 +37,7 @@ const encodingTypeSnappyFramed = "x-snappy-framed"
 var (
 	errShardCountTooLow = errors.New("shard count too low")
 
-	jsoniterMaxBufferPoolSize = os.Getpagesize()
+	jsoniterMaxBufferSize = os.Getpagesize()
 )
 
 type shardActiveSeriesMiddleware struct {
@@ -59,8 +58,8 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, l
 		encoder:  s2.NewWriter(nil),
 		bufferPool: sync.Pool{
 			New: func() any {
-				buf := make([]byte, jsoniterMaxBufferPoolSize)
-				return unsafe.SliceData(buf)
+				buf := make([]byte, jsoniterMaxBufferSize)
+				return &buf
 			},
 		},
 		labelBuilderPool: sync.Pool{
@@ -280,10 +279,10 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 				_ = body.Close()
 			}(r.Body)
 
-			buf := s.getBufferFromPool()
-			defer s.putBuffer(buf)
+			bufPtr := s.bufferPool.Get().(*[]byte)
+			defer s.bufferPool.Put(bufPtr)
 
-			it := jsoniter.ConfigFastest.BorrowIterator(buf)
+			it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
 			it.Reset(r.Body)
 			defer func() {
 				jsoniter.ConfigFastest.ReturnIterator(it)
@@ -359,14 +358,14 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	} else {
 		span.LogFields(otlog.String("encoding", "none"))
 	}
-	buf := s.getBufferFromPool()
-	defer s.putBuffer(buf)
 
 	stream := jsoniter.ConfigFastest.BorrowStream(out)
-	stream.SetBuffer(buf[:0])
-
 	defer func(stream *jsoniter.Stream) {
 		_ = stream.Flush()
+
+		if cap(stream.Buffer()) > jsoniterMaxBufferSize {
+			return
+		}
 		jsoniter.ConfigFastest.ReturnStream(stream)
 	}(stream)
 
@@ -398,7 +397,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		s.labelBuilderPool.Put(item)
 
 		// Flush the stream buffer if it's getting too large.
-		if stream.Buffered() > jsoniterMaxBufferPoolSize {
+		if stream.Buffered() > jsoniterMaxBufferSize {
 			_ = stream.Flush()
 		}
 	}
@@ -416,15 +415,4 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	}
 
 	stream.WriteObjectEnd()
-}
-
-func (s *shardActiveSeriesMiddleware) getBufferFromPool() []byte {
-	return unsafe.Slice(s.bufferPool.Get().(*byte), jsoniterMaxBufferPoolSize)
-}
-
-func (s *shardActiveSeriesMiddleware) putBuffer(buf []byte) {
-	if cap(buf) > jsoniterMaxBufferPoolSize {
-		return
-	}
-	s.bufferPool.Put(unsafe.SliceData(buf))
 }
