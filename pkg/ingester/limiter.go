@@ -132,9 +132,8 @@ func (l *Limiter) convertGlobalToLocalLimit(userShardSize int, globalLimit int) 
 		return 0
 	}
 
-	// Global limit is equally distributed among all the active zones.
-	// The portion of global limit related to each zone is then equally distributed
-	// among all the ingesters belonging to that zone.
+	// Global limit is scaled by the replication factor and then equally distributed among all the active zones.
+	// The portion of the global limit related to each zone is then equally distributed among all the ingesters belonging to that zone.
 	return int((float64(globalLimit*l.replicationFactor) / float64(zonesCount)) / float64(ingestersInZoneCount))
 }
 
@@ -144,7 +143,9 @@ func (l *Limiter) getShardSize(userID string) int {
 
 func (l *Limiter) getZonesCount() int {
 	if l.zoneAwarenessEnabled {
-		return util_math.Max(l.ring.ZonesCount(), 1)
+		// Series are replicated to at most replicationFactor zones, regardless of the number of zones in the ring
+		// Running with a number of zones < replicationFactor is unsupported
+		return util_math.Max(l.replicationFactor, 1)
 	}
 	return 1
 }

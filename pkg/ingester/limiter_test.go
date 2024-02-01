@@ -74,7 +74,6 @@ func runLimiterMaxFunctionTest(
 		ringReplicationFactor    int
 		ringZoneAwarenessEnabled bool
 		ringIngesterCount        int
-		ringZonesCount           int
 		ingestersInZoneCount     int
 		shardSize                int
 		expectedValue            int
@@ -120,13 +119,11 @@ func runLimiterMaxFunctionTest(
 			shardSize:             20,  // Greater than number of ingesters.
 			expectedValue:         300, // (1000 / 10 ingesters) * 3 replication factor
 		},
-
 		"zone-awareness enabled, limit is disabled": {
 			globalLimit:              0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     1,
 			expectedValue:            math.MaxInt32,
 		},
@@ -135,7 +132,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        9,
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3, // 9 ingesters / 3 zones
 			shardSize:                0,
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
@@ -145,7 +141,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     2, // in this zone ingesters are scaled down from 3 to 2
 			shardSize:                0,
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -155,7 +150,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3, // in this zone ingesters are NOT scaled down
 			shardSize:                0,
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
@@ -165,7 +159,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10, // ingesters are scaled up from 9 to 10
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     4, // in this zone ingesters are scaled up from 3 to 4
 			shardSize:                0,
 			expectedValue:            225, // (900 / 3 zones / 4 ingesters per zone) * 3 replication factor
@@ -175,7 +168,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10, // ingesters are scaled up from 9 to 10
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3, // in this zone ingesters are NOT scaled up
 			shardSize:                0,
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
@@ -185,7 +177,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        9,
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // 9 ingesters / 3 zones
 			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -195,7 +186,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        7, // ingesters are scaled down from 9 to 7
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     1,   // in this zone ingesters are scaled down from 3 to 1
 			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
 			expectedValue:            900, // (900 / 3 zones / 1 ingesters per zone) * 3 replication factor
@@ -205,7 +195,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        7, // ingesters are scaled down from 9 to 7
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled down (ignored because of shardSize)
 			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -215,7 +204,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     5,   // in this zone ingesters are scaled up from 3 to 5 (ignored because of shardSize)
 			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -225,7 +213,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled up (ignored because of shardSize)
 			shardSize:                5,   // the expected number of ingesters per zone is (ceil(5/3) = 2
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -235,7 +222,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        9,
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // 9 ingesters / 3 zones
 			shardSize:                20,  // Greater than number of ingesters.
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
@@ -245,7 +231,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     2,   // in this zone ingesters are scaled down from 3 to 2
 			shardSize:                20,  // Greater than number of ingesters.
 			expectedValue:            450, // (900 / 3 zones / 2 ingesters per zone) * 3 replication factor
@@ -255,7 +240,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        8, // ingesters are scaled down from 9 to 8
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled down
 			shardSize:                20,  // Greater than number of ingesters.
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
@@ -265,7 +249,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     5,   // in this zone ingesters are scaled up from 3 to 5
 			shardSize:                20,  // Greater than number of ingesters.
 			expectedValue:            180, // (900 / 3 zones / 5 ingesters per zone) * 3 replication factor
@@ -275,34 +258,40 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:    3,
 			ringIngesterCount:        11, // ingesters are scaled up from 9 to 11
 			ringZoneAwarenessEnabled: true,
-			ringZonesCount:           3,
 			ingestersInZoneCount:     3,   // in this zone ingesters are NOT scaled up
 			shardSize:                20,  // Greater than number of ingesters.
 			expectedValue:            300, // (900 / 3 zones / 3 ingesters per zone) * 3 replication factor
 		},
 	}
 
-	for testName, testData := range tests {
-		testData := testData
+	numZonesRFMultiplier := map[string]int{
+		"num zones == replication factor":    1,
+		"num zones = 2 * replication factor": 2,
+	}
 
-		t.Run(testName, func(t *testing.T) {
-			// Mock the ring
-			ring := &ringCountMock{}
-			ring.On("InstancesCount").Return(testData.ringIngesterCount)
-			ring.On("InstancesInZoneCount").Return(testData.ingestersInZoneCount)
-			ring.On("ZonesCount").Return(testData.ringZonesCount)
+	for zoneMultiplierName, zoneMultiplier := range numZonesRFMultiplier {
+		for testName, testData := range tests {
+			testData := testData
 
-			// Mock limits
-			limits := validation.Limits{IngestionTenantShardSize: testData.shardSize}
-			applyLimits(&limits, testData.globalLimit)
+			t.Run(zoneMultiplierName+", "+testName, func(t *testing.T) {
+				// Mock the ring
+				ring := &ringCountMock{}
+				ring.On("InstancesCount").Return(testData.ringIngesterCount)
+				ring.On("InstancesInZoneCount").Return(testData.ingestersInZoneCount)
+				ring.On("ZonesCount").Return(testData.ringReplicationFactor * zoneMultiplier)
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(t, err)
+				// Mock limits
+				limits := validation.Limits{IngestionTenantShardSize: testData.shardSize}
+				applyLimits(&limits, testData.globalLimit)
 
-			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
-			actual := runMaxFn(limiter)
-			assert.Equal(t, testData.expectedValue, actual)
-		})
+				overrides, err := validation.NewOverrides(limits, nil)
+				require.NoError(t, err)
+
+				limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
+				actual := runMaxFn(limiter)
+				assert.Equal(t, testData.expectedValue, actual)
+			})
+		}
 	}
 }
 
