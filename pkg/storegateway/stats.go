@@ -97,7 +97,7 @@ func newBlockQueriedMeta(meta *block.Meta) blockQueriedMeta {
 	return blockQueriedMeta{
 		source:     meta.Thanos.Source,
 		level:      meta.Compaction.Level,
-		outOfOrder: meta.OutOfOrder,
+		outOfOrder: meta.Compaction.FromOutOfOrder(),
 	}
 }
 
