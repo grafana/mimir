@@ -423,6 +423,10 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.
 }
 
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	type activeSeriesResponse struct {
+		Data []labels.Labels `json:"data"`
+	}
+
 	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
 
 	for _, numResponses := range bcs {
@@ -432,12 +436,15 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				var responses []*http.Response
 				for i := 0; i < numResponses; i++ {
-					body := fmt.Sprintf(fmt.Sprintf(`{"data": [{"__name__": "metric-%%0%dd"}]}`, 32), i)
+
+					var apiResp activeSeriesResponse
+					apiResp.Data = append(apiResp.Data, labels.FromStrings("__name__", "m_"+fmt.Sprint(i), "job", "prometheus"+fmt.Sprint(i), "instance", "instance"+fmt.Sprint(i)))
+					body, _ := json.Marshal(&apiResp)
 
 					responses = append(responses, &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{},
-						Body:       io.NopCloser(strings.NewReader(body)),
+						Body:       io.NopCloser(bytes.NewReader(body)),
 					})
 				}
 				benchResponses[i] = responses

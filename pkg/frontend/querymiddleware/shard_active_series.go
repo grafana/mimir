@@ -38,6 +38,18 @@ var (
 	errShardCountTooLow = errors.New("shard count too low")
 
 	jsoniterMaxBufferSize = os.Getpagesize()
+	jsoniterBufferPool    = sync.Pool{
+		New: func() any {
+			buf := make([]byte, jsoniterMaxBufferSize)
+			return &buf
+		},
+	}
+
+	labelBuilderPool = sync.Pool{
+		New: func() any {
+			return labels.NewBuilder(labels.EmptyLabels())
+		},
+	}
 )
 
 type shardActiveSeriesMiddleware struct {
@@ -45,9 +57,6 @@ type shardActiveSeriesMiddleware struct {
 	limits   Limits
 	logger   log.Logger
 	encoder  *s2.Writer
-
-	bufferPool       sync.Pool
-	labelBuilderPool sync.Pool
 }
 
 func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
@@ -56,17 +65,6 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, l
 		limits:   limits,
 		logger:   logger,
 		encoder:  s2.NewWriter(nil),
-		bufferPool: sync.Pool{
-			New: func() any {
-				buf := make([]byte, jsoniterMaxBufferSize)
-				return &buf
-			},
-		},
-		labelBuilderPool: sync.Pool{
-			New: func() any {
-				return labels.NewBuilder(labels.EmptyLabels())
-			},
-		},
 	}
 }
 
@@ -279,8 +277,8 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 				_ = body.Close()
 			}(r.Body)
 
-			bufPtr := s.bufferPool.Get().(*[]byte)
-			defer s.bufferPool.Put(bufPtr)
+			bufPtr := jsoniterBufferPool.Get().(*[]byte)
+			defer jsoniterBufferPool.Put(bufPtr)
 
 			it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
 			it.Reset(r.Body)
@@ -312,7 +310,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 			}
 
 			for it.ReadArray() {
-				item := s.labelBuilderPool.Get().(*labels.Builder)
+				item := labelBuilderPool.Get().(*labels.Builder)
 				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
 					item.Set(s, iterator.ReadString())
 					return true
@@ -394,7 +392,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		stream.WriteObjectEnd()
 
 		item.Reset(labels.EmptyLabels())
-		s.labelBuilderPool.Put(item)
+		labelBuilderPool.Put(item)
 
 		// Flush the stream buffer if it's getting too large.
 		if stream.Buffered() > jsoniterMaxBufferSize {
