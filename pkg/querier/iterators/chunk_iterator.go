@@ -63,7 +63,7 @@ func (i *chunkIterator) At() (int64, float64) {
 	return i.cachedTime, i.cachedValue
 }
 
-func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (i *chunkIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	if i.valType != chunkenc.ValHistogram {
 		panic(fmt.Errorf("chunkIterator: calling AtHistogram when chunk is of different type %v", i.valType))
 	}
@@ -72,12 +72,12 @@ func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
 		return i.cachedTime, i.cachedHistogram
 	}
 
-	i.cachedTime, i.cachedHistogram = i.it.AtHistogram()
+	i.cachedTime, i.cachedHistogram = i.it.AtHistogram(h)
 	i.cacheValid = true
 	return i.cachedTime, i.cachedHistogram
 }
 
-func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (i *chunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if i.valType != chunkenc.ValHistogram && i.valType != chunkenc.ValFloatHistogram {
 		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of type %v", i.valType))
 	}
@@ -86,17 +86,13 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 		return i.cachedTime, i.cachedFloatHistogram
 	}
 
-	var (
-		t  int64
-		fh *histogram.FloatHistogram
-	)
-
+	var t int64
 	if i.valType == chunkenc.ValHistogram {
 		var h *histogram.Histogram
-		t, h = i.AtHistogram()
-		fh = h.ToFloat(nil)
+		t, h = i.AtHistogram(i.cachedHistogram)
+		fh = h.ToFloat(fh)
 	} else {
-		t, fh = i.it.AtFloatHistogram()
+		t, fh = i.it.AtFloatHistogram(fh)
 	}
 
 	i.cachedTime = t
@@ -115,10 +111,10 @@ func (i *chunkIterator) AtT() int64 {
 		t, _ := i.At()
 		return t
 	case chunkenc.ValHistogram:
-		t, _ := i.AtHistogram()
+		t, _ := i.AtHistogram(i.cachedHistogram)
 		return t
 	case chunkenc.ValFloatHistogram:
-		t, _ := i.AtFloatHistogram()
+		t, _ := i.AtFloatHistogram(i.cachedFloatHistogram)
 		return t
 	default:
 		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
