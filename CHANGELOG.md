@@ -78,6 +78,7 @@
   * `active_series`: active series query
   * `other`: any other request
 * [BUGFIX] Fix performance regression introduced in Mimir 2.11.0 when uploading blocks to AWS S3. #7240
+* [BUGFIX] Ingester: fix limiter behavior when number of zones in a zone-aware cluster is greater than the configured replication factor. #7273
 
 ### Mixin
 
