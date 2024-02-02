@@ -195,11 +195,11 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (i *mockIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	return 0, &histogram.Histogram{}
 }
 
-func (i *mockIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (i *mockIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	return 0, &histogram.FloatHistogram{}
 }
 
