@@ -88,9 +88,8 @@ func (i *chunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *
 
 	var t int64
 	if i.valType == chunkenc.ValHistogram {
-		var h *histogram.Histogram
-		t, h = i.AtHistogram(i.cachedHistogram)
-		fh = h.ToFloat(fh)
+		t, i.cachedHistogram = i.AtHistogram(i.cachedHistogram)
+		fh = i.cachedHistogram.ToFloat(fh)
 	} else {
 		t, fh = i.it.AtFloatHistogram(fh)
 	}
@@ -106,15 +105,16 @@ func (i *chunkIterator) AtT() int64 {
 	if i.cacheValid {
 		return i.cachedTime
 	}
+	var t int64
 	switch i.valType {
 	case chunkenc.ValFloat:
-		t, _ := i.At()
+		t, i.cachedValue = i.At()
 		return t
 	case chunkenc.ValHistogram:
-		t, _ := i.AtHistogram(i.cachedHistogram)
+		t, i.cachedHistogram = i.AtHistogram(i.cachedHistogram)
 		return t
 	case chunkenc.ValFloatHistogram:
-		t, _ := i.AtFloatHistogram(i.cachedFloatHistogram)
+		t, i.cachedFloatHistogram = i.AtFloatHistogram(i.cachedFloatHistogram)
 		return t
 	default:
 		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
