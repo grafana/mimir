@@ -105,16 +105,15 @@ func (i *chunkIterator) AtT() int64 {
 	if i.cacheValid {
 		return i.cachedTime
 	}
-	var t int64
 	switch i.valType {
 	case chunkenc.ValFloat:
-		t, i.cachedValue = i.At()
+		t, _ := i.At()
 		return t
 	case chunkenc.ValHistogram:
-		t, i.cachedHistogram = i.AtHistogram(i.cachedHistogram)
+		t, _ := i.AtHistogram(nil)
 		return t
 	case chunkenc.ValFloatHistogram:
-		t, i.cachedFloatHistogram = i.AtFloatHistogram(i.cachedFloatHistogram)
+		t, _ := i.AtFloatHistogram(nil)
 		return t
 	default:
 		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
