@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -32,7 +34,23 @@ import (
 
 const encodingTypeSnappyFramed = "x-snappy-framed"
 
-var errShardCountTooLow = errors.New("shard count too low")
+var (
+	errShardCountTooLow = errors.New("shard count too low")
+
+	jsoniterMaxBufferSize = os.Getpagesize()
+	jsoniterBufferPool    = sync.Pool{
+		New: func() any {
+			buf := make([]byte, jsoniterMaxBufferSize)
+			return &buf
+		},
+	}
+
+	labelBuilderPool = sync.Pool{
+		New: func() any {
+			return labels.NewBuilder(labels.EmptyLabels())
+		},
+	}
+)
 
 type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
@@ -244,7 +262,7 @@ func shardedSelector(shardCount, currentShard int, expr parser.Expr) (parser.Exp
 func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, responses []*http.Response, acceptEncoding string) *http.Response {
 	reader, writer := io.Pipe()
 
-	items := make(chan map[string]string)
+	items := make(chan *labels.Builder, len(responses))
 
 	g := new(errgroup.Group)
 	for _, res := range responses {
@@ -254,11 +272,19 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 		r := res
 		g.Go(func() error {
 			defer func(body io.ReadCloser) {
-				_, _ = io.ReadAll(body)
+				// drain body reader
+				_, _ = io.Copy(io.Discard, body)
 				_ = body.Close()
 			}(r.Body)
 
-			it := jsoniter.Parse(jsoniter.ConfigFastest, r.Body, 512)
+			bufPtr := jsoniterBufferPool.Get().(*[]byte)
+			defer jsoniterBufferPool.Put(bufPtr)
+
+			it := jsoniter.ConfigFastest.BorrowIterator(*bufPtr)
+			it.Reset(r.Body)
+			defer func() {
+				jsoniter.ConfigFastest.ReturnIterator(it)
+			}()
 
 			// Iterate over fields until we find data or error fields
 			foundDataField := false
@@ -284,9 +310,9 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 			}
 
 			for it.ReadArray() {
-				item := make(map[string]string)
+				item := labelBuilderPool.Get().(*labels.Builder)
 				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
-					item[s] = iterator.ReadString()
+					item.Set(s, iterator.ReadString())
 					return true
 				})
 				items <- item
@@ -313,7 +339,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 	return response
 }
 
-func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items chan map[string]string, encodingType string) {
+func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encodingType string) {
 	defer func(encoder, w io.Closer) {
 		_ = encoder.Close()
 		_ = w.Close()
@@ -331,9 +357,14 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		span.LogFields(otlog.String("encoding", "none"))
 	}
 
-	stream := jsoniter.NewStream(jsoniter.ConfigFastest, out, 512)
+	stream := jsoniter.ConfigFastest.BorrowStream(out)
 	defer func(stream *jsoniter.Stream) {
 		_ = stream.Flush()
+
+		if cap(stream.Buffer()) > jsoniterMaxBufferSize {
+			return
+		}
+		jsoniter.ConfigFastest.ReturnStream(stream)
 	}(stream)
 
 	stream.WriteObjectStart()
@@ -348,16 +379,25 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		}
 		stream.WriteObjectStart()
 		firstField := true
-		for k, v := range item {
+
+		item.Range(func(l labels.Label) {
 			if firstField {
 				firstField = false
 			} else {
 				stream.WriteMore()
 			}
-			stream.WriteObjectField(k)
-			stream.WriteString(v)
-		}
+			stream.WriteObjectField(l.Name)
+			stream.WriteString(l.Value)
+		})
 		stream.WriteObjectEnd()
+
+		item.Reset(labels.EmptyLabels())
+		labelBuilderPool.Put(item)
+
+		// Flush the stream buffer if it's getting too large.
+		if stream.Buffered() > jsoniterMaxBufferSize {
+			_ = stream.Flush()
+		}
 	}
 	stream.WriteArrayEnd()
 

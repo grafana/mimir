@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -418,6 +419,49 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_ResponseBodyStreamed(t *testing.
 	for i, body := range upstreamResponseBodies {
 		bytesRead := int(body.BytesRead())
 		assert.Equal(t, responseSize[i], bytesRead)
+	}
+}
+
+func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	type activeSeriesResponse struct {
+		Data []labels.Labels `json:"data"`
+	}
+
+	bcs := []int{2, 4, 8, 16, 32, 64, 128, 256, 512}
+
+	for _, numResponses := range bcs {
+		b.Run(fmt.Sprintf("num-responses-%d", numResponses), func(b *testing.B) {
+			benchResponses := make([][]*http.Response, b.N)
+
+			for i := 0; i < b.N; i++ {
+				var responses []*http.Response
+				for i := 0; i < numResponses; i++ {
+
+					var apiResp activeSeriesResponse
+					apiResp.Data = append(apiResp.Data, labels.FromStrings("__name__", "m_"+fmt.Sprint(i), "job", "prometheus"+fmt.Sprint(i), "instance", "instance"+fmt.Sprint(i)))
+					body, _ := json.Marshal(&apiResp)
+
+					responses = append(responses, &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{},
+						Body:       io.NopCloser(bytes.NewReader(body)),
+					})
+				}
+				benchResponses[i] = responses
+			}
+
+			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				resp := s.mergeResponses(context.Background(), benchResponses[i], "")
+
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		})
 	}
 }
 
