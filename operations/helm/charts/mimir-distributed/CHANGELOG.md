@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [FEATURE] Added experimental feature for deploying keda autoscaling objects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. Requires metamonitoring, for more details on metamonitoring see the Helm chart documentation.
+* [FEATURE] Added experimental feature for deploying keda autoscaling objects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. Requires metamonitoring, for more details on metamonitoring see the Helm chart documentation. #7282
 * [CHANGE] Rollout-operator: remove default CPU limit. #7125
 * [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
   * `-distributor.ring.heartbeat-period` set to `1m`
