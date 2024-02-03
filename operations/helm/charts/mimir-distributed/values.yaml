@@ -1238,9 +1238,19 @@ querier:
     behavior:
       scaleDown:
         policies:
-          - periodSeconds: 60
+          - periodSeconds: 120
             type: Percent
             value: 10
+        stabilizationWindowSeconds: 600
+        scaleUp:
+          policies:
+            - periodSeconds: 120
+              type: Percent
+              value: 50
+            - periodSeconds: 120
+              type: Pods
+              value: 15
+          stabilizationWindowSeconds: 60
 
   service:
     annotations: {}
