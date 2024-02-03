@@ -9,7 +9,9 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
+  {{- if not .Values.ruler.kedaAutoscaling.enabled }}
   replicas: {{ .Values.ruler.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 6 }}

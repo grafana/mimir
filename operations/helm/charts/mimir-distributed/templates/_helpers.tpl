@@ -497,6 +497,10 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
 {{- end -}}
 
+{{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- end -}}
+
 {{/*
 Creates dict for zone-aware replication configuration
 Params:
