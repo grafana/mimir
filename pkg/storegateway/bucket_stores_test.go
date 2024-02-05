@@ -468,15 +468,18 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	const (
-		userID     = "tenant-with-block-ooo-chunks"
+		userID     = "user-1"
 		metricName = "test"
 	)
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
+	fixtureDir := "fixtures/test-query-block-with-ooo-chunks"
+	storageDir := t.TempDir()
 
-	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: "fixtures"})
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)
+	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
@@ -504,14 +507,34 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			},
 		}
 
-		_, err := block.GenerateBlockFromSpec(filepath.Join("fixtures", userID), specs)
+		_, err := block.GenerateBlockFromSpec(fixtureDir, specs)
 		require.NoError(t, err)
-
-		createBucketIndex(t, bucket, userID)
 	}
 
+	// Copy blocks from fixtures dir to the test bucket.
+	entries, err := os.ReadDir(fixtureDir)
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		blockDir := filepath.Join(fixtureDir, entry.Name())
+
+		blockID, err := ulid.Parse(entry.Name())
+		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
+
+		meta, err := block.ReadMetaFromDir(blockDir)
+		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
+
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+	}
+
+	createBucketIndex(t, bkt, userID)
+
 	reg := prometheus.NewPedanticRegistry()
-	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
+	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bkt, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, stores.InitialSync(ctx))
 
