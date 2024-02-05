@@ -733,7 +733,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		}),
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
-		NewNoCompactionMarkFilter(userBucket, true),
+		NewNoCompactionMarkFilter(userBucket),
 	}
 
 	fetcher, err := block.NewMetaFetcher(
