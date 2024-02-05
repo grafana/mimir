@@ -272,8 +272,8 @@ github.com/envoyproxy/protoc-gen-validate v1.0.4 h1:gVPz/FMfvh57HdSJQyvBtF00j8JU
 github.com/envoyproxy/protoc-gen-validate v1.0.4/go.mod h1:qys6tmnRsYrQqIhm2bvKZH4Blx/1gTIZ2UKVY1M+Yew=
 github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb h1:IT4JYU7k4ikYg1SCxNI1/Tieq/NFvh6dzLdgi7eu0tM=
 github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb/go.mod h1:bH6Xx7IW64qjjJq8M2u4dxNaBiDfKK+z/3eGDpXEQhc=
-github.com/failsafe-go/failsafe-go v0.4.2 h1:CdIlFeCqXa2Gbd9E6IYQmhAJiLsjAzgbirdXUFOyADI=
-github.com/failsafe-go/failsafe-go v0.4.2/go.mod h1:m5us3Ow4Q5S7q6Gg0G2MQ/cEM5CKHeFQtYIUuOB/i3M=
+github.com/failsafe-go/failsafe-go v0.4.4 h1:ecYKI68EKSDJt9mAUl4JOj8smFFLn8UbIaXkJ47WrVc=
+github.com/failsafe-go/failsafe-go v0.4.4/go.mod h1:m5us3Ow4Q5S7q6Gg0G2MQ/cEM5CKHeFQtYIUuOB/i3M=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
 github.com/fatih/color v1.9.0/go.mod h1:eQcE1qtQxscV5RaZvpXrrb8Drkc3/DdQ+uUYCNjL+zU=
 github.com/fatih/color v1.10.0/go.mod h1:ELkj/draVOlAH/xkhN6mQ50Qd0MPOk5AAr3maGEBuJM=
