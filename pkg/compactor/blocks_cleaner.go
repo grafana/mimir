@@ -679,7 +679,7 @@ func (c *BlocksCleaner) estimateCompactionJobsFrom(ctx context.Context, userID s
 	for _, f := range []block.MetadataFilter{
 		// We don't include ShardAwareDeduplicateFilter, because it relies on list of compaction sources, which are not present in the BucketIndex.
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
-		NewNoCompactionMarkFilter(userBucket, true),
+		NewNoCompactionMarkFilter(userBucket),
 	} {
 		err := f.Filter(ctx, metas, synced)
 		if err != nil {

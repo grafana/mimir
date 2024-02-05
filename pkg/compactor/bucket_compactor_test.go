@@ -175,27 +175,6 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	block5 := ulid.MustParse("01DTVP434PA9VFXSW2JK000005") // No mark file.
 
 	for name, testFn := range map[string]func(t *testing.T, synced block.GaugeVec){
-		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced block.GaugeVec) {
-			metas := map[ulid.ULID]*block.Meta{
-				block1: blockMeta(block1.String(), 100, 200, nil),
-				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
-				block4: blockMeta(block4.String(), 400, 500, nil), // Invalid marker is still a marker, and block will be in NoCompactMarkedBlocks.
-				block5: blockMeta(block5.String(), 500, 600, nil),
-			}
-
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
-			require.NoError(t, f.Filter(ctx, metas, synced))
-
-			require.Contains(t, metas, block1)
-			require.Contains(t, metas, block2)
-			require.Contains(t, metas, block4)
-			require.Contains(t, metas, block5)
-
-			require.Len(t, f.NoCompactMarkedBlocks(), 2)
-			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
-
-			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
-		},
 		"filter with deletion enabled": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*block.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
@@ -204,7 +183,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -230,7 +209,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			canceledCtx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			require.Error(t, f.Filter(canceledCtx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -247,7 +226,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
 
-			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt))
 			err := f.Filter(ctx, metas, synced)
 			require.NoError(t, err)
 			require.Empty(t, metas)
