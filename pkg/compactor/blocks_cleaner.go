@@ -734,6 +734,6 @@ func newNoopGaugeVec() *noopGaugeVec {
 	return &noopGaugeVec{g: prometheus.NewGauge(prometheus.GaugeOpts{})}
 }
 
-func (n *noopGaugeVec) WithLabelValues(lvs ...string) prometheus.Gauge {
+func (n *noopGaugeVec) WithLabelValues(...string) prometheus.Gauge {
 	return n.g
 }
