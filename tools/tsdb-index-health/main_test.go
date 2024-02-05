@@ -19,7 +19,6 @@ import (
 )
 
 func TestGatherIndexHealthStats(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec1 := block.SeriesSpec{

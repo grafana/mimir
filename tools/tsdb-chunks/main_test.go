@@ -18,7 +18,6 @@ import (
 )
 
 func TestTSDBChunks(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec := block.SeriesSpec{

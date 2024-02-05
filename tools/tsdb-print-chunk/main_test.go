@@ -18,7 +18,6 @@ import (
 )
 
 func TestTSDBPrintChunk(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec := block.SeriesSpec{
