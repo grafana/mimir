@@ -37,7 +37,7 @@ func TestTSDBChunks(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	co := test.CaptureOutput(t)

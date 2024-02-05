@@ -48,7 +48,7 @@ func TestGatherIndexHealthStats(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec1, &spec2})
+	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec1, &spec2})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())
