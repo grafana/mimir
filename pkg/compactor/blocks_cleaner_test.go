@@ -204,17 +204,17 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 2
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
-		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
-		# TYPE cortex_bucket_index_compaction_jobs gauge
-		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
-		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
-		cortex_bucket_index_compaction_jobs{type="merge",user="user-2"} 0
-		cortex_bucket_index_compaction_jobs{type="split",user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
-		"cortex_bucket_index_compaction_jobs",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -379,17 +379,17 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
-		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
-		# TYPE cortex_bucket_index_compaction_jobs gauge
-		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
-		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
-		cortex_bucket_index_compaction_jobs{type="merge",user="user-2"} 0
-		cortex_bucket_index_compaction_jobs{type="split",user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
-		"cortex_bucket_index_compaction_jobs",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
@@ -411,15 +411,15 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# HELP cortex_bucket_blocks_partials_count Total number of partial blocks.
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
-		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
-		# TYPE cortex_bucket_index_compaction_jobs gauge
-		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
-		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
-		"cortex_bucket_index_compaction_jobs",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -1078,7 +1078,7 @@ func TestComputeCompactionJobs(t *testing.T) {
 	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, log.NewNopLogger(), nil)
-	split, merge, err := cleaner.computeCompactionJobs(context.Background(), user, userBucket, &index)
+	split, merge, err := cleaner.estimateCompactionJobsFrom(context.Background(), user, userBucket, &index)
 	require.NoError(t, err)
 	require.Equal(t, 1, split)
 	require.Equal(t, 2, merge)

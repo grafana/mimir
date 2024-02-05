@@ -142,12 +142,12 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		}, []string{"user"}),
 
 		bucketIndexCompactionJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_bucket_index_compaction_jobs",
-			Help: "Number of compaction jobs based on latest version of bucket index.",
+			Name: "cortex_bucket_index_estimated_compaction_jobs",
+			Help: "Estimated number of compaction jobs based on latest version of bucket index.",
 		}, []string{"user", "type"}),
 		bucketIndexCompactionPlanningErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_bucket_index_compaction_jobs_errors_total",
-			Help: "Total number of failed executions of compaction job planning based on latest version of bucket index.",
+			Name: "cortex_bucket_index_estimated_compaction_jobs_errors_total",
+			Help: "Total number of failed executions of compaction job estimation based on latest version of bucket index.",
 		}),
 	}
 
@@ -474,12 +474,14 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
 	// Compute pending compaction jobs based on current index.
-	splitJobs, mergeJobs, err := c.computeCompactionJobs(ctx, userID, userBucket, idx)
+	splitJobs, mergeJobs, err := c.estimateCompactionJobsFrom(ctx, userID, userBucket, idx)
 	if err != nil {
 		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
 		if !errors.Is(err, context.Canceled) {
 			level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
 			c.bucketIndexCompactionPlanningErrors.Inc()
+			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
 		}
 	} else {
 		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
@@ -668,14 +670,14 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 	return lastModified, err
 }
 
-func (c *BlocksCleaner) computeCompactionJobs(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (int, int, error) {
+func (c *BlocksCleaner) estimateCompactionJobsFrom(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (int, int, error) {
 	metas := convertBucketIndexToMetasForCompactionJobPlanning(idx)
 
-	// We need to pass this metric to Filters, but we don't need to report this value from BlocksCleaner.
+	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.
 	synced := newNoopGaugeVec()
 
 	for _, f := range []block.MetadataFilter{
-		// We don't include ShardAwareDeduplicateFilter, because thus filter relies on list of compaction sources, which are not present in the BucketIndex.
+		// We don't include ShardAwareDeduplicateFilter, because it relies on list of compaction sources, which are not present in the BucketIndex.
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
 		NewNoCompactionMarkFilter(userBucket, true),
 	} {
