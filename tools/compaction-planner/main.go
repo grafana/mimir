@@ -100,7 +100,7 @@ func main() {
 
 	for _, f := range []block.MetadataFilter{
 		// No need to exclude blocks marked for deletion, as we did that above already.
-		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil), true),
+		compactor.NewNoCompactionMarkFilter(bucket.NewUserBucketClient(cfg.userID, bkt, nil)),
 	} {
 		log.Printf("Filtering using %T\n", f)
 		err = f.Filter(ctx, metas, synced)
