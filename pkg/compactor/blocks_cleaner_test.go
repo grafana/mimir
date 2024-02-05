@@ -203,10 +203,17 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 2
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_compaction_jobs gauge
+		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_compaction_jobs",
 	))
 }
 
@@ -371,10 +378,17 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_compaction_jobs gauge
+		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_compaction_jobs",
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
@@ -396,10 +410,15 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# HELP cortex_bucket_blocks_partials_count Total number of partial blocks.
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
+		# HELP cortex_bucket_index_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_compaction_jobs gauge
+		cortex_bucket_index_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_compaction_jobs{type="split",user="user-1"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_compaction_jobs",
 	))
 }
 
@@ -1009,6 +1028,59 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
 	}
+}
+
+func TestComputeCompactionJobs(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+		CompactionBlockRanges:   tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+	}
+
+	const user = "test"
+
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.splitGroups[user] = 0 // No grouping of jobs for split-compaction. All jobs will be in single split compaction.
+	cfgProvider.splitAndMergeShards[user] = 3
+
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+	dayMS := 24 * time.Hour.Milliseconds()
+
+	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
+
+	index := bucketindex.Index{}
+	index.Blocks = bucketindex.Blocks{
+		// Some 2h blocks that should be compacted together and split.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+
+		// Some merge jobs.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+
+		// This merge job is skipped, as block is marked for no-compaction.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+	}
+
+	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+	// Mark block for no-compaction.
+	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", prometheus.NewCounter(prometheus.CounterOpts{})))
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, log.NewNopLogger(), nil)
+	split, merge, err := cleaner.computeCompactionJobs(context.Background(), user, userBucket, &index)
+	require.NoError(t, err)
+	require.Equal(t, 1, split)
+	require.Equal(t, 2, merge)
 }
 
 type mockBucketFailure struct {

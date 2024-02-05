@@ -43,6 +43,7 @@ type BlocksCleanerConfig struct {
 	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
 	DeleteBlocksConcurrency    int
 	NoBlocksFileCleanupEnabled bool
+	CompactionBlockRanges      mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
 type BlocksCleaner struct {
@@ -60,18 +61,20 @@ type BlocksCleaner struct {
 	lastOwnedUsers []string
 
 	// Metrics.
-	runsStarted                    prometheus.Counter
-	runsCompleted                  prometheus.Counter
-	runsFailed                     prometheus.Counter
-	runsLastSuccess                prometheus.Gauge
-	blocksCleanedTotal             prometheus.Counter
-	blocksFailedTotal              prometheus.Counter
-	blocksMarkedForDeletion        prometheus.Counter
-	partialBlocksMarkedForDeletion prometheus.Counter
-	tenantBlocks                   *prometheus.GaugeVec
-	tenantMarkedBlocks             *prometheus.GaugeVec
-	tenantPartialBlocks            *prometheus.GaugeVec
-	tenantBucketIndexLastUpdate    *prometheus.GaugeVec
+	runsStarted                         prometheus.Counter
+	runsCompleted                       prometheus.Counter
+	runsFailed                          prometheus.Counter
+	runsLastSuccess                     prometheus.Gauge
+	blocksCleanedTotal                  prometheus.Counter
+	blocksFailedTotal                   prometheus.Counter
+	blocksMarkedForDeletion             prometheus.Counter
+	partialBlocksMarkedForDeletion      prometheus.Counter
+	tenantBlocks                        *prometheus.GaugeVec
+	tenantMarkedBlocks                  *prometheus.GaugeVec
+	tenantPartialBlocks                 *prometheus.GaugeVec
+	tenantBucketIndexLastUpdate         *prometheus.GaugeVec
+	bucketIndexCompactionJobs           *prometheus.GaugeVec
+	bucketIndexCompactionPlanningErrors prometheus.Counter
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
@@ -137,6 +140,15 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 			Name: "cortex_bucket_index_last_successful_update_timestamp_seconds",
 			Help: "Timestamp of the last successful update of a tenant's bucket index.",
 		}, []string{"user"}),
+
+		bucketIndexCompactionJobs: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_bucket_index_compaction_jobs",
+			Help: "Number of compaction jobs based on latest version of bucket index.",
+		}, []string{"user", "type"}),
+		bucketIndexCompactionPlanningErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_bucket_index_compaction_jobs_errors_total",
+			Help: "Total number of failed executions of compaction job planning based on latest version of bucket index.",
+		}),
 	}
 
 	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
@@ -231,6 +243,8 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 			c.tenantMarkedBlocks.DeleteLabelValues(userID)
 			c.tenantPartialBlocks.DeleteLabelValues(userID)
 			c.tenantBucketIndexLastUpdate.DeleteLabelValues(userID)
+			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+			c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
 		}
 	}
 	c.lastOwnedUsers = allUsers
@@ -337,6 +351,8 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	c.tenantBlocks.DeleteLabelValues(userID)
 	c.tenantMarkedBlocks.DeleteLabelValues(userID)
 	c.tenantPartialBlocks.DeleteLabelValues(userID)
+	c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageSplit))
+	c.bucketIndexCompactionJobs.DeleteLabelValues(userID, string(stageMerge))
 
 	if deletedBlocks > 0 {
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
@@ -456,6 +472,19 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
+
+	// Compute pending compaction jobs based on current index.
+	splitJobs, mergeJobs, err := c.computeCompactionJobs(ctx, userID, userBucket, idx)
+	if err != nil {
+		// When compactor is shutting down, we get context cancellation. There's no reason to report that as error.
+		if !errors.Is(err, context.Canceled) {
+			level.Error(userLogger).Log("msg", "failed to compute compaction jobs from bucket index for user", "err", err)
+			c.bucketIndexCompactionPlanningErrors.Inc()
+		}
+	} else {
+		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
+		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
+	}
 
 	return nil
 }
@@ -637,4 +666,74 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 		return time.Time{}, nil
 	}
 	return lastModified, err
+}
+
+func (c *BlocksCleaner) computeCompactionJobs(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index) (int, int, error) {
+	metas := convertBucketIndexToMetasForCompactionJobPlanning(idx)
+
+	// We need to pass this metric to Filters, but we don't need to report this value from BlocksCleaner.
+	synced := newNoopGaugeVec()
+
+	for _, f := range []block.MetadataFilter{
+		// We don't include ShardAwareDeduplicateFilter, because thus filter relies on list of compaction sources, which are not present in the BucketIndex.
+		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
+		NewNoCompactionMarkFilter(userBucket, true),
+	} {
+		err := f.Filter(ctx, metas, synced)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+
+	grouper := NewSplitAndMergeGrouper(userID, c.cfg.CompactionBlockRanges.ToMilliseconds(), uint32(c.cfgProvider.CompactorSplitAndMergeShards(userID)), uint32(c.cfgProvider.CompactorSplitGroups(userID)), log.NewNopLogger())
+	jobs, err := grouper.Groups(metas)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	split := 0
+	merge := 0
+	for _, j := range jobs {
+		if j.UseSplitting() {
+			split++
+		} else {
+			merge++
+		}
+	}
+
+	return split, merge, nil
+}
+
+// Convert index into map of block Metas, but ignore blocks marked for deletion.
+func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
+	deletedULIDs := idx.BlockDeletionMarks.GetULIDs()
+	deleted := make(map[ulid.ULID]bool, len(deletedULIDs))
+	for _, id := range deletedULIDs {
+		deleted[id] = true
+	}
+
+	metas := map[ulid.ULID]*block.Meta{}
+	for _, b := range idx.Blocks {
+		if deleted[b.ID] {
+			continue
+		}
+		metas[b.ID] = b.ThanosMeta()
+		if metas[b.ID].Thanos.Labels == nil {
+			metas[b.ID].Thanos.Labels = map[string]string{}
+		}
+		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+	}
+	return metas
+}
+
+type noopGaugeVec struct {
+	g prometheus.Gauge
+}
+
+func newNoopGaugeVec() *noopGaugeVec {
+	return &noopGaugeVec{g: prometheus.NewGauge(prometheus.GaugeOpts{})}
+}
+
+func (n *noopGaugeVec) WithLabelValues(lvs ...string) prometheus.Gauge {
+	return n.g
 }

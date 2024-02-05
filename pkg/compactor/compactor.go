@@ -493,6 +493,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		TenantCleanupDelay:         c.compactorCfg.TenantCleanupDelay,
 		DeleteBlocksConcurrency:    defaultDeleteBlocksConcurrency,
 		NoBlocksFileCleanupEnabled: c.compactorCfg.NoBlocksFileCleanupEnabled,
+		CompactionBlockRanges:      c.compactorCfg.BlockRanges,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
