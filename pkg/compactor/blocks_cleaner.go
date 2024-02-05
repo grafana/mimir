@@ -731,7 +731,7 @@ type noopGaugeVec struct {
 }
 
 func newNoopGaugeVec() *noopGaugeVec {
-	return &noopGaugeVec{g: prometheus.NewGauge(prometheus.GaugeOpts{})}
+	return &noopGaugeVec{g: promauto.With(nil).NewGauge(prometheus.GaugeOpts{})}
 }
 
 func (n *noopGaugeVec) WithLabelValues(...string) prometheus.Gauge {
