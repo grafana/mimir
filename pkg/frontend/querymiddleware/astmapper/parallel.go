@@ -35,7 +35,7 @@ var NonParallelFuncs = []string{
 	"time",
 	"vector",
 
-	// The following function may be parallelized rewriting is similar to what we do with avg().
+	// The following function may be parallelized using a strategy similar to avg().
 	"histogram_avg",
 }
 
