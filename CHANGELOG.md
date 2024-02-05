@@ -78,6 +78,7 @@
   * `active_series`: active series query
   * `other`: any other request
 * [BUGFIX] Fix performance regression introduced in Mimir 2.11.0 when uploading blocks to AWS S3. #7240
+* [BUGFIX] Query-frontend: fix race condition when sharding active series is enabled (see above) and response is compressed with snappy. #7290
 
 ### Mixin
 
