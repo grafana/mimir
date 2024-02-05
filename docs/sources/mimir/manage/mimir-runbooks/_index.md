@@ -1246,7 +1246,6 @@ create index header reader: write index header: new index reader: get TOC from o
 
 - Use the `Mimir / Object Store` dashboard to check for error rate and the failed object storage's operation impacted, e.g: `get_range`.
 
-
 ### KubePersistentVolumeFillingUp
 
 This alert is not defined in the Mimir mixin, but it's part of [`kube-prometheus`](https://github.com/prometheus-operator/kube-prometheus) alerts.
@@ -1279,6 +1278,7 @@ How it **works**:
 How to **investigate** and **fix** it:
 
 - Check the `Mimir / Compactor` dashboard
+
   - Ensure the compactor is healthy and running successfully.
     - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
     - "Tenants with largest number of blocks" must not be trending upwards
@@ -1287,15 +1287,17 @@ How to **investigate** and **fix** it:
     - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
 
 - Check the `Mimir / Reads resources` dashboard
+
   - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
     - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
     - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
 
 - Check if disk utilization unbalance is caused by shuffle sharding
+
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
-     ```
-     kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
-     ```
+    ```
+    kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+    ```
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
@@ -1304,7 +1306,6 @@ How to **investigate** and **fix** it:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
-
 
 ## Errors catalog
 
