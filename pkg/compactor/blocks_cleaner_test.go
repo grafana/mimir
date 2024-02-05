@@ -204,7 +204,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 2
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
-		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
 		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
 		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
 		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
@@ -379,7 +379,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
-		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
 		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
 		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
 		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
@@ -411,7 +411,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# HELP cortex_bucket_blocks_partials_count Total number of partial blocks.
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
-		# HELP cortex_bucket_index_estimated_compaction_jobs Number of compaction jobs based on latest version of bucket index.
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
 		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
 		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
 		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
