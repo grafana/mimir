@@ -3,6 +3,7 @@
 package iterators
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -157,6 +158,55 @@ func TestChunkIteratorCaching(t *testing.T) {
 			require.Equal(t, int64(30), it.AtT())
 			require.Equal(t, 4, loadCount) // AtT after At* uses cache
 		})
+	}
+}
+
+func BenchmarkChunkIterator_AtT(b *testing.B) {
+	testCases := map[string]chunk.Encoding{
+		"float chunk":           chunk.PrometheusXorChunk,
+		"histogram chunk":       chunk.PrometheusHistogramChunk,
+		"float histogram chunk": chunk.PrometheusFloatHistogramChunk,
+	}
+	for testName, encoding := range testCases {
+		for _, shouldLoadValue := range []bool{true, false} {
+			c := mkChunk(b, 0, 50, 1*time.Millisecond, encoding)
+			loadCount := 0
+			it := &chunkIterator{Chunk: c, it: countAtChunkIterator{it: c.Data.NewIterator(nil), loadCount: &loadCount}}
+			b.Run(fmt.Sprintf("%s-load-value-%v", testName, shouldLoadValue), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					require.NotEqual(b, chunkenc.ValNone, it.Seek(0))
+					for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+						ts1 := atT(it, shouldLoadValue)
+						ts2 := atT(it, shouldLoadValue)
+						ts3 := it.it.Timestamp()
+						require.Equal(b, ts1, ts2)
+						require.Equal(b, ts1, ts3)
+					}
+				}
+			})
+		}
+	}
+}
+
+func atT(it *chunkIterator, shouldLoadValue bool) int64 {
+	if !shouldLoadValue {
+		return it.AtT()
+	}
+	if it.cacheValid {
+		return it.cachedTime
+	}
+	switch it.valType {
+	case chunkenc.ValFloat:
+		t, _ := it.At()
+		return t
+	case chunkenc.ValHistogram:
+		t, _ := it.AtHistogram(nil)
+		return t
+	case chunkenc.ValFloatHistogram:
+		t, _ := it.AtFloatHistogram(nil)
+		return t
+	default:
+		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", it.valType))
 	}
 }
 
