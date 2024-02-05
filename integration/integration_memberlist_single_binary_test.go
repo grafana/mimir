@@ -82,6 +82,9 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 		mimir3 = newSingleBinary("mimir-3", "", networkName+"-mimir-1:8000", flags)
 	}
 
+	// Set correct permission on certs/ folder
+	require.NoError(t, setDirPermission(s.SharedDir()))
+
 	// start mimir-1 first, as mimir-2 and mimir-3 both connect to mimir-1
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 	require.NoError(t, s.StartAndWaitReady(mimir2, mimir3))

@@ -81,6 +81,7 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	// Start again Mimir in single binary with the exported config
 	// and ensure it starts (pass the readiness probe).
 	require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, body))
+	require.NoError(t, setDirPermission(s.SharedDir()))
 	mimir2 := e2emimir.NewSingleBinary("mimir-2", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir2))
 }

@@ -199,7 +199,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 				filepath.Join(s.SharedDir(), serverCertFile),
 				filepath.Join(s.SharedDir(), serverKeyFile),
 			))
-
+			require.NoError(t, setDirPermission(s.SharedDir()))
 			return "", flags
 		},
 		withHistograms: true,

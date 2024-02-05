@@ -67,6 +67,25 @@ func generateAlternatingSeries(i int) generateSeriesFunc {
 // generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
 type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
 
+func setDirPermission(dir string) error {
+	// The environment variable is set, we set the folder owner GID, otherwise do nothing
+	if folderGroupID := os.Getenv("FOLDER_GROUP_ID"); folderGroupID != "" {
+		currentUser, err := user.Current()
+		if err != nil {
+			return err
+		}
+
+		if err := exec.Command("chown", "-R", fmt.Sprintf("%s:%s", currentUser.Uid, folderGroupID), dir).Run(); err != nil {
+			return err
+		}
+
+		if err := exec.Command("chmod", "-R", "775", dir).Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func getMimirProjectDir() string {
 	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
 		return dir

@@ -60,6 +60,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	defer s.Close()
 
 	const blockRangePeriod = 5 * time.Second
+	tsdbSharedDir := filepath.Join(s.SharedDir(), "tsdb-shared")
+	require.NoError(t, os.MkdirAll(tsdbSharedDir, os.ModePerm))
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
@@ -77,6 +79,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
+	require.NoError(t, setDirPermission(s.SharedDir()))
 	// Start other Mimir components (ingester running on previous version).
 	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
@@ -126,6 +129,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	require.NoError(t, s.Stop(ingester))
 
 	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, setDirPermission(s.SharedDir()))
 	require.NoError(t, s.StartAndWaitReady(ingester))
 
 	// Wait until the distributor has updated the ring.
