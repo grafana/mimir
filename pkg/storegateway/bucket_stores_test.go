@@ -520,15 +520,10 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			continue
 		}
 
-		blockDir := filepath.Join(fixtureDir, entry.Name())
-
 		blockID, err := ulid.Parse(entry.Name())
 		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
 
-		meta, err := block.ReadMetaFromDir(blockDir)
-		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
-
-		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil))
 	}
 
 	createBucketIndex(t, bkt, userID)
