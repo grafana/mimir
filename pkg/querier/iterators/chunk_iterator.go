@@ -24,13 +24,11 @@ type chunkIterator struct {
 	valType chunkenc.ValueType
 	// AtT() is called often in the heap code, so caching its result seems like
 	// a good idea.
-	cachedValueValid          bool
-	cachedHistogramValid      bool
-	cachedFloatHistogramValid bool
-	cachedTime                int64
-	cachedValue               float64
-	cachedHistogram           *histogram.Histogram
-	cachedFloatHistogram      *histogram.FloatHistogram
+	cacheValid           bool
+	cachedTime           int64
+	cachedValue          float64
+	cachedHistogram      *histogram.Histogram
+	cachedFloatHistogram *histogram.FloatHistogram
 }
 
 // Seek advances the iterator forward to the value at or after
@@ -55,13 +53,13 @@ func (i *chunkIterator) At() (int64, float64) {
 		panic(fmt.Errorf("chunkIterator: calling At when chunk is of different type %v", i.valType))
 	}
 
-	if i.cachedValueValid {
+	if i.cacheValid {
 		return i.cachedTime, i.cachedValue
 	}
 
 	v := i.it.Value()
 	i.cachedTime, i.cachedValue = int64(v.Timestamp), float64(v.Value)
-	i.cachedValueValid = true
+	i.cacheValid = true
 	return i.cachedTime, i.cachedValue
 }
 
@@ -70,12 +68,12 @@ func (i *chunkIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.H
 		panic(fmt.Errorf("chunkIterator: calling AtHistogram when chunk is of different type %v", i.valType))
 	}
 
-	if i.cachedHistogramValid {
+	if i.cacheValid {
 		return i.cachedTime, i.cachedHistogram
 	}
 
 	i.cachedTime, i.cachedHistogram = i.it.AtHistogram(h)
-	i.cachedHistogramValid = true
+	i.cacheValid = true
 	return i.cachedTime, i.cachedHistogram
 }
 
@@ -84,8 +82,16 @@ func (i *chunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *
 		panic(fmt.Errorf("chunkIterator: calling AtFloatHistogram when chunk is of type %v", i.valType))
 	}
 
-	if i.cachedFloatHistogramValid {
-		return i.cachedTime, i.cachedFloatHistogram
+	if i.cacheValid {
+		// A valid cache at this point means one of the following conditions are satisfied:
+		// - AtFloatHistogram() was successfully completed, hence i.valType is chunkenc.ValFloatHistogram.
+		//   In this case it is not necessary to load another value of a floating-point histogram, and the
+		//   cached values can be returned.
+		// - AtHistogram() was successfully completed, hence i.valType is chunkenc.ValHistogram.
+		//   In this case, the cached value must not be used, because it is not a floating-point histogram.
+		if i.valType == chunkenc.ValFloatHistogram {
+			return i.cachedTime, i.cachedFloatHistogram
+		}
 	}
 
 	var t int64
@@ -98,28 +104,15 @@ func (i *chunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *
 
 	i.cachedTime = t
 	i.cachedFloatHistogram = fh
-	i.cachedFloatHistogramValid = true
-
+	i.cacheValid = true
 	return i.cachedTime, i.cachedFloatHistogram
 }
 
 func (i *chunkIterator) AtT() int64 {
-	if i.cachedValueValid || i.cachedHistogramValid || i.cachedFloatHistogramValid {
+	if i.cacheValid {
 		return i.cachedTime
 	}
-	switch i.valType {
-	case chunkenc.ValFloat:
-		t, _ := i.At()
-		return t
-	case chunkenc.ValHistogram:
-		t, _ := i.AtHistogram(nil)
-		return t
-	case chunkenc.ValFloatHistogram:
-		t, _ := i.AtFloatHistogram(nil)
-		return t
-	default:
-		panic(fmt.Errorf("chunkIterator: calling AtT with unknown chunk encoding %v", i.valType))
-	}
+	return i.it.Timestamp()
 }
 
 func (i *chunkIterator) AtType() chunkenc.ValueType {
@@ -140,7 +133,5 @@ func (i *chunkIterator) Err() error {
 }
 
 func (i *chunkIterator) invalidateCache() {
-	i.cachedValueValid = false
-	i.cachedHistogramValid = false
-	i.cachedFloatHistogramValid = false
+	i.cacheValid = false
 }

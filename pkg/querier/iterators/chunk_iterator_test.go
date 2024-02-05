@@ -60,14 +60,20 @@ func TestChunkIteratorAtFloatHistogram(t *testing.T) {
 
 func TestChunkIteratorAtFloatHistogramAfterAtHistogram(t *testing.T) {
 	c := mkChunk(t, 0, 50, 1*time.Millisecond, chunk.PrometheusHistogramChunk)
-	it := chunkIterator{Chunk: c, it: c.Data.NewIterator(nil)}
+	loadCount := 0
+	it := chunkIterator{Chunk: c, it: countAtChunkIterator{it: c.Data.NewIterator(nil), loadCount: &loadCount}}
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	// populate cache with histogram
+	// load histogram and populate cache
 	_, h := it.AtHistogram(nil)
 	require.NotNil(t, h)
-	// read float histogram
+	require.Equal(t, 1, loadCount)
+	// read float histogram by converting the cached histogram into a float histogram
 	_, fh := it.AtFloatHistogram(nil)
 	require.NotNil(t, fh)
+	// ensure the resulting float histogram has not been loaded
+	require.Equal(t, 1, loadCount)
+	// ensure the resulting float histogram is built from the cached histogram
+	test.RequireFloatHistogramEqual(t, h.ToFloat(nil), fh)
 }
 
 func TestChunkIteratorCaching(t *testing.T) {
@@ -110,58 +116,67 @@ func TestChunkIteratorCaching(t *testing.T) {
 	}
 	for name, data := range testCases {
 		t.Run(name, func(t *testing.T) {
-			callCount := 0
+			loadCount := 0
 			c := mkChunk(t, 0, 50, 1*time.Millisecond, data.encoding)
-			it := &chunkIterator{Chunk: c, it: countAtChunkIterator{it: c.Data.NewIterator(nil), callcount: &callCount}}
+			it := &chunkIterator{Chunk: c, it: countAtChunkIterator{it: c.Data.NewIterator(nil), loadCount: &loadCount}}
 			require.Equal(t, data.expectedType, it.Next())
-			require.Equal(t, 0, callCount)
+			require.Equal(t, 0, loadCount) // Next does not load any value form the underlying iterator and invalidates cache
+			require.False(t, it.cacheValid)
 			data.verifySample(t, 0, it)
-			require.Equal(t, 1, callCount) // first At* calls underlying iterator
+			require.Equal(t, 1, loadCount) // first At* loads a new value from the underlying iterator
 			data.verifySample(t, 0, it)
-			require.Equal(t, 1, callCount) // second At* uses cache
+			require.Equal(t, 1, loadCount) // second At* uses cache
 			require.Equal(t, int64(0), it.AtT())
-			require.Equal(t, 1, callCount) // AtT after At* uses cache
+			require.Equal(t, 1, loadCount) // AtT after At* uses cache
 
-			require.Equal(t, data.expectedType, it.Next())
+			require.Equal(t, data.expectedType, it.Next()) // Next does not load any value form the underlying iterator and invalidates cache
+			require.Equal(t, 1, loadCount)
+			require.False(t, it.cacheValid)
 			require.Equal(t, int64(1), it.AtT())
-			require.Equal(t, 2, callCount) // AtT after Next calls underlying iterator
-			require.Equal(t, int64(1), it.AtT())
-			require.Equal(t, 2, callCount)
+			require.Equal(t, 1, loadCount) // AtT after Next returns underlying iterator's timestamp, but does not load a new value
 			data.verifySample(t, 1, it)
-			require.Equal(t, 2, callCount) // At* after AtT uses cache
+			require.Equal(t, 2, loadCount) // first At* after Next loads a new value from the underlying iterator
+			require.Equal(t, int64(1), it.AtT())
+			require.Equal(t, 2, loadCount) // AtT after At* uses cache
 
-			require.Equal(t, data.expectedType, it.Seek(20))
+			require.Equal(t, data.expectedType, it.Seek(20)) // Seek does not load any new value from the underlying iterator and invalidates cache
+			require.Equal(t, 2, loadCount)
+			require.False(t, it.cacheValid)
+			data.verifySample(t, 20, it)
+			require.Equal(t, 3, loadCount) // first At* after Seek loads a new value from the underlying iterator
 			require.Equal(t, int64(20), it.AtT())
-			require.Equal(t, 3, callCount) // AtT after Seek calls underlying iterator
-			require.Equal(t, int64(20), it.AtT())
-			require.Equal(t, 3, callCount)
+			require.Equal(t, 3, loadCount) // AtT after At* uses cache
 
-			require.Equal(t, data.expectedType, it.Seek(30))
+			require.Equal(t, data.expectedType, it.Seek(30)) // Seek does not load any new value from the underlying iterator and invalidates cache
+			require.Equal(t, 3, loadCount)
+			require.False(t, it.cacheValid)
+			require.Equal(t, int64(30), it.AtT())
+			require.Equal(t, 3, loadCount) // AtT after Seek returns underlying iterator's timestamp, but does not load a new value
 			data.verifySample(t, 30, it)
-			require.Equal(t, 4, callCount) // At* after Seek calls underlying iterator
-			data.verifySample(t, 30, it)
-			require.Equal(t, 4, callCount)
+			require.Equal(t, 4, loadCount) // first At* after Seek loads a new value from the underlying iterator
+			require.Equal(t, int64(30), it.AtT())
+			require.Equal(t, 4, loadCount) // AtT after At* uses cache
 		})
 	}
 }
 
 type countAtChunkIterator struct {
 	it        chunk.Iterator
-	callcount *int
+	loadCount *int
 }
 
 func (i countAtChunkIterator) Value() model.SamplePair {
-	*i.callcount++
+	*i.loadCount++
 	return i.it.Value()
 }
 
 func (i countAtChunkIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	*i.callcount++
+	*i.loadCount++
 	return i.it.AtHistogram(h)
 }
 
 func (i countAtChunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	*i.callcount++
+	*i.loadCount++
 	return i.it.AtFloatHistogram(fh)
 }
 
@@ -182,7 +197,6 @@ func (i countAtChunkIterator) Scan() chunkenc.ValueType {
 }
 
 func (i countAtChunkIterator) Timestamp() int64 {
-	*i.callcount++
 	return i.it.Timestamp()
 }
 
