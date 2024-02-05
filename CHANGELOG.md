@@ -162,6 +162,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
+
 ### Tools
 
 * [CHANGE] copyblocks: The flags for copyblocks have been changed to align more closely with other tools. #6607
