@@ -468,46 +468,51 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 
 func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	const (
-		userID     = "user-1"
+		userID     = "tenant-with-block-ooo-chunks"
 		metricName = "test"
 	)
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
 
-	// Generate a single block with 1 series and a lot of samples.
+	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: "fixtures"})
+	require.NoError(t, err)
+
 	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
 	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
-	specs := []*block.SeriesSpec{
-		// Series with out of order chunks.
-		{
-			Labels: seriesWithOutOfOrderChunks,
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+
+	// Utility function originally used to generate a block with out of order chunks
+	// used by this test. The block has been generated commenting out the checks done
+	// by TSDB block Writer to prevent OOO chunks writing.
+	_ = func() {
+		specs := []*block.SeriesSpec{
+			// Series with out of order chunks.
+			{
+				Labels: seriesWithOutOfOrderChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}})),
+				},
 			},
-		},
-		// Series with out of order and overlapping chunks.
-		{
-			Labels: seriesWithOverlappingChunks,
-			Chunks: []chunks.Meta{
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
-				must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+			// Series with out of order and overlapping chunks.
+			{
+				Labels: seriesWithOverlappingChunks,
+				Chunks: []chunks.Meta{
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}})),
+					must(chunks.ChunkFromSamples([]chunks.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}})),
+				},
 			},
-		},
+		}
+
+		_, err := block.GenerateBlockFromSpec(filepath.Join("fixtures", userID), specs)
+		require.NoError(t, err)
+
+		createBucketIndex(t, bucket, userID)
 	}
-
-	storageDir := t.TempDir()
-	_, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, userID), specs)
-	require.NoError(t, err)
-
-	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
-	require.NoError(t, err)
 
 	reg := prometheus.NewPedanticRegistry()
 	stores, err := NewBucketStores(cfg, newNoShardingStrategy(), bucket, defaultLimitsOverrides(t), log.NewNopLogger(), reg)
 	require.NoError(t, err)
-	createBucketIndex(t, bucket, userID)
 	require.NoError(t, stores.InitialSync(ctx))
 
 	tests := map[string]struct {
