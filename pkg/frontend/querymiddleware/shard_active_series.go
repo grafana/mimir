@@ -56,7 +56,6 @@ type shardActiveSeriesMiddleware struct {
 	upstream http.RoundTripper
 	limits   Limits
 	logger   log.Logger
-	encoder  *s2.Writer
 }
 
 func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, logger log.Logger) http.RoundTripper {
@@ -64,7 +63,6 @@ func newShardActiveSeriesMiddleware(upstream http.RoundTripper, limits Limits, l
 		upstream: upstream,
 		limits:   limits,
 		logger:   logger,
-		encoder:  s2.NewWriter(nil),
 	}
 }
 
@@ -340,10 +338,7 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 }
 
 func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, check func() error, w io.WriteCloser, items <-chan *labels.Builder, encodingType string) {
-	defer func(encoder, w io.Closer) {
-		_ = encoder.Close()
-		_ = w.Close()
-	}(s.encoder, w)
+	defer w.Close()
 
 	span, _ := opentracing.StartSpanFromContext(ctx, "shardActiveSeries.writeMergedResponse")
 	defer span.Finish()
@@ -351,8 +346,9 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 	var out io.Writer = w
 	if encodingType == encodingTypeSnappyFramed {
 		span.LogFields(otlog.String("encoding", encodingTypeSnappyFramed))
-		out = s.encoder
-		s.encoder.Reset(w)
+		enc := s2.NewWriter(w)
+		defer enc.Close()
+		out = enc
 	} else {
 		span.LogFields(otlog.String("encoding", "none"))
 	}
