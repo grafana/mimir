@@ -359,6 +359,16 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 }
 
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	b.Run("encoding=none", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "")
+	})
+
+	b.Run("encoding=snappy", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed)
+	})
+}
+
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string) {
 	type activeSeriesResponse struct {
 		Data []labels.Labels `json:"data"`
 	}
@@ -392,7 +402,7 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], "")
+				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
