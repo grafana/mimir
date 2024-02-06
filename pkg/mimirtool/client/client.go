@@ -28,11 +28,15 @@ const (
 )
 
 var (
-	UserAgent           = fmt.Sprintf("mimirtool/%s %s", version.Version, version.Info())
 	ErrResourceNotFound = errors.New("requested resource not found")
 	errConflict         = errors.New("conflict with current state of target resource")
 	errTooManyRequests  = errors.New("too many requests")
 )
+
+// UserAgent returns build information in format suitable to be used in HTTP User-Agent header.
+func UserAgent() string {
+	return fmt.Sprintf("mimirtool/%s %s", version.Version, version.Info())
+}
 
 // Config is used to configure a MimirClient.
 type Config struct {
@@ -253,6 +257,6 @@ func buildRequest(ctx context.Context, p, m string, endpoint url.URL, payload io
 	if contentLength >= 0 {
 		r.ContentLength = contentLength
 	}
-	r.Header.Add("User-Agent", UserAgent)
+	r.Header.Add("User-Agent", UserAgent())
 	return r, nil
 }

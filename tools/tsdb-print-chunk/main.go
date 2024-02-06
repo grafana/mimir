@@ -65,6 +65,7 @@ func printChunks(blockDir string, chunkRefs []string) {
 		var (
 			h  *histogram.Histogram      // reused in iteration as we just dump the value and move on
 			fh *histogram.FloatHistogram // reused in iteration as we just dump the value and move on
+			ts int64                     // we declare ts here to prevent shadowing of h and fh within the loop
 		)
 		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 			switch valType {
@@ -72,10 +73,10 @@ func printChunks(blockDir string, chunkRefs []string) {
 				ts, v := it.At()
 				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			case chunkenc.ValHistogram:
-				ts, h := it.AtHistogram(h)
+				ts, h = it.AtHistogram(h)
 				fmt.Printf("%s\t%d (%s)\n", h.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			case chunkenc.ValFloatHistogram:
-				ts, fh := it.AtFloatHistogram(fh)
+				ts, fh = it.AtFloatHistogram(fh)
 				fmt.Printf("%s\t%d (%s)\n", fh.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			default:
 				fmt.Printf("skipping unsupported value type %v\n", valType)

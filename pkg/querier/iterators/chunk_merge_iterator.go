@@ -290,13 +290,13 @@ func (it *nonOverlappingIterator) At() (int64, float64) {
 }
 
 // AtHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.
-func (it *nonOverlappingIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
-	return it.chunks[it.curr].AtHistogram()
+func (it *nonOverlappingIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return it.chunks[it.curr].AtHistogram(h)
 }
 
 // AtFloatHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.
-func (it *nonOverlappingIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	return it.chunks[it.curr].AtFloatHistogram()
+func (it *nonOverlappingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return it.chunks[it.curr].AtFloatHistogram(fh)
 }
 
 func (it *nonOverlappingIterator) AtT() int64 {

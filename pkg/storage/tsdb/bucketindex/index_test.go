@@ -175,6 +175,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 					MaxTime: 20,
 					Compaction: tsdb.BlockMetaCompaction{
 						Level: 1,
+						Hints: []string{tsdb.CompactionHintFromOutOfOrder},
 					},
 				},
 				Thanos: block.ThanosMeta{
@@ -194,6 +195,7 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				SegmentsNum:     3,
 				Source:          "test",
 				CompactionLevel: 1,
+				OutOfOrder:      true,
 			},
 		},
 		"meta.json with Files": {
@@ -355,6 +357,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 				SegmentsNum:     3,
 				Source:          "test",
 				CompactionLevel: 1,
+				OutOfOrder:      true,
 			},
 			expected: &block.Meta{
 				BlockMeta: tsdb.BlockMeta{
@@ -364,6 +367,7 @@ func TestBlock_ThanosMeta(t *testing.T) {
 					Version: block.TSDBVersion1,
 					Compaction: tsdb.BlockMetaCompaction{
 						Level: 1,
+						Hints: []string{tsdb.CompactionHintFromOutOfOrder},
 					},
 				},
 				Thanos: block.ThanosMeta{

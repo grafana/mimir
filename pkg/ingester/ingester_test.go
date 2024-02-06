@@ -6686,20 +6686,20 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 						// We push the last request 2 times.
 						// The first request causes an instance limit error,
 						// and which opens the circuit breaker, but no
-						// circuitbreaker.ErrCircuitBreakerOpen is returned.
+						// circuitbreaker.ErrOpen is returned.
 						_, err := client.Push(ctx, req)
 						require.Error(t, err)
-						require.NotErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+						require.NotErrorIs(t, err, circuitbreaker.ErrOpen)
 						s, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok, "expected to be able to convert to gRPC status")
 						require.Equal(t, codes.Unavailable, s.Code())
 						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
 
-						// The second request causes a circuitbreaker.ErrCircuitBreakerOpen,
+						// The second request causes a circuitbreaker.ErrOpen,
 						// since the circuit breaker is already open.
 						_, err = client.Push(ctx, req)
 						require.Error(t, err)
-						require.ErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+						require.ErrorIs(t, err, circuitbreaker.ErrOpen)
 					}
 
 					// imitate time ticking between each push
