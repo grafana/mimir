@@ -19,7 +19,7 @@ spec:
     {{- range . }}
     - hosts:
         {{- range .hosts }}
-        - {{ . | quote }}
+        - {{ tpl . $ | quote }}
         {{- end }}
       {{- with .secretName }}
       secretName: {{ . }}
