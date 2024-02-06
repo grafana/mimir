@@ -41,7 +41,7 @@ func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
 	if int64(i.Through) < t || i.isExhausted {
 		i.valType = chunkenc.ValNone
 		i.isExhausted = true
-		i.cachedTime = int64(i.Through)
+		i.cachedTime = -1
 		return chunkenc.ValNone
 	}
 
