@@ -24,8 +24,8 @@ type chunkIterator struct {
 	valType chunkenc.ValueType
 	// AtT() is called often in the heap code, so caching its result seems like
 	// a good idea.
-	cacheValid           bool
 	cachedTime           int64
+	cacheValid           bool
 	cachedValue          float64
 	cachedHistogram      *histogram.Histogram
 	cachedFloatHistogram *histogram.FloatHistogram
@@ -41,10 +41,12 @@ func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
 	if int64(i.Through) < t || i.isExhausted {
 		i.valType = chunkenc.ValNone
 		i.isExhausted = true
+		i.cachedTime = int64(i.Through)
 		return chunkenc.ValNone
 	}
 
 	i.valType = i.it.FindAtOrAfter(model.Time(t))
+	i.cachedTime = i.it.Timestamp()
 	return i.valType
 }
 
@@ -109,10 +111,7 @@ func (i *chunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *
 }
 
 func (i *chunkIterator) AtT() int64 {
-	if i.cacheValid {
-		return i.cachedTime
-	}
-	return i.it.Timestamp()
+	return i.cachedTime
 }
 
 func (i *chunkIterator) AtType() chunkenc.ValueType {
@@ -125,6 +124,7 @@ func (i *chunkIterator) Next() chunkenc.ValueType {
 	}
 	i.invalidateCache()
 	i.valType = i.it.Scan()
+	i.cachedTime = i.it.Timestamp()
 	return i.valType
 }
 
@@ -134,4 +134,5 @@ func (i *chunkIterator) Err() error {
 
 func (i *chunkIterator) invalidateCache() {
 	i.cacheValid = false
+	i.cachedTime = -1
 }
