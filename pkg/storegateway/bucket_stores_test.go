@@ -474,7 +474,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := prepareStorageConfig(t)
-	fixtureDir := "fixtures/test-query-block-with-ooo-chunks"
+	fixtureDir := filepath.Join("fixtures", "test-query-block-with-ooo-chunks")
 	storageDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
