@@ -28,7 +28,7 @@ spec:
   {{- end }}
   rules:
     {{- range $.Values.ingress.hosts }}
-    - host: {{ . | quote }}
+    - host: {{ tpl . $ | quote }}
       http:
         paths:
           {{- range $svcName, $paths := $.Values.ingress.paths }}
