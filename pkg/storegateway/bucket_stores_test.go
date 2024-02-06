@@ -498,7 +498,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	}
 
 	storageDir := t.TempDir()
-	_, err := block.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
+	_, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, userID), specs)
 	require.NoError(t, err)
 
 	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})

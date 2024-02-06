@@ -74,8 +74,8 @@ type Iterator interface {
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
 	Value() model.SamplePair
-	AtHistogram() (int64, *histogram.Histogram)
-	AtFloatHistogram() (int64, *histogram.FloatHistogram)
+	AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram)
+	AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram)
 	Timestamp() int64
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
@@ -143,10 +143,10 @@ func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]mo
 		case chunkenc.ValFloat:
 			resultFloat = append(resultFloat, it.Value())
 		case chunkenc.ValHistogram:
-			t, h := it.AtHistogram()
+			t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 			resultHist = append(resultHist, mimirpb.FromHistogramToHistogramProto(t, h))
 		case chunkenc.ValFloatHistogram:
-			t, h := it.AtFloatHistogram()
+			t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
 			resultHist = append(resultHist, mimirpb.FromFloatHistogramToHistogramProto(t, h))
 		default:
 			return nil, nil, fmt.Errorf("unknown value type %v in iterator", currValType)

@@ -493,6 +493,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		TenantCleanupDelay:         c.compactorCfg.TenantCleanupDelay,
 		DeleteBlocksConcurrency:    defaultDeleteBlocksConcurrency,
 		NoBlocksFileCleanupEnabled: c.compactorCfg.NoBlocksFileCleanupEnabled,
+		CompactionBlockRanges:      c.compactorCfg.BlockRanges,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -732,7 +733,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		}),
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
-		NewNoCompactionMarkFilter(userBucket, true),
+		NewNoCompactionMarkFilter(userBucket),
 	}
 
 	fetcher, err := block.NewMetaFetcher(

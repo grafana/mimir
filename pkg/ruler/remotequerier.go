@@ -52,7 +52,6 @@ const (
 	formatProtobuf = "protobuf"
 )
 
-var userAgent = fmt.Sprintf("mimir/%s", version.Version)
 var allFormats = []string{formatJSON, formatProtobuf}
 
 // QueryFrontendConfig defines query-frontend transport configuration.
@@ -168,7 +167,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept-Encoding"), Values: []string{"snappy"}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{"application/x-protobuf"}},
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"), Values: []string{"0.1.0"}},
 		}),
 	}
@@ -272,7 +271,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 		Url:    q.promHTTPPrefix + queryEndpointPath,
 		Body:   body,
 		Headers: injectHTTPGrpcReadConsistencyHeader(ctx, []*httpgrpc.Header{
-			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{userAgent}},
+			{Key: textproto.CanonicalMIMEHeaderKey("User-Agent"), Values: []string{version.UserAgent()}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Type"), Values: []string{mimeTypeFormPost}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Content-Length"), Values: []string{strconv.Itoa(len(body))}},
 			{Key: textproto.CanonicalMIMEHeaderKey("Accept"), Values: []string{acceptHeader}},

@@ -780,7 +780,7 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 
 func (t *Mimir) initRuler() (serv services.Service, err error) {
 	if t.RulerDirectStorage == nil {
-		level.Info(util_log.Logger).Log("msg", "The ruler storage has not been configured.  Not starting the ruler.")
+		level.Info(util_log.Logger).Log("msg", "The ruler storage has not been configured. Not starting the ruler.")
 		return nil, nil
 	}
 

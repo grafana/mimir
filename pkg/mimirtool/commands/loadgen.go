@@ -139,7 +139,7 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 			URL:     &config.URL{URL: writeURL},
 			Timeout: model.Duration(c.writeTimeout),
 			Headers: map[string]string{
-				"User-Agent": client.UserAgent,
+				"User-Agent": client.UserAgent(),
 			},
 		})
 		if err != nil {

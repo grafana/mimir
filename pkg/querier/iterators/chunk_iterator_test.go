@@ -16,15 +16,57 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+func TestChunkIteratorAtHistogram(t *testing.T) {
+	c := mkChunk(t, 0, 50, 1*time.Millisecond, chunk.PrometheusHistogramChunk)
+	it := chunkIterator{Chunk: c, it: c.Data.NewIterator(nil)}
+	require.Equal(t, chunkenc.ValHistogram, it.Next())
+
+	ts, firstH := it.AtHistogram(nil)
+	require.Equal(t, int64(0), ts)
+	require.NotNil(t, firstH)
+	test.RequireHistogramEqual(t, test.GenerateTestHistogram(0), firstH)
+
+	it.Next()
+
+	// Verify that after a call to AtHistogram on a non-nil argument,
+	// the result and the argument point to the same histogram.
+	ts, secondH := it.AtHistogram(firstH)
+	require.Equal(t, int64(1), ts)
+	require.NotNil(t, secondH)
+	test.RequireHistogramEqual(t, test.GenerateTestHistogram(1), secondH)
+	require.Equal(t, firstH, secondH)
+}
+
+func TestChunkIteratorAtFloatHistogram(t *testing.T) {
+	c := mkChunk(t, 0, 50, 1*time.Millisecond, chunk.PrometheusFloatHistogramChunk)
+	it := chunkIterator{Chunk: c, it: c.Data.NewIterator(nil)}
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+
+	ts, firstFH := it.AtFloatHistogram(nil)
+	require.Equal(t, int64(0), ts)
+	require.NotNil(t, firstFH)
+	test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(0), firstFH)
+
+	it.Next()
+
+	// Verify that after a call to AtFloatHistogram on a non-nil argument,
+	// the result and the argument point to the same float histogram.
+	ts, secondFH := it.AtFloatHistogram(firstFH)
+	require.Equal(t, int64(1), ts)
+	require.NotNil(t, secondFH)
+	test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(1), secondFH)
+	require.Equal(t, firstFH, secondFH)
+}
+
 func TestChunkIteratorAtFloatHistogramAfterAtHistogram(t *testing.T) {
 	c := mkChunk(t, 0, 50, 1*time.Millisecond, chunk.PrometheusHistogramChunk)
 	it := chunkIterator{Chunk: c, it: c.Data.NewIterator(nil)}
 	require.Equal(t, chunkenc.ValHistogram, it.Next())
 	// populate cache with histogram
-	_, h := it.AtHistogram()
+	_, h := it.AtHistogram(nil)
 	require.NotNil(t, h)
 	// read float histogram
-	_, fh := it.AtFloatHistogram()
+	_, fh := it.AtFloatHistogram(nil)
 	require.NotNil(t, fh)
 }
 
@@ -47,11 +89,11 @@ func TestChunkIteratorCaching(t *testing.T) {
 			encoding:     chunk.PrometheusHistogramChunk,
 			expectedType: chunkenc.ValHistogram,
 			verifySample: func(t *testing.T, i int64, iter *chunkIterator) {
-				ts, h := iter.AtHistogram()
+				ts, h := iter.AtHistogram(nil)
 				require.Equal(t, i, ts)
 				test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(i)), h)
 				// auto convert
-				ts2, fh := iter.AtFloatHistogram()
+				ts2, fh := iter.AtFloatHistogram(nil)
 				require.Equal(t, i, ts2)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestHistogram(int(i)).ToFloat(nil), fh)
 			},
@@ -60,7 +102,7 @@ func TestChunkIteratorCaching(t *testing.T) {
 			encoding:     chunk.PrometheusFloatHistogramChunk,
 			expectedType: chunkenc.ValFloatHistogram,
 			verifySample: func(t *testing.T, i int64, iter *chunkIterator) {
-				ts, fh := iter.AtFloatHistogram()
+				ts, fh := iter.AtFloatHistogram(nil)
 				require.Equal(t, i, ts)
 				test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(i)), fh)
 			},
@@ -113,14 +155,14 @@ func (i countAtChunkIterator) Value() model.SamplePair {
 	return i.it.Value()
 }
 
-func (i countAtChunkIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (i countAtChunkIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
 	*i.callcount++
-	return i.it.AtHistogram()
+	return i.it.AtHistogram(h)
 }
 
-func (i countAtChunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (i countAtChunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	*i.callcount++
-	return i.it.AtFloatHistogram()
+	return i.it.AtFloatHistogram(fh)
 }
 
 func (i countAtChunkIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {

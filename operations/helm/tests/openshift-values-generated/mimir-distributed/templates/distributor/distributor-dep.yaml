@@ -51,6 +51,10 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Force gRPC clients connecting to distributor to reconnect periodically in order to have them re-resolve endpoints and discover new replicas.
+            - "-server.grpc.keepalive.max-connection-age=2m"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
