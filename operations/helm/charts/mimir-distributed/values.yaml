@@ -2722,7 +2722,8 @@ gateway:
     annotations: {}
     # -- Hosts configuration for the Ingress
     hosts:
-      - host: mimir.example.com
+      # -- Passed through the `tpl` function to allow templating.
+      - host: '{{ .Release.Name }}.mimir.example.com'
         paths:
           - path: /
             # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
@@ -2730,16 +2731,17 @@ gateway:
     # -- TLS configuration for the nginx ingress
     tls:
       - secretName: mimir-tls
+        # --  Hosts included in the tls certificate. Passed through the `tpl` function to allow templating.
         hosts:
-          - mimir.example.com
+          - '{{ .Release.Name }}.mimir.example.com'
 
   # -- OpenShift Route configuration
   route:
     enabled: false
     # -- Annotations for the Route
     annotations: {}
-
-    host: mimir.example.com
+    # -- Passed through the `tpl` function to allow templating.
+    host: '{{ .Release.Name }}.mimir.example.com'
 
     tls:
       # -- More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
