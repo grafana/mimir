@@ -1271,11 +1271,11 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 
 	storageDir := t.TempDir()
 
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock1Spec)
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock1Spec)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock2Spec)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock2Spec)
 	require.NoError(t, err)
-	_, err = block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), sourceBlock3Spec)
+	_, err = block.GenerateBlockFromSpec(filepath.Join(storageDir, user), sourceBlock3Spec)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -1291,7 +1291,7 @@ func TestMultitenantCompactor_ShouldFailWithInvalidTSDBCompactOutput(t *testing.
 	mockCall.RunFn = func(args mock.Arguments) {
 		dir := args.Get(0).(string)
 
-		compactedMeta, err := block.GenerateBlockFromSpec(user, dir, compactedBlockSpec)
+		compactedMeta, err := block.GenerateBlockFromSpec(dir, compactedBlockSpec)
 		require.NoError(t, err)
 		f, err := os.OpenFile(filepath.Join(dir, compactedMeta.ULID.String(), "tombstones"), os.O_RDONLY|os.O_CREATE, 0666)
 		require.NoError(t, err)
@@ -1460,13 +1460,13 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 		}))},
 	}}
 
-	user1Meta1, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user1Meta2, err := block.GenerateBlockFromSpec("user-1", filepath.Join(storageDir, "user-1"), spec)
+	user1Meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-1"), spec)
 	require.NoError(t, err)
-	user2Meta1, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
-	user2Meta2, err := block.GenerateBlockFromSpec("user-2", filepath.Join(storageDir, "user-2"), spec)
+	user2Meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, "user-2"), spec)
 	require.NoError(t, err)
 
 	// Mock the last modified timestamp returned for each of the block's meta.json.
@@ -2198,9 +2198,9 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 
 	storageDir := t.TempDir()
 	// We need two blocks to start compaction.
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -2264,9 +2264,9 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 
 	storageDir := t.TempDir()
 	// We need two blocks to start compaction.
-	meta1, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
-	meta2, err := block.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
 
 	// Force chunk to fall out of the block time range by modifying MaxTime.
