@@ -121,9 +121,9 @@ func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 		case chunkenc.ValFloat:
 			c.currTime, c.currValue = c.h[0].At()
 		case chunkenc.ValHistogram:
-			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+			c.currTime, c.currHistogram = c.h[0].AtHistogram(nil)
 		case chunkenc.ValFloatHistogram:
-			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram(nil)
 		default:
 			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
 			return chunkenc.ValNone
@@ -149,9 +149,9 @@ func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 		case chunkenc.ValFloat:
 			c.currTime, c.currValue = c.h[0].At()
 		case chunkenc.ValHistogram:
-			c.currTime, c.currHistogram = c.h[0].AtHistogram()
+			c.currTime, c.currHistogram = c.h[0].AtHistogram(nil)
 		case chunkenc.ValFloatHistogram:
-			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram()
+			c.currTime, c.currFloatHistogram = c.h[0].AtFloatHistogram(nil)
 		default:
 			c.currErr = fmt.Errorf("chunkMergeIterator: unimplemented type: %v", valType)
 			return chunkenc.ValNone
@@ -183,14 +183,14 @@ func (c *chunkMergeIterator) At() (t int64, v float64) {
 	return c.currTime, c.currValue
 }
 
-func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (c *chunkMergeIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	if c.currValueType != chunkenc.ValHistogram {
 		panic(fmt.Errorf("chunkMergeIterator: calling AtHistogram when cursor is at different type %v", c.currValueType))
 	}
 	return c.currTime, c.currHistogram
 }
 
-func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (c *chunkMergeIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	if c.currValueType == chunkenc.ValHistogram {
 		return c.currTime, c.currHistogram.ToFloat(nil)
 	}
@@ -289,12 +289,14 @@ func (it *nonOverlappingIterator) At() (int64, float64) {
 	return it.chunks[it.curr].At()
 }
 
-func (it *nonOverlappingIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return it.chunks[it.curr].AtHistogram()
+// AtHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.
+func (it *nonOverlappingIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return it.chunks[it.curr].AtHistogram(h)
 }
 
-func (it *nonOverlappingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return it.chunks[it.curr].AtFloatHistogram()
+// AtFloatHistogram implements chunkenc.Iterator. It does not copy the underlying histogram as that optimization is left to the caller / higher level.
+func (it *nonOverlappingIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return it.chunks[it.curr].AtFloatHistogram(fh)
 }
 
 func (it *nonOverlappingIterator) AtT() int64 {

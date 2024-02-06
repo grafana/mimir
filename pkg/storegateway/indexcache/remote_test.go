@@ -954,6 +954,10 @@ func (c *mockedRemoteCacheClient) Stop() {
 	// Nothing to do.
 }
 
+func (c *mockedRemoteCacheClient) Name() string {
+	return "mock"
+}
+
 // remove a string from a slice of strings
 func remove(slice []string, needle string) []string {
 	res := make([]string, 0, len(slice))

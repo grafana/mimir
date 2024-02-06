@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -52,6 +53,11 @@ func parseFile(file string) (QueryStreamResponse, error) {
 func dumpResponse(res QueryStreamResponse) {
 	for _, series := range res.Chunkseries {
 		fmt.Println(series.LabelSet().String())
+		var (
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
+			ts int64
+		)
 
 		for _, chunk := range series.Chunks {
 			fmt.Printf(
@@ -70,11 +76,11 @@ func dumpResponse(res QueryStreamResponse) {
 				case chunkenc.ValFloat:
 					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
 				case chunkenc.ValHistogram:
-					ts, value := chunkIterator.AtHistogram()
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", value)
+					ts, h = chunkIterator.AtHistogram(h)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h)
 				case chunkenc.ValFloatHistogram:
-					ts, value := chunkIterator.AtFloatHistogram()
-					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", value)
+					ts, fh := chunkIterator.AtFloatHistogram(fh)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh)
 				default:
 					panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
 				}

@@ -18,7 +18,6 @@ import (
 )
 
 func TestTSDBPrintChunk(t *testing.T) {
-	userID := "user"
 	tmpDir := t.TempDir()
 
 	spec := block.SeriesSpec{
@@ -37,7 +36,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 		},
 	}
 
-	meta, err := block.GenerateBlockFromSpec(userID, tmpDir, []*block.SeriesSpec{&spec})
+	meta, err := block.GenerateBlockFromSpec(tmpDir, []*block.SeriesSpec{&spec})
 	require.NoError(t, err)
 
 	blockDir := path.Join(tmpDir, meta.ULID.String())

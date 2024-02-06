@@ -98,7 +98,7 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 	var sourceIPs *middleware.SourceIPExtractor
 	if serverCfg.LogSourceIPs {
 		var err error
-		sourceIPs, err = middleware.NewSourceIPs(serverCfg.LogSourceIPsHeader, serverCfg.LogSourceIPsRegex)
+		sourceIPs, err = middleware.NewSourceIPs(serverCfg.LogSourceIPsHeader, serverCfg.LogSourceIPsRegex, serverCfg.LogSourceIPsFull)
 		if err != nil {
 			// This should have already been caught in the Server creation
 			return nil, err

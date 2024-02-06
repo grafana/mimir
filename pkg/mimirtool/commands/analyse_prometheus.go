@@ -88,7 +88,7 @@ func (cmd *PrometheusAnalyzeCommand) parseUsedMetrics() (model.LabelValues, erro
 
 func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
-	rt = config.NewUserAgentRoundTripper(client.UserAgent, rt)
+	rt = config.NewUserAgentRoundTripper(client.UserAgent(), rt)
 	if cmd.username != "" {
 		rt = &setTenantIDTransport{
 			RoundTripper: rt,

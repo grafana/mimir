@@ -30,6 +30,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
@@ -50,7 +51,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -2033,14 +2033,14 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	srv := newStoreGatewayTestServer(t, store)
 	_, _, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
 
 	req.StreamingChunksBatchSize = 10
 	_, _, _, _, err = srv.Series(ctx, req)
 	assert.Error(t, err)
-	s, ok = status.FromError(err)
+	s, ok = grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
 }
@@ -2096,7 +2096,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 	srv := newStoreGatewayTestServer(t, store)
 	_, _, _, _, err = srv.Series(context.Background(), req)
 	assert.Error(t, err)
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.InvalidArgument, s.Code())
 	assert.ErrorContains(t, s.Err(), "error parsing regexp: missing closing )")
@@ -2747,7 +2747,7 @@ func TestLabelNames_Cancelled(t *testing.T) {
 
 	_, err := store.LabelNames(ctx, req)
 	assert.Error(t, err)
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
 }
@@ -2774,7 +2774,7 @@ func TestLabelValues_Cancelled(t *testing.T) {
 
 	_, err := store.LabelValues(ctx, req)
 	assert.Error(t, err)
-	s, ok := status.FromError(err)
+	s, ok := grpcutil.ErrorToStatus(err)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Canceled, s.Code())
 }

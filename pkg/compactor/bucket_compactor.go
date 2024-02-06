@@ -1018,16 +1018,14 @@ var _ block.MetadataFilter = &NoCompactionMarkFilter{}
 // NoCompactionMarkFilter is a block.Fetcher filter that finds all blocks with no-compact marker files, and optionally
 // removes them from synced metas.
 type NoCompactionMarkFilter struct {
-	bkt                   objstore.InstrumentedBucketReader
-	noCompactMarkedMap    map[ulid.ULID]struct{}
-	removeNoCompactBlocks bool
+	bkt                objstore.InstrumentedBucketReader
+	noCompactMarkedMap map[ulid.ULID]struct{}
 }
 
 // NewNoCompactionMarkFilter creates NoCompactionMarkFilter.
-func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader, removeNoCompactBlocks bool) *NoCompactionMarkFilter {
+func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader) *NoCompactionMarkFilter {
 	return &NoCompactionMarkFilter{
-		bkt:                   bkt,
-		removeNoCompactBlocks: removeNoCompactBlocks,
+		bkt: bkt,
 	}
 }
 
@@ -1054,9 +1052,7 @@ func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID
 				noCompactMarkedMap[blockID] = struct{}{}
 				synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
 
-				if f.removeNoCompactBlocks {
-					delete(metas, blockID)
-				}
+				delete(metas, blockID)
 			}
 
 		}

@@ -681,6 +681,8 @@ Usage of ./cmd/mimir/mimir:
     	Optionally log request headers.
   -server.log-request-headers-exclude-list string
     	Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.
+  -server.log-source-ips-full
+    	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
   -server.tls-cipher-suites string

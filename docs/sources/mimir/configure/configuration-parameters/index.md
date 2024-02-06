@@ -692,6 +692,11 @@ grpc_tls_config:
 # CLI flag: -server.log-source-ips-enabled
 [log_source_ips_enabled: <boolean> | default = false]
 
+# Log all source IPs instead of only the originating one. Only used if
+# server.log-source-ips-enabled is true
+# CLI flag: -server.log-source-ips-full
+[log_source_ips_full: <boolean> | default = false]
+
 # (advanced) Header field storing the source IPs. Only used if
 # server.log-source-ips-enabled is true. If not set the default Forwarded,
 # X-Real-IP and X-Forwarded-For headers are used
@@ -2251,6 +2256,14 @@ alertmanager_client:
 # removed for any tenant that does not have a configuration.
 # CLI flag: -alertmanager.enable-state-cleanup
 [enable_state_cleanup: <boolean> | default = true]
+
+# (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
+# matchers for routes and inhibition rules, in silences, and in the labels for
+# alerts. It is recommended to check both alertmanager_matchers_disagree_total
+# and alertmanager_matchers_incompatible_total metrics before using this mode as
+# otherwise some tenant configurations might fail to load.
+# CLI flag: -alertmanager.utf8-strict-mode-enabled
+[utf8_strict_mode: <boolean> | default = false]
 ```
 
 ### alertmanager_storage

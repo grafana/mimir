@@ -1223,12 +1223,12 @@ How to **investigate**
 - Flush tenant's data to blocks storage.
 - Remove tenant's directory on disk and restart ingester.
 
-## MimirStoreGatewayTooManyFailedOperations
+### MimirStoreGatewayTooManyFailedOperations
 
 How it **works**:
 
-This alert fires when the `store-gateways` report errors when interacting with the object storage for an extended period of time.
-This is usually because Mimir cannot read an object due to an issue with the object itself or the object storage.
+- This alert fires when the `store-gateways` report errors when interacting with the object storage for an extended period of time.
+- This is usually because Mimir cannot read an object due to an issue with the object itself or the object storage.
 
 How to **investigate**
 
@@ -1245,6 +1245,67 @@ create index header reader: write index header: new index reader: get TOC from o
 ```
 
 - Use the `Mimir / Object Store` dashboard to check for error rate and the failed object storage's operation impacted, e.g: `get_range`.
+
+### KubePersistentVolumeFillingUp
+
+This alert is not defined in the Mimir mixin, but it's part of [`kube-prometheus`](https://github.com/prometheus-operator/kube-prometheus) alerts.
+This alert fires when a `PersistentVolume` is nearing capacity.
+
+#### Compactor
+
+How it **works**:
+
+- The compactor uses the volume to temporarily store blocks to compact. The compactor doesn't require persistence, so it's safe to stop the compactor, delete the volume content and restart it with an empty disk.
+- The compactor disk utilization is typically a function of the size of source blocks to compact as part of a compaction job and the configured number of maximum concurrent compactions (`-compactor.compaction-concurrency`).
+
+How to **fix** it:
+
+- Increase the compactor volume size to stop the bleed. You can either:
+  - Resize the volume
+  - Delete the compactor StatefulSet and its PersistentVolumeClaims, then re-create the compactor StatefulSet with a bigger volume size request
+- Check if the compactor is configured with `-compactor.compaction-concurrency` greater than 1 and there are multiple concurrent compactions running in the affected compactor. If so, you can consider lowering the concurrency.
+
+#### Store-gateway
+
+How it **works**:
+
+- Blocks in the long-term storage are sharded and replicated between store-gateway replicas using the store-gateway hash ring. This means that each store-gateway owns a subset of the blocks.
+  - The sharding algorithm is designed to try to evenly balance the number of blocks per store-gateway replica, but not their size. This means that in case of a tenant with uneven blocks sizes, some store-gateways may use more disk than others even if the number of blocks assigned to each replicas are perfectly balanced.
+  - The sharding algorithm can achieve a fair balance of the number of blocks between store-gateway replicas only on a large number of blocks. This means that in case of a Mimir cluster with a small number of blocks, these may not be evenly balanced between replicas. Currently, a perfect (or even very good) balance between store-gateway replicas is nearly impossible to achieve.
+  - When store-gateway shuffle sharding is in use for a given tenant and the tenant's shard size is smaller than the number of store-gateway replicas, the tenant's blocks are sharded only across a subset of replicas. Shuffle sharding can cause an imbalance in store-gateway disk utilization.
+- The store-gateway uses the volume to store the [index-header]({{< relref "../../references/architecture/binary-index-header.md" >}}) of each owned block.
+
+How to **investigate** and **fix** it:
+
+- Check the `Mimir / Compactor` dashboard
+
+  - Ensure the compactor is healthy and running successfully.
+    - The "Last successful run per-compactor replica" panel should show all compactors are running Ok and none of them having Delayed, Late or Very Late status.
+    - "Tenants with largest number of blocks" must not be trending upwards
+  - An issue in the compactor (e.g. compactor is crashing, OOMKilled or can't catch up with compaction jobs) would cause the number of non-compacted blocks to increase, causing an increased disk utilization in the store-gateway. In case of an issue with the compactor you should fix it first:
+    - If the compactor is OOMKilled, increase compactor memory request.
+    - If the compactor is lagging behind or there are many blocks to compactor, temporarily increase increase the compactor replicas to let the compactor catching up quickly.
+
+- Check the `Mimir / Reads resources` dashboard
+
+  - Check if disk utilization is nearly balanced between store-gateway replicas (e.g. a 20-30% variance between replicas is expected)
+    - If disk utilization is nearly balanced you can scale out store-gateway replicas to lower disk utilization on average
+    - If disk utilization is unbalanced you may consider the other options before scaling out store-gateways
+
+- Check if disk utilization unbalance is caused by shuffle sharding
+
+  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+    ```
+    kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+    ```
+  - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
+
+- Check if disk utilization unbalance is caused by a tenant with uneven block sizes
+  - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
+  - If you suspect this may be an issue:
+    - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
+    - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
+    - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
 
 ## Errors catalog
 
@@ -1283,6 +1344,12 @@ The limit protects the system from using too much memory. To configure the limit
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets and it is not possible to reduce the buckets further. Since native buckets at the lowest resolution of -4 can cover all 64 bit float observations with a handful of buckets, this indicates that the
 `-validation.max-native-histogram-buckets` option is set too low (<20).
+
+> **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+
+### err-mimir-invalid-native-histogram-schema
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram with an invalid schema number. Currently, valid schema numbers are from the range [-4, 8].
 
 > **Note:** The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
 

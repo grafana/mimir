@@ -581,6 +581,16 @@
       },
     },
 
+    rollout_dashboard: {
+      // workload_label_replaces is used to create label_replace(...) calls on the statefulset and deployment series when rendering the Rollout Dashboard.
+      // Extendable to allow grouping multiple workloads into a single one.
+      workload_label_replaces: [
+        { src_label: 'deployment', regex: '(.+)', replacement: '$1' },
+        { src_label: 'statefulset', regex: '(.+)', replacement: '$1' },
+        { src_label: 'workload', regex: '(.*?)(?:-zone-[a-z])?', replacement: '$1' },
+      ],
+    },
+
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
 

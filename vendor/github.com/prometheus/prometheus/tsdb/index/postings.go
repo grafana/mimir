@@ -834,6 +834,42 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 	return indexes, nil
 }
 
+// findNonContainedPostings checks whether candidates[i] for each i in candidates is contained in p.
+// If not contained, i is added to the indexes returned.
+// The idea is the need to find postings iterators not fully contained in a set you wish to exclude.
+// Returned indexes are not sorted.
+func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int, err error) {
+	h := make(postingsWithIndexHeap, 0, len(candidates))
+	for idx, it := range candidates {
+		switch {
+		case it.Next():
+			h = append(h, postingsWithIndex{index: idx, p: it})
+		case it.Err() != nil:
+			return nil, it.Err()
+		}
+	}
+	if h.empty() {
+		return nil, nil
+	}
+	heap.Init(&h)
+
+	for !h.empty() {
+		// Find the first posting >= h.at()
+		if !p.Seek(h.at()) && p.Err() != nil {
+			return nil, p.Err()
+		}
+
+		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
+		if p.At() != h.at() {
+			indexes = append(indexes, h.popIndex())
+		} else if err := h.next(); err != nil {
+			return nil, err
+		}
+	}
+
+	return indexes, nil
+}
+
 // postingsWithIndex is used as postingsWithIndexHeap elements by FindIntersectingPostings,
 // keeping track of the original index of each postings while they move inside the heap.
 type postingsWithIndex struct {

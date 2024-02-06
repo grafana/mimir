@@ -84,7 +84,7 @@ func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics
 			return invoker(ctx, method, req, reply, cc, opts...)
 		})
 
-		if err != nil && errors.Is(err, circuitbreaker.ErrCircuitBreakerOpen) {
+		if err != nil && errors.Is(err, circuitbreaker.ErrOpen) {
 			countOpen.Inc()
 		}
 

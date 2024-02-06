@@ -309,11 +309,11 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 					continue
 				}
 
-				if errors.Is(errors.Cause(err), ErrorSyncMetaNotFound) {
+				if errors.Is(err, ErrorSyncMetaNotFound) {
 					mtx.Lock()
 					resp.noMetasCount++
 					mtx.Unlock()
-				} else if errors.Is(errors.Cause(err), ErrorSyncMetaCorrupted) {
+				} else if errors.Is(err, ErrorSyncMetaCorrupted) {
 					mtx.Lock()
 					resp.corruptedMetasCount++
 					mtx.Unlock()
@@ -549,10 +549,10 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 			for id := range ch {
 				m := &DeletionMark{}
 				if err := ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
-					if errors.Is(errors.Cause(err), ErrorMarkerNotFound) {
+					if errors.Is(err, ErrorMarkerNotFound) {
 						continue
 					}
-					if errors.Is(errors.Cause(err), ErrorUnmarshalMarker) {
+					if errors.Is(err, ErrorUnmarshalMarker) {
 						level.Warn(f.logger).Log("msg", "found partial deletion-mark.json; if we will see it happening often for the same block, consider manually deleting deletion-mark.json from the object storage", "block", id, "err", err)
 						continue
 					}

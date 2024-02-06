@@ -80,11 +80,11 @@ func assertChunkIteratorsEqual(t testing.TB, c1, c2 chunkenc.Iterator) {
 		)
 		switch c1Next {
 		case chunkenc.ValHistogram:
-			atT1, atV1 = c1.AtHistogram()
-			atT2, atV2 = c2.AtHistogram()
+			atT1, atV1 = c1.AtHistogram(nil)
+			atT2, atV2 = c2.AtHistogram(nil)
 		case chunkenc.ValFloatHistogram:
-			atT1, atV1 = c1.AtFloatHistogram()
-			atT2, atV2 = c2.AtFloatHistogram()
+			atT1, atV1 = c1.AtFloatHistogram(nil)
+			atT2, atV2 = c2.AtFloatHistogram(nil)
 		case chunkenc.ValFloat:
 			atT1, atV1 = c1.At()
 			atT2, atV2 = c2.At()

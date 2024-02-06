@@ -36,6 +36,9 @@ type RemoteCacheClient interface {
 
 	// Stop client and release underlying resources.
 	Stop()
+
+	// Name returns the name of this particular cache instance.
+	Name() string
 }
 
 // Cache is a generic interface.
@@ -53,6 +56,7 @@ type Cache interface {
 	// Delete cache entry with the given key if it exists.
 	Delete(ctx context.Context, key string) error
 
+	// Name returns the name of this particular cache instance.
 	Name() string
 }
 
@@ -125,13 +129,13 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return NewMemcachedCache(cacheName, logger, client), nil
+		return NewRemoteCacheAdapter(client), nil
 	case BackendRedis:
 		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create redis client")
 		}
-		return NewRedisCache(cacheName, logger, client), nil
+		return NewRemoteCacheAdapter(client), nil
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

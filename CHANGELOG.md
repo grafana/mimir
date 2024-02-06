@@ -37,14 +37,18 @@
 * [CHANGE] Query-frontend: the default value of the CLI flag `-query-frontend.max-cache-freshness` (and its respective YAML configuration parameter) has been changed from `1m` to `10m`. #7161
 * [CHANGE] Distributor: default the optimization `-distributor.write-requests-buffer-pooling-enabled` to `true`. #7165
 * [CHANGE] Tracing: Move query information to span attributes instead of span logs. #7046
+* [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
 * [FEATURE] Querier / query-frontend: added `-querier.promql-experimental-functions-enabled` CLI flag (and respective YAML config option) to enable experimental PromQL functions. The experimental functions introduced are: `mad_over_time()`, `sort_by_label()` and `sort_by_label_desc()`. #7057
-* [FEATURE] Alertmanager API: added `-alertmanager.grafana-alertmanager-compatibility-enabledd` CLI flag (and respective YAML config option) to enable an experimental API endpoints that support the migration of the Grafana Alertmanager. #7057
+* [FEATURE] Alertmanager API: added `-alertmanager.grafana-alertmanager-compatibility-enabled` CLI flag (and respective YAML config option) to enable an experimental API endpoints that support the migration of the Grafana Alertmanager. #7057
+* [FEATURE] Alertmanager: Added `-alertmanager.utf8-strict-mode-enabled` to control support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels. It's default value is set to `false`. #6898
+* [FEATURE] Querier: added `histogram_avg()` function support to PromQL. #7293
 * [ENHANCEMENT] Store-gateway: add no-compact details column on store-gateway tenants admin UI. #6848
 * [ENHANCEMENT] PromQL: ignore small errors for bucketQuantile #6766
 * [ENHANCEMENT] Distributor: improve efficiency of some errors #6785
 * [ENHANCEMENT] Ruler: exclude vector queries from being tracked in `cortex_ruler_queries_zero_fetched_series_total`. #6544
+* [ENHANCEMENT] Ruler: local storage backend now supports reading a rule group via `/config/api/v1/rules/{namespace}/{groupName}` configuration API endpoint. #6632
 * [ENHANCEMENT] Query-Frontend and Query-Scheduler: split tenant query request queues by query component with `query-frontend.additional-query-queue-dimensions-enabled` and `query-scheduler.additional-query-queue-dimensions-enabled`. #6772
 * [ENHANCEMENT] Distributor: support disabling metric relabel rules per-tenant via the flag `-distributor.metric-relabeling-enabled` or associated YAML. #6970
 * [ENHANCEMENT] Distributor: `-distributor.remote-timeout` is now accounted from the first ingester push request being sent. #6972
@@ -54,6 +58,8 @@
 * [ENHANCEMENT] Distributor: set `-distributor.reusable-ingester-push-workers=2000` by default and mark feature as `advanced`. #7128
 * [ENHANCEMENT] All: set `-server.grpc.num-workers=100` by default and mark feature as `advanced`. #7131
 * [ENHANCEMENT] Distributor: invalid metric name error message gets cleaned up to not include non-ascii strings. #7146
+* [ENHANCEMENT] Store-gateway: add `source`, `level`, and `out_or_order` to `cortex_bucket_store_series_blocks_queried` metric that indicates the number of blocks that were queried from store gateways by block metadata. #7112 #7262 #7267
+* [ENHANCEMENT] Compactor: After updating bucket-index, compactor now also computes estimated number of compaction jobs based on current bucket-index, and reports the result in `cortex_bucket_index_estimated_compaction_jobs` metric. If computation of jobs fails, `cortex_bucket_index_estimated_compaction_jobs_errors_total` is updated instead. #7299
 * [BUGFIX] Ingester: don't ignore errors encountered while iterating through chunks or samples in response to a query request. #6451
 * [BUGFIX] Fix issue where queries can fail or omit OOO samples if OOO head compaction occurs between creating a querier and reading chunks #6766
 * [BUGFIX] Fix issue where concatenatingChunkIterator can obscure errors #6766
@@ -73,6 +79,8 @@
   * `label_names_and_values`: label names / values query
   * `active_series`: active series query
   * `other`: any other request
+* [BUGFIX] Fix performance regression introduced in Mimir 2.11.0 when uploading blocks to AWS S3. #7240
+* [BUGFIX] Query-frontend: fix race condition when sharding active series is enabled (see above) and response is compressed with snappy. #7290
 
 ### Mixin
 
@@ -87,6 +95,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Distributor: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 1000, to avoid dropping tracing spans. #7259
 * [CHANGE] Querier: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from 1000 to 5000, to avoid dropping tracing spans. #6764
 * [CHANGE] rollout-operator: remove default CPU limit. #7066
 * [CHANGE] Store-gateway: Increase `JAEGER_REPORTER_MAX_QUEUE_SIZE` from the default (100) to 1000, to avoid dropping tracing spans. #7068
@@ -154,6 +163,8 @@
 ### Query-tee
 
 ### Documentation
+
+* [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
 
 ### Tools
 
