@@ -56,11 +56,10 @@ func NewRuleDetail(r Rule) RuleDetail {
 	}
 
 	return RuleDetail{
-		Name:   r.Name(),
-		Query:  r.Query().String(),
-		Labels: r.Labels(),
-		Kind:   kind,
-
+		Name:              r.Name(),
+		Query:             r.Query().String(),
+		Labels:            r.Labels(),
+		Kind:              kind,
 		NoDependentRules:  r.NoDependentRules(),
 		NoDependencyRules: r.NoDependencyRules(),
 	}

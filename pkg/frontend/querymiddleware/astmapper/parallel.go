@@ -34,6 +34,9 @@ var NonParallelFuncs = []string{
 	"sort",
 	"time",
 	"vector",
+
+	// The following function may be parallelized using a strategy similar to avg().
+	"histogram_avg",
 }
 
 // FuncsWithDefaultTimeArg is the list of functions that extract date information from a variadic list of params,
