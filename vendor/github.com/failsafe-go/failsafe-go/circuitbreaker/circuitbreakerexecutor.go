@@ -16,7 +16,7 @@ var _ policy.Executor[any] = &circuitBreakerExecutor[any]{}
 
 func (cbe *circuitBreakerExecutor[R]) PreExecute(_ policy.ExecutionInternal[R]) *common.PolicyResult[R] {
 	if !cbe.circuitBreaker.TryAcquirePermit() {
-		return internal.FailureResult[R](ErrCircuitBreakerOpen)
+		return internal.FailureResult[R](ErrOpen)
 	}
 	return nil
 }

@@ -85,7 +85,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	// Subsequent requests should fail with this specific error once "open"
 	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
-	require.ErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+	require.ErrorIs(t, err, circuitbreaker.ErrOpen)
 
 	// Non-ingester methods shouldn't be short-circuited
 	err = breaker(context.Background(), "Different.Method", "", "", &conn, success)
