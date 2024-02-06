@@ -48,8 +48,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"'),
-        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
       },
 
       // Read failures rate as percentage of total requests.
@@ -64,8 +64,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"'),
-        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector),
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+        countQuery: utils.nativeClassicHistogramCountRate(p.readRequestsPerSecondMetric, p.readRequestsPerSecondSelector).native,
       },
     },
 
@@ -89,8 +89,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         /
         sum(%(countQuery)s)
       ||| % {
-        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"'),
-        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+        countFailQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector+',status_code=~"5.*|error"').native,
+        countQuery: utils.nativeClassicHistogramCountRate(p.writeRequestsPerSecondMetric, p.writeRequestsPerSecondSelector).native,
       },
     },
 

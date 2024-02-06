@@ -179,8 +179,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.qpsPanel(selector, statusLabelName) +
     { yaxes: $.yaxes('reqps') },
 
-  qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
-    super.qpsPanelNativeHistogram(selector, statusLabelName) +
+  qpsPanelNativeHistogram(title, selector, statusLabelName='status_code')::
+    super.qpsPanelNativeHistogram(title, selector, statusLabelName) +
     { yaxes: $.yaxes('reqps') },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.

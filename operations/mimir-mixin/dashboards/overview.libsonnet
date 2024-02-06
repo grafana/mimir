@@ -32,6 +32,7 @@ local filename = 'mimir-overview.json';
 
     ($.dashboard('Overview') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowHistoricDataVariable()
 
     .addRow(
       $.row('%(product)s cluster health' % $._config)
@@ -113,8 +114,8 @@ local filename = 'mimir-overview.json';
         ||| % helpers),
       )
       .addPanel(
-        $.panel(std.stripChars('Write requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
         $.qpsPanelNativeHistogram(
+          std.stripChars('Write requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' '),
           if $._config.gateway_enabled then
             $.queries.gateway.writeRequestsPerSecondMetric
           else

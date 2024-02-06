@@ -102,153 +102,153 @@ local filename = 'mimir-writes.json';
         $.statPanel('sum(%s)' % utils.nativeClassicHistogramCountRate($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector), format='reqps')
       )
     )
-    .addRowIf(
-      $._config.gateway_enabled,
-      $.row('Gateway')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
-      )
-      .addPanel(
-        $.panel('Latency') +
-        $.latencyPanelNativeHistogram($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          utils.nativeClassicHistogramQuantile('0.99', $.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
-        )
-      )
-    )
-    .addRow(
-      $.row('Distributor')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.panelDescription(
-          'Requests / sec',
-          |||
-            The rate of successful, failed and rejected requests to distributor.
-            Rejected requests are requests that distributor fails to handle because of distributor instance limits.
-            When distributor is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
-            When distributor is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
-          |||
-        ) +
-        $.qpsPanelNativeHistogram($.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-            {
-              legendLink: null,
-              expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
-              format: 'time_series',
-              intervalFactor: 2,
-              legendFormat: 'rejected',
-              refId: 'B',
-            },
-          ] + super.targets,
-          aliasColors+: {
-            rejected: '#EAB839',
-          },
-        } else {},
-      )
-      .addPanel(
-        $.panel('Latency') +
-        $.latencyPanelNativeHistogram($.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector)
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
-        )
-      )
-    )
-    .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
-    .addRow(
-      $.row('Ingester')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.panelDescription(
-          'Requests / sec',
-          |||
-            The rate of successful, failed and rejected requests to ingester.
-            Rejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests, ingester-max-inflight-push-requests-bytes, ingester-max-ingestion-rate).
-            When ingester is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
-            When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
-          |||
-        ) +
-        $.qpsPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester)) +
-        if $._config.show_rejected_requests_on_writes_dashboard then {
-          targets: [
-            {
-              legendLink: null,
-              expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
-              format: 'time_series',
-              intervalFactor: 2,
-              legendFormat: 'rejected',
-              refId: 'B',
-            },
-          ] + super.targets,
-          aliasColors+: {
-            rejected: '#EAB839',
-          },
-        } else {},
-      )
-      .addPanel(
-        $.panel('Latency') +
-        $.latencyPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label]), ''
-        )
-      )
-    )
-    .addRowIf(
-      $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
-      $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
-    )
-    .addRowIf(
-      $._config.autoscaling.distributor.enabled,
-      $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
-    )
-    .addRow(
-      $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
-    )
-    .addRow(
-      $.kvStoreRow('Distributor - key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
-    )
-    .addRow(
-      $.kvStoreRow('Ingester - key-value store for the ingesters ring', 'ingester', 'ingester-.*')
-    )
-    .addRow(
-      $.row('Ingester - shipper')
-      .addPanel(
-        $.panel('Uploaded blocks / sec') +
-        $.successFailurePanel(
-          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
-          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
-        ) +
-        $.panelDescription(
-          'Uploaded blocks / sec',
-          |||
-            The rate of blocks being uploaded from the ingesters
-            to object storage.
-          |||
-        ) +
-        $.stack,
-      )
-      .addPanel(
-        $.panel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
-        $.panelDescription(
-          'Upload latency',
-          |||
-            The average, median (50th percentile), and 99th percentile time
-            the ingesters take to upload blocks to object storage.
-          |||
-        ),
-      )
-    )
+    // .addRowIf(
+    //   $._config.gateway_enabled,
+    //   $.row('Gateway')
+    //   .addPanel(
+    //     $.panel('Requests / sec') +
+    //     $.qpsPanelNativeHistogram($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
+    //   )
+    //   .addPanel(
+    //     $.panel('Latency') +
+    //     $.latencyPanelNativeHistogram($.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
+    //   )
+    //   .addPanel(
+    //     $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+    //     $.hiddenLegendQueryPanel(
+    //       utils.nativeClassicHistogramQuantile('0.99', $.queries.gateway.writeRequestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
+    //     )
+    //   )
+    // )
+    // .addRow(
+    //   $.row('Distributor')
+    //   .addPanel(
+    //     $.panel('Requests / sec') +
+    //     $.panelDescription(
+    //       'Requests / sec',
+    //       |||
+    //         The rate of successful, failed and rejected requests to distributor.
+    //         Rejected requests are requests that distributor fails to handle because of distributor instance limits.
+    //         When distributor is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
+    //         When distributor is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
+    //       |||
+    //     ) +
+    //     $.qpsPanelNativeHistogram($.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector) +
+    //     if $._config.show_rejected_requests_on_writes_dashboard then {
+    //       targets: [
+    //         {
+    //           legendLink: null,
+    //           expr: 'sum (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.distributor)],
+    //           format: 'time_series',
+    //           intervalFactor: 2,
+    //           legendFormat: 'rejected',
+    //           refId: 'B',
+    //         },
+    //       ] + super.targets,
+    //       aliasColors+: {
+    //         rejected: '#EAB839',
+    //       },
+    //     } else {},
+    //   )
+    //   .addPanel(
+    //     $.panel('Latency') +
+    //     $.latencyPanelNativeHistogram($.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector)
+    //   )
+    //   .addPanel(
+    //     $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+    //     $.hiddenLegendQueryPanel(
+    //       utils.nativeClassicHistogramQuantile('0.99', $.queries.distributor.writeRequestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector, [$._config.per_instance_label]), ''
+    //     )
+    //   )
+    // )
+    // .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
+    // .addRow(
+    //   $.row('Ingester')
+    //   .addPanel(
+    //     $.panel('Requests / sec') +
+    //     $.panelDescription(
+    //       'Requests / sec',
+    //       |||
+    //         The rate of successful, failed and rejected requests to ingester.
+    //         Rejected requests are requests that ingester fails to handle because of ingester instance limits (ingester-max-inflight-push-requests, ingester-max-inflight-push-requests-bytes, ingester-max-ingestion-rate).
+    //         When ingester is configured to use "early" request rejection, then rejected requests are NOT included in other metrics.
+    //         When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
+    //       |||
+    //     ) +
+    //     $.qpsPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester)) +
+    //     if $._config.show_rejected_requests_on_writes_dashboard then {
+    //       targets: [
+    //         {
+    //           legendLink: null,
+    //           expr: 'sum (rate(cortex_ingester_instance_rejected_requests_total{%s, reason=~"ingester_max_inflight_push_requests|ingester_max_ingestion_rate"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+    //           format: 'time_series',
+    //           intervalFactor: 2,
+    //           legendFormat: 'rejected',
+    //           refId: 'B',
+    //         },
+    //       ] + super.targets,
+    //       aliasColors+: {
+    //         rejected: '#EAB839',
+    //       },
+    //     } else {},
+    //   )
+    //   .addPanel(
+    //     $.panel('Latency') +
+    //     $.latencyPanelNativeHistogram('cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester))
+    //   )
+    //   .addPanel(
+    //     $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+    //     $.hiddenLegendQueryPanel(
+    //       utils.nativeClassicHistogramQuantile('0.99', 'cortex_request_duration_seconds', '%s,route="/cortex.Ingester/Push"' % $.jobMatcher($._config.job_names.ingester), [$._config.per_instance_label]), ''
+    //     )
+    //   )
+    // )
+    // .addRowIf(
+    //   $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
+    //   $.cpuAndMemoryBasedAutoScalingRow('Gateway'),
+    // )
+    // .addRowIf(
+    //   $._config.autoscaling.distributor.enabled,
+    //   $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
+    // )
+    // .addRow(
+    //   $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
+    // )
+    // .addRow(
+    //   $.kvStoreRow('Distributor - key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
+    // )
+    // .addRow(
+    //   $.kvStoreRow('Ingester - key-value store for the ingesters ring', 'ingester', 'ingester-.*')
+    // )
+    // .addRow(
+    //   $.row('Ingester - shipper')
+    //   .addPanel(
+    //     $.panel('Uploaded blocks / sec') +
+    //     $.successFailurePanel(
+    //       'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+    //       'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+    //     ) +
+    //     $.panelDescription(
+    //       'Uploaded blocks / sec',
+    //       |||
+    //         The rate of blocks being uploaded from the ingesters
+    //         to object storage.
+    //       |||
+    //     ) +
+    //     $.stack,
+    //   )
+    //   .addPanel(
+    //     $.panel('Upload latency') +
+    //     $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+    //     $.panelDescription(
+    //       'Upload latency',
+    //       |||
+    //         The average, median (50th percentile), and 99th percentile time
+    //         the ingesters take to upload blocks to object storage.
+    //       |||
+    //     ),
+    //   )
+    // )
     .addRow(
       $.row('Ingester - TSDB head')
       .addPanel(
