@@ -56,7 +56,7 @@ func (job *Job) Key() string {
 	return job.key
 }
 
-// AppendMeta the block with the given meta to the job.
+// AppendMeta appends the block with the given meta to the job.
 func (job *Job) AppendMeta(meta *block.Meta) error {
 	if !labels.Equal(job.labels, labels.FromMap(meta.Thanos.Labels)) {
 		return errors.New("block and group labels do not match")
