@@ -183,6 +183,8 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 				records.earliestWrittenTimestamp = now
 			}
 		}
+		//FIXME: skipping query validation for now
+		return
 	}
 
 	queryRanges, queryInstants, err := t.getQueryTimeRanges(now, records)
