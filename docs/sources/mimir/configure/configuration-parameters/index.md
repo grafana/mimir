@@ -3969,12 +3969,21 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.compaction-concurrency
 [compaction_concurrency: <int> | default = 1]
 
-# How long the compactor waits before compacting first-level blocks that are
-# uploaded by the ingesters. This configuration option allows for the reduction
-# of cases where the compactor begins to compact blocks before all ingesters
-# have uploaded their blocks to the storage.
+# (deprecated) How long the compactor waits before compacting first-level blocks
+# that are uploaded by the ingesters. This configuration option allows for the
+# reduction of cases where the compactor begins to compact blocks before all
+# ingesters have uploaded their blocks to the storage.
+# first-level-compaction-delay should be used instead of this setting.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
+
+# How long the compactor waits before compacting first-level blocks that are
+# uploaded by the ingesters, relative to the current time and the block's maxT.
+# This setting allows for the reduction of cases where the compactor begins to
+# compact blocks before all ingesters have uploaded their blocks to the storage.
+# This setting replaces first-level-compaction-wait-period when enabled.
+# CLI flag: -compactor.first-level-compaction-delay
+[first_level_compaction_delay: <duration> | default = 0s]
 
 # (advanced) How frequently compactor should run blocks cleanup and maintenance,
 # as well as update the bucket index.

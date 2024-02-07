@@ -708,6 +708,7 @@ type BucketCompactor struct {
 	ownJob               ownCompactionJobFunc
 	sortJobs             JobsOrderFunc
 	waitPeriod           time.Duration
+	compactionDelay      time.Duration
 	blockSyncConcurrency int
 	metrics              *BucketCompactorMetrics
 }
@@ -726,6 +727,7 @@ func NewBucketCompactor(
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
 	waitPeriod time.Duration,
+	compactionDelay time.Duration,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
@@ -745,6 +747,7 @@ func NewBucketCompactor(
 		ownJob:               ownJob,
 		sortJobs:             sortJobs,
 		waitPeriod:           waitPeriod,
+		compactionDelay:      compactionDelay,
 		blockSyncConcurrency: blockSyncConcurrency,
 		metrics:              metrics,
 	}, nil
@@ -909,7 +912,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 
 		// Skip jobs for which the wait period hasn't been honored yet.
-		jobs = c.filterJobsByWaitPeriod(ctx, jobs)
+		jobs = c.filterFirstLevelJobs(ctx, jobs)
 
 		// Sort jobs based on the configured ordering algorithm.
 		jobs = c.sortJobs(jobs)
@@ -994,19 +997,31 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 	return jobs, nil
 }
 
-// filterJobsByWaitPeriod filters out jobs for which the configured wait period hasn't been honored yet.
-func (c *BucketCompactor) filterJobsByWaitPeriod(ctx context.Context, jobs []*Job) []*Job {
+// filterFirstLevelJobs filters out jobs for which the configured compaction delay or wait period have not yet elapsed.
+// When a compactionDelay is configured, this setting will be used, else the waitPeriod will be used.
+func (c *BucketCompactor) filterFirstLevelJobs(ctx context.Context, jobs []*Job) []*Job {
 	for i := 0; i < len(jobs); {
-		if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
-			level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
-
-			// Keep the job.
-			i++
-		} else if !elapsed {
-			level.Info(c.logger).Log("msg", "skipping compaction job because blocks in this job were uploaded too recently (within wait period)", "groupKey", jobs[i].Key(), "waitPeriodNotElapsedFor", notElapsedBlock.String())
-			jobs = append(jobs[:i], jobs[i+1:]...)
+		// Filter jobs using compaction delay when enabled
+		if c.compactionDelay > 0 {
+			if jobs[i].MinCompactionLevel() == 1 && jobs[i].MaxTime() > time.Now().Add(-c.compactionDelay).UnixMilli() {
+				level.Info(c.logger).Log("msg", "skipping compaction job because blocks in this job were uploaded too recently (within compaction delay)", "groupKey", jobs[i].Key())
+				jobs = append(jobs[:i], jobs[i+1:]...)
+			} else {
+				i++
+			}
 		} else {
-			i++
+			// Compaction delay is not enabled, filter jobs using wait period
+			if elapsed, notElapsedBlock, err := jobWaitPeriodElapsed(ctx, jobs[i], c.waitPeriod, c.bkt); err != nil {
+				level.Warn(c.logger).Log("msg", "not enforcing compaction wait period because the check if compaction job contains recently uploaded blocks has failed", "groupKey", jobs[i].Key(), "err", err)
+
+				// Keep the job.
+				i++
+			} else if !elapsed {
+				level.Info(c.logger).Log("msg", "skipping compaction job because blocks in this job were uploaded too recently (within wait period)", "groupKey", jobs[i].Key(), "waitPeriodNotElapsedFor", notElapsedBlock.String())
+				jobs = append(jobs[:i], jobs[i+1:]...)
+			} else {
+				i++
+			}
 		}
 	}
 

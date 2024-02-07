@@ -88,7 +88,8 @@ type Config struct {
 	CompactionInterval         time.Duration           `yaml:"compaction_interval" category:"advanced"`
 	CompactionRetries          int                     `yaml:"compaction_retries" category:"advanced"`
 	CompactionConcurrency      int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CompactionWaitPeriod       time.Duration           `yaml:"first_level_compaction_wait_period"`
+	CompactionWaitPeriod       time.Duration           `yaml:"first_level_compaction_wait_period" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.13.
+	FirstLevelCompactionDelay  time.Duration           `yaml:"first_level_compaction_delay"`
 	CleanupInterval            time.Duration           `yaml:"cleanup_interval" category:"advanced"`
 	CleanupConcurrency         int                     `yaml:"cleanup_concurrency" category:"advanced"`
 	DeletionDelay              time.Duration           `yaml:"deletion_delay" category:"advanced"`
@@ -137,7 +138,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", time.Hour, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
-	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.")
+	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. "+
+		"first-level-compaction-delay should be used instead of this setting.")
+	f.DurationVar(&cfg.FirstLevelCompactionDelay, "compactor.first-level-compaction-delay", 0, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters, relative to the current time and the block's maxT. "+
+		"This setting allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. "+
+		"This setting replaces first-level-compaction-wait-period when enabled.",
+	)
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
@@ -773,6 +779,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.compactorCfg.CompactionWaitPeriod,
+		c.compactorCfg.FirstLevelCompactionDelay,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
 	)

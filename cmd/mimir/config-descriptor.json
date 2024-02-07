@@ -8876,10 +8876,21 @@
           "kind": "field",
           "name": "first_level_compaction_wait_period",
           "required": false,
-          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage.",
+          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. first-level-compaction-delay should be used instead of this setting.",
           "fieldValue": null,
           "fieldDefaultValue": 1500000000000,
           "fieldFlag": "compactor.first-level-compaction-wait-period",
+          "fieldType": "duration",
+          "fieldCategory": "deprecated"
+        },
+        {
+          "kind": "field",
+          "name": "first_level_compaction_delay",
+          "required": false,
+          "desc": "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters, relative to the current time and the block's maxT. This setting allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. This setting replaces first-level-compaction-wait-period when enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.first-level-compaction-delay",
           "fieldType": "duration"
         },
         {

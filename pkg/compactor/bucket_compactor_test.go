@@ -120,13 +120,73 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 4, m)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, 0, 4, m)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
 
 			require.NoError(t, err)
 			assert.Len(t, res, testCase.expectedJobs)
+		})
+	}
+}
+
+// Tests bucketCompactor.filterFirstLevelJobs, primarily when a compactionDelay is configured
+func TestBucketCompactor_FilterFirstLevelJobsForCompactionDelay(t *testing.T) {
+	// Blocks with compaction level 1
+	meta1 := &block.Meta{BlockMeta: tsdb.BlockMeta{MaxTime: time.Now().Add(-2 * time.Hour).UnixMilli(), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta2 := &block.Meta{BlockMeta: tsdb.BlockMeta{MaxTime: time.Now().Add(-1 * time.Hour).UnixMilli(), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+
+	// Blocks with compaction level 2
+	meta3 := &block.Meta{BlockMeta: tsdb.BlockMeta{MaxTime: time.Now().Add(-2 * time.Hour).UnixMilli(), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
+	meta4 := &block.Meta{BlockMeta: tsdb.BlockMeta{MaxTime: time.Now().Add(-1 * time.Hour).UnixMilli(), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
+
+	tests := map[string]struct {
+		compactionDelay time.Duration
+		metas           []*block.Meta
+		expectedJobs    int
+	}{
+		"compaction delay disabled": {
+			compactionDelay: 0,
+			metas:           []*block.Meta{meta1, meta2, meta3, meta4},
+			expectedJobs:    1,
+		},
+		"compaction level > 1": {
+			compactionDelay: 90 * time.Minute,
+			metas:           []*block.Meta{meta3, meta4},
+			expectedJobs:    1,
+		},
+		"compaction delay elapsed": {
+			compactionDelay: 90 * time.Minute,
+			metas:           []*block.Meta{meta1},
+			expectedJobs:    1,
+		},
+		"compaction delay not elapsed for level 1": {
+			compactionDelay: 90 * time.Minute,
+			metas:           []*block.Meta{meta1, meta2},
+			expectedJobs:    0,
+		},
+		"compaction delay not elapsed for level 2": {
+			compactionDelay: 90 * time.Minute,
+			metas:           []*block.Meta{meta3, meta4},
+			expectedJobs:    1,
+		},
+	}
+
+	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			job := NewJob("user-1", "group-1", labels.EmptyLabels(), 0, true, 2, "shard-1")
+			for _, m := range testData.metas {
+				require.NoError(t, job.AppendMeta(m))
+			}
+
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, testData.compactionDelay, 4, m)
+			require.NoError(t, err)
+
+			res := bc.filterFirstLevelJobs(context.TODO(), []*Job{job})
+
+			assert.Len(t, res, testData.expectedJobs)
 		})
 	}
 }
@@ -156,7 +216,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 4, metrics)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, 0, 4, metrics)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
