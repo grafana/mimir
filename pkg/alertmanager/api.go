@@ -187,7 +187,7 @@ func (am *MultitenantAlertmanager) DeleteUserConfig(w http.ResponseWriter, r *ht
 
 // Partially copied from: https://github.com/prometheus/alertmanager/blob/8e861c646bf67599a1704fc843c6a94d519ce312/cli/check_config.go#L65-L96
 func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits Limits, user string) error {
-	validateMatchersInConfigDesc(logger, compat.RegisteredMetrics, "api", cfg)
+	validateMatchersInConfigDesc(logger, compat.NewMetrics(nil), "api", cfg)
 
 	// We don't have a valid use case for empty configurations. If a tenant does not have a
 	// configuration set and issue a request to the Alertmanager, we'll a) upload an empty
