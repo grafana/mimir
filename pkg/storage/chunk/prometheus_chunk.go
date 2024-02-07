@@ -197,6 +197,9 @@ func (p *prometheusFloatHistogramChunk) Encoding() Encoding {
 type prometheusChunkIterator struct {
 	c  chunkenc.Chunk // we need chunk, because FindAtOrAfter needs to start with fresh iterator.
 	it chunkenc.Iterator
+
+	cachedHistograms     []*histogram.Histogram
+	cachedFloatHistogram []*histogram.FloatHistogram
 }
 
 func (p *prometheusChunkIterator) Scan() chunkenc.ValueType {
@@ -230,10 +233,20 @@ func (p *prometheusChunkIterator) Timestamp() int64 {
 	return p.it.AtT()
 }
 
+func resize[T any](items []T, n int) []T {
+	if cap(items) < n {
+		return make([]T, n)
+	}
+	return items[:n]
+}
+
 func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) Batch {
-	var batch Batch
+	var (
+		batch    Batch
+		populate func(j int)
+		ts       int64
+	)
 	batch.ValueType = valueType
-	var populate func(j int)
 	switch valueType {
 	case chunkenc.ValNone:
 		// Here in case we will introduce a linter that checks that all possible types are covered
@@ -245,16 +258,18 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 			batch.Values[j] = v
 		}
 	case chunkenc.ValHistogram:
+		p.cachedHistograms = resize(p.cachedHistograms, size)
 		populate = func(j int) {
-			t, h := p.it.AtHistogram(nil)
-			batch.Timestamps[j] = t
-			batch.PointerValues[j] = unsafe.Pointer(h)
+			ts, p.cachedHistograms[j] = p.it.AtHistogram(p.cachedHistograms[j])
+			batch.Timestamps[j] = ts
+			batch.PointerValues[j] = unsafe.Pointer(p.cachedHistograms[j])
 		}
 	case chunkenc.ValFloatHistogram:
+		p.cachedFloatHistogram = resize(p.cachedFloatHistogram, size)
 		populate = func(j int) {
-			t, fh := p.it.AtFloatHistogram(nil)
-			batch.Timestamps[j] = t
-			batch.PointerValues[j] = unsafe.Pointer(fh)
+			ts, p.cachedFloatHistogram[j] = p.it.AtFloatHistogram(p.cachedFloatHistogram[j])
+			batch.Timestamps[j] = ts
+			batch.PointerValues[j] = unsafe.Pointer(p.cachedFloatHistogram[j])
 		}
 	default:
 		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))

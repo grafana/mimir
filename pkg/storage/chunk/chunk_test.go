@@ -87,7 +87,7 @@ func TestChunk(t *testing.T) {
 	}
 }
 
-func mkChunk(t *testing.T, encoding Encoding, samples int) EncodedChunk {
+func mkChunk(t require.TestingT, encoding Encoding, samples int) EncodedChunk {
 	chunk, err := NewForEncoding(encoding)
 	require.NoError(t, err)
 
@@ -307,7 +307,7 @@ func testChunkSeekForward(t *testing.T, encoding Encoding, samples int) {
 	require.NoError(t, iter.Err())
 }
 
-func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
+func testChunkBatch(t require.TestingT, encoding Encoding, samples int) {
 	chunk := mkChunk(t, encoding, samples)
 
 	// Check all the samples are in there.
@@ -347,4 +347,18 @@ func testChunkBatch(t *testing.T, encoding Encoding, samples int) {
 	}
 	require.Equal(t, chunkenc.ValNone, iter.Scan())
 	require.NoError(t, iter.Err())
+}
+
+func BenchmarkPrometheusChunkIterator_Batch(b *testing.B) {
+	const maxSamples = 240 // Twice as big as current TSDB
+
+	for _, enc := range []Encoding{PrometheusHistogramChunk, PrometheusFloatHistogramChunk} {
+		b.Run(fmt.Sprintf("encoding-%s", enc), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for samples := maxSamples / 10; samples < maxSamples; samples += maxSamples / 10 {
+					testChunkBatch(b, enc, samples)
+				}
+			}
+		})
+	}
 }
