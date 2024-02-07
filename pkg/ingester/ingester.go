@@ -87,8 +87,6 @@ const (
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
-	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
-
 	// Jitter applied to the idle timeout to prevent compaction in all ingesters concurrently.
 	compactionIdleTimeoutJitter = 0.25
 
@@ -570,10 +568,6 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
-	// It's important to wait until shipper is finished,
-	// because the blocks transfer should start only once it's guaranteed
-	// there's no shipping on-going.
-
 	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
@@ -2339,16 +2333,6 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 		return db, nil
 	}
 
-	// We're ready to create the TSDB, however we must be sure that the ingester
-	// is in the ACTIVE state, otherwise it may conflict with the transfer in/out.
-	// The TSDB is created when the first series is pushed and this shouldn't happen
-	// to a non-ACTIVE ingester, however we want to protect from any bug, cause we
-	// may have data loss or TSDB WAL corruption if the TSDB is created before/during
-	// a transfer in occurs.
-	if ingesterState := i.lifecycler.GetState(); !force && ingesterState != ring.ACTIVE {
-		return nil, fmt.Errorf(errTSDBCreateIncompatibleState, ingesterState)
-	}
-
 	gl := i.getInstanceLimits()
 	if gl != nil && gl.MaxInMemoryTenants > 0 {
 		if users := int64(len(i.tsdbs)); users >= gl.MaxInMemoryTenants {
@@ -2739,17 +2723,6 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 
 // shipBlocks runs shipping for all users.
 func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants) {
-	// Do not ship blocks if the ingester is PENDING or JOINING. It's
-	// particularly important for the JOINING state because there could
-	// be a blocks transfer in progress (from another ingester) and if we
-	// run the shipper in such state we could end up with race conditions.
-	if i.lifecycler != nil {
-		if ingesterState := i.lifecycler.GetState(); ingesterState == ring.PENDING || ingesterState == ring.JOINING {
-			level.Info(i.logger).Log("msg", "TSDB blocks shipping has been skipped because of the current ingester state", "state", ingesterState)
-			return
-		}
-	}
-
 	// Number of concurrent workers is limited in order to avoid to concurrently sync a lot
 	// of tenants in a large cluster.
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.ShipConcurrency, func(ctx context.Context, userID string) error {
@@ -2857,15 +2830,6 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
-	// Don't compact TSDB blocks while JOINING as there may be ongoing blocks transfers.
-	// Compaction loop is not running in LEAVING state, so if we get here in LEAVING state, we're flushing blocks.
-	if i.lifecycler != nil {
-		if ingesterState := i.lifecycler.GetState(); ingesterState == ring.JOINING {
-			level.Info(i.logger).Log("msg", "TSDB blocks compaction has been skipped because of the current ingester state", "state", ingesterState)
-			return
-		}
-	}
-
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(ctx context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil
@@ -3334,7 +3298,8 @@ func (i *Ingester) unsetPrepareShutdown() {
 //   - Flush all the chunks.
 func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	originalFlush := i.lifecycler.FlushOnShutdown()
-	// We want to flush the chunks if transfer fails irrespective of original flag.
+
+	// We want to flush the blocks.
 	i.lifecycler.SetFlushOnShutdown(true)
 
 	// In the case of an HTTP shutdown, we want to unregister no matter what.

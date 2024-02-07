@@ -3200,17 +3200,23 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
-	// Configure the lifecycler to not immediately join the ring, to make sure
-	// the ingester will NOT be in the ACTIVE state when we'll push samples.
+func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *testing.T) {
+	// Configure the lifecycler to not immediately leave the ring, to make sure
+	// the ingester service will stay in Stopping state for longer.
 	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.JoinAfter = 10 * time.Second
+	cfg.IngesterRing.FinalSleep = 5 * time.Second
 
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
+
+	// Start the ingester and then stop it.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-	require.Equal(t, ring.PENDING, i.lifecycler.GetState())
+	i.StopAsync()
+
+	// Wait until the ingester service switches to Stopping state.
+	require.Eventually(t, func() bool {
+		return i.State() == services.Stopping
+	}, time.Second, 10*time.Millisecond)
 
 	// Mock request
 	userID := "test"
@@ -3218,73 +3224,15 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
 
 	res, err := i.Push(ctx, req)
-	assert.EqualError(t, err, wrapOrAnnotateWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
+	assert.EqualError(t, err, newUnavailableError(services.Stopping).Error())
 	assert.Nil(t, res)
 
 	// Check if the TSDB has been created
 	_, tsdbCreated := i.tsdbs[userID]
 	assert.False(t, tsdbCreated)
-}
 
-func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNotActive(t *testing.T) {
-	tests := map[string]struct {
-		state       ring.InstanceState
-		expectedErr error
-	}{
-		"not allow to create TSDB if in PENDING state": {
-			state:       ring.PENDING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.PENDING),
-		},
-		"not allow to create TSDB if in JOINING state": {
-			state:       ring.JOINING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.JOINING),
-		},
-		"not allow to create TSDB if in LEAVING state": {
-			state:       ring.LEAVING,
-			expectedErr: fmt.Errorf(errTSDBCreateIncompatibleState, ring.LEAVING),
-		},
-		"allow to create TSDB if in ACTIVE state": {
-			state:       ring.ACTIVE,
-			expectedErr: nil,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			cfg := defaultIngesterTestConfig(t)
-			cfg.IngesterRing.JoinAfter = 60 * time.Second
-
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-			// Switch ingester state to the expected one in the test
-			if i.lifecycler.GetState() != testData.state {
-				var stateChain []ring.InstanceState
-
-				if testData.state == ring.LEAVING {
-					stateChain = []ring.InstanceState{ring.ACTIVE, ring.LEAVING}
-				} else {
-					stateChain = []ring.InstanceState{testData.state}
-				}
-
-				for _, s := range stateChain {
-					err = i.lifecycler.ChangeState(context.Background(), s)
-					require.NoError(t, err)
-				}
-			}
-
-			db, err := i.getOrCreateTSDB("test", false)
-			assert.Equal(t, testData.expectedErr, err)
-
-			if testData.expectedErr != nil {
-				assert.Nil(t, db)
-			} else {
-				assert.NotNil(t, db)
-			}
-		})
-	}
+	// Wait until terminated.
+	require.NoError(t, i.AwaitTerminated(context.Background()))
 }
 
 func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
