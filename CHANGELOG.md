@@ -172,6 +172,7 @@
 * [CHANGE] copyblocks: The flags for copyblocks have been changed to align more closely with other tools. #6607
 * [CHANGE] undelete-blocks: undelete-blocks-gcs has been removed and replaced with undelete-blocks, which supports recovering deleted blocks in versioned buckets from ABS, GCS, and S3-compatible object storage. #6607
 * [FEATURE] copyprefix: Add tool to copy objects between prefixes. Supports ABS, GCS, and S3-compatible object storage. #6607
+* [ENHANCEMENT] add s3 options to configure multipart: `<prefix>.disable-multipart` and `<prefix>.part-size`. #7350
 
 ## 2.11.0
 
