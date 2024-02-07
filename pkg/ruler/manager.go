@@ -62,7 +62,7 @@ type DefaultMultiTenantManager struct {
 
 func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cache.AddressProvider) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
-	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics)
+	ncfg, err := buildNotifierConfig(&cfg, dnsResolver, refreshMetrics, cfg.ExternalLabels)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(user string, groups rules
 	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
 	r.configUpdatesTotal.WithLabelValues(user).Inc()
 
-	err = manager.Update(r.cfg.EvaluationInterval, files, labels.EmptyLabels(), r.cfg.ExternalURL.String(), nil)
+	err = manager.Update(r.cfg.EvaluationInterval, files, r.cfg.ExternalLabels, r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)

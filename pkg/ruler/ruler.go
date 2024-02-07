@@ -110,6 +110,10 @@ type Config struct {
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
 
+	// Add relabeling config before sending the alert to the alertmanager
+	AlertRelabelConfigs []*relabel.Config   `yaml:"alert_relabel_configs,omitempty"`
+	ExternalLabels	labels.Labels  `yaml:"external_labels,omitempty" doc:"description=Labels to add to all alerts."`
+
 	// Max time to tolerate outage for restoring "for" state of alert.
 	OutageTolerance time.Duration `yaml:"for_outage_tolerance" category:"advanced"`
 	// Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period.
@@ -148,6 +152,12 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 
 	if err := cfg.QueryFrontend.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
+	}
+
+	for _, relabel := range cfg.AlertRelabelConfigs {
+		if err := relabel.Validate(); err != nil {
+			return errors.Wrap(err, "invalid alert_relabel_configs")
+		}
 	}
 
 	return nil

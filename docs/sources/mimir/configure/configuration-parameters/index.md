@@ -1668,6 +1668,13 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.alertmanager-url
 [alertmanager_url: <string> | default = ""]
 
+# alert relabeling configuration
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/#alert_relabel_configs
+[alert_relabel_configs: <relabel_config...> | default = ]
+
+# Labels to add to all alerts.
+[external_labels: <list of Labels>]
+
 # (advanced) How long to wait between refreshing DNS resolutions of Alertmanager
 # hosts.
 # CLI flag: -ruler.alertmanager-refresh-interval

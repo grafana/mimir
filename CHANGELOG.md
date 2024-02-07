@@ -1,6 +1,8 @@
 # Changelog
 
 ## main / unreleased
+* [CHANGE] Ruler: add the possibility to set alert_relabel_configs to relabel labels before sending to the alertmanager.
+* [CHANGE] Ruler: add the possibility to add exteranl label labels before sending to the alertmanager.
 
 ### Grafana Mimir
 

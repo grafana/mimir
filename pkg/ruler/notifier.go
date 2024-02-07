@@ -100,7 +100,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rmi discovery.RefreshMetricsManager, externalLabels labels.Labels) (*config.Config, error) {
 	if rulerConfig.AlertmanagerURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil
@@ -130,7 +130,11 @@ func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rm
 	}
 
 	promConfig := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ExternalLabels: externalLabels,
+		},
 		AlertingConfig: config.AlertingConfig{
+			AlertRelabelConfigs: rulerConfig.AlertRelabelConfigs,
 			AlertmanagerConfigs: amConfigs,
 		},
 	}
