@@ -114,7 +114,7 @@ func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	if err != nil {
 		return err
 	}
-	compat.InitFromFlags(l, compat.RegisteredMetrics, flags)
+	compat.InitFromFlags(l, compat.NewMetrics(nil), flags)
 
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
