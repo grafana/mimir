@@ -10,10 +10,12 @@ import (
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -97,9 +99,21 @@ func isFailure(err error) bool {
 		return false
 	}
 
-	// We only consider timeouts or the ingester being unavailable (returned when hitting
-	// per-instance limits) to be errors worthy of tripping the circuit breaker since these
+	// We only consider timeouts or ingester hitting a per-instance limit
+	// to be errors worthy of tripping the circuit breaker since these
 	// are specific to a particular ingester, not a user or request.
-	code := status.Code(err)
-	return code == codes.Unavailable || code == codes.DeadlineExceeded
+	if stat, ok := grpcutil.ErrorToStatus(err); ok {
+		if stat.Code() == codes.DeadlineExceeded {
+			return true
+		}
+
+		details := stat.Details()
+		if len(details) != 1 {
+			return false
+		}
+		if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+			return errDetails.GetCause() == mimirpb.INSTANCE_LIMIT
+		}
+	}
+	return false
 }
