@@ -146,8 +146,6 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 
 func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
-	level.Info(t.logger).Log("msg", "In RunInner")
-
 	if records.earliestWrittenTimestamp.IsZero() || now.Before(records.earliestWrittenTimestamp) {
 		records.earliestWrittenTimestamp = now
 	}
@@ -163,15 +161,13 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
 			errs.Add(err)
 			break
-		} else {
-			level.Info(t.logger).Log("msg", "Successfully wrote in-order series", "ts", timestamp)
 		}
 	}
 
 	// If OOO is enabled, write an OOO sample now - oooWriteInterval
 	if t.cfg.OOOSamplesEnabled {
 		startingTs := now.Add(-writeInterval + oooWriteInterval)
-		for ts := startingTs; !ts.After(now); ts = ts.Add(oooWriteInterval) {
+		for ts := startingTs; ts.Before(now); ts = ts.Add(oooWriteInterval) {
 			ts = alignTimestampToInterval(ts, oooWriteInterval)
 			if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 				// Context has been canceled, so we should interrupt.
@@ -182,20 +178,11 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			series := generateSeries(metricName, ts, t.cfg.NumSeries)
 			if err := t.writeOOOSamples(ctx, typeLabel, ts, series, records); err != nil {
 				errs.Add(err)
-			} else {
-				level.Info(t.logger).Log("msg", "Successfully wrote OOO series", "ts", ts)
 			}
 			if records.earliestWrittenTimestamp.IsZero() || now.Before(records.earliestWrittenTimestamp) {
 				records.earliestWrittenTimestamp = now
 			}
 		}
-		//timestamp := now.Add(-oooWriteInterval)
-		//timestamp = alignTimestampToInterval(timestamp, oooWriteInterval)
-		//if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
-		//	// Context has been canceled, so we should interrupt.
-		//	errs.Add(err)
-		//	return
-		//}
 	}
 
 	queryRanges, queryInstants, err := t.getQueryTimeRanges(now, records)
