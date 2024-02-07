@@ -324,7 +324,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles, withCustomFunctions(userID))
+	tmpl, err := template.FromGlobs(templateFiles, WithCustomFunctions(userID))
 	if err != nil {
 		return err
 	}

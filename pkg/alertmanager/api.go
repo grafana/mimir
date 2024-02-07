@@ -263,7 +263,7 @@ func validateUserConfig(logger log.Logger, cfg alertspb.AlertConfigDesc, limits 
 		templateFiles[i] = filepath.Join(userTempDir, t)
 	}
 
-	_, err = template.FromGlobs(templateFiles, withCustomFunctions(user))
+	_, err = template.FromGlobs(templateFiles, WithCustomFunctions(user))
 	if err != nil {
 		return err
 	}
