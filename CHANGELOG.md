@@ -166,6 +166,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
+* [BUGFIX] Fixed typo on single zone->zone aware replication Helm page. #7327
 
 ### Tools
 
