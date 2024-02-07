@@ -106,7 +106,7 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 	}
 
 	// First of all we have to group blocks using the default grouping, but not
-	// considering the shard ID in the external labels (because will be checked later).
+	// considering the shard ID in the external labels (because it will be checked later).
 	mainGroups := map[string][]*block.Meta{}
 	for _, b := range blocks {
 		key := defaultGroupKeyWithoutShardID(b.Thanos)
@@ -174,7 +174,7 @@ func planCompaction(userID string, blocks []*block.Meta, ranges []int64, shardCo
 	return jobs
 }
 
-// planCompactionByRange analyze the input blocks and returns a list of compaction jobs to
+// planCompactionByRange analyzes the input blocks and returns a list of compaction jobs to
 // compact blocks for the given compaction time range. Input blocks MUST be sorted by MinTime.
 func planCompactionByRange(userID string, blocks []*block.Meta, tr int64, isSmallestRange bool, shardCount, splitGroups uint32) (jobs []*job) {
 	groups := groupBlocksByRange(blocks, tr)

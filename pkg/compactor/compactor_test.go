@@ -1663,7 +1663,7 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
-		owned, err := c.shardingStrategy.compactorOwnUser(userID)
+		owned, err := c.shardingStrategy.compactorOwnsUser(userID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2159,9 +2159,9 @@ func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, 
 	for _, c := range comps {
 		var f func(string) (bool, error)
 		if reason == ownUserReasonCompactor {
-			f = c.shardingStrategy.compactorOwnUser
+			f = c.shardingStrategy.compactorOwnsUser
 		} else {
-			f = c.shardingStrategy.blocksCleanerOwnUser
+			f = c.shardingStrategy.blocksCleanerOwnsUser
 		}
 		ok, err := f(user)
 		require.NoError(t, err)

@@ -938,7 +938,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.cleanup-concurrency int
     	Max number of tenants for which blocks cleanup and maintenance should run concurrently. (default 20)
   -compactor.cleanup-interval duration
-    	How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index. (default 15m0s)
+    	How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index. (default 15m0s)
   -compactor.compaction-concurrency int
     	Max number of concurrent compactions running. (default 1)
   -compactor.compaction-interval duration
@@ -952,17 +952,17 @@ Usage of ./cmd/mimir/mimir:
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
-    	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
+    	Time before a block marked for deletion is deleted from bucket. If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures. (default 12h0m0s)
   -compactor.disabled-tenants comma-separated-list-of-strings
-    	Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
+    	Comma separated list of tenants that cannot be compacted by the compactor. If specified, and the compactor would normally pick a given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.
   -compactor.enabled-tenants comma-separated-list-of-strings
-    	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.
+    	Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by the compactor, otherwise all tenants can be compacted. Subject to sharding.
   -compactor.first-level-compaction-wait-period duration
     	How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. (default 25m0s)
   -compactor.max-block-upload-validation-concurrency int
     	Max number of uploaded blocks that can be validated concurrently. 0 = no limit. (default 1)
   -compactor.max-closing-blocks-concurrency int
-    	Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index. (default 1)
+    	Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index. (default 1)
   -compactor.max-compaction-time duration
     	Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled. (default 1h0m0s)
   -compactor.max-opening-blocks-concurrency int
@@ -1052,7 +1052,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.symbols-flushers-concurrency int
     	Number of symbols flushers used when doing split compaction. (default 1)
   -compactor.tenant-cleanup-delay duration
-    	For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
+    	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
