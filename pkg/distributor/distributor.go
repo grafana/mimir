@@ -687,6 +687,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
 
@@ -813,6 +814,44 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			for _, labelName := range d.limits.DropLabels(userID) {
 				req.Timeseries[tsIdx].RemoveLabel(labelName)
 			}
+
+			if len(ts.Labels) == 0 {
+				removeTsIndexes = append(removeTsIndexes, tsIdx)
+				continue
+			}
+		}
+
+		if len(removeTsIndexes) > 0 {
+			for _, removeTsIndex := range removeTsIndexes {
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
+			}
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
+
+		cleanupInDefer = false
+		return next(ctx, pushReq)
+	}
+}
+
+// prePushSortAndFilterMiddleware is responsible for sorting labels and
+// filtering empty values. This is a protection mechanism for ingesters.
+func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}()
+
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return err
+		}
+
+		var removeTsIndexes []int
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
 
 			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
 			req.Timeseries[tsIdx].RemoveEmptyLabelValues()
