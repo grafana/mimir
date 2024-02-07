@@ -140,7 +140,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CompactionWaitPeriod, "compactor.first-level-compaction-wait-period", 25*time.Minute, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters. This configuration option allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. "+
 		"first-level-compaction-delay should be used instead of this setting.")
-	f.DurationVar(&cfg.FirstLevelCompactionDelay, "compactor.first-level-compaction-delay", 0, "How long the compactor waits before compacting first-level blocks that are uploaded by the ingesters, relative to the current time and the block's maxT. "+
+	f.DurationVar(&cfg.FirstLevelCompactionDelay, "compactor.first-level-compaction-delay", 0, "How long the compactor delays before compacting first-level blocks that are uploaded by the ingesters, comparing the current time to the block's maxT. "+
 		"This setting allows for the reduction of cases where the compactor begins to compact blocks before all ingesters have uploaded their blocks to the storage. "+
 		"This setting replaces first-level-compaction-wait-period when enabled.",
 	)

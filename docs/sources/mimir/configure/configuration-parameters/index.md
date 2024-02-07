@@ -3977,8 +3977,8 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# How long the compactor waits before compacting first-level blocks that are
-# uploaded by the ingesters, relative to the current time and the block's maxT.
+# How long the compactor delays before compacting first-level blocks that are
+# uploaded by the ingesters, comparing the current time to the block's maxT.
 # This setting allows for the reduction of cases where the compactor begins to
 # compact blocks before all ingesters have uploaded their blocks to the storage.
 # This setting replaces first-level-compaction-wait-period when enabled.
