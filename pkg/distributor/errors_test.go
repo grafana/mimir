@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -18,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -329,6 +331,16 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
+		"a client.ErrCircuitBreakerOpen error gets translated into an Unavailable error without details": {
+			err:              client.ErrCircuitBreakerOpen{},
+			expectedGRPCCode: codes.Unavailable,
+			expectedErrorMsg: circuitbreaker.ErrOpen.Error(),
+		},
+		"a wrapped client.ErrCircuitBreakerOpen error gets translated into an Unavailable error without details": {
+			err:              errors.Wrap(client.ErrCircuitBreakerOpen{}, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+			expectedGRPCCode: codes.Unavailable,
+			expectedErrorMsg: fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
+		},
 	}
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -362,6 +374,15 @@ func TestWrapIngesterPushError(t *testing.T) {
 	t.Run("no error gives no error", func(t *testing.T) {
 		err := wrapIngesterPushError(nil, ingesterID)
 		require.NoError(t, err)
+	})
+
+	// Ensure that client.ErrCircuitBreakerOpen error gets correctly wrapped.
+	t.Run("an ErrCircuitBreakerOpen error gives an ErrCircuitBreakerOpen error", func(t *testing.T) {
+		ingesterPushErr := client.ErrCircuitBreakerOpen{}
+		err := wrapIngesterPushError(ingesterPushErr, ingesterID)
+		require.Error(t, err)
+		require.ErrorIs(t, err, circuitbreaker.ErrOpen)
+		require.ErrorAs(t, err, &client.ErrCircuitBreakerOpen{})
 	})
 
 	// Ensure that the errors created by httpgrpc get translated into

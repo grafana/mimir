@@ -88,12 +88,13 @@ func TestNewCircuitBreaker(t *testing.T) {
 	conn := grpc.ClientConn{}
 	reg := prometheus.NewPedanticRegistry()
 	inst := ring.InstanceDesc{Id: "test", Addr: "localhost:8080"}
+	coolDown := 10 * time.Second
 	breaker := NewCircuitBreaker(inst, CircuitBreakerConfig{
 		Enabled:                   true,
 		FailureThreshold:          1,
 		FailureExecutionThreshold: 1,
 		ThresholdingPeriod:        60 * time.Second,
-		CooldownPeriod:            60 * time.Second,
+		CooldownPeriod:            coolDown,
 	}, NewMetrics(reg), test.NewTestingLogger(t))
 
 	// Initial request that should succeed because the circuit breaker is "closed"
@@ -109,6 +110,15 @@ func TestNewCircuitBreaker(t *testing.T) {
 	// Subsequent requests should fail with this specific error once "open"
 	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
 	require.ErrorIs(t, err, circuitbreaker.ErrOpen)
+	var errCBOpen1 ErrCircuitBreakerOpen
+	require.ErrorAs(t, err, &errCBOpen1)
+	require.Less(t, errCBOpen1.RemainingDelay(), coolDown)
+
+	err = breaker(context.Background(), "/cortex.Ingester/Push", "", "", &conn, success)
+	require.ErrorIs(t, err, circuitbreaker.ErrOpen)
+	var errCBOpen2 ErrCircuitBreakerOpen
+	require.ErrorAs(t, err, &errCBOpen2)
+	require.Less(t, errCBOpen2.RemainingDelay(), errCBOpen1.RemainingDelay())
 
 	// Non-ingester methods shouldn't be short-circuited
 	err = breaker(context.Background(), "Different.Method", "", "", &conn, success)
@@ -118,7 +128,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 # HELP cortex_ingester_client_circuit_breaker_results_total Results of executing requests via the circuit breaker
 # TYPE cortex_ingester_client_circuit_breaker_results_total counter
-cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="circuit_breaker_open"} 1
+cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="circuit_breaker_open"} 2
 cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="error"} 1
 cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="success"} 1
 `), "cortex_ingester_client_circuit_breaker_results_total"))
