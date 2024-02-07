@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -283,4 +284,251 @@ overrides:
 			}
 		}
 	}
+}
+
+type RampingMetricsGenerator struct {
+	wg     sync.WaitGroup
+	client *e2emimir.Client
+}
+
+func (g *RampingMetricsGenerator) Start(startSeries, maxSeries, rampSeries, periodSec int) {
+	g.wg.Add(1)
+	go g.run(startSeries, maxSeries, rampSeries, periodSec)
+}
+
+func (g *RampingMetricsGenerator) Wait() {
+	g.wg.Wait()
+}
+
+func (g *RampingMetricsGenerator) run(startSeries, maxSeries, rampSeries, periodSec int) {
+	defer g.wg.Done()
+
+	ticker := time.NewTicker(time.Duration(periodSec) * time.Second)
+	defer ticker.Stop()
+
+	iteration := 0
+	numSeries := startSeries
+	series := make([]prompb.TimeSeries, 0, maxSeries)
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			series = series[:0]
+			numSeries = startSeries + (iteration * rampSeries)
+			for i := 0; i < numSeries; i++ {
+				s, _, _ := generateFloatSeries(fmt.Sprintf("test_series_%d", i), now)
+				series = append(series, s[0])
+			}
+			g.client.Push(series)
+			iteration++
+
+			if numSeries >= maxSeries {
+				return
+			}
+		}
+	}
+}
+
+func TestIngesterOwnedSeriesLimitsAddShards(t *testing.T) {
+	const (
+		overridesFile     = "overrides.yaml"
+		overridesTemplate = `
+overrides:
+  e2e-user:
+    ingestion_tenant_shard_size: {{.IngestionTenantShardSize}}
+`
+		maxGlobalSeriesPerUser = 10000
+		initialShardCount      = 1
+		finalShardCount        = 2
+	)
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+	)
+	flags["-ingester.ring.replication-factor"] = "1"
+	flags["-ingester.ring.zone-awareness-enabled"] = "true"
+	flags["-ingester.ring.instance-availability-zone"] = "zone-a"
+	flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(initialShardCount)
+	flags["-ingester.max-global-series-per-user"] = strconv.Itoa(maxGlobalSeriesPerUser)
+	flags["-ingester.ring.heartbeat-period"] = "1s"
+	flags["-runtime-config.reload-period"] = "100ms"
+	flags["-runtime-config.file"] = filepath.Join(e2e.ContainerSharedDir, overridesFile)
+	flags["-ingester.track-ingester-owned-series"] = "true"
+	flags["-ingester.use-ingester-owned-series-for-limits"] = "true"
+
+	// Write blank overrides file, so we can check if they are updated later
+	require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(2), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until ingesters have heartbeated the ring after all ingesters were active,
+	// in order to update the number of instances. Since we have no metric, we have to
+	// rely on an ugly sleep.
+	time.Sleep(2 * time.Second)
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+	require.NoError(t, err)
+
+	totalSeries := 9000
+	gen := RampingMetricsGenerator{
+		client: client,
+	}
+	gen.Start(5000, totalSeries, 100, 1)
+
+	// Wait for ingesters to start receiving samples. We don't know which ingester
+	// will get the series initially, so sleep.
+	time.Sleep(2 * time.Second)
+
+	// Verify we're writing samples, but only to one ingester
+	values, err := ingester1.SumMetrics([]string{"cortex_ingester_memory_series"})
+	require.NoError(t, err)
+	memSeries1 := e2e.SumValues(values)
+	values, err = ingester2.SumMetrics([]string{"cortex_ingester_memory_series"})
+	require.NoError(t, err)
+	memSeries2 := e2e.SumValues(values)
+	require.Greater(t, int(memSeries1+memSeries2), 0)
+	require.Equalf(t, memSeries1+memSeries2, max(memSeries1, memSeries2), "ingester 1 series: %d, ingester 2 series: %d", int(memSeries1), int(memSeries2))
+
+	// Populate the overrides we want, then wait long enough for it to be read.
+	overrides := buildConfigFromTemplate(overridesTemplate, struct{ IngestionTenantShardSize int }{IngestionTenantShardSize: finalShardCount})
+	require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte(overrides)))
+	time.Sleep(500 * time.Millisecond)
+
+	// Wait for metrics generator to finish
+	gen.Wait()
+
+	// Wait for owned series service to run and metrics to get updated
+	// Metrics are updated only every 15 seconds :/
+	time.Sleep(20 * time.Second)
+
+	// Check that local limits were correctly updated
+	values, err = ingester1.SumMetrics([]string{"cortex_ingester_local_limits"})
+	require.NoError(t, err)
+	assert.Equal(t, int(e2e.SumValues(values)), maxGlobalSeriesPerUser/finalShardCount)
+	values, err = ingester1.SumMetrics([]string{"cortex_ingester_local_limits"})
+	require.NoError(t, err)
+	assert.Equal(t, int(e2e.SumValues(values)), maxGlobalSeriesPerUser/finalShardCount)
+
+	// Check owned series counts
+	values, err = ingester1.SumMetrics([]string{"cortex_ingester_owned_series"})
+	require.NoError(t, err)
+	ownedSeries1 := e2e.SumValues(values)
+	values, err = ingester2.SumMetrics([]string{"cortex_ingester_owned_series"})
+	require.NoError(t, err)
+	ownedSeries2 := e2e.SumValues(values)
+	require.Equalf(t, int(ownedSeries1+ownedSeries2), totalSeries, "ingester 1 series: %d, ingester 2 series: %d", int(ownedSeries1), int(ownedSeries2))
+
+	// Check discards (metrics should not exist)
+	values, err = ingester1.SumMetrics([]string{"cortex_discarded_samples_total"})
+	assert.Error(t, err, "ingester 1 discards: %d", int(e2e.SumValues(values)))
+	values, err = ingester2.SumMetrics([]string{"cortex_discarded_samples_total"})
+	assert.Error(t, err, "ingester 2 discards: %d", int(e2e.SumValues(values)))
+}
+
+func TestIngesterOwnedSeriesLimitsAddIngester(t *testing.T) {
+	const (
+		maxGlobalSeriesPerUser = 10000
+	)
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+	)
+	flags["-ingester.ring.replication-factor"] = "1"
+	flags["-ingester.ring.zone-awareness-enabled"] = "true"
+	flags["-ingester.ring.instance-availability-zone"] = "zone-a"
+	flags["-distributor.ingestion-tenant-shard-size"] = "100"
+	flags["-ingester.max-global-series-per-user"] = strconv.Itoa(maxGlobalSeriesPerUser)
+	flags["-ingester.ring.heartbeat-period"] = "1s"
+	flags["-ingester.track-ingester-owned-series"] = "true"
+	flags["-ingester.use-ingester-owned-series-for-limits"] = "true"
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components (only 1 ingester for now).
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until ingesters have heartbeated the ring after all ingesters were active,
+	// in order to update the number of instances. Since we have no metric, we have to
+	// rely on a ugly sleep.
+	time.Sleep(30 * time.Second)
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+	require.NoError(t, err)
+
+	totalSeries := 9000
+	gen := RampingMetricsGenerator{
+		client: client,
+	}
+	gen.Start(5000, totalSeries, 100, 1)
+
+	// Wait until ingester starts receiving metrics
+	require.NoError(t, ingester1.WaitSumMetrics(e2e.Greater(0), "cortex_ingester_memory_series"))
+
+	// Start second ingester
+	require.NoError(t, s.StartAndWaitReady(ingester2))
+
+	// Wait for metrics generator to finish
+	gen.Wait()
+
+	// Wait for owned series service to run and metrics to get updated
+	// Metrics are updated only every 15 seconds :/
+	time.Sleep(20 * time.Second)
+
+	// Check that local limits were correctly updated
+	values, err := ingester1.SumMetrics([]string{"cortex_ingester_local_limits"})
+	require.NoError(t, err)
+	assert.Equal(t, int(e2e.SumValues(values)), maxGlobalSeriesPerUser/2)
+	values, err = ingester1.SumMetrics([]string{"cortex_ingester_local_limits"})
+	require.NoError(t, err)
+	assert.Equal(t, int(e2e.SumValues(values)), maxGlobalSeriesPerUser/2)
+
+	// Check owned series counts
+	values, err = ingester1.SumMetrics([]string{"cortex_ingester_owned_series"})
+	require.NoError(t, err)
+	ownedSeries1 := e2e.SumValues(values)
+	values, err = ingester2.SumMetrics([]string{"cortex_ingester_owned_series"})
+	require.NoError(t, err)
+	ownedSeries2 := e2e.SumValues(values)
+	require.Equalf(t, int(ownedSeries1+ownedSeries2), totalSeries, "ingester 1 series: %d, ingester 2 series: %d", int(ownedSeries1), int(ownedSeries2))
+
+	// Check discards (metrics should not exist)
+	values, err = ingester1.SumMetrics([]string{"cortex_discarded_samples_total"})
+	assert.Error(t, err, "ingester 1 discards: %d", int(e2e.SumValues(values)))
+	values, err = ingester2.SumMetrics([]string{"cortex_discarded_samples_total"})
+	assert.Error(t, err, "ingester 2 discards: %d", int(e2e.SumValues(values)))
 }
