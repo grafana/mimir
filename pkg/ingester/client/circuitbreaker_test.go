@@ -20,7 +20,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
