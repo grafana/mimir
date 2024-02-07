@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
+	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -44,11 +45,33 @@ func TestIsFailure(t *testing.T) {
 		require.True(t, isFailure(fmt.Errorf("%w", err)))
 	})
 
-	t.Run("gRPC unavailable", func(t *testing.T) {
-		err := status.Error(codes.Unavailable, "broken!")
+	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
+		err := perInstanceLimitError(t)
 		require.True(t, isFailure(err))
 		require.True(t, isFailure(fmt.Errorf("%w", err)))
 	})
+
+	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
+		stat := status.New(codes.Unavailable, "broken!")
+		stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.SERVICE_UNAVAILABLE})
+		require.NoError(t, err)
+		err = stat.Err()
+		require.False(t, isFailure(err))
+		require.False(t, isFailure(fmt.Errorf("%w", err)))
+	})
+
+	t.Run("gRPC unavailable without details is not a failure", func(t *testing.T) {
+		err := status.Error(codes.Unavailable, "broken!")
+		require.False(t, isFailure(err))
+		require.False(t, isFailure(fmt.Errorf("%w", err)))
+	})
+}
+
+func perInstanceLimitError(t *testing.T) error {
+	stat := status.New(codes.Unavailable, "broken!")
+	stat, err := stat.WithDetails(&mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
+	require.NoError(t, err)
+	return stat.Err()
 }
 
 func TestNewCircuitBreaker(t *testing.T) {
@@ -59,7 +82,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 
 	// gRPC invoker that returns an error that will be treated as an error by the circuit breaker
 	failure := func(currentCtx context.Context, currentMethod string, currentReq, currentRepl interface{}, currentConn *grpc.ClientConn, currentOpts ...grpc.CallOption) error {
-		return status.Error(codes.Unavailable, "failed")
+		return perInstanceLimitError(t)
 	}
 
 	conn := grpc.ClientConn{}
