@@ -37,7 +37,7 @@
 * [CHANGE] Query-frontend: the default value of the CLI flag `-query-frontend.max-cache-freshness` (and its respective YAML configuration parameter) has been changed from `1m` to `10m`. #7161
 * [CHANGE] Distributor: default the optimization `-distributor.write-requests-buffer-pooling-enabled` to `true`. #7165
 * [CHANGE] Tracing: Move query information to span attributes instead of span logs. #7046
-* [CHANGE] Store-gateway: remove `cortex_bucket_store_blocks_loaded_by_duration`. You can use `cortex_bucket_store_series_blocks_queried` instead. #7309
+* [CHANGE] Store-gateway: remove `cortex_bucket_store_blocks_loaded_by_duration`. `cortex_bucket_store_series_blocks_queried` is better suited for detecting when compactors are not able to keep up with the number of blocks to compact. #7309
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
 * [FEATURE] Cardinality API: added a new `count_method` parameter which enables counting active label values. #7085
