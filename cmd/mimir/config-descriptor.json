@@ -2267,7 +2267,7 @@
               "required": false,
               "desc": "How long the circuit breaker will stay in the open state before allowing some requests",
               "fieldValue": null,
-              "fieldDefaultValue": 60000000000,
+              "fieldDefaultValue": 10000000000,
               "fieldFlag": "ingester.client.circuit-breaker.cooldown-period",
               "fieldType": "duration",
               "fieldCategory": "experimental"
