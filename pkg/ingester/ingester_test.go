@@ -4814,7 +4814,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 	// Create the TSDB for 3 users and then replace the shipper with the mocked one
 	mocks := []*uploaderMock{}
 	for _, userID := range []string{"user-1", "user-2", "user-3"} {
-		userDB, err := i.getOrCreateTSDB(userID, false)
+		userDB, err := i.getOrCreateTSDB(userID)
 		require.NoError(t, err)
 		require.NotNil(t, userDB)
 
@@ -4985,7 +4985,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	_, err = i.getOrCreateTSDB(userID, false)
+	_, err = i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 
 	iterations := 5000
@@ -4998,7 +4998,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 			case <-quit:
 				return
 			default:
-				_, err = i.getOrCreateTSDB(userID, false)
+				_, err = i.getOrCreateTSDB(userID)
 				if err != nil {
 					chanErr <- err
 				}
@@ -5038,7 +5038,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	db, err := i.getOrCreateTSDB(userID, true)
+	db, err := i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 
@@ -5054,7 +5054,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.Nil(t, db)
 
 	// And we can recreate it again, if needed.
-	db, err = i.getOrCreateTSDB(userID, true)
+	db, err = i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 }
@@ -5493,7 +5493,7 @@ func TestIngester_ForFlush(t *testing.T) {
 
 func mockUserShipper(t *testing.T, i *Ingester) *uploaderMock {
 	m := &uploaderMock{}
-	userDB, err := i.getOrCreateTSDB(userID, false)
+	userDB, err := i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 	require.NotNil(t, userDB)
 
@@ -9701,7 +9701,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 		return i.lifecycler.HealthyInstancesCount()
 	})
 
-	db, err := i.getOrCreateTSDB(userID, true)
+	db, err := i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	require.InDelta(t, time.Now().Unix(), db.getLastUpdate().Unix(), 5) // within 5 seconds of "now"
@@ -9714,7 +9714,7 @@ func TestIngester_lastUpdatedTimeIsNotInTheFuture(t *testing.T) {
 	i.closeAllTSDB()
 
 	// and open it again (it must exist)
-	db, err = i.getOrCreateTSDB(userID, false)
+	db, err = i.getOrCreateTSDB(userID)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 

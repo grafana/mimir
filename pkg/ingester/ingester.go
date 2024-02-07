@@ -948,7 +948,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		return nil
 	}
 
-	db, err := i.getOrCreateTSDB(userID, false)
+	db, err := i.getOrCreateTSDB(userID)
 	if err != nil {
 		return wrapOrAnnotateWithUser(err, userID)
 	}
@@ -2317,7 +2317,7 @@ func (i *Ingester) getTSDBUsers() []string {
 	return ids
 }
 
-func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error) {
+func (i *Ingester) getOrCreateTSDB(userID string) (*userTSDB, error) {
 	db := i.getTSDB(userID)
 	if db != nil {
 		return db, nil
