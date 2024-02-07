@@ -74,7 +74,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*block.Meta) (res []*
 		resolution := job.blocks[0].Thanos.Downsample.Resolution
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
-		compactionJob := NewJob(
+		compactionJob := newJob(
 			g.userID,
 			groupKey,
 			externalLabels,

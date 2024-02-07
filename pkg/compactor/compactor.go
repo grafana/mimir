@@ -748,7 +748,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return err
 	}
 
-	syncer, err := NewMetaSyncer(
+	syncer, err := newMetaSyncer(
 		userLogger,
 		reg,
 		userBucket,

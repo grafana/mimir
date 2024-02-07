@@ -33,8 +33,8 @@ type Job struct {
 	splitNumShards uint32
 }
 
-// NewJob returns a new compaction Job.
-func NewJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
+// newJob returns a new compaction Job.
+func newJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
 	return &Job{
 		userID:         userID,
 		key:            key,
