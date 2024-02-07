@@ -540,8 +540,7 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// countBlocksLoaded returns the total number of blocks loaded and the number of blocks
-// loaded bucketed by the provided block durations, summed for all users.
+// countBlocksLoaded returns the total number of blocks loaded, summed for all users.
 func (u *BucketStores) countBlocksLoaded(durations []time.Duration) int {
 	total := 0
 
