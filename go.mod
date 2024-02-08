@@ -31,7 +31,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.26.1-0.20240130102200-cab8ecbc95c4
+	github.com/prometheus/alertmanager v0.26.1-0.20240208095903-f69a5086657b
 	github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/common v0.46.0
@@ -156,14 +156,14 @@ require (
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v0.21.4 // indirect
+	github.com/go-openapi/analysis v0.22.2 // indirect
 	github.com/go-openapi/errors v0.21.0 // indirect
-	github.com/go-openapi/jsonpointer v0.20.0 // indirect
-	github.com/go-openapi/jsonreference v0.20.2 // indirect
-	github.com/go-openapi/loads v0.21.2 // indirect
-	github.com/go-openapi/runtime v0.26.0 // indirect
-	github.com/go-openapi/spec v0.20.9 // indirect
-	github.com/go-openapi/validate v0.22.1 // indirect
+	github.com/go-openapi/jsonpointer v0.20.2 // indirect
+	github.com/go-openapi/jsonreference v0.20.4 // indirect
+	github.com/go-openapi/loads v0.21.5 // indirect
+	github.com/go-openapi/runtime v0.27.1 // indirect
+	github.com/go-openapi/spec v0.20.14 // indirect
+	github.com/go-openapi/validate v0.23.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
