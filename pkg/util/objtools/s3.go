@@ -13,11 +13,12 @@ import (
 )
 
 type S3ClientConfig struct {
-	BucketName      string
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	Secure          bool
+	BucketName         string
+	Endpoint           string
+	AccessKeyID        string
+	SecretAccessKey    string
+	Secure             bool
+	DefaultCredentials bool
 }
 
 func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
@@ -35,20 +36,33 @@ func (c *S3ClientConfig) Validate(prefix string) error {
 	if c.Endpoint == "" {
 		return errors.New(prefix + "endpoint is missing")
 	}
-	if c.AccessKeyID == "" {
-		return errors.New(prefix + "access-key-id is missing")
-	}
-	if c.SecretAccessKey == "" {
-		return errors.New(prefix + "secret-access-key is missing")
+	if !c.DefaultCredentials {
+		if c.AccessKeyID == "" {
+			return errors.New(prefix + "access-key-id is missing")
+		}
+		if c.SecretAccessKey == "" {
+			return errors.New(prefix + "secret-access-key is missing")
+		}
 	}
 	return nil
 }
 
 func (c *S3ClientConfig) ToBucket() (Bucket, error) {
-	client, err := minio.New(c.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
-		Secure: c.Secure,
-	})
+	var client *minio.Client
+	var err error
+
+	if c.DefaultCredentials {
+		client, err = minio.New(c.Endpoint, &minio.Options{
+			Creds:  credentials.NewIAM(""),
+			Secure: c.Secure,
+		})
+	} else {
+		client, err = minio.New(c.Endpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(c.AccessKeyID, c.SecretAccessKey, ""),
+			Secure: c.Secure,
+		})
+	}
+
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to initialize S3 client")
 	}
