@@ -1327,8 +1327,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 
 	var targetRing ring.BatchRingAdapter
 	if d.cfg.IngestStorageConfig.Enabled {
-		// TODO: this should be a method on partitionsRingWatchers, so that we can implement caching there.
-		targetRing, err = d.partitionsInstanceRing.ShuffleRingPartitions(userID, d.limits.IngestionTenantShardSize(userID), 0, time.Time{})
+		targetRing, err = d.partitionsInstanceRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 		if err != nil {
 			return err
 		}

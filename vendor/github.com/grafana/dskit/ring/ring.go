@@ -661,7 +661,7 @@ func (r *Ring) ShuffleShard(identifier string, size int) ReadRing {
 	}
 
 	result := r.shuffleShard(identifier, size, 0, time.Now())
-	// Only cache subring if it is different from this ring, to avoid deadlocks in getSubring,
+	// Only cache subring if it is different from this ring, to avoid deadlocks in getCachedShuffledSubring,
 	// when we update the cached ring.
 	if result != r {
 		r.setCachedShuffledSubring(identifier, size, result)
@@ -866,11 +866,18 @@ func mergeTokenGroups(groupsByName map[string][]uint32) []uint32 {
 	return merged
 }
 
-func (r *Ring) GetInstance(instanceID string) (InstanceDesc, error) {
+// GetInstance return the InstanceDesc for the given instanceID or an error
+// if the instance doesn't exist in the ring. The returned InstanceDesc is NOT a
+// deep copy, so the caller should never modify it.
+func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	instances := r.ringDesc.GetIngesters()
+	if instances == nil {
+		return InstanceDesc{}, ErrInstanceNotFound
+	}
+
 	instance, ok := instances[instanceID]
 	if !ok {
 		return InstanceDesc{}, ErrInstanceNotFound
@@ -881,15 +888,10 @@ func (r *Ring) GetInstance(instanceID string) (InstanceDesc, error) {
 
 // GetInstanceState returns the current state of an instance or an error if the
 // instance does not exist in the ring.
-// TODO use GetInstance()
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
-	instances := r.ringDesc.GetIngesters()
-	instance, ok := instances[instanceID]
-	if !ok {
-		return PENDING, ErrInstanceNotFound
+	instance, err := r.GetInstance(instanceID)
+	if err != nil {
+		return PENDING, err
 	}
 
 	return instance.GetState(), nil

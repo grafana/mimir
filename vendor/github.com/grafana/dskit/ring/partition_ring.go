@@ -125,7 +125,8 @@ func (r *PartitionRing) ShuffleShard(identifier string, size int) (*PartitionRin
 // that have been part of the identifier's shard in [now - lookbackPeriod, now] time window.
 //
 // This function can return a mix of ACTIVE and INACTIVE partitions. INACTIVE partitions are only
-// included if they were part of the identifier's shard within the lookbackPeriod.
+// included if they were part of the identifier's shard within the lookbackPeriod. PENDING partitions
+// are never returned.
 //
 // This function supports caching, but the cache will only be effective if successive calls for the
 // same identifier are with the same lookbackPeriod and increasing values of now.
@@ -198,6 +199,13 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 				return nil, ErrInconsistentTokensInfo
 			}
 
+			// PENDING partitions should be skipped because they're not ready for read or write yet,
+			// and they don't need to be looked back.
+			if p.IsPending() {
+				exclude[pid] = struct{}{}
+				continue
+			}
+
 			var (
 				withinLookbackPeriod = lookbackPeriod > 0 && p.GetStateTimestamp() >= lookbackUntil
 				shouldExtend         = withinLookbackPeriod
@@ -267,6 +275,21 @@ func (r *PartitionRing) PartitionIDs() []int32 {
 	return ids
 }
 
+// PendingPartitionIDs returns a list of all PENDING partition IDs in the ring.
+// The returned slice is a copy, so the caller can freely manipulate it.
+func (r *PartitionRing) PendingPartitionIDs() []int32 {
+	ids := make([]int32, 0, len(r.desc.Partitions))
+
+	for id, partition := range r.desc.Partitions {
+		if partition.IsPending() {
+			ids = append(ids, id)
+		}
+	}
+
+	slices.Sort(ids)
+	return ids
+}
+
 // ActivePartitionIDs returns a list of all ACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) ActivePartitionIDs() []int32 {
@@ -288,7 +311,7 @@ func (r *PartitionRing) InactivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
 
 	for id, partition := range r.desc.Partitions {
-		if !partition.IsActive() {
+		if partition.IsInactive() {
 			ids = append(ids, id)
 		}
 	}
@@ -298,8 +321,14 @@ func (r *PartitionRing) InactivePartitionIDs() []int32 {
 }
 
 // PartitionOwnerIDs returns a list of owner IDs for the given partitionID.
-// The returned slice is a copy, so the caller can freely manipulate it.
-func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) []string {
+// The returned slice is NOT a copy and should be never modified by the caller.
+func (r *PartitionRing) PartitionOwnerIDs(partitionID int32) (doNotModify []string) {
+	return r.ownersByPartition[partitionID]
+}
+
+// PartitionOwnerIDsCopy is like PartitionOwnerIDs(), but the returned slice is a copy,
+// so the caller can freely manipulate it.
+func (r *PartitionRing) PartitionOwnerIDsCopy(partitionID int32) []string {
 	ids := r.ownersByPartition[partitionID]
 	if len(ids) == 0 {
 		return nil

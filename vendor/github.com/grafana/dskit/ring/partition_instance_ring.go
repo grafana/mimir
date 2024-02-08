@@ -5,54 +5,63 @@ import (
 	"time"
 )
 
-type PartitionInstanceRing struct {
-	// TODO doc: these are mutually exclusive. Access the partitions ring via .PartitionRing()
-	partitionsRingWatcher *PartitionRingWatcher
-	partitionsRing        *PartitionRing
-
-	instancesRing    *Ring
-	heartbeatTimeout time.Duration
+type PartitionRingReader interface {
+	// PartitionRing returns a snapshot of the PartitionRing. This function must never return nil.
+	// If the ring is empty or unknown, an empty PartitionRing can be returned.
+	PartitionRing() *PartitionRing
 }
 
-func NewPartitionInstanceRing(partitionsRingWatcher *PartitionRingWatcher, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
+// PartitionInstanceRing holds a partitions ring and a instances ring, and provide functions
+// to look up the intersection of the two (e.g. healthy instances by partition).
+type PartitionInstanceRing struct {
+	partitionsRingReader PartitionRingReader
+	instancesRing        *Ring
+	heartbeatTimeout     time.Duration
+}
+
+func NewPartitionInstanceRing(partitionsRingWatcher PartitionRingReader, instancesRing *Ring, heartbeatTimeout time.Duration) *PartitionInstanceRing {
 	return &PartitionInstanceRing{
-		partitionsRingWatcher: partitionsRingWatcher,
-		instancesRing:         instancesRing,
-		heartbeatTimeout:      heartbeatTimeout,
+		partitionsRingReader: partitionsRingWatcher,
+		instancesRing:        instancesRing,
+		heartbeatTimeout:     heartbeatTimeout,
 	}
 }
 
-// GetReplicationSetsForOperation returns one ReplicationSet for each partition and returns ReplicationSet for all partitions.
-// If there are not enough owners for partitions, error is returned.
-//
-// For querying instances, basic idea is that we need to query *ALL* partitions in the ring (or subring).
-// For each partition, each owner is a full replica, so it's enough to query single instance only.
-// GetReplicationSetsForOperation returns all healthy owners for each partition according to op and the heartbeat timeout.
-// GetReplicationSetsForOperation returns an error which Is(ErrTooManyUnhealthyInstances) if there are no healthy owners for some partition.
-// GetReplicationSetsForOperation returns ErrEmptyRing if there are no partitions in the ring.
-func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
-	// TODO cleanup this design to avoid having to access to .desc
-	partitionsRing := pr.PartitionRing()
+func (r *PartitionInstanceRing) PartitionRing() *PartitionRing {
+	return r.partitionsRingReader.PartitionRing()
+}
+
+func (r *PartitionInstanceRing) InstanceRing() *Ring {
+	return r.instancesRing
+}
+
+// GetReplicationSetsForOperation returns one ReplicationSet for each partition in the ring.
+// A ReplicationSet is returned for every partition in ring. If there are no healthy owners
+// for a partition, an error is returned.
+func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]ReplicationSet, error) {
+	partitionsRing := r.PartitionRing()
 	partitionsRingDesc := partitionsRing.desc
-	partitionsRingOwners := partitionsRing.PartitionOwners()
 
 	if len(partitionsRingDesc.Partitions) == 0 {
 		return nil, ErrEmptyRing
 	}
+
 	now := time.Now()
-
 	result := make([]ReplicationSet, 0, len(partitionsRingDesc.Partitions))
-	for pid := range partitionsRingDesc.Partitions {
-		owners := partitionsRingOwners[pid]
-		instances := make([]InstanceDesc, 0, len(owners))
 
-		for _, instanceID := range owners {
-			instance, err := pr.instancesRing.GetInstance(instanceID)
+	for partitionID := range partitionsRingDesc.Partitions {
+		ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
+		instances := make([]InstanceDesc, 0, len(ownerIDs))
+
+		for _, instanceID := range ownerIDs {
+			instance, err := r.instancesRing.GetInstance(instanceID)
 			if err != nil {
-				return nil, err
+				// If an instance doesn't exist in the instances ring we don't return an error
+				// but lookup for other instances of the partition.
+				continue
 			}
 
-			if !instance.IsHealthy(op, pr.heartbeatTimeout, now) {
+			if !instance.IsHealthy(op, r.heartbeatTimeout, now) {
 				continue
 			}
 
@@ -60,16 +69,44 @@ func (pr *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([
 		}
 
 		if len(instances) == 0 {
-			return nil, fmt.Errorf("partition %d: %w", pid, ErrTooManyUnhealthyInstances)
+			return nil, fmt.Errorf("partition %d: %w", partitionID, ErrTooManyUnhealthyInstances)
 		}
 
 		result = append(result, ReplicationSet{
 			Instances:            instances,
 			MaxUnavailableZones:  len(instances) - 1, // We need response from at least 1 owner.
-			ZoneAwarenessEnabled: true,
+			ZoneAwarenessEnabled: true,               // Partitions has no concept of zone, but we enable it in order to support ring's requests minimization feature.
 		})
 	}
 	return result, nil
+}
+
+// ShuffleShard wraps PartitionRing.ShuffleShard().
+//
+// The PartitionRing embedded in the returned PartitionInstanceRing is based on a snapshot of the partitions ring
+// at the time this function gets called. This means that subsequent changes to the partitions ring will not
+// be reflected in the returned PartitionInstanceRing.
+func (r *PartitionInstanceRing) ShuffleShard(identifier string, size int) (*PartitionInstanceRing, error) {
+	partitionsSubring, err := r.PartitionRing().ShuffleShard(identifier, size)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
+}
+
+// ShuffleShardWithLookback wraps PartitionRing.ShuffleShardWithLookback().
+//
+// The PartitionRing embedded in the returned PartitionInstanceRing is based on a snapshot of the partitions ring
+// at the time this function gets called. This means that subsequent changes to the partitions ring will not
+// be reflected in the returned PartitionInstanceRing.
+func (r *PartitionInstanceRing) ShuffleShardWithLookback(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionInstanceRing, error) {
+	partitionsSubring, err := r.PartitionRing().ShuffleShardWithLookback(identifier, size, lookbackPeriod, now)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
 }
 
 func (pr *PartitionInstanceRing) InstancesCount() int {
@@ -103,22 +140,16 @@ func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, e
 	}, nil
 }
 
-func (pr *PartitionInstanceRing) ShuffleRingPartitions(identifier string, size int, lookbackPeriod time.Duration, now time.Time) (*PartitionInstanceRing, error) {
-	subRing, err := pr.PartitionRing().ShuffleShardWithLookback(identifier, size, lookbackPeriod, now)
-	if err != nil {
-		return nil, err
-	}
-
-	return &PartitionInstanceRing{
-		partitionsRing:   subRing,
-		instancesRing:    pr.instancesRing,
-		heartbeatTimeout: pr.heartbeatTimeout,
-	}, nil
+type staticPartitionRingReader struct {
+	ring *PartitionRing
 }
 
-func (pr *PartitionInstanceRing) PartitionRing() *PartitionRing {
-	if pr.partitionsRingWatcher != nil {
-		return pr.partitionsRingWatcher.GetRing()
+func newStaticPartitionRingReader(ring *PartitionRing) staticPartitionRingReader {
+	return staticPartitionRingReader{
+		ring: ring,
 	}
-	return pr.partitionsRing
+}
+
+func (m staticPartitionRingReader) PartitionRing() *PartitionRing {
+	return m.ring
 }

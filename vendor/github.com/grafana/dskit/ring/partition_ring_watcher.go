@@ -34,6 +34,7 @@ func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, 
 		key:    key,
 		kv:     kv,
 		logger: logger,
+		ring:   NewPartitionRing(*NewPartitionRingDesc()),
 		numPartitionsGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partitions",
 			Help:        "Number of partitions by state in the partitions ring.",
@@ -56,8 +57,6 @@ func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 
 	if value == nil {
 		level.Info(w.logger).Log("msg", "partition ring doesn't exist in KV store yet")
-
-		// Initialise the watcher with an empty ring.
 		value = NewPartitionRingDesc()
 	}
 
@@ -91,9 +90,9 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 	}
 }
 
-// GetRing returns the most updated snapshot of the PartitionRing. The returned instance
+// PartitionRing returns the most updated snapshot of the PartitionRing. The returned instance
 // is immutable and will not be updated if new changes are done to the ring.
-func (w *PartitionRingWatcher) GetRing() *PartitionRing {
+func (w *PartitionRingWatcher) PartitionRing() *PartitionRing {
 	w.ringMx.Lock()
 	defer w.ringMx.Unlock()
 

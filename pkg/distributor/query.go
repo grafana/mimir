@@ -164,7 +164,7 @@ func (d *Distributor) GetIngesters(ctx context.Context) ([]ring.ReplicationSet, 
 func (d *Distributor) partitionRingReplicationSets(shardSize int, lookbackPeriod time.Duration, err error, userID string) ([]ring.ReplicationSet, error) {
 	r := d.partitionsInstanceRing
 	if shardSize > 0 && lookbackPeriod > 0 {
-		r, err = r.ShuffleRingPartitions(userID, shardSize, lookbackPeriod, time.Now())
+		r, err = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
 		if err != nil {
 			return nil, err
 		}
