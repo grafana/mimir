@@ -16,6 +16,9 @@ import (
 )
 
 func TestVaultTokenRenewal(t *testing.T) {
+	const devToken = "dev_token"
+	const httpPort = 8200
+
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -25,16 +28,16 @@ func TestVaultTokenRenewal(t *testing.T) {
 		"vault",
 		"hashicorp/vault:1.13.2",
 		nil,
-		e2e.NewHTTPReadinessProbe(8200, "/v1/sys/health", 200, 200),
-		8200,
+		e2e.NewHTTPReadinessProbe(httpPort, "/v1/sys/health", 200, 200),
+		httpPort,
 	)
-	vault.SetEnvVars(map[string]string{"VAULT_DEV_ROOT_TOKEN_ID": "dev_token"})
+	vault.SetEnvVars(map[string]string{"VAULT_DEV_ROOT_TOKEN_ID": devToken})
 	require.NoError(t, s.StartAndWaitReady(vault))
 
 	cli, err := hashivault.NewClient(&hashivault.Config{Address: fmt.Sprintf("http://%s", vault.HTTPEndpoint())})
 	require.NoError(t, err)
 
-	cli.SetToken("dev_token")
+	cli.SetToken(devToken)
 
 	err = cli.Sys().EnableAuthWithOptions("userpass", &hashivault.EnableAuthOptions{
 		Type: "userpass",

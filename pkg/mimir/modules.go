@@ -185,7 +185,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,10 @@ func (t *Mimir) initVault() (services.Service, error) {
 	}
 
 	runFunc := func(ctx context.Context) error {
-		return t.Vault.RenewTokenLease(ctx)
+		err := t.Vault.KeepRenewingTokenLease(ctx)
+		// We don't want to turn Mimir into an unready state if Vault fails here
+		<-ctx.Done()
+		return err
 	}
 
 	return services.NewBasicService(nil, runFunc, nil), nil

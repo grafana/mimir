@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/vault/api/auth/kubernetes"
 	"github.com/hashicorp/vault/api/auth/userpass"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // Config for the Vault used to fetch secrets
@@ -60,19 +62,21 @@ type SecretsEngine interface {
 }
 
 type Vault struct {
-	KVStore SecretsEngine
-	Auth    AuthConfig
+	kvStore SecretsEngine
+	auth    AuthConfig
 
-	client  *hashivault.Client
-	token   *hashivault.Secret
-	logger  log.Logger
-	metrics *metrics
+	client *hashivault.Client
+	token  *hashivault.Secret
+	logger log.Logger
+
+	authTotal             prometheus.Counter
+	authLeaseRenewalTotal prometheus.Counter
 }
 
 func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vault, error) {
 	if cfg.Mock != nil {
 		return &Vault{
-			KVStore: cfg.Mock,
+			kvStore: cfg.Mock,
 		}, nil
 	}
 
@@ -90,19 +94,26 @@ func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vaul
 	}
 
 	vault := &Vault{
-		KVStore: client.KVv2(cfg.MountPath),
-		Auth:    cfg.Auth,
+		kvStore: client.KVv2(cfg.MountPath),
+		auth:    cfg.Auth,
 		token:   authToken,
 		client:  client,
 		logger:  l,
-		metrics: newMetrics(registerer),
+		authTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_auth_total",
+			Help: "Total number of times authentication to Vault happened during token lifecycle management",
+		}),
+		authLeaseRenewalTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_token_lease_renewal_total",
+			Help: "Total number of times the auth token was renewed",
+		}),
 	}
 
 	return vault, nil
 }
 
 func (v *Vault) ReadSecret(path string) ([]byte, error) {
-	secret, err := v.KVStore.Get(context.Background(), path)
+	secret, err := v.kvStore.Get(context.Background(), path)
 
 	if err != nil {
 		return nil, fmt.Errorf("unable to read secret from vault: %v", err)
@@ -120,58 +131,51 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	return []byte(data), nil
 }
 
-func (v *Vault) manageTokenLifecycle(ctx context.Context) error {
-	authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
-		Secret: v.token,
-	})
-	if err != nil {
-		return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
-	}
-
+func (v *Vault) manageTokenLifecycle(ctx context.Context, authTokenWatcher *hashivault.LifetimeWatcher) {
 	go authTokenWatcher.Start()
 	defer authTokenWatcher.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return
 
 		case <-authTokenWatcher.DoneCh():
 			// Token failed to renew (e.g expired), re-auth required
-			return nil
+			return
 
 		case renewalInfo := <-authTokenWatcher.RenewCh():
 			// Token was successfully renewed
 			if renewalInfo.Secret.Auth != nil {
-				level.Debug(v.logger).Log("msg", fmt.Sprintf("token renewed, new lease: %d", renewalInfo.Secret.Auth.LeaseDuration))
-				v.metrics.authLeaseRenewalTotal.Inc()
+				level.Debug(v.logger).Log("msg", "token renewed", "leaseDuration", time.Duration(renewalInfo.Secret.Auth.LeaseDuration)*time.Second)
+				v.authLeaseRenewalTotal.Inc()
 			}
 		}
 	}
 }
 
-func (v *Vault) RenewTokenLease(ctx context.Context) error {
+func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 	for ctx.Err() == nil {
-		lfcErr := v.manageTokenLifecycle(ctx)
-		if lfcErr != nil {
-			level.Error(v.logger).Log("msg", fmt.Sprintf("unable to manage token lifecycle: %v", lfcErr))
-			// We don't want to turn Mimir into an unready state if Vault fails here
-			<-ctx.Done()
-			return lfcErr
+		authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
+			Secret: v.token,
+		})
+		if err != nil {
+			return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
 		}
+
+		v.manageTokenLifecycle(ctx, authTokenWatcher)
 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
-		newAuthToken, err := getAuthToken(ctx, &v.Auth, v.client)
+		newAuthToken, err := getAuthToken(ctx, &v.auth, v.client)
 		if err != nil {
-			level.Error(v.logger).Log("msg", fmt.Sprintf("error during re-authentication after token expiry: %v", err))
-			<-ctx.Done()
+			level.Error(v.logger).Log("msg", "error during re-authentication after token expiry", "err", err)
 			return err
 		}
 
-		v.metrics.authTotal.Inc()
+		v.authTotal.Inc()
 		v.token = newAuthToken
 	}
 
