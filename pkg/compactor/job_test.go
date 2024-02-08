@@ -47,6 +47,12 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 	meta3 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
 	meta4 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil), Compaction: tsdb.BlockMetaCompaction{Level: 2}}}
 
+	// OOO blocks
+	meta5 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(5, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta6 := &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(6, nil), Compaction: tsdb.BlockMetaCompaction{Level: 1}}}
+	meta5.Compaction.SetOutOfOrder()
+	meta6.Compaction.SetOutOfOrder()
+
 	tests := map[string]struct {
 		waitPeriod      time.Duration
 		jobBlocks       []jobBlock
@@ -86,6 +92,15 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			jobBlocks: []jobBlock{
 				{meta: meta3, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-4 * time.Minute)}},
 				{meta: meta4, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
+			},
+			expectedElapsed: true,
+			expectedMeta:    nil,
+		},
+		"out of order block": {
+			waitPeriod: 10 * time.Minute,
+			jobBlocks: []jobBlock{
+				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-15 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
