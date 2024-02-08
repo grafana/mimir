@@ -25,7 +25,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ruler") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.ruler.serviceAccountName" . }}
       {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}

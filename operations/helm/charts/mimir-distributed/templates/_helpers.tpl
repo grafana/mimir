@@ -64,13 +64,27 @@ For compatibility and to support upgrade from enterprise-metrics chart calculate
 {{- end -}}
 
 {{/*
-Create the name of the service account
+Create the name of the general service account
 */}}
 {{- define "mimir.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
     {{ default (include "mimir.fullname" .) .Values.serviceAccount.name }}
 {{- else -}}
     {{ default "default" .Values.serviceAccount.name }}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the ruler service account
+*/}}
+{{- define "mimir.ruler.serviceAccountName" -}}
+{{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-%s" $sa "ruler" }}
+{{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
+{{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
 {{- end -}}
 {{- end -}}
 
