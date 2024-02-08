@@ -69,8 +69,9 @@ type Vault struct {
 	token  *hashivault.Secret
 	logger log.Logger
 
-	authTotal             prometheus.Counter
-	authLeaseRenewalTotal prometheus.Counter
+	authTotal                    prometheus.Counter
+	authLeaseRenewalSuccessTotal prometheus.Counter
+	authLeaseRenewalFailureTotal prometheus.Counter
 }
 
 func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vault, error) {
@@ -103,9 +104,13 @@ func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vaul
 			Name: "cortex_vault_auth_total",
 			Help: "Total number of times authentication to Vault happened during token lifecycle management",
 		}),
-		authLeaseRenewalTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		authLeaseRenewalSuccessTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_vault_token_lease_renewal_total",
-			Help: "Total number of times the auth token was renewed",
+			Help: "Total number of times the auth token was renewed successfully",
+		}),
+		authLeaseRenewalFailureTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_token_lease_renewal_failure_total",
+			Help: "Total number of times auth token lease renewal failed",
 		}),
 	}
 
@@ -148,7 +153,7 @@ func (v *Vault) manageTokenLifecycle(ctx context.Context, authTokenWatcher *hash
 			// Token was successfully renewed
 			if renewalInfo.Secret.Auth != nil {
 				level.Debug(v.logger).Log("msg", "token renewed", "leaseDuration", time.Duration(renewalInfo.Secret.Auth.LeaseDuration)*time.Second)
-				v.authLeaseRenewalTotal.Inc()
+				v.authLeaseRenewalSuccessTotal.Inc()
 			}
 		}
 	}
@@ -160,6 +165,7 @@ func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 			Secret: v.token,
 		})
 		if err != nil {
+			v.authLeaseRenewalFailureTotal.Inc()
 			return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
 		}
 
@@ -172,6 +178,7 @@ func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 		newAuthToken, err := getAuthToken(ctx, &v.auth, v.client)
 		if err != nil {
 			level.Error(v.logger).Log("msg", "error during re-authentication after token expiry", "err", err)
+			v.authLeaseRenewalFailureTotal.Inc()
 			return err
 		}
 
