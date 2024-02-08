@@ -513,11 +513,6 @@ func validateDiscordConfig(cfg config.DiscordConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
-	if cfg.HTTPConfig != nil {
-		if err := validateReceiverHTTPConfig(*cfg.HTTPConfig); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -588,11 +583,6 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
-	}
-	if cfg.HTTPConfig != nil {
-		if err := validateReceiverHTTPConfig(*cfg.HTTPConfig); err != nil {
-			return err
-		}
 	}
 	return nil
 }
