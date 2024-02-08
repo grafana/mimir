@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/vault/api/auth/approle"
 	"github.com/hashicorp/vault/api/auth/kubernetes"
 	"github.com/hashicorp/vault/api/auth/userpass"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Config for the Vault used to fetch secrets
@@ -62,12 +63,13 @@ type Vault struct {
 	KVStore SecretsEngine
 	Auth    AuthConfig
 
-	client *hashivault.Client
-	token  *hashivault.Secret
-	logger log.Logger
+	client  *hashivault.Client
+	token   *hashivault.Secret
+	logger  log.Logger
+	metrics *metrics
 }
 
-func NewVault(cfg Config, l log.Logger) (*Vault, error) {
+func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vault, error) {
 	if cfg.Mock != nil {
 		return &Vault{
 			KVStore: cfg.Mock,
@@ -93,6 +95,7 @@ func NewVault(cfg Config, l log.Logger) (*Vault, error) {
 		token:   authToken,
 		client:  client,
 		logger:  l,
+		metrics: newMetrics(registerer),
 	}
 
 	return vault, nil
@@ -117,12 +120,12 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	return []byte(data), nil
 }
 
-func (v *Vault) manageTokenLifecycle(ctx context.Context, authToken *hashivault.Secret) (bool, error) {
+func (v *Vault) manageTokenLifecycle(ctx context.Context, authToken *hashivault.Secret) error {
 	authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
 		Secret: v.token,
 	})
 	if err != nil {
-		return false, fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
+		return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
 	}
 
 	go authTokenWatcher.Start()
@@ -131,36 +134,48 @@ func (v *Vault) manageTokenLifecycle(ctx context.Context, authToken *hashivault.
 	for {
 		select {
 		case <-ctx.Done():
-			return false, nil
+			return nil
 
 		case <-authTokenWatcher.DoneCh():
 			// Token failed to renew (e.g expired), re-auth required
-			return true, nil
+			return nil
 
 		case renewalInfo := <-authTokenWatcher.RenewCh():
 			// Token was successfully renewed
 			if renewalInfo.Secret.Auth != nil {
 				level.Debug(v.logger).Log("msg", fmt.Sprintf("token renewed, new lease: %d", renewalInfo.Secret.Auth.LeaseDuration))
+				v.metrics.authLeaseRenewalTotal.Inc()
 			}
 		}
 	}
 }
 
 func (v *Vault) RenewTokenLease(ctx context.Context) error {
-	for {
-		reAuthRequired, lfcErr := v.manageTokenLifecycle(ctx, v.token)
+	for ctx.Err() == nil {
+		lfcErr := v.manageTokenLifecycle(ctx, v.token)
 		if lfcErr != nil {
-			return fmt.Errorf("unable to manage token lifecycle: %v", lfcErr)
+			level.Error(v.logger).Log("msg", fmt.Sprintf("unable to manage token lifecycle: %v", lfcErr))
+			// We don't want to turn Mimir into an unready state if Vault fails here
+			<-ctx.Done()
+			return lfcErr
 		}
 
-		if reAuthRequired {
-			newAuthToken, err := getAuthToken(ctx, &v.Auth, v.client)
-			if err != nil {
-				return fmt.Errorf("error during re-authentication after token expiry: %v", err)
-			}
-			v.token = newAuthToken
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
+
+		newAuthToken, err := getAuthToken(ctx, &v.Auth, v.client)
+		if err != nil {
+			level.Error(v.logger).Log("msg", fmt.Sprintf("error during re-authentication after token expiry: %v", err))
+			<-ctx.Done()
+			return err
+		}
+
+		v.metrics.authTotal.Inc()
+		v.token = newAuthToken
 	}
+
+	return nil
 }
 
 type authFactoryReal struct{}

@@ -185,7 +185,7 @@ func (t *Mimir) initVault() (services.Service, error) {
 		return nil, nil
 	}
 
-	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger)
+	v, err := vault.NewVault(t.Cfg.Vault, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
 	}
