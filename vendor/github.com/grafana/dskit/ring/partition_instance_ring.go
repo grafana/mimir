@@ -109,18 +109,18 @@ func (r *PartitionInstanceRing) ShuffleShardWithLookback(identifier string, size
 	return NewPartitionInstanceRing(newStaticPartitionRingReader(partitionsSubring), r.instancesRing, r.heartbeatTimeout), nil
 }
 
-func (pr *PartitionInstanceRing) InstancesCount() int {
+func (r *PartitionInstanceRing) InstancesCount() int {
 	// Number of partitions.
-	return len(pr.PartitionRing().PartitionOwners())
+	return len(r.PartitionRing().PartitionOwners())
 }
 
-func (pr *PartitionInstanceRing) ReplicationFactor() int {
+func (r *PartitionInstanceRing) ReplicationFactor() int {
 	// Each key is always stored into single partition only.
 	return 1
 }
 
-func (pr *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
-	partitionsRing := pr.PartitionRing()
+func (r *PartitionInstanceRing) Get(key uint32, _ Operation) (ReplicationSet, error) {
+	partitionsRing := r.PartitionRing()
 
 	pid, err := partitionsRing.ActivePartitionForKey(key)
 	if err != nil {
