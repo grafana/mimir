@@ -169,6 +169,27 @@ func TestNewIngesterPushError(t *testing.T) {
 	}
 }
 
+func TestNewCircuitBreakerOpenError(t *testing.T) {
+	errCircuitBreakerOpen := client.ErrCircuitBreakerOpen{}
+
+	err := newCircuitBreakerOpenError(errCircuitBreakerOpen)
+	expectedErrorMsg := errCircuitBreakerOpen.Error()
+	assert.Error(t, err)
+	assert.EqualError(t, err, expectedErrorMsg)
+	checkDistributorError(t, err, mimirpb.CIRCUIT_BREAKER_OPEN)
+
+	assert.NotErrorIs(t, err, errCircuitBreakerOpen)
+	assert.Equal(t, errCircuitBreakerOpen.RemainingDelay(), err.RemainingDelay())
+
+	assert.True(t, errors.As(err, &circuitBreakerOpenError{}))
+	assert.False(t, errors.As(err, &replicasDidNotMatchError{}))
+
+	wrappedErr := fmt.Errorf("wrapped %w", err)
+	assert.ErrorIs(t, wrappedErr, err)
+	assert.True(t, errors.As(wrappedErr, &circuitBreakerOpenError{}))
+	checkDistributorError(t, wrappedErr, mimirpb.CIRCUIT_BREAKER_OPEN)
+}
+
 func TestToGRPCError(t *testing.T) {
 	const (
 		ingesterID  = "ingester-25"
@@ -331,15 +352,17 @@ func TestToGRPCError(t *testing.T) {
 			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, originalMsg),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.UNKNOWN_CAUSE},
 		},
-		"a client.ErrCircuitBreakerOpen error gets translated into an Unavailable error without details": {
-			err:              client.ErrCircuitBreakerOpen{},
-			expectedGRPCCode: codes.Unavailable,
-			expectedErrorMsg: circuitbreaker.ErrOpen.Error(),
+		"a circuitBreakerOpenError gets translated into an Unavailable error with CIRCUIT_BREAKER_OPEN cause": {
+			err:                  newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+			expectedGRPCCode:     codes.Unavailable,
+			expectedErrorMsg:     circuitbreaker.ErrOpen.Error(),
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
-		"a wrapped client.ErrCircuitBreakerOpen error gets translated into an Unavailable error without details": {
-			err:              errors.Wrap(client.ErrCircuitBreakerOpen{}, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
-			expectedGRPCCode: codes.Unavailable,
-			expectedErrorMsg: fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
+		"a wrapped circuitBreakerOpenError gets translated into an Unavailable error witch CIRCUIT_BREAKER_OPEN cause": {
+			err:                  errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+			expectedGRPCCode:     codes.Unavailable,
+			expectedErrorMsg:     fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
+			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.CIRCUIT_BREAKER_OPEN},
 		},
 	}
 	for name, tc := range testCases {
@@ -377,12 +400,11 @@ func TestWrapIngesterPushError(t *testing.T) {
 	})
 
 	// Ensure that client.ErrCircuitBreakerOpen error gets correctly wrapped.
-	t.Run("an ErrCircuitBreakerOpen error gives an ErrCircuitBreakerOpen error", func(t *testing.T) {
+	t.Run("an ErrCircuitBreakerOpen error gives an circuitBreakerOpenErr error", func(t *testing.T) {
 		ingesterPushErr := client.ErrCircuitBreakerOpen{}
 		err := wrapIngesterPushError(ingesterPushErr, ingesterID)
 		require.Error(t, err)
-		require.ErrorIs(t, err, circuitbreaker.ErrOpen)
-		require.ErrorAs(t, err, &client.ErrCircuitBreakerOpen{})
+		require.ErrorAs(t, err, &circuitBreakerOpenError{})
 	})
 
 	// Ensure that the errors created by httpgrpc get translated into

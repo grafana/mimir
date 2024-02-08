@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
@@ -196,6 +197,30 @@ func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
 // Ensure that ingesterPushError implements distributorError.
 var _ distributorError = ingesterPushError{}
 
+type circuitBreakerOpenError struct {
+	err client.ErrCircuitBreakerOpen
+}
+
+// newCircuitBreakerOpenError creates a circuitBreakerOpenError wrapping the passed client.ErrCircuitBreakerOpen.
+func newCircuitBreakerOpenError(err client.ErrCircuitBreakerOpen) circuitBreakerOpenError {
+	return circuitBreakerOpenError{err: err}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return e.err.Error()
+}
+
+func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
+	return e.err.RemainingDelay()
+}
+
+func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.CIRCUIT_BREAKER_OPEN
+}
+
+// Ensure that circuitBreakerOpenError implements distributorError.
+var _ distributorError = circuitBreakerOpenError{}
+
 // toGRPCError converts the given error into an appropriate gRPC error.
 func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
@@ -220,9 +245,9 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 			errCode = codes.AlreadyExists
 		case mimirpb.TOO_MANY_CLUSTERS:
 			errCode = codes.FailedPrecondition
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			errCode = codes.Unavailable
 		}
-	} else if errors.As(pushErr, &client.ErrCircuitBreakerOpen{}) {
-		errCode = codes.Unavailable
 	}
 	stat := status.New(errCode, pushErr.Error())
 	if errDetails != nil {
@@ -241,7 +266,12 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
+		pushErr := err
+		var errCircuitBreakerOpen client.ErrCircuitBreakerOpen
+		if errors.As(pushErr, &errCircuitBreakerOpen) {
+			pushErr = newCircuitBreakerOpenError(errCircuitBreakerOpen)
+		}
+		return errors.Wrap(pushErr, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
