@@ -4,6 +4,7 @@ package distributor
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
@@ -197,12 +198,20 @@ func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
 var _ distributorError = ingesterPushError{}
 
 type circuitBreakerOpenError struct {
-	client.ErrCircuitBreakerOpen
+	err client.ErrCircuitBreakerOpen
 }
 
 // newCircuitBreakerOpenError creates a circuitBreakerOpenError wrapping the passed client.ErrCircuitBreakerOpen.
 func newCircuitBreakerOpenError(err client.ErrCircuitBreakerOpen) circuitBreakerOpenError {
-	return circuitBreakerOpenError{ErrCircuitBreakerOpen: err}
+	return circuitBreakerOpenError{err: err}
+}
+
+func (e circuitBreakerOpenError) Error() string {
+	return e.err.Error()
+}
+
+func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
+	return e.err.RemainingDelay()
 }
 
 func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
