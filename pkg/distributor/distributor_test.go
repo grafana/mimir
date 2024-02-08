@@ -3767,8 +3767,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		)
 		require.NoError(t, err)
 
-		partitionsRingWatcher, err = ring.NewPartitionRingWatcher(partitionsKvStore, ingester.PartitionRingKey, logger, prometheus.NewPedanticRegistry())
-		require.NoError(t, err)
+		partitionsRingWatcher = ring.NewPartitionRingWatcher(ingester.PartitionRingName, ingester.PartitionRingKey, partitionsKvStore, logger, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), partitionsRingWatcher))
 
 		partitionsInstanceRing = ring.NewPartitionInstanceRing(partitionsRingWatcher, ingestersRing, ingestersHeartbeatTimeout)
