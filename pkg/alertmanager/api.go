@@ -589,8 +589,10 @@ func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
 	if cfg.WebhookURLFile != "" {
 		return errWebhookURLFileNotAllowed
 	}
-	if err := validateReceiverHTTPConfig(*cfg.HTTPConfig); err != nil {
-		return err
+	if cfg.HTTPConfig != nil {
+		if err := validateReceiverHTTPConfig(*cfg.HTTPConfig); err != nil {
+			return err
+		}
 	}
 	return nil
 }
