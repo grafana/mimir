@@ -21,7 +21,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
@@ -78,12 +77,11 @@ type BucketStores struct {
 	stores   map[string]*BucketStore
 
 	// Metrics.
-	syncTimes              prometheus.Histogram
-	syncLastSuccess        prometheus.Gauge
-	tenantsDiscovered      prometheus.Gauge
-	tenantsSynced          prometheus.Gauge
-	blocksLoaded           *prometheus.Desc
-	blocksLoadedByDuration *prometheus.Desc
+	syncTimes         prometheus.Histogram
+	syncLastSuccess   prometheus.Gauge
+	tenantsDiscovered prometheus.Gauge
+	tenantsSynced     prometheus.Gauge
+	blocksLoaded      *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores.
@@ -156,11 +154,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"cortex_bucket_store_blocks_loaded",
 		"Number of currently loaded blocks.",
 		nil, nil,
-	)
-	u.blocksLoadedByDuration = prometheus.NewDesc(
-		"cortex_bucket_store_blocks_loaded_by_duration",
-		"Number of currently loaded blocks, bucketed by block duration.",
-		[]string{"duration"}, nil,
 	)
 
 	// Init the index cache.
@@ -547,10 +540,8 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// countBlocksLoaded returns the total number of blocks loaded and the number of blocks
-// loaded bucketed by the provided block durations, summed for all users.
-func (u *BucketStores) countBlocksLoaded(durations []time.Duration) (int, map[time.Duration]int) {
-	byDuration := make(map[time.Duration]int)
+// countBlocksLoaded returns the total number of blocks loaded, summed for all users.
+func (u *BucketStores) countBlocksLoaded(durations []time.Duration) int {
 	total := 0
 
 	u.storesMu.RLock()
@@ -558,28 +549,21 @@ func (u *BucketStores) countBlocksLoaded(durations []time.Duration) (int, map[ti
 
 	for _, store := range u.stores {
 		stats := store.Stats(durations)
-		for d, n := range stats.BlocksLoaded {
-			byDuration[d] += n
+		for _, n := range stats.BlocksLoaded {
 			total += n
 		}
 	}
 
-	return total, byDuration
+	return total
 }
 
 func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 	descs <- u.blocksLoaded
-	descs <- u.blocksLoadedByDuration
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total, byDuration := u.countBlocksLoaded(defaultBlockDurations)
+	total := u.countBlocksLoaded(defaultBlockDurations)
 	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
-	for d, n := range byDuration {
-		// Convert time.Duration to model.Duration here since the string format is nicer
-		// to read for round numbers than the stdlib version. E.g. "2h" vs "2h0m0s"
-		metrics <- prometheus.MustNewConstMetric(u.blocksLoadedByDuration, prometheus.GaugeValue, float64(n), model.Duration(d).String())
-	}
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
