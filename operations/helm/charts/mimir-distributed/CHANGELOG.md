@@ -46,7 +46,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
 * [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
-* [ENHANCEMENT] Make the PSP template configurable. #7190
+* [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
 
 ## 5.2.1
 
