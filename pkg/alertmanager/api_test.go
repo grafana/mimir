@@ -1116,6 +1116,22 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errPasswordFileNotAllowed,
 		},
+		"*DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"DiscordConfig.HTTPConfig": {
+			input: &config.DiscordConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
 		"*DiscordConfig.WebhookURLFile": {
 			input: &config.DiscordConfig{
 				WebhookURLFile: "/file",
@@ -1137,6 +1153,22 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 		"EmailConfig.AuthPasswordFile": {
 			input: config.EmailConfig{
 				AuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"MSTeams.HTTPConfig": {
+			input: &config.MSTeamsConfig{
+				HTTPConfig: &commoncfg.HTTPClientConfig{
+					BearerTokenFile: "/file",
+				},
 			},
 			expected: errPasswordFileNotAllowed,
 		},
