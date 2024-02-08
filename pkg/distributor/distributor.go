@@ -862,10 +862,11 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 			}
 
 			// We rely on sorted labels in different places:
-			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
-			// different tokens, which is bad.
-			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
-			// later in the validation phase, we ignore them here.
+			// 1) When computing token for labels. Here different order of
+			// labels returns different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names.
+			// As duplicate label names are rejected later in the validation
+			// phase, we ignore them here.
 			// 3) Ingesters expect labels to be sorted in the Push request.
 			req.Timeseries[tsIdx].SortLabelsIfNeeded()
 		}
