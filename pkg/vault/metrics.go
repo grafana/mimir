@@ -2,7 +2,10 @@
 
 package vault
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
 
 type metrics struct {
 	authTotal             prometheus.Counter
@@ -12,22 +15,15 @@ type metrics struct {
 func newMetrics(r prometheus.Registerer) *metrics {
 	var m metrics
 
-	m.authTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.authTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "vault_auth_total",
 		Help: "Total number of times authentication to Vault happened during token lifecycle management",
 	})
 
-	m.authLeaseRenewalTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.authLeaseRenewalTotal = promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "vault_token_lease_renewal_total",
 		Help: "Total number of times the auth token was renewed",
 	})
-
-	if r != nil {
-		r.MustRegister(
-			m.authTotal,
-			m.authLeaseRenewalTotal,
-		)
-	}
 
 	return &m
 }

@@ -120,7 +120,7 @@ func (v *Vault) ReadSecret(path string) ([]byte, error) {
 	return []byte(data), nil
 }
 
-func (v *Vault) manageTokenLifecycle(ctx context.Context, authToken *hashivault.Secret) error {
+func (v *Vault) manageTokenLifecycle(ctx context.Context) error {
 	authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
 		Secret: v.token,
 	})
@@ -152,7 +152,7 @@ func (v *Vault) manageTokenLifecycle(ctx context.Context, authToken *hashivault.
 
 func (v *Vault) RenewTokenLease(ctx context.Context) error {
 	for ctx.Err() == nil {
-		lfcErr := v.manageTokenLifecycle(ctx, v.token)
+		lfcErr := v.manageTokenLifecycle(ctx)
 		if lfcErr != nil {
 			level.Error(v.logger).Log("msg", fmt.Sprintf("unable to manage token lifecycle: %v", lfcErr))
 			// We don't want to turn Mimir into an unready state if Vault fails here
