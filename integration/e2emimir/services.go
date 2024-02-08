@@ -82,7 +82,8 @@ func newMimirServiceFromOptions(name string, defaultFlags, overrideFlags map[str
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
 	)
 }
 
@@ -91,9 +92,9 @@ func newMimirDebugServiceFromOptions(name string, defaultFlags, flags map[string
 	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
 	serviceArgs := e2e.BuildArgs(serviceFlags)
 
-	delveListenPort := o.HTTPPort + 10000
+	delveListenPort := o.HTTPPort + 10000 // follow convention in docker compose development environment
 
-	// delve ars must be ordered correctly due to the use of `--`
+	// delve args must be ordered correctly due to the use of `--`
 	// to delineate the end of delve args and beginning of the binary's args;
 	// do not use any interface utilizing a map structure as order will not be preserved
 	delveArgs := []string{
@@ -117,8 +118,8 @@ func newMimirDebugServiceFromOptions(name string, defaultFlags, flags map[string
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		//otherPorts,
-		//map[int]int{delveListenPort: delveListenPort, o.HTTPPort: o.HTTPPort},
+		[]int{delveListenPort},
+		map[int]int{delveListenPort: delveListenPort, o.HTTPPort: o.HTTPPort},
 	)
 }
 
@@ -349,7 +350,8 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 		o.Environment,
 		o.HTTPPort,
 		o.GRPCPort,
-		o.OtherPorts...,
+		o.OtherPorts,
+		nil,
 	)
 }
 

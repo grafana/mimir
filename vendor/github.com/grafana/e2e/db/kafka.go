@@ -25,6 +25,8 @@ func NewKafka() *KafkaService {
 			nil, // No custom command.
 			NewKafkaReadinessProbe(9092),
 			9092,
+			nil,
+			nil,
 		),
 	}
 }
