@@ -138,9 +138,7 @@ inhibit_rules:
 		t.Run(test.name, func(t *testing.T) {
 			buf := bytes.Buffer{}
 			validateMatchersInConfigDesc(log.NewLogfmtLogger(&buf), "test", test.config)
-			lines := strings.Split(buf.String(), "\n")
-			// Need to ignore the trailing newline
-			lines = lines[:len(lines)-1]
+			lines := strings.Split(strings.Trim(buf.String(), "\n"), "\n")
 			require.Equal(t, len(test.expected), len(lines))
 			for i := range lines {
 				require.Equal(t, test.expected[i], lines[i])
