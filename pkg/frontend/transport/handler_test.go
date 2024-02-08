@@ -238,37 +238,58 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 	for _, test := range []struct {
 		name                string
 		cfg                 HandlerConfig
-		expectedMetrics     int
 		path                string
+		queryResponseFunc   roundTripperFunc
+		expectedStatusCode  int
+		expectedMetrics     int
+		expectedStatusLog   string
 		expectQueryParamLog bool
-		queryErr            error
 	}{
 		{
-			name:                "Failed round trip with context cancelled",
-			cfg:                 HandlerConfig{QueryStatsEnabled: false},
+			name: "Failed round trip with context cancelled",
+			cfg:  HandlerConfig{QueryStatsEnabled: false},
+			path: "/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z",
+			queryResponseFunc: func(*http.Request) (*http.Response, error) {
+				return nil, context.Canceled
+			},
+			expectedStatusCode:  StatusClientClosedRequest,
 			expectedMetrics:     0,
-			path:                "/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z",
+			expectedStatusLog:   "canceled",
 			expectQueryParamLog: true,
-			queryErr:            context.Canceled,
 		},
 		{
-			name:                "Failed round trip with no query params",
-			cfg:                 HandlerConfig{QueryStatsEnabled: true},
+			name: "Failed round trip with no query params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			path: "/api/v1/query",
+			queryResponseFunc: func(*http.Request) (*http.Response, error) {
+				return nil, context.Canceled
+			},
+			expectedStatusCode:  StatusClientClosedRequest,
 			expectedMetrics:     5,
-			path:                "/api/v1/query",
+			expectedStatusLog:   "canceled",
 			expectQueryParamLog: false,
-			queryErr:            context.Canceled,
+		},
+		{
+			name: "Failed round trip with HTTP response",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			path: "/api/v1/query",
+			queryResponseFunc: func(*http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusInternalServerError,
+					Body:       io.NopCloser(strings.NewReader("{}")),
+				}, nil
+			},
+			expectedStatusCode:  http.StatusInternalServerError,
+			expectedMetrics:     5,
+			expectedStatusLog:   "failed",
+			expectQueryParamLog: false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-				return nil, test.queryErr
-			})
-
 			reg := prometheus.NewPedanticRegistry()
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
-			handler := NewHandler(test.cfg, roundTripper, logger, reg, nil)
+			handler := NewHandler(test.cfg, test.queryResponseFunc, logger, reg, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "12345")
 			req := httptest.NewRequest("GET", test.path, nil)
@@ -276,7 +297,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			require.Equal(t, StatusClientClosedRequest, resp.Code)
+			require.Equal(t, test.expectedStatusCode, resp.Code)
 
 			count, err := promtest.GatherAndCount(
 				reg,
@@ -286,11 +307,10 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_chunks_total",
 				"cortex_query_fetched_index_bytes_total",
 			)
-
 			require.NoError(t, err)
 
 			assert.Contains(t, strings.TrimSpace(logs.String()), "sharded_queries")
-			assert.Contains(t, strings.TrimSpace(logs.String()), "status=canceled")
+			assert.Contains(t, strings.TrimSpace(logs.String()), fmt.Sprintf("status=%s", test.expectedStatusLog))
 			if test.expectQueryParamLog {
 				assert.Contains(t, strings.TrimSpace(logs.String()), "param_query")
 			}
