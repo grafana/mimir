@@ -26,7 +26,7 @@ func TestVaultTokenRenewal(t *testing.T) {
 	// Initialize Vault
 	vault := e2e.NewHTTPService(
 		"vault",
-		"hashicorp/vault:1.13.2",
+		VaultImage,
 		nil,
 		e2e.NewHTTPReadinessProbe(httpPort, "/v1/sys/health", 200, 200),
 		httpPort,
