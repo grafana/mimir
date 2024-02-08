@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/flagext"
@@ -1056,8 +1055,7 @@ func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	err := ds[0].push(ctx, NewParsedRequest(makeWriteRequest(123456789000, 10, 0, false, true, "foo")))
 	require.Error(t, err)
-	require.ErrorIs(t, err, circuitbreaker.ErrOpen)
-	require.ErrorAs(t, err, &client.ErrCircuitBreakerOpen{})
+	require.ErrorAs(t, err, &circuitBreakerOpenError{})
 }
 
 func TestDistributor_PushQuery(t *testing.T) {

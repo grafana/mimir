@@ -45,6 +45,7 @@ enum ErrorCause {
   SERVICE_UNAVAILABLE = 7;
   TSDB_UNAVAILABLE = 8;
   TOO_BUSY = 9;
+  CIRCUIT_BREAKER_OPEN = 10;
 }
 
 message ErrorDetails {

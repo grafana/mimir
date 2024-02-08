@@ -24,7 +24,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -227,9 +226,9 @@ func toHTTPStatus(ctx context.Context, pushErr error, limits *validation.Overrid
 			return http.StatusBadRequest
 		case mimirpb.TSDB_UNAVAILABLE:
 			return http.StatusServiceUnavailable
+		case mimirpb.CIRCUIT_BREAKER_OPEN:
+			return http.StatusServiceUnavailable
 		}
-	} else if errors.As(pushErr, &client.ErrCircuitBreakerOpen{}) {
-		return http.StatusServiceUnavailable
 	}
 
 	return http.StatusInternalServerError
