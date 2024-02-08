@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -270,12 +271,6 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Stub upstream with valid or invalid responses.
 			var requestCount atomic.Int32
 			upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				defer func(body io.ReadCloser) {
-					if body != nil {
-						_ = body.Close()
-					}
-				}(r.Body)
-
 				_, _, err := user.ExtractOrgIDFromHTTPRequest(r)
 				require.NoError(t, err)
 				_, err = user.ExtractOrgID(r.Context())
@@ -358,7 +353,85 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 	}
 }
 
+func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
+	const shardCount = 4
+
+	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		require.NoError(t, r.ParseForm())
+		req, err := cardinality.DecodeActiveSeriesRequestFromValues(r.Form)
+		require.NoError(t, err)
+		shard, _, err := sharding.ShardFromMatchers(req.Matchers)
+		require.NoError(t, err)
+		require.NotNil(t, shard)
+
+		resp := fmt.Sprintf(`{"data": [{"__name__": "metric-%d"}]}`, shard.ShardIndex)
+
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(resp))}, nil
+	})
+
+	s := newShardActiveSeriesMiddleware(
+		upstream,
+		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
+		log.NewNopLogger(),
+	)
+
+	assertRoundTrip := func(t *testing.T, trip http.RoundTripper, req *http.Request) {
+		resp, err := trip.RoundTrip(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body io.Reader = resp.Body
+		if resp.Header.Get("Content-Encoding") == encodingTypeSnappyFramed {
+			body = s2.NewReader(resp.Body)
+		}
+
+		// For this test, if we can decode the response, it is enough to guaranty it worked. We proof actual validity
+		// of all kinds of responses in the tests above.
+		var res result
+		err = json.NewDecoder(body).Decode(&res)
+		require.NoError(t, err)
+		require.Len(t, res.Data, shardCount)
+	}
+
+	const reqCount = 20
+
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	wg.Add(reqCount)
+
+	for n := reqCount; n > 0; n-- {
+		go func(n int) {
+			defer wg.Done()
+
+			req := httptest.NewRequest("POST", "/active_series", strings.NewReader(`selector={__name__=~"metric-.*"}`))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			// Send every other request as snappy to proof the middleware doesn't mess up body encoders
+			if n%2 == 0 {
+				req.Header.Add("Accept-Encoding", encodingTypeSnappyFramed)
+			}
+
+			req = req.WithContext(user.InjectOrgID(req.Context(), "test"))
+
+			assertRoundTrip(t, s, req)
+		}(n)
+	}
+}
+
 func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
+	b.Run("encoding=none", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, "")
+	})
+
+	b.Run("encoding=snappy", func(b *testing.B) {
+		benchmarkActiveSeriesMiddlewareMergeResponses(b, encodingTypeSnappyFramed)
+	})
+}
+
+func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string) {
 	type activeSeriesResponse struct {
 		Data []labels.Labels `json:"data"`
 	}
@@ -392,7 +465,7 @@ func BenchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], "")
+				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()
