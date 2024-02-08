@@ -47,7 +47,7 @@ var (
 	errRequestEntityTooLarge = httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "http: request body too large")
 )
 
-// Config for a Handler.
+// HandlerConfig is a config for the handler.
 type HandlerConfig struct {
 	LogQueriesLongerThan   time.Duration          `yaml:"log_queries_longer_than"`
 	LogQueryRequestHeaders flagext.StringSliceCSV `yaml:"log_query_request_headers" category:"advanced"`
@@ -196,7 +196,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, err)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, 0, queryDetails, 0, err)
 		return
 	}
 
@@ -217,13 +217,13 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reportSlowQuery(r, params, queryResponseTime, queryDetails)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, nil)
+		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
 }
 
 // reportSlowQuery reports slow queries.
 func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, details *querymiddleware.QueryDetails) {
-	logMessage := append([]interface{}{
+	logMessage := append([]any{
 		"msg", "slow query detected",
 		"method", r.Method,
 		"host", r.Host,
@@ -238,7 +238,16 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryStartTime time.Time, queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails, queryErr error) {
+func (f *Handler) reportQueryStats(
+	r *http.Request,
+	queryString url.Values,
+	queryStartTime time.Time,
+	queryResponseTime time.Duration,
+	queryResponseSizeBytes int64,
+	details *querymiddleware.QueryDetails,
+	queryResponseStatusCode int,
+	queryErr error,
+) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -266,12 +275,13 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	}
 
 	// Log stats.
-	logMessage := append([]interface{}{
+	logMessage := append([]any{
 		"msg", "query stats",
 		"component", "query-frontend",
 		"method", r.Method,
 		"path", r.URL.Path,
 		"user_agent", r.UserAgent(),
+		"status_code", queryResponseStatusCode,
 		"response_time", queryResponseTime,
 		"response_size_bytes", queryResponseSizeBytes,
 		"query_wall_time_seconds", wallTime.Seconds(),
@@ -312,6 +322,11 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.cfg.LogQueryRequestHeaders)...)
 	}
 
+	if queryErr == nil && queryResponseStatusCode/100 != 2 {
+		// If downstream replied with non-2xx, log this as a failure.
+		queryErr = fmt.Errorf("downstream replied with %s", http.StatusText(queryResponseStatusCode))
+	}
+
 	if queryErr != nil {
 		logStatus := "failed"
 		if errors.Is(queryErr, context.Canceled) {
@@ -332,7 +347,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 }
 
 // formatQueryString prefers printing start, end, and step from details if they are not nil.
-func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []interface{}) {
+func formatQueryString(details *querymiddleware.QueryDetails, queryString url.Values) (fields []any) {
 	for k, v := range queryString {
 		var formattedValue string
 		if details != nil {
@@ -368,7 +383,7 @@ func paramValueFromDetails(details *querymiddleware.QueryDetails, paramName stri
 	return ""
 }
 
-func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []interface{}) {
+func formatRequestHeaders(h *http.Header, headersToLog []string) (fields []any) {
 	for _, s := range headersToLog {
 		if v := h.Get(s); v != "" {
 			fields = append(fields, fmt.Sprintf("header_%s", strings.ReplaceAll(strings.ToLower(s), "-", "_")), v)
