@@ -33,8 +33,8 @@ type Job struct {
 	splitNumShards uint32
 }
 
-// NewJob returns a new compaction Job.
-func NewJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
+// newJob returns a new compaction Job.
+func newJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
 	return &Job{
 		userID:         userID,
 		key:            key,
@@ -56,7 +56,7 @@ func (job *Job) Key() string {
 	return job.key
 }
 
-// AppendMeta the block with the given meta to the job.
+// AppendMeta appends the block with the given meta to the job.
 func (job *Job) AppendMeta(meta *block.Meta) error {
 	if !labels.Equal(job.labels, labels.FromMap(meta.Thanos.Labels)) {
 		return errors.New("block and group labels do not match")

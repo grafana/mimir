@@ -1044,6 +1044,20 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	}
 }
 
+func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:       3,
+		happyIngesters:     3,
+		numDistributors:    1,
+		circuitBreakerOpen: true,
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	err := ds[0].push(ctx, NewParsedRequest(makeWriteRequest(123456789000, 10, 0, false, true, "foo")))
+	require.Error(t, err)
+	require.ErrorAs(t, err, &circuitBreakerOpenError{})
+}
+
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -3511,7 +3525,8 @@ type prepConfig struct {
 
 	configure func(*Config)
 
-	timeOut bool
+	timeOut            bool
+	circuitBreakerOpen bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -3636,6 +3651,7 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
+			circuitBreakerOpen:            cfg.circuitBreakerOpen,
 		})
 	}
 	return ingesters
@@ -4111,6 +4127,7 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
+	circuitBreakerOpen            bool
 }
 
 func (i *mockIngester) address() string {
@@ -4155,6 +4172,10 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 
 	if i.timeOut {
 		return nil, context.DeadlineExceeded
+	}
+
+	if i.circuitBreakerOpen {
+		return nil, client.ErrCircuitBreakerOpen{}
 	}
 
 	if len(req.Timeseries) > 0 && i.timeseries == nil {
