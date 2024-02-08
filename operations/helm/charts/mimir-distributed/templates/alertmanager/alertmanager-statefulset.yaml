@@ -178,6 +178,8 @@ spec:
             {{- toYaml .Values.alertmanager.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.alertmanager.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.alertmanager.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:

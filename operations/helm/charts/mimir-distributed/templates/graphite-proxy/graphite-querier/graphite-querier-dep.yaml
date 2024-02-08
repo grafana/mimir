@@ -80,6 +80,8 @@ spec:
             {{- toYaml .Values.graphite.querier.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.graphite.querier.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.graphite.querier.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.graphite.querier.resources | nindent 12 }}
           securityContext:

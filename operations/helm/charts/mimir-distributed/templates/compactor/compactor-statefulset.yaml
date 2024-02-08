@@ -143,6 +143,8 @@ spec:
             {{- toYaml .Values.compactor.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.compactor.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.compactor.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.compactor.resources | nindent 12 }}
           securityContext:

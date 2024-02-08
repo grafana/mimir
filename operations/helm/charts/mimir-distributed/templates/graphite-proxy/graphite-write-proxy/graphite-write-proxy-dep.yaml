@@ -78,6 +78,8 @@ spec:
             {{- toYaml .Values.graphite.write_proxy.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.graphite.write_proxy.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.graphite.write_proxy.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.graphite.write_proxy.resources | nindent 12 }}
           securityContext:

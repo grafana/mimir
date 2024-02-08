@@ -93,6 +93,8 @@ spec:
             {{- toYaml .Values.distributor.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.distributor.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.distributor.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.distributor.resources | nindent 12 }}
           securityContext:

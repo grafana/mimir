@@ -76,6 +76,8 @@ spec:
             {{- toYaml .Values.overrides_exporter.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.overrides_exporter.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.overrides_exporter.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.overrides_exporter.resources | nindent 12 }}
           securityContext:

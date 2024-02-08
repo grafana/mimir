@@ -77,6 +77,8 @@ spec:
           {{- end }}
           readinessProbe:
             {{- toYaml .Values.nginx.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.nginx.startupProbe | nindent 12 }}
           securityContext:
             {{- toYaml .Values.nginx.containerSecurityContext | nindent 12 }}
           volumeMounts:

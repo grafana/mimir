@@ -91,6 +91,8 @@ spec:
             {{- toYaml .Values.querier.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.querier.readinessProbe | nindent 12 }}
+          startupProbe:
+            {{- toYaml .Values.querier.startupProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:

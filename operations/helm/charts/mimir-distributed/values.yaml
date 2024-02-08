@@ -591,6 +591,12 @@ alertmanager:
       port: http-metrics
     initialDelaySeconds: 45
 
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
+
   # -- SecurityContext override for alermeneger pods
   securityContext: {}
 
@@ -779,6 +785,12 @@ distributor:
       port: http-metrics
     initialDelaySeconds: 45
 
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
+
   # -- SecurityContext override for distributor pods
   securityContext: {}
 
@@ -910,6 +922,12 @@ ingester:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 60
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 6
 
   # -- SecurityContext override for ingester pods
   securityContext: {}
@@ -1087,6 +1105,11 @@ overrides_exporter:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 45
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
 
   resources:
     requests:
@@ -1152,6 +1175,12 @@ ruler:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 45
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
 
   # -- SecurityContext override for ruler pods
   securityContext: {}
@@ -1230,6 +1259,12 @@ querier:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 45
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
 
   # -- SecurityContext override for querier pods
   securityContext: {}
@@ -1310,6 +1345,12 @@ query_frontend:
       port: http-metrics
     initialDelaySeconds: 45
 
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
+
   # -- SecurityContext override for query-fronted pods
   securityContext: {}
 
@@ -1388,6 +1429,12 @@ query_scheduler:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 45
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
 
   # -- SecurityContext override for query-scheduler pods
   securityContext: {}
@@ -1522,6 +1569,12 @@ store_gateway:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 60
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 6
 
   # -- SecurityContext override for store-gateway pods
   securityContext: {}
@@ -1716,6 +1769,12 @@ compactor:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 60
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 6
 
   # -- SecurityContext override for compactor pods
   securityContext: {}
@@ -2381,6 +2440,12 @@ nginx:
       port: http-metric
     initialDelaySeconds: 15
     timeoutSeconds: 1
+  startupProbe:
+    httpGet:
+      path: /
+      port: http-metric
+    failureThreshold: 2
+    timeoutSeconds: 1
 
   # -- Additional containers to be added to the nginx pod.
   extraContainers: []
@@ -2747,6 +2812,12 @@ gateway:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 15
+    timeoutSeconds: 1
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 2
     timeoutSeconds: 1
 
   nginx:
@@ -3295,6 +3366,12 @@ admin_api:
       port: http-metrics
     initialDelaySeconds: 45
 
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    failureThreshold: 5
+
   resources:
     requests:
       cpu: 10m
@@ -3448,6 +3525,11 @@ graphite:
         path: /ready
         port: http-metrics
       initialDelaySeconds: 45
+    startupProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      failureThreshold: 5
 
     annotations: {}
     persistence:
@@ -3530,6 +3612,11 @@ graphite:
         path: /ready
         port: http-metrics
       initialDelaySeconds: 45
+    startupProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      failureThreshold: 5
 
     annotations: {}
     persistence:
