@@ -48,6 +48,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `ruler` component by setting `ruler.serivceAcount.create` to true in the values. #7132
 * [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
+* [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
 
 ## 5.2.1
 
