@@ -280,7 +280,16 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	toCompactMaxTime := maxTime(toCompact)
 	jobLogger = log.With(jobLogger, "minTime", toCompactMinTime.String(), "maxTime", toCompactMaxTime.String())
 
-	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
+	var sb strings.Builder
+	for i, meta := range toCompact {
+		if i > 0 {
+			sb.WriteRune(',')
+		}
+		sb.WriteString(meta.ULID.String())
+	}
+	toCompactStr := sb.String()
+
+	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", toCompactStr)
 
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
@@ -329,10 +338,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
 	}
-	toCompactStrs := strings.Join(blocksToCompactDirs, ",")
 
 	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(blocksToCompactDirs), "plan", toCompactStrs, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(blocksToCompactDirs), "plan", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	compactionBegin := time.Now()
 
@@ -344,12 +352,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, errors.Wrapf(err, "compact blocks %s", toCompactStrs)
+		return false, nil, errors.Wrapf(err, "compact blocks %s", toCompactStr)
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", toCompactStrs)
+		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", toCompactStr)
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
 				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -362,7 +370,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(compactionBegin)
-	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", toCompactStrs, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
