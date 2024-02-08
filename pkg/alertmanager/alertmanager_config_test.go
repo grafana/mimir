@@ -142,7 +142,7 @@ inhibit_rules:
 			// Need to ignore the trailing newline
 			lines = lines[:len(lines)-1]
 			require.Equal(t, len(test.expected), len(lines))
-			for i, _ := range lines {
+			for i := range lines {
 				require.Equal(t, test.expected[i], lines[i])
 			}
 		})
