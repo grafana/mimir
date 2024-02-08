@@ -522,13 +522,14 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
 				var cfg sampleValidationCfg
 				cfg.maxNativeHistogramBuckets = limit
+				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
-				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", []mimirpb.LabelAdapter{
-					{Name: model.MetricNameLabel, Value: "a"},
-					{Name: "a", Value: "a"}}, &h)
+				err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h)
 
 				if limit == 1 {
 					require.Error(t, err)
+					expectedErr := fmt.Errorf("received a native histogram sample with too many buckets, timestamp: %d series: a{a=\"a\"}, buckets: 2, limit: %d (err-mimir-max-native-histogram-buckets)", h.Timestamp, limit)
+					require.Equal(t, expectedErr, err)
 				} else {
 					require.NoError(t, err)
 				}
@@ -540,6 +541,45 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="group-1",reason="max_native_histogram_buckets",user="user-1"} 8
+	`), "cortex_discarded_samples_total"))
+}
+
+func TestInvalidNativeHistogramSchema(t *testing.T) {
+	testCases := map[string]struct {
+		schema        int32
+		expectedError error
+	}{
+		"a valid schema causes no error": {
+			schema:        3,
+			expectedError: nil,
+		},
+		"a schema lower than the minimum causes an error": {
+			schema:        -5,
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: -5 (err-mimir-invalid-native-histogram-schema)"),
+		},
+		"a schema higher than the maximum causes an error": {
+			schema:        10,
+			expectedError: fmt.Errorf("received a native histogram sample with an invalid schema: 10 (err-mimir-invalid-native-histogram-schema)"),
+		},
+	}
+
+	registry := prometheus.NewRegistry()
+	metrics := newSampleValidationMetrics(registry)
+	cfg := sampleValidationCfg{}
+	hist := &mimirpb.Histogram{}
+	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			hist.Schema = testCase.schema
+			err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", labels, hist)
+			require.Equal(t, testCase.expectedError, err)
+		})
+	}
+
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`
+			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+			# TYPE cortex_discarded_samples_total counter
+			cortex_discarded_samples_total{group="group-1",reason="invalid_native_histogram_schema",user="user-1"} 2
 	`), "cortex_discarded_samples_total"))
 }
 

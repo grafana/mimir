@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,13 +125,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		{path: path.Join("user-1", block3.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-2", block7.String(), block.MetaFilename), expectedExists: false},
 		{path: path.Join("user-2", block8.String(), block.MetaFilename), expectedExists: true},
-		// Should not delete a block with deletion mark who hasn't reached the deletion threshold yet.
+		// Should not delete a block with deletion mark which hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block2.String(), block.MetaFilename), expectedExists: true},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block2)), expectedExists: true},
-		// Should delete a partial block with deletion mark who hasn't reached the deletion threshold yet.
+		// Should delete a partial block with deletion mark which hasn't reached the deletion threshold yet.
 		{path: path.Join("user-1", block4.String(), block.DeletionMarkFilename), expectedExists: false},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block4)), expectedExists: false},
-		// Should delete a partial block with deletion mark who has reached the deletion threshold.
+		// Should delete a partial block with deletion mark which has reached the deletion threshold.
 		{path: path.Join("user-1", block5.String(), block.DeletionMarkFilename), expectedExists: false},
 		{path: path.Join("user-1", block.DeletionMarkFilepath(block5)), expectedExists: false},
 		// Should not delete a partial block without deletion mark.
@@ -203,10 +204,17 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 2
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -371,10 +379,17 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
 		cortex_bucket_blocks_partials_count{user="user-2"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-2"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-2"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 
 	// Override the users scanner to reconfigure it to only return a subset of users.
@@ -396,10 +411,15 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 		# HELP cortex_bucket_blocks_partials_count Total number of partial blocks.
 		# TYPE cortex_bucket_blocks_partials_count gauge
 		cortex_bucket_blocks_partials_count{user="user-1"} 0
+		# HELP cortex_bucket_index_estimated_compaction_jobs Estimated number of compaction jobs based on latest version of bucket index.
+		# TYPE cortex_bucket_index_estimated_compaction_jobs gauge
+		cortex_bucket_index_estimated_compaction_jobs{type="merge",user="user-1"} 0
+		cortex_bucket_index_estimated_compaction_jobs{type="split",user="user-1"} 0
 	`),
 		"cortex_bucket_blocks_count",
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_bucket_blocks_partials_count",
+		"cortex_bucket_index_estimated_compaction_jobs",
 	))
 }
 
@@ -1009,6 +1029,59 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 			require.Equal(t, tc.expectedLastModified, lastModified)
 		})
 	}
+}
+
+func TestComputeCompactionJobs(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+		CompactionBlockRanges:   tsdb.DurationList{2 * time.Hour, 24 * time.Hour},
+	}
+
+	const user = "test"
+
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.splitGroups[user] = 0 // No grouping of jobs for split-compaction. All jobs will be in single split compaction.
+	cfgProvider.splitAndMergeShards[user] = 3
+
+	twoHoursMS := 2 * time.Hour.Milliseconds()
+	dayMS := 24 * time.Hour.Milliseconds()
+
+	blockMarkedForNoCompact := ulid.MustNew(ulid.Now(), rand.Reader)
+
+	index := bucketindex.Index{}
+	index.Blocks = bucketindex.Blocks{
+		// Some 2h blocks that should be compacted together and split.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: 0, MaxTime: twoHoursMS},
+
+		// Some merge jobs.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "1_of_3"},
+
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "2_of_3"},
+
+		// This merge job is skipped, as block is marked for no-compaction.
+		&bucketindex.Block{ID: ulid.MustNew(ulid.Now(), rand.Reader), MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+		&bucketindex.Block{ID: blockMarkedForNoCompact, MinTime: dayMS, MaxTime: 2 * dayMS, CompactorShardID: "3_of_3"},
+	}
+
+	userBucket := bucket.NewUserBucketClient(user, bucketClient, nil)
+	// Mark block for no-compaction.
+	require.NoError(t, block.MarkForNoCompact(context.Background(), log.NewNopLogger(), userBucket, blockMarkedForNoCompact, block.CriticalNoCompactReason, "testing", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, log.NewNopLogger(), nil)
+	split, merge, err := cleaner.estimateCompactionJobsFrom(context.Background(), user, userBucket, &index)
+	require.NoError(t, err)
+	require.Equal(t, 1, split)
+	require.Equal(t, 2, merge)
 }
 
 type mockBucketFailure struct {

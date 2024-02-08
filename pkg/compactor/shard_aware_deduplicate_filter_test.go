@@ -391,7 +391,6 @@ func newTestFetcherMetrics() *block.FetcherMetrics {
 }
 
 func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
-
 	var (
 		reg   prometheus.Registerer
 		count uint64

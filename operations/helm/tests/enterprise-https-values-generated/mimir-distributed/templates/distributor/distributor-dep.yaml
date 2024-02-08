@@ -54,6 +54,10 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Force gRPC clients connecting to distributor to reconnect periodically in order to have them re-resolve endpoints and discover new replicas.
+            - "-server.grpc.keepalive.max-connection-age=2m"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
           volumeMounts:
               
             - mountPath: /certs
@@ -101,6 +105,8 @@ spec:
           env:
             - name: "GOMAXPROCS"
               value: "8"
+            - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+              value: "1000"
           envFrom:
       nodeSelector:
         {}

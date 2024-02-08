@@ -189,15 +189,18 @@ type HeadOptions struct {
 
 	IsolationDisabled bool
 
-	PostingsForMatchersCacheTTL      time.Duration
-	PostingsForMatchersCacheMaxItems int
-	PostingsForMatchersCacheMaxBytes int64
-	PostingsForMatchersCacheForce    bool
-
 	// Maximum number of CPUs that can simultaneously processes WAL replay.
 	// The default value is GOMAXPROCS.
 	// If it is set to a negative value or zero, the default value is used.
 	WALReplayConcurrency int
+
+	// EnableSharding enables ShardedPostings() support in the Head.
+	EnableSharding bool
+
+	PostingsForMatchersCacheTTL      time.Duration
+	PostingsForMatchersCacheMaxItems int
+	PostingsForMatchersCacheMaxBytes int64
+	PostingsForMatchersCacheForce    bool
 
 	// Optional hash function applied to each new series. Computed hash value is preserved for each series in the head,
 	// and values can be iterated by using Head.ForEachSecondaryHash method.
@@ -1525,9 +1528,9 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 			continue
 		}
 
-		series.RLock()
+		series.Lock()
 		t0, t1 := series.minTime(), series.maxTime()
-		series.RUnlock()
+		series.Unlock()
 		if t0 == math.MinInt64 || t1 == math.MinInt64 {
 			continue
 		}
@@ -1704,7 +1707,12 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, labels.StableHash(lset), h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
+		shardHash := uint64(0)
+		if h.opts.EnableSharding {
+			shardHash = labels.StableHash(lset)
+		}
+
+		return newMemSeries(lset, id, shardHash, h.secondaryHashFunc(lset), h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1792,32 +1800,31 @@ func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	m.conflicts[hash] = append(l, s)
 }
 
-func (m *seriesHashmap) del(hash uint64, lset labels.Labels) {
+func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
 	var rem []*memSeries
 	unique, found := m.unique[hash]
 	switch {
-	case !found:
+	case !found: // Supplied hash is not stored.
 		return
-	case labels.Equal(unique.lset, lset):
+	case unique.ref == ref:
 		conflicts := m.conflicts[hash]
-		if len(conflicts) == 0 {
+		if len(conflicts) == 0 { // Exactly one series with this hash was stored
 			delete(m.unique, hash)
 			return
 		}
-		rem = conflicts
-	default:
-		rem = append(rem, unique)
+		m.unique[hash] = conflicts[0] // First remaining series goes in 'unique'.
+		rem = conflicts[1:]           // Keep the rest.
+	default: // The series to delete is somewhere in 'conflicts'. Keep all the ones that don't match.
 		for _, s := range m.conflicts[hash] {
-			if !labels.Equal(s.lset, lset) {
+			if s.ref != ref {
 				rem = append(rem, s)
 			}
 		}
 	}
-	m.unique[hash] = rem[0]
-	if len(rem) == 1 {
+	if len(rem) == 0 {
 		delete(m.conflicts, hash)
 	} else {
-		m.conflicts[hash] = rem[1:]
+		m.conflicts[hash] = rem
 	}
 }
 
@@ -1932,7 +1939,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
-		s.hashes[hashShard].del(hash, series.lset)
+		s.hashes[hashShard].del(hash, series.ref)
 		delete(s.series[refShard], series.ref)
 		deletedForCallback[series.ref] = series.lset
 	}
@@ -2058,13 +2065,14 @@ func (s sample) Type() chunkenc.ValueType {
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
 type memSeries struct {
-	sync.RWMutex
+	sync.Mutex
 
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
 	meta *metadata.Metadata
 
-	// Series labels hash to use for sharding purposes.
+	// Series labels hash to use for sharding purposes. The value is always 0 when sharding has not
+	// been explicitly enabled in TSDB.
 	shardHash uint64
 
 	// Value returned by secondary hash function.
@@ -2133,7 +2141,7 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 		secondaryHash:        secondaryHash,
 	}
 	if !isolationDisabled {
-		s.txs = newTxRing(4)
+		s.txs = newTxRing(0)
 	}
 	return s
 }

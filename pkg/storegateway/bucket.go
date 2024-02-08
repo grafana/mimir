@@ -1088,11 +1088,11 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 	strategy seriesIteratorStrategy,
 ) (seriesChunkRefsSetIterator, error) {
 	var (
-		mtx                           = sync.Mutex{}
-		batches                       = make([]seriesChunkRefsSetIterator, 0, len(blocks))
-		g, _                          = errgroup.WithContext(ctx)
-		begin                         = time.Now()
-		blocksQueriedBySourceAndLevel = make(map[blockSourceAndLevel]int)
+		mtx                      = sync.Mutex{}
+		batches                  = make([]seriesChunkRefsSetIterator, 0, len(blocks))
+		g, _                     = errgroup.WithContext(ctx)
+		begin                    = time.Now()
+		blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	)
 	for i, b := range blocks {
 		b := b
@@ -1139,10 +1139,7 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 			return nil
 		})
 
-		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
-			source: b.meta.Thanos.Source,
-			level:  b.meta.Compaction.Level,
-		}]++
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 	}
 
 	err := g.Wait()
@@ -1152,8 +1149,8 @@ func (s *BucketStore) getSeriesIteratorFromBlocks(
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
-		for sl, count := range blocksQueriedBySourceAndLevel {
-			stats.blocksQueriedBySourceAndLevel[sl] = count
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
 		}
 		stats.streamingSeriesExpandPostingsDuration += time.Since(begin)
 	})
@@ -1184,8 +1181,8 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesDataFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetched))
 	s.metrics.seriesDataSizeFetched.WithLabelValues("chunks", "refetched").Observe(float64(stats.chunksRefetchedSizeSum))
 
-	for sl, count := range stats.blocksQueriedBySourceAndLevel {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(sl.source), strconv.Itoa(sl.level)).Observe(float64(count))
+	for m, count := range stats.blocksQueriedByBlockMeta {
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 
 	s.metrics.seriesDataTouched.WithLabelValues("chunks", "processed").Observe(float64(stats.chunksTouched))
@@ -1205,8 +1202,8 @@ func (s *BucketStore) recordLabelNamesCallResult(safeStats *safeQueryStats) {
 	s.recordSeriesHashCacheStats(stats)
 	s.recordStreamingSeriesStats(stats)
 
-	for sl, count := range stats.blocksQueriedBySourceAndLevel {
-		s.metrics.seriesBlocksQueried.WithLabelValues(string(sl.source), strconv.Itoa(sl.level)).Observe(float64(count))
+	for m, count := range stats.blocksQueriedByBlockMeta {
+		s.metrics.seriesBlocksQueried.WithLabelValues(string(m.source), strconv.Itoa(m.level), strconv.FormatBool(m.outOfOrder)).Observe(float64(count))
 	}
 }
 
@@ -1335,7 +1332,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var mtx sync.Mutex
 	var sets [][]string
-	var blocksQueriedBySourceAndLevel = make(map[blockSourceAndLevel]int)
+	var blocksQueriedByBlockMeta = make(map[blockQueriedMeta]int)
 	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	for _, b := range s.blocks {
@@ -1348,10 +1345,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 
 		resHints.AddQueriedBlock(b.meta.ULID)
-		blocksQueriedBySourceAndLevel[blockSourceAndLevel{
-			source: b.meta.Thanos.Source,
-			level:  b.meta.Compaction.Level,
-		}]++
+		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		indexr := b.loadedIndexReader(gctx, s.postingsStrategy, stats)
 
@@ -1385,8 +1379,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(sets)
-		for sl, count := range blocksQueriedBySourceAndLevel {
-			stats.blocksQueriedBySourceAndLevel[sl] = count
+		for sl, count := range blocksQueriedByBlockMeta {
+			stats.blocksQueriedByBlockMeta[sl] = count
 		}
 	})
 

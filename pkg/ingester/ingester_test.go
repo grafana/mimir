@@ -3806,7 +3806,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValHistogram, it.Next())
-					actualTs, actualHist := it.AtHistogram()
+					actualTs, actualHist := it.AtHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestHistogram(seriesID), actualHist)
 
@@ -3820,7 +3820,7 @@ func TestIngester_QueryStream(t *testing.T) {
 					it := chk.Iterator(nil)
 
 					require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
-					actualTs, actualHist := it.AtFloatHistogram()
+					actualTs, actualHist := it.AtFloatHistogram(nil)
 					require.Equal(t, int64(seriesID), actualTs)
 					require.Equal(t, util_test.GenerateTestFloatHistogram(seriesID), actualHist)
 
@@ -6686,20 +6686,20 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 						// We push the last request 2 times.
 						// The first request causes an instance limit error,
 						// and which opens the circuit breaker, but no
-						// circuitbreaker.ErrCircuitBreakerOpen is returned.
+						// circuitbreaker.ErrOpen is returned.
 						_, err := client.Push(ctx, req)
 						require.Error(t, err)
-						require.NotErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+						require.NotErrorIs(t, err, circuitbreaker.ErrOpen)
 						s, ok := grpcutil.ErrorToStatus(err)
 						require.True(t, ok, "expected to be able to convert to gRPC status")
 						require.Equal(t, codes.Unavailable, s.Code())
 						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
 
-						// The second request causes a circuitbreaker.ErrCircuitBreakerOpen,
+						// The second request causes a circuitbreaker.ErrOpen,
 						// since the circuit breaker is already open.
 						_, err = client.Push(ctx, req)
 						require.Error(t, err)
-						require.ErrorIs(t, err, circuitbreaker.ErrCircuitBreakerOpen)
+						require.ErrorIs(t, err, circuitbreaker.ErrOpen)
 					}
 
 					// imitate time ticking between each push

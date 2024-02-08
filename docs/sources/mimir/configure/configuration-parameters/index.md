@@ -692,6 +692,11 @@ grpc_tls_config:
 # CLI flag: -server.log-source-ips-enabled
 [log_source_ips_enabled: <boolean> | default = false]
 
+# Log all source IPs instead of only the originating one. Only used if
+# server.log-source-ips-enabled is true
+# CLI flag: -server.log-source-ips-full
+[log_source_ips_full: <boolean> | default = false]
+
 # (advanced) Header field storing the source IPs. Only used if
 # server.log-source-ips-enabled is true. If not set the default Forwarded,
 # X-Real-IP and X-Forwarded-For headers are used
@@ -2254,9 +2259,9 @@ alertmanager_client:
 
 # (experimental) Enable UTF-8 strict mode. Allows UTF-8 characters in the
 # matchers for routes and inhibition rules, in silences, and in the labels for
-# alerts. It is recommended to check both alertmanager_matchers_disagree and
-# alertmanager_matchers_incompatible metrics before using this mode as otherwise
-# some tenant configurations might fail to load.
+# alerts. It is recommended to check both alertmanager_matchers_disagree_total
+# and alertmanager_matchers_incompatible_total metrics before using this mode as
+# otherwise some tenant configurations might fail to load.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
 ```
@@ -2351,7 +2356,7 @@ circuit_breaker:
   # (experimental) How long the circuit breaker will stay in the open state
   # before allowing some requests
   # CLI flag: -ingester.client.circuit-breaker.cooldown-period
-  [cooldown_period: <duration> | default = 1m]
+  [cooldown_period: <duration> | default = 10s]
 
 # (deprecated) If set to true, gRPC status codes will be reported in
 # "status_code" label of "cortex_ingester_client_request_duration_seconds"
@@ -3971,8 +3976,8 @@ The `compactor` block configures the compactor component.
 # CLI flag: -compactor.first-level-compaction-wait-period
 [first_level_compaction_wait_period: <duration> | default = 25m]
 
-# (advanced) How frequently compactor should run blocks cleanup and maintenance,
-# as well as update the bucket index.
+# (advanced) How frequently the compactor should run blocks cleanup and
+# maintenance, as well as update the bucket index.
 # CLI flag: -compactor.cleanup-interval
 [cleanup_interval: <duration> | default = 15m]
 
@@ -3982,15 +3987,16 @@ The `compactor` block configures the compactor component.
 [cleanup_concurrency: <int> | default = 20]
 
 # (advanced) Time before a block marked for deletion is deleted from bucket. If
-# not 0, blocks will be marked for deletion and compactor component will
+# not 0, blocks will be marked for deletion and the compactor component will
 # permanently delete blocks marked for deletion from the bucket. If 0, blocks
 # will be deleted straight away. Note that deleting blocks immediately can cause
 # query failures.
 # CLI flag: -compactor.deletion-delay
 [deletion_delay: <duration> | default = 12h]
 
-# (advanced) For tenants marked for deletion, this is time between deleting of
-# last block, and doing final cleanup (marker files, debug files) of the tenant.
+# (advanced) For tenants marked for deletion, this is the time between deletion
+# of the last block, and doing final cleanup (marker files, debug files) of the
+# tenant.
 # CLI flag: -compactor.tenant-cleanup-delay
 [tenant_cleanup_delay: <duration> | default = 6h]
 
@@ -4012,8 +4018,8 @@ The `compactor` block configures the compactor component.
 [max_opening_blocks_concurrency: <int> | default = 1]
 
 # (advanced) Max number of blocks that can be closed concurrently during split
-# compaction. Note that closing of newly compacted block uses a lot of memory
-# for writing index.
+# compaction. Note that closing a newly compacted block uses a lot of memory for
+# writing the index.
 # CLI flag: -compactor.max-closing-blocks-concurrency
 [max_closing_blocks_concurrency: <int> | default = 1]
 
@@ -4027,15 +4033,15 @@ The `compactor` block configures the compactor component.
 [max_block_upload_validation_concurrency: <int> | default = 1]
 
 # (advanced) Comma separated list of tenants that can be compacted. If
-# specified, only these tenants will be compacted by compactor, otherwise all
-# tenants can be compacted. Subject to sharding.
+# specified, only these tenants will be compacted by the compactor, otherwise
+# all tenants can be compacted. Subject to sharding.
 # CLI flag: -compactor.enabled-tenants
 [enabled_tenants: <string> | default = ""]
 
-# (advanced) Comma separated list of tenants that cannot be compacted by this
-# compactor. If specified, and compactor would normally pick given tenant for
-# compaction (via -compactor.enabled-tenants or sharding), it will be ignored
-# instead.
+# (advanced) Comma separated list of tenants that cannot be compacted by the
+# compactor. If specified, and the compactor would normally pick a given tenant
+# for compaction (via -compactor.enabled-tenants or sharding), it will be
+# ignored instead.
 # CLI flag: -compactor.disabled-tenants
 [disabled_tenants: <string> | default = ""]
 

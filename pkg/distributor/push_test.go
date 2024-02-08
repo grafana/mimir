@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/user"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -35,6 +36,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -470,7 +472,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, verifyWritePushFunc(t, mimirpb.RULE), log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
@@ -479,7 +481,7 @@ func TestHandler_mimirWriteRequest(t *testing.T) {
 func TestHandler_contextCanceledRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
-	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
+	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 	handler := Handler(100000, sourceIPs, false, nil, RetryConfig{}, func(_ context.Context, req *Request) error {
 		defer req.CleanUp()
 		return fmt.Errorf("the request failed: %w", context.Canceled)
@@ -1133,6 +1135,16 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			err:                newIngesterPushError(createStatusWithDetails(t, codes.Internal, context.DeadlineExceeded.Error(), mimirpb.UNKNOWN_CAUSE), ingesterID),
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
+		},
+		"a circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
+		},
+		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+			expectedHTTPStatus: http.StatusServiceUnavailable,
+			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
 		},
 	}
 	for name, tc := range testCases {

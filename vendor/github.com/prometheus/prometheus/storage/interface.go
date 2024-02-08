@@ -197,8 +197,19 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
-	ShardIndex uint64 // Current shard index (starts from 0 and up to ShardCount-1).
-	ShardCount uint64 // Total number of shards (0 means sharding is disabled).
+	// ShardCount is the total number of shards that series should be split into
+	// at query time. Then, only series in the ShardIndex shard will be returned
+	// by the query.
+	//
+	// ShardCount equal to 0 means that sharding is disabled.
+	ShardCount uint64
+
+	// ShardIndex is the series shard index to query. The index must be between 0 and ShardCount-1.
+	// When ShardCount is set to a value > 0, then a query will only process series within the
+	// ShardIndex's shard.
+	//
+	// Series are sharded by "labels stable hash" mod "ShardCount".
+	ShardIndex uint64
 
 	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
@@ -464,4 +475,20 @@ type ChunkIterable interface {
 	// Iterator returns an iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
 	Iterator(chunks.Iterator) chunks.Iterator
+}
+
+// LabelValues is an iterator over label values in sorted order.
+type LabelValues interface {
+	// Next tries to advance the iterator and returns true if it could, false otherwise.
+	Next() bool
+	// At returns the current label value.
+	At() string
+	// Err is the error that iteration eventually failed with.
+	// When an error occurs, the iterator cannot continue.
+	Err() error
+	// Warnings is a collection of warnings that have occurred during iteration.
+	// Warnings could be non-empty even if iteration has not failed with an error.
+	Warnings() annotations.Annotations
+	// Close the iterator and release held resources. Can be called multiple times.
+	Close() error
 }

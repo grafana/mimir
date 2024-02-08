@@ -10,6 +10,7 @@ import (
 type circuitState[R any] interface {
 	getState() State
 	getStats() circuitStats
+	getRemainingDelay() time.Duration
 	tryAcquirePermit() bool
 	checkThresholdAndReleasePermit(exec failsafe.Execution[R])
 }
@@ -38,6 +39,10 @@ func (s *closedState[R]) getState() State {
 
 func (s *closedState[R]) getStats() circuitStats {
 	return s.stats
+}
+
+func (s *closedState[R]) getRemainingDelay() time.Duration {
+	return 0
 }
 
 func (s *closedState[R]) tryAcquirePermit() bool {
@@ -81,6 +86,11 @@ func (s *openState[R]) getStats() circuitStats {
 	return s.stats
 }
 
+func (s *openState[R]) getRemainingDelay() time.Duration {
+	elapsedTime := s.breaker.config.clock.CurrentUnixNano() - s.startTime
+	return max(0, s.delay-time.Duration(elapsedTime))
+}
+
 func (s *openState[R]) tryAcquirePermit() bool {
 	if s.breaker.config.clock.CurrentUnixNano()-s.startTime >= s.delay.Nanoseconds() {
 		s.breaker.halfOpen()
@@ -119,6 +129,10 @@ func (s *halfOpenState[R]) getState() State {
 
 func (s *halfOpenState[R]) getStats() circuitStats {
 	return s.stats
+}
+
+func (s *halfOpenState[R]) getRemainingDelay() time.Duration {
+	return 0
 }
 
 func (s *halfOpenState[R]) tryAcquirePermit() bool {

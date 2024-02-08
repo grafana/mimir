@@ -5,15 +5,18 @@ package client
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/ring"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -38,6 +41,22 @@ var (
 		"/cortex.Ingester/LabelValuesCardinality":  {},
 	}
 )
+
+type ErrCircuitBreakerOpen struct {
+	remainingDelay time.Duration
+}
+
+func (e ErrCircuitBreakerOpen) RemainingDelay() time.Duration {
+	return e.remainingDelay
+}
+
+func (e ErrCircuitBreakerOpen) Error() string {
+	return circuitbreaker.ErrOpen.Error()
+}
+
+func (e ErrCircuitBreakerOpen) Unwrap() error {
+	return circuitbreaker.ErrOpen
+}
 
 func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics *Metrics, logger log.Logger) grpc.UnaryClientInterceptor {
 	// Initialize each of the known labels for circuit breaker metrics for this particular ingester
@@ -84,8 +103,9 @@ func NewCircuitBreaker(inst ring.InstanceDesc, cfg CircuitBreakerConfig, metrics
 			return invoker(ctx, method, req, reply, cc, opts...)
 		})
 
-		if err != nil && errors.Is(err, circuitbreaker.ErrCircuitBreakerOpen) {
+		if err != nil && errors.Is(err, circuitbreaker.ErrOpen) {
 			countOpen.Inc()
+			return ErrCircuitBreakerOpen{remainingDelay: breaker.RemainingDelay()}
 		}
 
 		return err
@@ -97,9 +117,21 @@ func isFailure(err error) bool {
 		return false
 	}
 
-	// We only consider timeouts or the ingester being unavailable (returned when hitting
-	// per-instance limits) to be errors worthy of tripping the circuit breaker since these
+	// We only consider timeouts or ingester hitting a per-instance limit
+	// to be errors worthy of tripping the circuit breaker since these
 	// are specific to a particular ingester, not a user or request.
-	code := status.Code(err)
-	return code == codes.Unavailable || code == codes.DeadlineExceeded
+	if stat, ok := grpcutil.ErrorToStatus(err); ok {
+		if stat.Code() == codes.DeadlineExceeded {
+			return true
+		}
+
+		details := stat.Details()
+		if len(details) != 1 {
+			return false
+		}
+		if errDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
+			return errDetails.GetCause() == mimirpb.INSTANCE_LIMIT
+		}
+	}
+	return false
 }

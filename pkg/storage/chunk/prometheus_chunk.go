@@ -218,12 +218,12 @@ func (p *prometheusChunkIterator) Value() model.SamplePair {
 	}
 }
 
-func (p *prometheusChunkIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return p.it.AtHistogram()
+func (p *prometheusChunkIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
+	return p.it.AtHistogram(h)
 }
 
-func (p *prometheusChunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return p.it.AtFloatHistogram()
+func (p *prometheusChunkIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return p.it.AtFloatHistogram(fh)
 }
 
 func (p *prometheusChunkIterator) Timestamp() int64 {
@@ -246,13 +246,13 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 		}
 	case chunkenc.ValHistogram:
 		populate = func(j int) {
-			t, h := p.it.AtHistogram()
+			t, h := p.it.AtHistogram(nil)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(h)
 		}
 	case chunkenc.ValFloatHistogram:
 		populate = func(j int) {
-			t, fh := p.it.AtFloatHistogram()
+			t, fh := p.it.AtFloatHistogram(nil)
 			batch.Timestamps[j] = t
 			batch.PointerValues[j] = unsafe.Pointer(fh)
 		}
@@ -288,8 +288,10 @@ type errorIterator string
 func (e errorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
 func (e errorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
 func (e errorIterator) Value() model.SamplePair                       { panic("no values") }
-func (e errorIterator) AtHistogram() (int64, *histogram.Histogram)    { panic("no integer histograms") }
-func (e errorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (e errorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+	panic("no integer histograms")
+}
+func (e errorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("no float histograms")
 }
 func (e errorIterator) Timestamp() int64                        { panic("no samples") }

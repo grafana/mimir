@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	opSet                 = "set"
-	opGetMulti            = "getmulti"
-	opDelete              = "delete"
+	opSet      = "set"
+	opGetMulti = "getmulti"
+	opDelete   = "delete"
+
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
@@ -26,6 +27,14 @@ const (
 	reasonServerError     = "server-error"
 	reasonNetworkError    = "network-error"
 	reasonOther           = "other"
+
+	labelCacheName           = "name"
+	labelCacheBackend        = "backend"
+	backendValueRedis        = "redis"
+	backendValueMemcached    = "memcached"
+	cacheMetricNamePrefix    = "cache_"
+	getMultiMetricNamePrefix = "getmulti_"
+	clientInfoMetricName     = "client_info"
 )
 
 type clientMetrics struct {

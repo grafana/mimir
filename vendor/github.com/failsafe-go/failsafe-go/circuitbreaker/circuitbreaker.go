@@ -3,13 +3,14 @@ package circuitbreaker
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/policy"
 )
 
-// ErrCircuitBreakerOpen is returned when an execution is attempted against a circuit breaker that is open.
-var ErrCircuitBreakerOpen = errors.New("circuit breaker open")
+// ErrOpen is returned when an execution is attempted against a circuit breaker that is open.
+var ErrOpen = errors.New("circuit breaker open")
 
 // State of a CircuitBreaker.
 type State int
@@ -42,7 +43,7 @@ const (
 CircuitBreaker is a policy that temporarily blocks execution when a configured number of failures are exceeded. Circuit
 breakers have three states: closed, open, and half-open. When a circuit breaker is in the ClosedState (default),
 executions are allowed. If a configurable number of failures occur, optionally over some time period, the circuit
-breaker transitions to OpenState. In the OpenState a circuit breaker will fail executions with ErrCircuitBreakerOpen.
+breaker transitions to OpenState. In the OpenState a circuit breaker will fail executions with ErrOpen.
 After a configurable delay, the circuit breaker will transition to HalfOpenState. In the HalfOpenState a configurable
 number of trial executions will be allowed, after which the circuit breaker will transition to either ClosedState or
 OpenState depending on how many were successful.
@@ -80,6 +81,10 @@ type CircuitBreaker[R any] interface {
 
 	// State returns the State of the CircuitBreaker.
 	State() State
+
+	// RemainingDelay returns the remaining delay until the circuit is half-opened and allows another execution, when in the
+	// OpenState, else returns 0 when in other states.
+	RemainingDelay() time.Duration
 
 	// Metrics returns metrics for the CircuitBreaker.
 	Metrics() Metrics
@@ -176,6 +181,12 @@ func (cb *circuitBreaker[R]) State() State {
 	cb.mtx.Lock()
 	defer cb.mtx.Unlock()
 	return cb.state.getState()
+}
+
+func (cb *circuitBreaker[R]) RemainingDelay() time.Duration {
+	cb.mtx.Lock()
+	defer cb.mtx.Unlock()
+	return cb.state.getRemainingDelay()
 }
 
 func (cb *circuitBreaker[R]) Metrics() Metrics {

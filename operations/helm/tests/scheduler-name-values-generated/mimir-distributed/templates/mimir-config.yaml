@@ -82,10 +82,6 @@ data:
       rule_path: /data
     runtime_config:
       file: /var/mimir/runtime.yaml
-    server:
-      grpc_server_max_connection_age: 2m
-      grpc_server_max_connection_age_grace: 5m
-      grpc_server_max_connection_idle: 1m
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m

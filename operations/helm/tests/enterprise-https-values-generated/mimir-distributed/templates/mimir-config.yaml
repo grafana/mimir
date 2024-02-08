@@ -286,9 +286,6 @@ data:
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
-      grpc_server_max_connection_age: 2m
-      grpc_server_max_connection_age_grace: 5m
-      grpc_server_max_connection_idle: 1m
       grpc_tls_config:
         cert_file: /certs/tls.crt
         client_auth_type: VerifyClientCertIfGiven

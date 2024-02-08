@@ -67,7 +67,7 @@ func (s SeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(_ string, storageDir string, specs SeriesSpecs) (_ *Meta, returnErr error) {
+func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
