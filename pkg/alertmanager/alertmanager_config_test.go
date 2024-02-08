@@ -4,11 +4,12 @@ package alertmanager
 
 import (
 	"bytes"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/require"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
