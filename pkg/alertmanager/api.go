@@ -347,6 +347,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
+	case reflect.TypeOf(config.DiscordConfig{}):
+		if err := validateDiscordConfig(v.Interface().(config.DiscordConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(config.EmailConfig{}):
 		if err := validateEmailConfig(v.Interface().(config.EmailConfig)); err != nil {
 			return err
@@ -386,10 +391,17 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validatePushoverConfig(v.Interface().(config.PushoverConfig)); err != nil {
 			return err
 		}
+
+	case reflect.TypeOf(config.MSTeamsConfig{}):
+		if err := validateMSTeamsConfig(v.Interface().(config.MSTeamsConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(config.TelegramConfig{}):
 		if err := validateTelegramConfig(v.Interface().(config.TelegramConfig)); err != nil {
 			return err
 		}
+
 	case reflect.TypeOf(config.WebhookConfig{}):
 		if err := validateWebhookConfig(v.Interface().(config.WebhookConfig)); err != nil {
 			return err
@@ -495,6 +507,15 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	return nil
 }
 
+// validateDiscordConfig validates the Discord config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateDiscordConfig(cfg config.DiscordConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
+	return nil
+}
+
 // validateEmailConfig validates the Email config and returns an error if it contains settings not allowed by Mimir.
 func validateEmailConfig(cfg config.EmailConfig) error {
 	if cfg.AuthPasswordFile != "" {
@@ -554,6 +575,15 @@ func validatePushoverConfig(cfg config.PushoverConfig) error {
 		return errPushoverTokenFileNotAllowed
 	}
 
+	return nil
+}
+
+// validateMSTeamsConfig validates the Microsoft Teams config and returns an error if it
+// contains settings not allowed by Mimir.
+func validateMSTeamsConfig(cfg config.MSTeamsConfig) error {
+	if cfg.WebhookURLFile != "" {
+		return errWebhookURLFileNotAllowed
+	}
 	return nil
 }
 
