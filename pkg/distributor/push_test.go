@@ -1136,13 +1136,13 @@ func TestHandler_ToHTTPStatus(t *testing.T) {
 			expectedHTTPStatus: http.StatusInternalServerError,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, context.DeadlineExceeded),
 		},
-		"a client.ErrCircuitBreakerOpen error gets translated into an HTTP 503": {
-			err:                client.ErrCircuitBreakerOpen{},
+		"a circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedErrorMsg:   circuitbreaker.ErrOpen.Error(),
 		},
-		"a wrapped client.ErrCircuitBreakerOpen error gets translated into an HTTP 503": {
-			err:                errors.Wrap(client.ErrCircuitBreakerOpen{}, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
+		"a wrapped circuitBreakerOpenError gets translated into an HTTP 503": {
+			err:                errors.Wrap(newCircuitBreakerOpenError(client.ErrCircuitBreakerOpen{}), fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID)),
 			expectedHTTPStatus: http.StatusServiceUnavailable,
 			expectedErrorMsg:   fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, circuitbreaker.ErrOpen),
 		},
