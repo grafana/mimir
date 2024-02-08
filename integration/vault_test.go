@@ -24,7 +24,6 @@ func TestVaultTokenRenewal(t *testing.T) {
 	vault := e2e.NewHTTPService(
 		"vault",
 		"hashicorp/vault:1.13.2",
-		// Create the buckets before starting minio
 		nil,
 		e2e.NewHTTPReadinessProbe(8200, "/v1/sys/health", 200, 200),
 		8200,
