@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -220,6 +221,8 @@ func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
 		case mimirpb.TOO_MANY_CLUSTERS:
 			errCode = codes.FailedPrecondition
 		}
+	} else if errors.As(pushErr, &client.ErrCircuitBreakerOpen{}) {
+		errCode = codes.Unavailable
 	}
 	stat := status.New(errCode, pushErr.Error())
 	if errDetails != nil {
