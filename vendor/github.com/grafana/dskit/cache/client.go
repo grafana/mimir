@@ -15,9 +15,13 @@ import (
 )
 
 const (
-	opSet      = "set"
-	opGetMulti = "getmulti"
-	opDelete   = "delete"
+	opSet            = "set"
+	opGetMulti       = "getmulti"
+	opDelete         = "delete"
+	opIncrement      = "increment"
+	opTouch          = "touch"
+	opFlush          = "flushall"
+	opCompareAndSwap = "compareswap"
 
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
@@ -69,12 +73,16 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.operations.WithLabelValues(opGetMulti)
 	cm.operations.WithLabelValues(opSet)
 	cm.operations.WithLabelValues(opDelete)
+	cm.operations.WithLabelValues(opIncrement)
+	cm.operations.WithLabelValues(opTouch)
+	cm.operations.WithLabelValues(opCompareAndSwap)
+	cm.operations.WithLabelValues(opFlush)
 
 	cm.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "operation_failures_total",
 		Help: "Total number of operations against cache that failed.",
 	}, []string{"operation", "reason"})
-	for _, op := range []string{opGetMulti, opSet, opDelete} {
+	for _, op := range []string{opGetMulti, opSet, opDelete, opIncrement, opFlush, opTouch, opCompareAndSwap} {
 		cm.failures.WithLabelValues(op, reasonTimeout)
 		cm.failures.WithLabelValues(op, reasonMalformedKey)
 		cm.failures.WithLabelValues(op, reasonServerError)
@@ -98,6 +106,10 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	cm.duration.WithLabelValues(opGetMulti)
 	cm.duration.WithLabelValues(opSet)
 	cm.duration.WithLabelValues(opDelete)
+	cm.duration.WithLabelValues(opIncrement)
+	cm.duration.WithLabelValues(opFlush)
+	cm.duration.WithLabelValues(opTouch)
+	cm.duration.WithLabelValues(opCompareAndSwap)
 
 	cm.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "operation_data_size_bytes",
@@ -110,6 +122,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 	)
 	cm.dataSize.WithLabelValues(opGetMulti)
 	cm.dataSize.WithLabelValues(opSet)
+	cm.dataSize.WithLabelValues(opCompareAndSwap)
 
 	return cm
 }
