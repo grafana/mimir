@@ -1044,6 +1044,20 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 	}
 }
 
+func TestDistributor_PushWithCircuitBreakers(t *testing.T) {
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:       3,
+		happyIngesters:     3,
+		numDistributors:    1,
+		circuitBreakerOpen: true,
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	err := ds[0].push(ctx, NewParsedRequest(makeWriteRequest(123456789000, 10, 0, false, true, "foo")))
+	require.Error(t, err)
+	require.ErrorAs(t, err, &circuitBreakerOpenError{})
+}
+
 func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -3440,6 +3454,81 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
+func TestSortAndFilterMiddleware(t *testing.T) {
+	ctxWithUser := user.InjectOrgID(context.Background(), "user")
+
+	type testCase struct {
+		name         string
+		ctx          context.Context
+		reqs         []*mimirpb.WriteRequest
+		expectedReqs []*mimirpb.WriteRequest
+		expectErrs   []bool
+	}
+	testCases := []testCase{
+		{
+			name:         "unsorted labels",
+			ctx:          ctxWithUser,
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "labelb", "valueb", "labela", "valuea"), nil, nil)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "labela", "valuea", "labelb", "valueb"), nil, nil)},
+			expectErrs:   []bool{false},
+		},
+		{
+			name:         "empty labels",
+			ctx:          ctxWithUser,
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithEmptyLabels("metric1", "empty"), nil, nil)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithEmptyLabels("metric1"), nil, nil)},
+			expectErrs:   []bool{false},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanupCallCount := 0
+			cleanup := func() {
+				cleanupCallCount++
+			}
+
+			duplicateCleanup := func() {
+				// If we get here, that means the middleware called `next`
+				// (which will call `CleanUp`) and then called `CleanUp` again.
+				assert.Fail(t, "cleanup called twice")
+			}
+
+			var gotReqs []*mimirpb.WriteRequest
+			next := func(ctx context.Context, pushReq *Request) error {
+				req, err := pushReq.WriteRequest()
+				require.NoError(t, err)
+				gotReqs = append(gotReqs, req)
+				pushReq.CleanUp()
+				pushReq.AddCleanup(duplicateCleanup)
+				return nil
+			}
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			ds, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+			})
+			middleware := ds[0].prePushSortAndFilterMiddleware(next)
+
+			var gotErrs []bool
+			for _, req := range tc.reqs {
+				pushReq := NewParsedRequest(req)
+				pushReq.AddCleanup(cleanup)
+				err := middleware(tc.ctx, pushReq)
+				gotErrs = append(gotErrs, err != nil)
+			}
+
+			assert.Equal(t, tc.expectedReqs, gotReqs)
+			assert.Equal(t, tc.expectErrs, gotErrs)
+
+			// Cleanup must have been called once per request.
+			assert.Equal(t, len(tc.reqs), cleanupCallCount)
+		})
+	}
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
@@ -3511,7 +3600,8 @@ type prepConfig struct {
 
 	configure func(*Config)
 
-	timeOut bool
+	timeOut            bool
+	circuitBreakerOpen bool
 }
 
 // totalIngesters takes into account ingesterStateByZone and numIngesters.
@@ -3636,6 +3726,7 @@ func prepareIngesterZone(zone string, state ingesterZoneState, cfg prepConfig) [
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 			timeOut:                       cfg.timeOut,
+			circuitBreakerOpen:            cfg.circuitBreakerOpen,
 		})
 	}
 	return ingesters
@@ -3942,6 +4033,31 @@ func labelSetGenForStringPairs(tb testing.TB, namesValues ...string) func(id int
 	}
 }
 
+// labelSetGenWithEmptyLabels takes a slice of label names, it then returns a label set generator which generates
+// labelsets of the given label names with empty values, plus a metric name and unique id label which are non-empty.
+func labelSetGenWithEmptyLabels(metric string, names ...string) func(id int) []mimirpb.LabelAdapter {
+	return func(id int) []mimirpb.LabelAdapter {
+		labels := make([]mimirpb.LabelAdapter, 0, len(names)+2)
+		labels = append(labels, mimirpb.LabelAdapter{
+			Name:  model.MetricNameLabel,
+			Value: metric,
+		})
+
+		labels = append(labels, mimirpb.LabelAdapter{
+			Name:  "id",
+			Value: fmt.Sprintf("%d", id),
+		})
+
+		for _, name := range names {
+			labels = append(labels, mimirpb.LabelAdapter{
+				Name:  name,
+				Value: "",
+			})
+		}
+		return labels
+	}
+}
+
 type labelSetGen func(int) []mimirpb.LabelAdapter
 type metaDataGen func(int, string) *mimirpb.MetricMetadata
 
@@ -4111,6 +4227,7 @@ type mockIngester struct {
 	timeOut                       bool
 	tokens                        []uint32
 	id                            int
+	circuitBreakerOpen            bool
 }
 
 func (i *mockIngester) address() string {
@@ -4155,6 +4272,10 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ..
 
 	if i.timeOut {
 		return nil, context.DeadlineExceeded
+	}
+
+	if i.circuitBreakerOpen {
+		return nil, client.ErrCircuitBreakerOpen{}
 	}
 
 	if len(req.Timeseries) > 0 && i.timeseries == nil {

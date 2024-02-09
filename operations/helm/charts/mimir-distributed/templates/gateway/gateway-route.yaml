@@ -11,7 +11,7 @@ metadata:
   {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  host: {{ .Values.gateway.route.host }}
+  host: {{ tpl .Values.gateway.route.host  $ | quote }}
   to:
     kind: Service
     name: {{ include "mimir.gateway.service.name" . }}
