@@ -69,9 +69,9 @@ type Vault struct {
 	token  *hashivault.Secret
 	logger log.Logger
 
-	authTotal                    prometheus.Counter
+	authLeaseRenewalActive       prometheus.Gauge
 	authLeaseRenewalSuccessTotal prometheus.Counter
-	authLeaseRenewalFailureTotal prometheus.Counter
+	authSuccessTotal             prometheus.Counter
 }
 
 func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vault, error) {
@@ -100,17 +100,17 @@ func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vaul
 		token:   authToken,
 		client:  client,
 		logger:  l,
-		authTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_vault_auth_total",
-			Help: "Total number of times authentication to Vault happened during token lifecycle management",
+		authLeaseRenewalActive: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_vault_token_lease_renewal_active",
+			Help: "Gauge to check whether token renewal is active or not (0 active, 1 inactive).",
 		}),
 		authLeaseRenewalSuccessTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_vault_token_lease_renewal_total",
-			Help: "Total number of times the auth token was renewed successfully",
+			Name: "cortex_vault_token_lease_renewal_success_total",
+			Help: "Number of successful token lease renewals. Token is renewed as it approaches the end of its ttl.",
 		}),
-		authLeaseRenewalFailureTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_vault_token_lease_renewal_failure_total",
-			Help: "Total number of times auth token lease renewal failed",
+		authSuccessTotal: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_vault_auth_success_total",
+			Help: "Number of successful authentications. Authentication occurs when the token has reached its max_ttl and the lease can no longer be renewed.",
 		}),
 	}
 
@@ -160,12 +160,13 @@ func (v *Vault) manageTokenLifecycle(ctx context.Context, authTokenWatcher *hash
 }
 
 func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
+	v.authLeaseRenewalActive.Inc()
 	for ctx.Err() == nil {
 		authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
 			Secret: v.token,
 		})
 		if err != nil {
-			v.authLeaseRenewalFailureTotal.Inc()
+			v.authLeaseRenewalActive.Dec()
 			return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
 		}
 
@@ -178,11 +179,11 @@ func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 		newAuthToken, err := getAuthToken(ctx, &v.auth, v.client)
 		if err != nil {
 			level.Error(v.logger).Log("msg", "error during re-authentication after token expiry", "err", err)
-			v.authLeaseRenewalFailureTotal.Inc()
+			v.authLeaseRenewalActive.Dec()
 			return err
 		}
 
-		v.authTotal.Inc()
+		v.authSuccessTotal.Inc()
 		v.token = newAuthToken
 	}
 

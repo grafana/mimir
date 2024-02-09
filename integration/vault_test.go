@@ -73,8 +73,10 @@ func TestVaultTokenRenewal(t *testing.T) {
 	mimir := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(DefaultSingleBinaryFlags(), flags))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
+	// Check that token renewal is active
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_vault_token_lease_renewal_active"))
 	// Check that the token lease has been updated before hitting max_ttl
-	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(2), "cortex_vault_token_lease_renewal_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(2), "cortex_vault_token_lease_renewal_success_total"))
 	// Check that re-authentication occurred
-	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(2), "cortex_vault_auth_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_vault_auth_success_total"))
 }
