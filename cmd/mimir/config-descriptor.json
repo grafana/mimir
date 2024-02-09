@@ -785,6 +785,16 @@
               "fieldFlag": "distributor.retry-after-header.max-backoff-exponent",
               "fieldType": "int",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "circuit_breaker_awareness_enabled",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
