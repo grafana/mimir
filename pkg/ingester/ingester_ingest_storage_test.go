@@ -41,6 +41,89 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestIngester_Start(t *testing.T) {
+	t.Run("should replay the partition at startup and then join the ingesters and partitions ring", func(t *testing.T) {
+		var (
+			ctx                = context.Background()
+			cfg                = defaultIngesterTestConfig(t)
+			reg                = prometheus.NewRegistry()
+			fetchRequestsCount = atomic.NewInt64(0)
+			fetchShouldFail    = atomic.NewBool(true)
+			series1            = mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "test")),
+					Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
+				},
+			}
+		)
+
+		// Create the ingester.
+		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+		require.NoError(t, err)
+		ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+
+		// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
+		kafkaCluster.ControlKey(int16(kmsg.Fetch), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			kafkaCluster.KeepControl()
+			fetchRequestsCount.Inc()
+
+			if fetchShouldFail.Load() {
+				return nil, errors.New("mocked error"), true
+			}
+
+			return nil, nil, false
+		})
+
+		// Create a Kafka writer and then write a series.
+		writer := ingest.NewWriter(cfg.IngestStorageConfig.KafkaConfig, log.NewNopLogger(), nil)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, writer))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
+		})
+
+		partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+		require.NoError(t, err)
+		require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
+
+		// Start the ingester.
+		require.NoError(t, ingester.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+		})
+
+		// Wait until the Kafka cluster received few Fetch requests.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return fetchRequestsCount.Load() > 2
+		})
+
+		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the ingester hasn't
+		// catched up yet, and it's still in Starting state.
+		assert.Equal(t, services.Starting, ingester.State())
+		assert.Empty(t, ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(partitionID))
+		assert.Equal(t, services.New, ingester.lifecycler.State())
+
+		// Unblock the Fetch requests. Now they will succeed.
+		fetchShouldFail.Store(false)
+
+		// We expect the ingester to catch up, and then switch to Running state.
+		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+			return ingester.State()
+		})
+
+		assert.Equal(t, services.Running, ingester.lifecycler.State())
+
+		assert.Eventually(t, func() bool {
+			return ingester.lifecycler.GetState() == ring.ACTIVE
+		}, time.Second, 10*time.Millisecond)
+
+		assert.Eventually(t, func() bool {
+			return slices.Equal(
+				ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(partitionID),
+				[]string{ingester.cfg.IngesterRing.InstanceID})
+		}, time.Second, 10*time.Millisecond)
+	})
+}
+
 func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 	const (
 		metricName = "series_1"
@@ -161,13 +244,6 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
 	})
 
-	// Start a watcher used to assert on the partitions ring.
-	watcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, cfg.IngesterPartitionRing.kvMock, log.NewNopLogger(), nil)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
-	})
-
 	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return ingester.lifecycler.HealthyInstancesCount()
@@ -198,7 +274,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 		// Pre-condition: the ingester should be registered as owner in the ring.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{"ingester-zone-a-0"})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(0), []string{"ingester-zone-a-0"})
 		}, time.Second, 10*time.Millisecond)
 
 		// Shutdown ingester.
@@ -206,7 +282,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 		// We expect the ingester to be removed from partition owners.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(0), []string{})
 		}, time.Second, 10*time.Millisecond)
 	})
 }
@@ -217,7 +293,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
 
-	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher) {
+	setup := func(t *testing.T, cfg Config) *Ingester {
 		// Start ingester.
 		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
@@ -226,29 +302,22 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
 		})
 
-		// Start a watcher used to assert on the partitions ring.
-		watcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, cfg.IngesterPartitionRing.kvMock, log.NewNopLogger(), nil)
-		require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
-		})
-
 		// Wait until it's healthy
 		test.Poll(t, 1*time.Second, 1, func() interface{} {
 			return ingester.lifecycler.HealthyInstancesCount()
 		})
 
-		return ingester, watcher
+		return ingester
 	}
 
 	t.Run("POST request should switch the partition state to INACTIVE", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
+		ingester := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().ActivePartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 
 		res := httptest.NewRecorder()
@@ -257,18 +326,18 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// We expect the partition to switch to INACTIVE.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().InactivePartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().InactivePartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 	})
 
 	t.Run("DELETE request after a POST request should switch the partition back to ACTIVE state", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
+		ingester := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().ActivePartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 
 		res := httptest.NewRecorder()
@@ -277,7 +346,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// We expect the partition to switch to INACTIVE.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().InactivePartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().InactivePartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 
 		res = httptest.NewRecorder()
@@ -286,7 +355,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// We expect the partition to switch to ACTIVE.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().ActivePartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().ActivePartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 	})
 
@@ -298,11 +367,11 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngesterPartitionRing.MinOwnersCount = 2
 
-		ingester, watcher := setup(t, cfg)
+		ingester := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PendingPartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 
 		res := httptest.NewRecorder()
@@ -311,7 +380,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// We expect the partition to be in PENDING state.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PendingPartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 	})
 
@@ -323,11 +392,11 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngesterPartitionRing.MinOwnersCount = 2
 
-		ingester, watcher := setup(t, cfg)
+		ingester := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PendingPartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 
 		res := httptest.NewRecorder()
@@ -336,7 +405,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// We expect the partition to be in PENDING state.
 		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
+			return slices.Equal(ingester.ingestPartitionWatcher.PartitionRing().PendingPartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 	})
 }
@@ -361,25 +430,21 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 		_ = services.StopAndAwaitTerminated(ctx, ingester)
 	})
 
-	// Start a watcher used to assert on the partitions ring.
-	watcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, cfg.IngesterPartitionRing.kvMock, log.NewNopLogger(), nil)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
-	})
-
 	// No matter how long we wait, we expect the ingester service to hung in the starting state
 	// given it's not allowed to create the partition and the partition doesn't exist in the ring.
 	time.Sleep(10 * cfg.IngesterPartitionRing.lifecyclerPollingInterval)
 
 	assert.Equal(t, services.Starting, ingester.State())
-	assert.Empty(t, watcher.PartitionRing().PartitionIDs())
-	assert.Empty(t, watcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID))
+	assert.Empty(t, ingester.ingestPartitionWatcher.PartitionRing().PartitionIDs())
+	assert.Empty(t, ingester.ingestPartitionWatcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID))
 }
 
 // Returned ingester and ring watcher are NOT started.
 func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
-	defaultIngesterConfig := defaultIngesterTestConfig(t)
+	var (
+		ctx                   = context.Background()
+		defaultIngesterConfig = defaultIngesterTestConfig(t)
+	)
 
 	// Always disable gRPC Push API when testing ingest store.
 	ingesterCfg.PushGrpcMethodEnabled = false
@@ -419,6 +484,11 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	ingesterCfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
 
 	prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, prw))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
+	})
+
 	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, err)
 

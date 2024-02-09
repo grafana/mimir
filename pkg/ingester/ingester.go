@@ -337,6 +337,7 @@ type Ingester struct {
 	ingestReader              *ingest.PartitionReader
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
+	ingestPartitionWatcher    *ring.PartitionRingWatcher
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -453,6 +454,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 
+		i.ingestPartitionWatcher = partitionRingWatcher
+
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
@@ -529,6 +532,15 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		return errors.Wrap(err, "opening existing TSDBs")
 	}
 
+	// When ingest storage is enabled, we have to make sure that reader catches up replaying the partition
+	// BEFORE the ingester ring lifecycler is started, because once the ingester ring lifecycler will start
+	// it will switch the ingester state to ACTIVE.
+	if i.ingestReader != nil {
+		if err := services.StartAndAwaitRunning(ctx, i.ingestReader); err != nil {
+			return errors.Wrap(err, "failed to start partition reader")
+		}
+	}
+
 	if i.ownedSeriesService != nil {
 		// We need to perform the initial computation of owned series after the TSDBs are opened but before the ingester becomes
 		// ACTIVE in the ring and starts to accept requests. However, because the ingester still uses the Lifecycler (rather
@@ -578,10 +590,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.ingestReader != nil {
-		servs = append(servs, i.ingestReader)
-	}
-
 	if i.ingestPartitionLifecycler != nil {
 		servs = append(servs, i.ingestPartitionLifecycler)
 	}
@@ -601,6 +609,12 @@ func (i *Ingester) stoppingForFlusher(_ error) error {
 }
 
 func (i *Ingester) stopping(_ error) error {
+	if i.ingestReader != nil {
+		if err := services.StopAndAwaitTerminated(context.Background(), i.ingestReader); err != nil {
+			level.Warn(i.logger).Log("msg", "failed to stop partition reader", "err", err)
+		}
+	}
+
 	if i.ownedSeriesService != nil {
 		err := services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
 		if err != nil {

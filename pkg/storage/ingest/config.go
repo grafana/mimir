@@ -48,6 +48,7 @@ type KafkaConfig struct {
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
+	MaxConsumerLagAtStartup        time.Duration `yaml:"max_consumer_lag_at_startup"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
@@ -63,6 +64,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+".last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+".last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")
+	f.DurationVar(&cfg.MaxConsumerLagAtStartup, prefix+".max-consumer-lag-at-startup", 15*time.Second, "The maximum tolerated lag before a consumer is being considered to have catched up reading from a partition at startup. Set 0 to disable.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
