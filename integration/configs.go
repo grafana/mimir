@@ -247,6 +247,10 @@ blocks_storage:
 			// and faster integration tests.
 			"-ingest-storage.kafka.last-produced-offset-poll-interval": "50ms",
 			"-ingest-storage.kafka.last-produced-offset-retry-timeout": "1s",
+
+			// Do not wait before switching an INACTIVE partition to ACTIVE.
+			"-ingester.partition-ring.min-partition-owners-count":    "0",
+			"-ingester.partition-ring.min-partition-owners-duration": "0s",
 		}
 	}
 )

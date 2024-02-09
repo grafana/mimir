@@ -14,23 +14,50 @@ std.manifestYamlDoc({
     {},
 
   write:: {
-    'mimir-write-1': mimirService({
-      name: 'mimir-write-1',
+    // Zone-a.
+    'mimir-write-zone-a-1': mimirService({
+      name: 'mimir-write-zone-a-1',
       target: 'write',
       publishedHttpPort: 8001,
-      extraVolumes: ['.data-mimir-write-1:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-1:/data:delegated'],
     }),
-    'mimir-write-2': mimirService({
-      name: 'mimir-write-2',
+    'mimir-write-zone-a-2': mimirService({
+      name: 'mimir-write-zone-a-2',
       target: 'write',
       publishedHttpPort: 8002,
-      extraVolumes: ['.data-mimir-write-2:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-2:/data:delegated'],
     }),
-    'mimir-write-3': mimirService({
-      name: 'mimir-write-3',
+    'mimir-write-zone-a-3': mimirService({
+      name: 'mimir-write-zone-a-3',
       target: 'write',
       publishedHttpPort: 8003,
-      extraVolumes: ['.data-mimir-write-3:/data:delegated'],
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-a'],
+      extraVolumes: ['.data-mimir-write-zone-a-3:/data:delegated'],
+    }),
+
+    // Zone-b.
+    'mimir-write-zone-b-1': mimirService({
+      name: 'mimir-write-zone-b-1',
+      target: 'write',
+      publishedHttpPort: 8011,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-1:/data:delegated'],
+    }),
+    'mimir-write-zone-b-2': mimirService({
+      name: 'mimir-write-zone-b-2',
+      target: 'write',
+      publishedHttpPort: 8012,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-2:/data:delegated'],
+    }),
+    'mimir-write-zone-b-3': mimirService({
+      name: 'mimir-write-zone-b-3',
+      target: 'write',
+      publishedHttpPort: 8013,
+      extraArguments: ['-ingester.ring.instance-availability-zone=zone-b'],
+      extraVolumes: ['.data-mimir-write-zone-b-3:/data:delegated'],
     }),
   },
 
@@ -176,6 +203,7 @@ std.manifestYamlDoc({
         kafka: { condition: 'service_healthy' },
       },
       env: {},
+      extraArguments: [],
       extraVolumes: [],
       memberlistBindPort: self.publishedHttpPort + 2000,
     },
@@ -192,7 +220,7 @@ std.manifestYamlDoc({
       '-config.file=./config/mimir.yaml' % options,
       '-target=%(target)s' % options,
       '-activity-tracker.filepath=/activity/%(name)s' % options,
-    ],
+    ] + options.extraArguments,
     environment: [
       '%s=%s' % [key, options.env[key]]
       for key in std.objectFields(options.env)

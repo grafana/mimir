@@ -1458,7 +1458,7 @@ func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.Instance
 // sendToStorage sends received data to the object storage, computing the partition based on the input ingester.
 // This function is used when ingest storage is enabled.
 func (d *Distributor) sendToStorage(ctx context.Context, userID string, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	partitionID, err := ingest.IngesterPartition(ingester.Id)
+	partitionID, err := ingest.IngesterZonalPartition(ingester.Id)
 	if err != nil {
 		return err
 	}
