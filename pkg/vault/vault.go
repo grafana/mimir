@@ -113,6 +113,7 @@ func NewVault(cfg Config, l log.Logger, registerer prometheus.Registerer) (*Vaul
 			Help: "Number of successful authentications. Authentication occurs when the token has reached its max_ttl and the lease can no longer be renewed.",
 		}),
 	}
+	vault.authSuccessTotal.Inc()
 
 	return vault, nil
 }
@@ -161,12 +162,13 @@ func (v *Vault) manageTokenLifecycle(ctx context.Context, authTokenWatcher *hash
 
 func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 	v.authLeaseRenewalActive.Inc()
+	defer v.authLeaseRenewalActive.Dec()
+
 	for ctx.Err() == nil {
 		authTokenWatcher, err := v.client.NewLifetimeWatcher(&hashivault.LifetimeWatcherInput{
 			Secret: v.token,
 		})
 		if err != nil {
-			v.authLeaseRenewalActive.Dec()
 			return fmt.Errorf("error initializing auth token lifetime watcher: %v", err)
 		}
 
@@ -179,7 +181,6 @@ func (v *Vault) KeepRenewingTokenLease(ctx context.Context) error {
 		newAuthToken, err := getAuthToken(ctx, &v.auth, v.client)
 		if err != nil {
 			level.Error(v.logger).Log("msg", "error during re-authentication after token expiry", "err", err)
-			v.authLeaseRenewalActive.Dec()
 			return err
 		}
 
