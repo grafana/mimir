@@ -202,7 +202,6 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 	other, ok := mergeable.(*Desc)
 	if !ok {
-		// This method only deals with non-nil rings.
 		return nil, fmt.Errorf("expected *ring.Desc, got %T", mergeable)
 	}
 
