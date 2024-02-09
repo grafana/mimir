@@ -146,7 +146,12 @@ The following features are currently experimental:
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
-- Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+- Vault
+  - Fetching TLS secrets from Vault for various clients (`-vault.enabled`)
+  - Vault client authentication token lifetime watcher. Ensures the client token is always valid by renewing the token lease or re-authenticating. Includes the metrics:
+    - `cortex_vault_token_lease_renewal_active`
+    - `cortex_vault_token_lease_renewal_success_total`
+    - `cortex_vault_auth_success_total`
 - Logger
   - Rate limited logger support
     - `log.rate-limit-enabled`
