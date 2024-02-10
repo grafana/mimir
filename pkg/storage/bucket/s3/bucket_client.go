@@ -61,6 +61,7 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		SSEConfig:          sseCfg,
 		ListObjectsVersion: cfg.ListObjectsVersion,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,
+		DisableMultipart:   cfg.DisableMultipart,
 		PartSize:           cfg.PartSize,
 		HTTPConfig: s3.HTTPConfig{
 			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
