@@ -4677,6 +4677,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.native-aws-auth-enabled
 [native_aws_auth_enabled: <boolean> | default = false]
 
+# (experimental) Whether or not to disable multipart updloads.
+# CLI flag: -<prefix>.s3.disable-multipart
+[disable_multipart: <boolean> | default = false]
+
 # (experimental) The minimum file size in bytes used for multipart uploads. If
 # 0, the value is optimally computed for each object.
 # CLI flag: -<prefix>.s3.part-size
