@@ -171,6 +171,7 @@
 
 ### Documentation
 
+* [CHANGE] No longer mark OTLP distributor endpoint as experimental. #7348
 * [ENHANCEMENT] Added runbook for `KubePersistentVolumeFillingUp` alert. #7297
 * [BUGFIX] Fixed typo on single zone->zone aware replication Helm page. #7327
 
