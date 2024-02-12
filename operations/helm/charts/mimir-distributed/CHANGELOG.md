@@ -42,9 +42,11 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
+* [CHANGE] Distributor: termination grace period increased from 60s to 100s.
 * [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086 #7259
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.10.1. #7125
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
+* [ENHANCEMENT] Distributor: reduced `-server.grpc.keepalive.max-connection-age` from `2m` to `60s` and configured `-shutdown-delay` to `90s` in order to reduce the chances of failed gRPC write requests when distributors gracefully shutdown. #7361
 * [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `ruler` component by setting `ruler.serivceAcount.create` to true in the values. #7132
 * [ENHANCEMENT] nginx, Gateway: set `proxy_http_version: 1.1` to proxy to HTTP 1.1. #5040
 * [ENHANCEMENT] Gateway: make Ingress/Route host templateable. #7218

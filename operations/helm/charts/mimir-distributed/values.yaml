@@ -842,7 +842,8 @@ distributor:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 60
+  # Keep the termination grace period higher than the -shutdown-delay configured on the distributor.
+  terminationGracePeriodSeconds: 100
 
   tolerations: []
   initContainers: []
