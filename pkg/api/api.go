@@ -52,7 +52,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
-	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"advanced"`
+	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"deprecated"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
@@ -71,7 +71,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via X-Mimir-SkipLabelNameValidation header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
-	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", false, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
+	f.BoolVar(&cfg.EnableOtelMetadataStorage, "distributor.enable-otlp-metadata-storage", true, "If true, store metadata when ingesting metrics via OTLP. This makes metric descriptions and types available for metrics ingested via OTLP.")
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
