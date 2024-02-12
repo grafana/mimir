@@ -1651,12 +1651,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "distributor.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
@@ -3024,12 +3024,12 @@
           "kind": "field",
           "name": "limit_inflight_requests_using_grpc_method_limiter",
           "required": false,
-          "desc": "Use experimental method of limiting push requests.",
+          "desc": "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.limit-inflight-requests-using-grpc-method-limiter",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "field",
