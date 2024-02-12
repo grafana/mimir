@@ -30,6 +30,20 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361
+* [CHANGE] Rollout-operator: remove default CPU limit. #7125
+* [CHANGE] Ring: relaxed the hash ring heartbeat period and timeout for distributor, ingester, store-gateway and compactor: #6860
+  * `-distributor.ring.heartbeat-period` set to `1m`
+  * `-distributor.ring.heartbeat-timeout` set to `4m`
+  * `-ingester.ring.heartbeat-period` set to `2m`
+  * `-ingester.ring.heartbeat-timeout` set to `10m`
+  * `-store-gateway.sharding-ring.heartbeat-period` set to `1m`
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `4m`
+  * `-compactor.ring.heartbeat-period` set to `1m`
+  * `-compactor.ring.heartbeat-timeout` set to `4m`
+* [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
+* [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
+* [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
   * Alertmanager: changed from `60` to `900`
   * Distributor: changed from `60` to `100`
   * Ingester: changed from `240` to `1200`
@@ -43,6 +57,10 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Index-cache: changed from `60` to `30`
   * Metadata-cache: changed from `60` to `30`
   * Results-cache: changed from `60` to `30`
+* [FEATURE] Added experimental feature for deploying [KEDA](https://keda.sh) ScaledObjects as part of the helm chart for the components: distributor, querier, query-frontend and ruler. #7282 #7392
+  * Autoscaling can be enabled via `distributor.kedaAutoscaling`, `ruler.kedaAutoscaling`, `query_frontend.kedaAutoscaling`, and `querier.kedaAutoscaling`.
+  * Global configuration of `promtheusAddress`, `pollingInterval` and `customHeaders` can be found in `kedaAutoscaling`section.
+  * Requires metamonitoring or custom installed Prometheus compatible solution, for more details on metamonitoring see [Monitor the health of your system](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/). See [grafana/mimir#7367](https://github.com/grafana/mimir/issues/7367) for a migration procedure.
 
 ## 5.3.0-rc.0
 
