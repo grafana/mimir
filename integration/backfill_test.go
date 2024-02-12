@@ -74,16 +74,20 @@ func TestMimirtoolBackfill(t *testing.T) {
 	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
+	dataDir := filepath.Join(s.SharedDir(), "data")
+	err = os.Mkdir(dataDir, os.ModePerm)
+	require.NoError(t, err)
 
 	// Configure the compactor with a data directory and runtime config (for overrides)
 	flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), map[string]string{
-		"-compactor.data-dir":           filepath.Join("/data"),
+		"-compactor.data-dir":           filepath.Join(e2e.ContainerSharedDir, "data"),
 		"-runtime-config.reload-period": "100ms",
 		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, overridesFile),
 	})
 
 	// Start Mimir compactor.
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, setDirPermission(s.SharedDir()))
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
 	{
@@ -199,7 +203,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 	const httpServerTimeout = 2 * time.Second
 
 	flags := mergeFlags(CommonStorageBackendFlags(), BlocksStorageFlags(), map[string]string{
-		"-compactor.data-dir": "/data",
+		"-compactor.data-dir": filepath.Join(e2e.ContainerSharedDir, "data"),
 
 		// Enable uploads for all tenants
 		"-compactor.block-upload-enabled": "true",
@@ -214,6 +218,7 @@ func TestBackfillSlowUploadSpeed(t *testing.T) {
 
 	// Start Mimir compactor.
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, setDirPermission(s.SharedDir()))
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
 	// Create block that we will try to upload.
