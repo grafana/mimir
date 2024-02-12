@@ -163,9 +163,6 @@ The following features are currently experimental:
     - `-<prefix>.memcached.read-buffer-size-bytes`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
-- Limiting inflight requests to Distributor and Ingester via gRPC limiter:
-  - `-distributor.limit-inflight-requests-using-grpc-method-limiter`
-  - `-ingester.limit-inflight-requests-using-grpc-method-limiter`
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
 - Ingester: track "owned series" and use owned series instead of in-memory series for tenant limits.
   - `-ingester.use-ingester-owned-series-for-limits`
