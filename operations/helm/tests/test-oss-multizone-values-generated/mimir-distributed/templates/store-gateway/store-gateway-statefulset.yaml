@@ -89,7 +89,7 @@ spec:
             app.kubernetes.io/component: store-gateway
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -245,7 +245,7 @@ spec:
             app.kubernetes.io/component: store-gateway
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -401,7 +401,7 @@ spec:
             app.kubernetes.io/component: store-gateway
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:

@@ -89,7 +89,7 @@ spec:
             app.kubernetes.io/component: ingester
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -243,7 +243,7 @@ spec:
             app.kubernetes.io/component: ingester
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -397,7 +397,7 @@ spec:
             app.kubernetes.io/component: ingester
       tolerations:
         []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:

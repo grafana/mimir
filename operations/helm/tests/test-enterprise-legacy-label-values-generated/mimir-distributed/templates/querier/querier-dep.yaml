@@ -109,7 +109,7 @@ spec:
             release: test-enterprise-legacy-label-values
       tolerations:
         []
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           secret:

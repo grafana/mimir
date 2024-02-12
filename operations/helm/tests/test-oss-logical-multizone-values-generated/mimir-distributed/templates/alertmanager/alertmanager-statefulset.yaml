@@ -67,7 +67,7 @@ spec:
             app.kubernetes.io/component: alertmanager
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -204,7 +204,7 @@ spec:
             app.kubernetes.io/component: alertmanager
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -341,7 +341,7 @@ spec:
             app.kubernetes.io/component: alertmanager
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:

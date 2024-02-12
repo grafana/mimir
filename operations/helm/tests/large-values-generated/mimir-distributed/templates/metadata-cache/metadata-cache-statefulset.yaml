@@ -51,7 +51,7 @@ spec:
       
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 30
       containers:
         - name: memcached
           image: memcached:1.6.23-alpine
