@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/md5"
 	fipssha256 "crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
@@ -513,6 +514,7 @@ func isAmzHeader(headerKey string) bool {
 
 // supportedQueryValues is a list of query strings that can be passed in when using GetObject.
 var supportedQueryValues = map[string]bool{
+	"attributes":                   true,
 	"partNumber":                   true,
 	"versionId":                    true,
 	"response-cache-control":       true,
@@ -622,7 +624,7 @@ func IsNetworkOrHostDown(err error, expectTimeouts bool) bool {
 	urlErr := &url.Error{}
 	if errors.As(err, &urlErr) {
 		switch urlErr.Err.(type) {
-		case *net.DNSError, *net.OpError, net.UnknownNetworkError:
+		case *net.DNSError, *net.OpError, net.UnknownNetworkError, *tls.CertificateVerificationError:
 			return true
 		}
 	}
@@ -649,7 +651,12 @@ func IsNetworkOrHostDown(err error, expectTimeouts bool) bool {
 	case strings.Contains(err.Error(), "connection refused"):
 		// If err is connection refused
 		return true
-
+	case strings.Contains(err.Error(), "server gave HTTP response to HTTPS client"):
+		// If err is TLS client is used with HTTP server
+		return true
+	case strings.Contains(err.Error(), "Client sent an HTTP request to an HTTPS server"):
+		// If err is plain-text Client is used with a HTTPS server
+		return true
 	case strings.Contains(strings.ToLower(err.Error()), "503 service unavailable"):
 		// Denial errors
 		return true
