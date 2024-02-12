@@ -88,6 +88,7 @@
 * [BUGFIX] Query-frontend: fix race condition when sharding active series is enabled (see above) and response is compressed with snappy. #7290
 * [BUGFIX] Query-frontend: "query stats" log unsuccessful replies from downstream as "failed". #7296
 * [BUGFIX] Packaging: remove reload from systemd file as mimir does not take into account SIGHUP. #7345
+* [BUGFIX] Compactor: do not allow out-of-order blocks to prevent timely compaction. #7342
 
 ### Mixin
 
