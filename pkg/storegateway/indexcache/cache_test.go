@@ -9,11 +9,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -117,4 +120,60 @@ func TestCanonicalPostingsKey(t *testing.T) {
 		_, err := base64.RawURLEncoding.DecodeString(string(key))
 		assert.NoError(t, err)
 	})
+}
+
+func TestBlockTTL(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		minT int64
+		maxT int64
+		ttl  time.Duration
+	}{
+		{
+			name: "1h block",
+			minT: 1700000000000,
+			maxT: 1700003600000,
+			ttl:  2 * time.Hour,
+		},
+		{
+			name: "2h block",
+			minT: 1700000000000,
+			maxT: 1700007200000,
+			ttl:  2 * time.Hour,
+		},
+		{
+			name: "10h block",
+			minT: 1700000000000,
+			maxT: 1700036000000,
+			ttl:  2 * time.Hour,
+		},
+		{
+			name: "12h block",
+			minT: 1700000000000,
+			maxT: 1700043200000,
+			ttl:  2 * time.Hour,
+		},
+		{
+			name: "20h block",
+			minT: 1700000000000,
+			maxT: 1700072000000,
+			ttl:  168 * time.Hour,
+		},
+		{
+			name: "24h block",
+			minT: 1700000000000,
+			maxT: 1700086400000,
+			ttl:  168 * time.Hour,
+		},
+	} {
+		meta := &block.Meta{
+			BlockMeta: tsdb.BlockMeta{
+				MinTime: tt.minT,
+				MaxTime: tt.maxT,
+			},
+		}
+
+		ttl := BlockTTL(meta)
+		assert.Equal(t, tt.ttl, ttl)
+	}
 }

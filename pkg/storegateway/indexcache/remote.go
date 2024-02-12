@@ -73,11 +73,6 @@ func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg 
 	return c, nil
 }
 
-// set stores a value for the given key in the remote cache.
-func (c *RemoteIndexCache) set(key string, val []byte) {
-	c.remote.SetAsync(key, val, remoteDefaultTTL)
-}
-
 // get retrieves a single value from the remote cache, returned bool value indicates whether the value was found or not.
 func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]byte, bool) {
 	c.requests.WithLabelValues(typ).Inc()
@@ -93,7 +88,7 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(postingsCacheKey(userID, blockID.String(), l), v)
+	c.remote.SetAsync(postingsCacheKey(userID, blockID.String(), l), v, remoteDefaultTTL)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label.
@@ -198,8 +193,8 @@ func postingsCacheKeyLabelID(l labels.Label) (out [blake2b.Size256]byte, outLen 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(seriesForRefCacheKey(userID, blockID, id), v)
+func (c *RemoteIndexCache) StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, ttl time.Duration) {
+	c.remote.SetAsync(seriesForRefCacheKey(userID, blockID, id), v, ttl)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -262,7 +257,7 @@ func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *RemoteIndexCache) StoreExpandedPostings(userID string, blockID ulid.ULID, lmKey LabelMatchersKey, postingsSelectionStrategy string, v []byte) {
-	c.set(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v)
+	c.remote.SetAsync(expandedPostingsCacheKey(userID, blockID, lmKey, postingsSelectionStrategy), v, remoteDefaultTTL)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
@@ -277,7 +272,7 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 
 // StoreSeriesForPostings stores a series set for the provided postings.
 func (c *RemoteIndexCache) StoreSeriesForPostings(userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.set(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v)
+	c.remote.SetAsync(seriesForPostingsCacheKey(userID, blockID, shard, postingsKey), v, remoteDefaultTTL)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
@@ -298,7 +293,7 @@ func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, shard *sharding
 
 // StoreLabelNames stores the result of a LabelNames() call.
 func (c *RemoteIndexCache) StoreLabelNames(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.set(labelNamesCacheKey(userID, blockID, matchersKey), v)
+	c.remote.SetAsync(labelNamesCacheKey(userID, blockID, matchersKey), v, remoteDefaultTTL)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
@@ -313,7 +308,7 @@ func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatch
 
 // StoreLabelValues stores the result of a LabelValues() call.
 func (c *RemoteIndexCache) StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.set(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
+	c.remote.SetAsync(labelValuesCacheKey(userID, blockID, labelName, matchersKey), v, remoteDefaultTTL)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.

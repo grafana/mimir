@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/oklog/ulid"
@@ -20,6 +21,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
@@ -87,7 +89,7 @@ type IndexCache interface {
 	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (result BytesResult)
 
 	// StoreSeriesForRef stores a single series.
-	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)
+	StoreSeriesForRef(userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte, ttl time.Duration)
 
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
@@ -114,6 +116,22 @@ type IndexCache interface {
 	StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+}
+
+// BlockTTL determines an appropriate TTL for cache entries related to a particular block
+// based on metadata about the block. Use a shorter TTL for temporary blocks that will be
+// compacted and deleted soon and a longer TTL for larger blocks that won't be deleted.
+func BlockTTL(meta *block.Meta) time.Duration {
+	duration := time.Duration(meta.MaxTime-meta.MinTime) * time.Millisecond
+
+	// Anything less than or equal to 12h is a temporary block that will eventually
+	// be compacted into a 24h block. Don't cache for long since otherwise these will
+	// stay in the cache long after they're no longer relevant.
+	if duration <= 12*time.Hour {
+		return 2 * time.Hour
+	}
+
+	return 7 * 24 * time.Hour
 }
 
 // PostingsKey represents a canonical key for a []storage.SeriesRef slice
