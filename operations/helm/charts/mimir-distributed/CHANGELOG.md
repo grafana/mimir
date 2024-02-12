@@ -45,7 +45,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
-* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
   * Alertmanager: changed from `60` to `900`
   * Distributor: changed from `60` to `100`
   * Ingester: changed from `240` to `1200`
