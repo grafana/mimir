@@ -928,9 +928,10 @@ instance_limits:
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
-# (experimental) Use experimental method of limiting push requests.
+# (deprecated) When enabled, in-flight write requests limit is checked as soon
+# as the gRPC request is received, before the request is decoded and parsed.
 # CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
 # (advanced) Number of pre-allocated workers used to forward push requests to
 # the ingesters. If 0, no workers will be used and a new goroutine will be
@@ -1167,9 +1168,10 @@ instance_limits:
 # CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
 [log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
 
-# (experimental) Use experimental method of limiting push requests.
+# (deprecated) When enabled, in-flight write requests limit is checked as soon
+# as the gRPC request is received, before the request is decoded and parsed.
 # CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = false]
+[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
 
 # (experimental) Each error will be logged once in this many times. Use 0 to log
 # all of them.

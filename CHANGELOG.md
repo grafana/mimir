@@ -39,6 +39,7 @@
 * [CHANGE] Tracing: Move query information to span attributes instead of span logs. #7046
 * [CHANGE] Distributor: the default value of circuit breaker's CLI flag `-ingester.client.circuit-breaker.cooldown-period` has been changed from `1m` to `10s`. #7310
 * [CHANGE] Store-gateway: remove `cortex_bucket_store_blocks_loaded_by_duration`. `cortex_bucket_store_series_blocks_queried` is better suited for detecting when compactors are not able to keep up with the number of blocks to compact. #7309
+* [CHANGE] Ingester, Distributor: the support for rejecting push requests received via gRPC before reading them into memory, enabled via `-ingester.limit-inflight-requests-using-grpc-method-limiter` and `-distributor.limit-inflight-requests-using-grpc-method-limiter`, is now stable and enabled by default. The configuration options have been deprecated and will be removed in Mimir 2.14. #7360
 * [CHANGE] Distributor: Change`-distributor.enable-otlp-metadata-storage` flag's default to true, and deprecate it. The flag will be removed in Mimir 2.14. #7366
 * [FEATURE] Introduce `-server.log-source-ips-full` option to log all IPs from `Forwarded`, `X-Real-IP`, `X-Forwarded-For` headers. #7250
 * [FEATURE] Introduce `-tenant-federation.max-tenants` option to limit the max number of tenants allowed for requests when federation is enabled. #6959
