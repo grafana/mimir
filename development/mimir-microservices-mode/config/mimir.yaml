@@ -168,6 +168,8 @@ limits:
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
   native_histograms_ingestion_enabled: true
+  ooo_native_histograms_ingestion_enabled: true # for OOO tests
+  out_of_order_time_window: 30m # for OOO tests
   cardinality_analysis_enabled: true
 
 runtime_config:

@@ -19,6 +19,7 @@ import (
 
 	"github.com/oklog/ulid"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -38,13 +39,13 @@ func NewOOOChunk() *OOOChunk {
 
 // Insert inserts the sample such that order is maintained.
 // Returns false if insert was not possible due to the same timestamp already existing.
-func (o *OOOChunk) Insert(t int64, v float64) bool {
+func (o *OOOChunk) Insert(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) bool {
 	// Although out-of-order samples can be out-of-order amongst themselves, we
 	// are opinionated and expect them to be usually in-order meaning we could
 	// try to append at the end first if the new timestamp is higher than the
 	// last known timestamp.
 	if len(o.samples) == 0 || t > o.samples[len(o.samples)-1].t {
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -53,7 +54,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 
 	if i >= len(o.samples) {
 		// none found. append it at the end
-		o.samples = append(o.samples, sample{t, v, nil, nil})
+		o.samples = append(o.samples, sample{t, v, h, fh})
 		return true
 	}
 
@@ -65,7 +66,7 @@ func (o *OOOChunk) Insert(t int64, v float64) bool {
 	// Expand length by 1 to make room. use a zero sample, we will overwrite it anyway.
 	o.samples = append(o.samples, sample{})
 	copy(o.samples[i+1:], o.samples[i:])
-	o.samples[i] = sample{t, v, nil, nil}
+	o.samples[i] = sample{t, v, h, fh}
 
 	return true
 }
@@ -74,24 +75,22 @@ func (o *OOOChunk) NumSamples() int {
 	return len(o.samples)
 }
 
-func (o *OOOChunk) ToXOR() (*chunkenc.XORChunk, error) {
-	x := chunkenc.NewXORChunk()
-	app, err := x.Appender()
-	if err != nil {
-		return nil, err
+// ToEncodedChunks returns chunks with the samples in the OOOChunk.
+//
+//nolint:revive // unexported-return.
+func (o *OOOChunk) ToEncodedChunks(mint, maxt int64) (chks []memChunk, err error) {
+	if len(o.samples) == 0 {
+		return nil, nil
 	}
-	for _, s := range o.samples {
-		app.Append(s.t, s.f)
-	}
-	return x, nil
-}
-
-func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk, error) {
-	x := chunkenc.NewXORChunk()
-	app, err := x.Appender()
-	if err != nil {
-		return nil, err
-	}
+	// The most common case is that there will be a single chunk, with the same type of samples in it - this is always true for float samples.
+	chks = make([]memChunk, 0, 1)
+	var (
+		cmint int64
+		cmaxt int64
+		chunk chunkenc.Chunk
+		app   chunkenc.Appender
+	)
+	prevEncoding := chunkenc.EncNone // Yes we could call the chunk for this, but this is more efficient.
 	for _, s := range o.samples {
 		if s.t < mint {
 			continue
@@ -99,9 +98,77 @@ func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk,
 		if s.t > maxt {
 			break
 		}
-		app.Append(s.t, s.f)
+		encoding := chunkenc.EncXOR
+		if s.h != nil {
+			encoding = chunkenc.EncHistogram
+		} else if s.fh != nil {
+			encoding = chunkenc.EncFloatHistogram
+		}
+
+		// prevApp is the appender for the previous sample.
+		prevApp := app
+
+		if encoding != prevEncoding { // For the first sample, this will always be true as EncNone != EncXOR | EncHistogram | EncFloatHistogram
+			if prevEncoding != chunkenc.EncNone {
+				chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+			}
+			cmint = s.t
+			switch encoding {
+			case chunkenc.EncXOR:
+				chunk = chunkenc.NewXORChunk()
+			case chunkenc.EncHistogram:
+				chunk = chunkenc.NewHistogramChunk()
+			case chunkenc.EncFloatHistogram:
+				chunk = chunkenc.NewFloatHistogramChunk()
+			default:
+				chunk = chunkenc.NewXORChunk()
+			}
+			app, err = chunk.Appender()
+			if err != nil {
+				return
+			}
+		}
+		switch encoding {
+		case chunkenc.EncXOR:
+			app.Append(s.t, s.f)
+		case chunkenc.EncHistogram:
+			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+			prevHApp, _ := prevApp.(*chunkenc.HistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendHistogram(prevHApp, s.t, s.h, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
+					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+				}
+				chunk = newChunk
+				cmint = s.t
+			}
+		case chunkenc.EncFloatHistogram:
+			// Ignoring ok is ok, since we don't want to compare to the wrong previous appender anyway.
+			prevHApp, _ := prevApp.(*chunkenc.FloatHistogramAppender)
+			var (
+				newChunk chunkenc.Chunk
+				recoded  bool
+			)
+			newChunk, recoded, app, _ = app.AppendFloatHistogram(prevHApp, s.t, s.fh, false)
+			if newChunk != nil { // A new chunk was allocated.
+				if !recoded {
+					chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+				}
+				chunk = newChunk
+				cmint = s.t
+			}
+		}
+		cmaxt = s.t
+		prevEncoding = encoding
 	}
-	return x, nil
+	if prevEncoding != chunkenc.EncNone {
+		chks = append(chks, memChunk{chunk, cmint, cmaxt, nil})
+	}
+	return chks, nil
 }
 
 var _ BlockReader = &OOORangeHead{}

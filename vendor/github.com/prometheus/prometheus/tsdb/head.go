@@ -165,6 +165,11 @@ type HeadOptions struct {
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
 
+	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
+	// It will only take effect if EnableNativeHistograms is set to true and the
+	// OutOfOrderTimeWindow is > 0
+	EnableOOONativeHistograms atomic.Bool
+
 	// EnableCreatedTimestampZeroIngestion enables the ingestion of the created timestamp as a synthetic zero sample.
 	// See: https://github.com/prometheus/proposals/blob/main/proposals/2023-06-13_created-timestamp.md
 	EnableCreatedTimestampZeroIngestion bool
@@ -380,7 +385,7 @@ type headMetrics struct {
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
 	samplesAppended           *prometheus.CounterVec
-	outOfOrderSamplesAppended prometheus.Counter
+	outOfOrderSamplesAppended *prometheus.CounterVec
 	outOfBoundSamples         *prometheus.CounterVec
 	outOfOrderSamples         *prometheus.CounterVec
 	tooOldSamples             *prometheus.CounterVec
@@ -460,10 +465,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
 		}, []string{"type"}),
-		outOfOrderSamplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
+		outOfOrderSamplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
 			Help: "Total number of appended out of order samples.",
-		}),
+		}, []string{"type"}),
 		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
 			Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
@@ -1035,6 +1040,16 @@ func (h *Head) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
+}
+
+// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
+func (h *Head) EnableOOONativeHistograms() {
+	h.opts.EnableOOONativeHistograms.Store(true)
+}
+
+// DisableNativeHistograms disables the ingestion of out-of-order native histograms.
+func (h *Head) DisableOOONativeHistograms() {
+	h.opts.EnableOOONativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.

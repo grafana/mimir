@@ -50,6 +50,25 @@ func New(t testutil.T) *TestStorage {
 	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
 }
 
+func NewTestStorageWithOpts(t testutil.T, opts *tsdb.Options) *TestStorage {
+	dir, err := os.MkdirTemp("", "test_storage")
+	require.NoError(t, err, "unexpected error while opening test directory")
+
+	if opts == nil {
+		opts = tsdb.DefaultOptions()
+	}
+
+	opts.OutOfOrderCapMax = 30
+	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
+	require.NoError(t, err, "unexpected error while opening test storage")
+	reg := prometheus.NewRegistry()
+	eMetrics := tsdb.NewExemplarMetrics(reg)
+
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
+	require.NoError(t, err, "unexpected error while opening test exemplar storage")
+	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
+}
+
 type TestStorage struct {
 	*tsdb.DB
 	exemplarStorage tsdb.ExemplarStorage

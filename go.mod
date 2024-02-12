@@ -256,7 +256,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240205112357-84eae046431c
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20240205164112-ccbf860c6a9a //Temp override to OOO native histograms branch for testing
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

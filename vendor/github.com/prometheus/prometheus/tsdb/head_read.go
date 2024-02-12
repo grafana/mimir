@@ -553,21 +553,15 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm chunkDiskMapper, mint,
 		}
 		var iterable chunkenc.Iterable
 		if c.meta.Ref == oooHeadRef {
-			var xor *chunkenc.XORChunk
-			var err error
-			// If head chunk min and max time match the meta OOO markers
-			// that means that the chunk has not expanded so we can append
-			// it as it is.
-			if s.ooo.oooHeadChunk.minTime == meta.OOOLastMinTime && s.ooo.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
-				xor, err = s.ooo.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
-			} else {
-				// We need to remove samples that are outside of the markers
-				xor, err = s.ooo.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
-			}
+			chks, err := s.ooo.oooHeadChunk.chunk.ToEncodedChunks(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert ooo head chunk to xor chunk: %w", err)
+				return nil, fmt.Errorf("failed to convert ooo head chunk to encoded chunk(s): %w", err)
 			}
-			iterable = xor
+			// If the head results in multiple chunks, the chunks will share the same reference as the head chunk,
+			// which is technically true, but if some code does not check against the head, could lead to unexpected results.
+			for _, chk := range chks {
+				mc.chunkIterables = append(mc.chunkIterables, chk.chunk)
+			}
 		} else {
 			chk, err := cdm.Chunk(c.ref)
 			if err != nil {
@@ -587,8 +581,8 @@ func (s *memSeries) oooMergedChunks(meta chunks.Meta, cdm chunkDiskMapper, mint,
 			} else {
 				iterable = chk
 			}
+			mc.chunkIterables = append(mc.chunkIterables, iterable)
 		}
-		mc.chunkIterables = append(mc.chunkIterables, iterable)
 		if c.meta.MaxTime > absoluteMax {
 			absoluteMax = c.meta.MaxTime
 		}
@@ -642,15 +636,15 @@ type boundedIterator struct {
 // If there are samples within bounds it will advance one by one amongst them.
 // If there are no samples within bounds it will return false.
 func (b boundedIterator) Next() chunkenc.ValueType {
-	for b.Iterator.Next() == chunkenc.ValFloat {
-		t, _ := b.Iterator.At()
+	for typ := b.Iterator.Next(); typ != chunkenc.ValNone; typ = b.Iterator.Next() {
+		t := b.Iterator.AtT()
 		switch {
 		case t < b.minT:
 			continue
 		case t > b.maxT:
 			return chunkenc.ValNone
 		default:
-			return chunkenc.ValFloat
+			return typ
 		}
 	}
 	return chunkenc.ValNone
@@ -659,13 +653,13 @@ func (b boundedIterator) Next() chunkenc.ValueType {
 func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
 	if t < b.minT {
 		// We must seek at least up to b.minT if it is asked for something before that.
-		val := b.Iterator.Seek(b.minT)
-		if !(val == chunkenc.ValFloat) {
+		valType := b.Iterator.Seek(b.minT)
+		if valType == chunkenc.ValNone {
 			return chunkenc.ValNone
 		}
-		t, _ := b.Iterator.At()
+		t := b.Iterator.AtT()
 		if t <= b.maxT {
-			return chunkenc.ValFloat
+			return valType
 		}
 	}
 	if t > b.maxT {
