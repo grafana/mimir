@@ -100,7 +100,7 @@ func TestJobWaitPeriodElapsed(t *testing.T) {
 			waitPeriod: 10 * time.Minute,
 			jobBlocks: []jobBlock{
 				{meta: meta5, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}},
-				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-15 * time.Minute)}},
+				{meta: meta6, attrs: objstore.ObjectAttributes{LastModified: time.Now().Add(-5 * time.Minute)}},
 			},
 			expectedElapsed: true,
 			expectedMeta:    nil,
