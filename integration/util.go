@@ -8,9 +8,11 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"time"
 
