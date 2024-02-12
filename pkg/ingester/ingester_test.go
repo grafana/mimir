@@ -6321,9 +6321,11 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 
 func TestIngester_PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
-		limits      InstanceLimits
-		reqs        map[string][]*mimirpb.WriteRequest
-		expectedErr error
+		limits                     InstanceLimits
+		reqs                       map[string][]*mimirpb.WriteRequest
+		expectedErr                error
+		expectedOptionalLoggingErr bool
+		expectedGRPCErr            bool
 	}{
 		"should succeed creating one user and series": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
@@ -6365,7 +6367,9 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxInMemorySeriesReached,
+			expectedErr:                errMaxInMemorySeriesReached,
+			expectedGRPCErr:            true,
+			expectedOptionalLoggingErr: true,
 		},
 
 		"should fail creating two users": {
@@ -6392,7 +6396,9 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxTenantsReached,
+			expectedErr:                errMaxTenantsReached,
+			expectedGRPCErr:            true,
+			expectedOptionalLoggingErr: true,
 		},
 
 		"should fail pushing samples in two requests due to rate limit": {
@@ -6417,7 +6423,9 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 				},
 			},
-			expectedErr: errMaxIngestionRateReached,
+			expectedErr:                errMaxIngestionRateReached,
+			expectedGRPCErr:            false,
+			expectedOptionalLoggingErr: false,
 		},
 	}
 
@@ -6480,11 +6488,17 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 								// Last push may expect error.
 								if testData.expectedErr != nil {
 									assert.ErrorIs(t, err, testData.expectedErr)
-									var optional middleware.OptionalLogging
-									assert.ErrorAs(t, err, &optional)
-									s, ok := grpcutil.ErrorToStatus(err)
-									require.True(t, ok, "expected to be able to convert to gRPC status")
-									assert.Equal(t, codes.Unavailable, s.Code())
+
+									if testData.expectedOptionalLoggingErr {
+										var optional middleware.OptionalLogging
+										assert.ErrorAs(t, err, &optional)
+									}
+
+									if testData.expectedGRPCErr {
+										s, ok := grpcutil.ErrorToStatus(err)
+										require.True(t, ok, "expected to be able to convert to gRPC status")
+										assert.Equal(t, codes.Unavailable, s.Code())
+									}
 								} else {
 									assert.NoError(t, err)
 								}
@@ -6808,21 +6822,21 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 					return i.inflightPushRequests.Load()
 				})
 
-				var err error
 				if grpcLimitEnabled {
-					_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
+					_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+					require.ErrorIs(t, err, errMaxInflightRequestsReached)
 				} else {
-					_, err = i.Push(ctx, req)
+					_, err := i.Push(ctx, req)
+					require.ErrorIs(t, err, errMaxInflightRequestsReached)
+
+					var optional middleware.OptionalLogging
+					require.ErrorAs(t, err, &optional)
+					require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+					s, ok := grpcutil.ErrorToStatus(err)
+					require.True(t, ok, "expected to be able to convert to gRPC status")
+					require.Equal(t, codes.Unavailable, s.Code())
 				}
-				require.ErrorIs(t, err, errMaxInflightRequestsReached)
-
-				var optional middleware.OptionalLogging
-				require.ErrorAs(t, err, &optional)
-				require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
-
-				s, ok := grpcutil.ErrorToStatus(err)
-				require.True(t, ok, "expected to be able to convert to gRPC status")
-				require.Equal(t, codes.Unavailable, s.Code())
 
 				return nil
 			})
@@ -6931,19 +6945,20 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 				// Sending push request fails
 				if grpcLimitEnabled {
-					_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
+					_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+					require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 				} else {
-					_, err = i.Push(ctx, req)
+					_, err := i.Push(ctx, req)
+					require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+
+					var optional middleware.OptionalLogging
+					require.ErrorAs(t, err, &optional)
+					require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
+
+					s, ok := grpcutil.ErrorToStatus(err)
+					require.True(t, ok, "expected to be able to convert to gRPC status")
+					require.Equal(t, codes.Unavailable, s.Code())
 				}
-				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-				var optional middleware.OptionalLogging
-				require.ErrorAs(t, err, &optional)
-				require.False(t, optional.ShouldLog(ctx, time.Duration(0)), "expected not to log via .ShouldLog()")
-
-				s, ok := grpcutil.ErrorToStatus(err)
-				require.True(t, ok, "expected to be able to convert to gRPC status")
-				require.Equal(t, codes.Unavailable, s.Code())
 
 				return nil
 			})
