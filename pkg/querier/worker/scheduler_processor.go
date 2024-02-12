@@ -294,7 +294,9 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 			break
 		}
 
-		if sp.streamingEnabled && streamingEnabledForResponse(response.Headers) {
+		var ok bool
+		response.Headers, ok = consumeResponseStreamingEnabledHeader(response.Headers)
+		if sp.streamingEnabled && ok {
 			err = streamResponse(frontendCtx, c, queryID, response, stats)
 		} else {
 			// Response is empty and uninteresting.
@@ -318,15 +320,18 @@ func (sp *schedulerProcessor) runRequest(ctx context.Context, logger log.Logger,
 	}
 }
 
-func streamingEnabledForResponse(headers []*httpgrpc.Header) bool {
+func consumeResponseStreamingEnabledHeader(headers []*httpgrpc.Header) ([]*httpgrpc.Header, bool) {
 	streamEnabledViaHeader := false
-	for _, header := range headers {
-		if header.Key == ResponseStreamingEnabledHeader && header.Values[0] == "true" {
-			streamEnabledViaHeader = true
+	for i, header := range headers {
+		if header.Key == ResponseStreamingEnabledHeader {
+			if header.Values[0] == "true" {
+				streamEnabledViaHeader = true
+			}
+			headers = append(headers[:i], headers[i+1:]...)
 			break
 		}
 	}
-	return streamEnabledViaHeader
+	return headers, streamEnabledViaHeader
 }
 
 func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
