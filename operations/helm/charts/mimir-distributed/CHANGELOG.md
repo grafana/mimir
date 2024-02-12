@@ -45,7 +45,20 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Ruler: Set `-distributor.remote-timeout` to 10s in order to accommodate writing large rule results to the ingester. #7143
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-age` and `-server.grpc.keepalive.max-connection-age-grace` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7269
 * [CHANGE] Remove `-server.grpc.keepalive.max-connection-idle` from default config. The configuration now applied directly to distributor, fixing parity with jsonnet. #7298
-* [CHANGE] Distributor: termination grace period increased from 60s to 100s.
+* [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361
+  * Alertmanager: changed from `60` to `900`
+  * Distributor: changed from `60` to `100`
+  * Ingester: changed from `240` to `1200`
+  * Overrides-exporter: changed from `60` to `30`
+  * Ruler: changed from `180` to `600`
+  * Querier: changed from `180` to `30`
+  * Query-scheduler: changed from `180` to `30`
+  * Store-gateway: changed from `240` to `120`
+  * Compactor: changed from `240` to `900`
+  * Chunks-cache: changed from `60` to `30`
+  * Index-cache: changed from `60` to `30`
+  * Metadata-cache: changed from `60` to `30`
+  * Results-cache: changed from `60` to `30`
 * [ENHANCEMENT] Add `jaegerReporterMaxQueueSize` Helm value for all components where configuring `JAEGER_REPORTER_MAX_QUEUE_SIZE` makes sense, and override the Jaeger client's default value of 100 for components expected to generate many trace spans. #7068 #7086 #7259
 * [ENHANCEMENT] Rollout-operator: upgraded to v0.13.0. #7469
 * [ENHANCEMENT] Query-frontend: configured `-shutdown-delay`, `-server.grpc.keepalive.max-connection-age` and termination grace period to reduce the likelihood of queries hitting terminated query-frontends. #7129
