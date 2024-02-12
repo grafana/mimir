@@ -92,7 +92,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: small-values
             app.kubernetes.io/component: query-scheduler
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 30
       volumes:
         - name: config
           configMap:

@@ -57,7 +57,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-compactor
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           secret:
