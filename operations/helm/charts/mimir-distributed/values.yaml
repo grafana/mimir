@@ -1367,7 +1367,7 @@ querier:
       maxUnavailable: 0
       maxSurge: 15%
 
-  terminationGracePeriodSeconds: 30
+  terminationGracePeriodSeconds: 180
 
   tolerations: []
   initContainers: []
@@ -1547,7 +1547,7 @@ query_scheduler:
       maxUnavailable: 0
       maxSurge: 1
 
-  terminationGracePeriodSeconds: 30
+  terminationGracePeriodSeconds: 180
 
   tolerations: []
   initContainers: []

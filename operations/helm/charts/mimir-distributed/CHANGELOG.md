@@ -49,8 +49,6 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Ingester: changed from `240` to `1200`
   * Overrides-exporter: changed from `60` to `30`
   * Ruler: changed from `180` to `600`
-  * Querier: changed from `180` to `30`
-  * Query-scheduler: changed from `180` to `30`
   * Store-gateway: changed from `240` to `120`
   * Compactor: changed from `240` to `900`
   * Chunks-cache: changed from `60` to `30`

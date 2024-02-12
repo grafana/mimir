@@ -101,7 +101,7 @@ spec:
           matchLabels:
             app: enterprise-metrics-querier
             release: test-enterprise-legacy-label-values
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: config
           secret:
