@@ -427,6 +427,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
+		//nolint:staticcheck
 		legacyPartitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingester legacy partition ID")

@@ -98,6 +98,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, writer))
 			})
 
+			//nolint:staticcheck
 			partitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
 			require.NoError(t, err)
 			require.NoError(t, writer.WriteSync(ctx, partitionID, userID, &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{series1}, Source: mimirpb.API}))
