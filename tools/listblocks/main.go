@@ -114,7 +114,6 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 	fmt.Fprintf(tabber, "Min Time\t")
 	fmt.Fprintf(tabber, "Max Time\t")
 	fmt.Fprintf(tabber, "Duration\t")
-	fmt.Fprintf(tabber, "No Compact\t")
 	if cfg.showDeleted {
 		fmt.Fprintf(tabber, "Deletion Time\t")
 	}
@@ -162,14 +161,6 @@ func printMetas(metas map[ulid.ULID]*block.Meta, deleteMarkerDetails map[ulid.UL
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
-
-		if val, ok := noCompactMarkerDetails[b.ULID]; ok {
-			fmt.Fprintf(tabber, "%v\t", []string{
-				fmt.Sprintf("Time: %s", time.Unix(val.NoCompactTime, 0).UTC().Format(time.RFC3339)),
-				fmt.Sprintf("Reason: %s", val.Reason)})
-		} else {
-			fmt.Fprintf(tabber, "\t")
-		}
 
 		if cfg.showDeleted {
 			if deleteMarkerDetails[b.ULID].DeletionTime == 0 {

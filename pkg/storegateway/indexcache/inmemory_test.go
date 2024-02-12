@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/hashicorp/golang-lru/v2/simplelru"
@@ -148,7 +149,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeSeriesForRef,
 			set: func(id uint64, b []byte) {
-				cache.StoreSeriesForRef(user, uid(id), storage.SeriesRef(id), b)
+				cache.StoreSeriesForRef(user, uid(id), storage.SeriesRef(id), b, time.Hour)
 			},
 			get: func(id uint64) ([]byte, bool) {
 				seriesRef := storage.SeriesRef(id)
@@ -313,7 +314,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	testFetchMultiPostings(ctx, t, cache, user, id, []labels.Label{{Name: "test", Value: "124"}}, nil)
 
 	// Add sliceHeaderSize + 3 more bytes.
-	cache.StoreSeriesForRef(user, id, 1234, []byte{222, 223, 224})
+	cache.StoreSeriesForRef(user, id, 1234, []byte{222, 223, 224}, time.Hour)
 	assert.Equal(t, uint64(2*sliceHeaderSize+5), cache.curSize)
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.current.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(sliceHeaderSize+2), promtest.ToFloat64(cache.currentSize.WithLabelValues(cacheTypePostings)))

@@ -668,6 +668,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 	// Use a slab pool to reduce allocations by sharding one large slice of bytes instead of allocating each series' bytes separately.
 	// But in order to avoid a race condition with an async cache, we never release the pool and let the GC collect it.
 	bytesPool := pool.NewSlabPool[byte](pool.NoopPool{}, seriesBytesSlabSize)
+	cacheTTL := indexcache.BlockTTL(r.block.meta)
 
 	for i, id := range ids {
 		// We iterate the series in order assuming they are sorted.
@@ -695,7 +696,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		}
 		loaded.addSeries(id, seriesBytes)
 
-		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes)
+		r.block.indexCache.StoreSeriesForRef(r.block.userID, r.block.meta.ULID, id, seriesBytes, cacheTTL)
 	}
 	return nil
 }

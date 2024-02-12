@@ -132,7 +132,7 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, ke
 	return &indexcache.MapIterator[labels.Label]{Keys: keys}
 }
 
-func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) StoreSeriesForRef(string, ulid.ULID, storage.SeriesRef, []byte, time.Duration) {}
 func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
