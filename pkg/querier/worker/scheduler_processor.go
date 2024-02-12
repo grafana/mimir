@@ -6,7 +6,6 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -350,16 +349,17 @@ func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, re
 	}
 
 	// Send body chunks.
-	bodyReader := bytes.NewReader(response.Body)
-	for bodyReader.Len() > 0 {
-		payload, err := buildBodyChunk(queryID, bodyReader)
-		if err != nil {
-			return fmt.Errorf("error reading response body chunk: %w", err)
-		}
-		err = sc.Send(payload)
+	for offset := 0; offset < len(response.Body); {
+		err = sc.Send(&frontendv2pb.QueryResultStreamRequest{
+			QueryID: queryID,
+			Data: &frontendv2pb.QueryResultStreamRequest_Body{Body: &frontendv2pb.QueryResultBody{
+				Chunk: response.Body[offset:min(offset+responseStreamingBodyChunkSizeBytes, len(response.Body))],
+			}},
+		})
 		if err != nil {
 			return fmt.Errorf("error sending response body chunk to frontend: %w", err)
 		}
+		offset += responseStreamingBodyChunkSizeBytes
 	}
 
 	_, err = sc.CloseAndRecv()
@@ -368,21 +368,6 @@ func streamResponse(ctx context.Context, c client.PoolClient, queryID uint64, re
 	}
 
 	return nil
-}
-
-func buildBodyChunk(queryID uint64, bodyReader *bytes.Reader) (*frontendv2pb.QueryResultStreamRequest, error) {
-	data := &frontendv2pb.QueryResultStreamRequest_Body{
-		Body: &frontendv2pb.QueryResultBody{Chunk: make([]byte, min(responseStreamingBodyChunkSizeBytes, bodyReader.Len()))},
-	}
-	payload := &frontendv2pb.QueryResultStreamRequest{
-		QueryID: queryID,
-		Data:    data,
-	}
-	_, err := bodyReader.Read(data.Body.Chunk)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	return payload, nil
 }
 
 func (sp *schedulerProcessor) updateTracingHeaders(request *httpgrpc.HTTPRequest, span opentracing.Span) error {
