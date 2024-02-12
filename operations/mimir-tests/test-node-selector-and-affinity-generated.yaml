@@ -622,6 +622,7 @@ spec:
           name: overrides
       nodeSelector:
         workload: mimir
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -803,6 +804,7 @@ spec:
           name: overrides
       nodeSelector:
         workload: mimir
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides

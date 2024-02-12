@@ -111,7 +111,7 @@ spec:
             app.kubernetes.io/component: querier
       tolerations:
         []
-      terminationGracePeriodSeconds: 30
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: config
           configMap:
