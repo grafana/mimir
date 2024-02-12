@@ -33,7 +33,7 @@ type Config struct {
 	QuerierID                      string            `yaml:"id" category:"advanced"`
 	QueryFrontendGRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
 	QuerySchedulerGRPCClientConfig grpcclient.Config `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
-	ResponseStreamingEnabled       bool              `yaml:"response_streaming_enabled" doc:"description=Enables streaming of responses from querier to query-frontend." category:"experimental"`
+	ResponseStreamingEnabled       bool              `yaml:"response_streaming_enabled" category:"experimental"`
 
 	// This configuration is injected internally.
 	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.

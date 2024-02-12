@@ -2555,7 +2555,9 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
 
-# (experimental) Enables streaming of responses from querier to query-frontend.
+# (experimental) Enables streaming of responses from querier to query-frontend
+# for responses that request it. This is an experimental feature and may be
+# removed in the future.
 # CLI flag: -querier.response-streaming-enabled
 [response_streaming_enabled: <boolean> | default = false]
 ```
