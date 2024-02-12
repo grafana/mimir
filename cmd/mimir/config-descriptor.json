@@ -94,7 +94,7 @@
           "fieldDefaultValue": false,
           "fieldFlag": "distributor.enable-otlp-metadata-storage",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",

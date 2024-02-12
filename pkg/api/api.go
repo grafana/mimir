@@ -52,7 +52,7 @@ type ConfigHandler func(actualCfg interface{}, defaultCfg interface{}) http.Hand
 type Config struct {
 	SkipLabelNameValidationHeader bool `yaml:"skip_label_name_validation_header_enabled" category:"advanced"`
 
-	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"experimental"`
+	EnableOtelMetadataStorage bool `yaml:"enable_otel_metadata_translation" category:"advanced"`
 
 	AlertmanagerHTTPPrefix string `yaml:"alertmanager_http_prefix" category:"advanced"`
 	PrometheusHTTPPrefix   string `yaml:"prometheus_http_prefix" category:"advanced"`
