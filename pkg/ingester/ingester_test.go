@@ -3201,38 +3201,50 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *testing.T) {
-	// Configure the lifecycler to not immediately leave the ring, to make sure
-	// the ingester service will stay in Stopping state for longer.
-	cfg := defaultIngesterTestConfig(t)
-	cfg.IngesterRing.FinalSleep = 5 * time.Second
+	for _, grpcLimitEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
+			cfg := defaultIngesterTestConfig(t)
+			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
 
-	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
-	require.NoError(t, err)
+			// Configure the lifecycler to not immediately leave the ring, to make sure
+			// the ingester service will stay in Stopping state for longer.
+			cfg.IngesterRing.FinalSleep = 5 * time.Second
 
-	// Start the ingester and then stop it.
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	i.StopAsync()
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			require.NoError(t, err)
 
-	// Wait until the ingester service switches to Stopping state.
-	require.Eventually(t, func() bool {
-		return i.State() == services.Stopping
-	}, time.Second, 10*time.Millisecond)
+			// Start the ingester and then stop it.
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			i.StopAsync()
 
-	// Mock request
-	userID := "test"
-	ctx := user.InjectOrgID(context.Background(), userID)
-	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
+			// Wait until the ingester service switches to Stopping state.
+			require.Eventually(t, func() bool {
+				return i.State() == services.Stopping
+			}, time.Second, 10*time.Millisecond)
 
-	res, err := i.Push(ctx, req)
-	assert.EqualError(t, err, newUnavailableError(services.Stopping).Error())
-	assert.Nil(t, res)
+			// Mock request
+			userID := "test"
+			ctx := user.InjectOrgID(context.Background(), userID)
+			req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
 
-	// Check if the TSDB has been created
-	_, tsdbCreated := i.tsdbs[userID]
-	assert.False(t, tsdbCreated)
+			var res *mimirpb.WriteResponse
 
-	// Wait until terminated.
-	require.NoError(t, i.AwaitTerminated(context.Background()))
+			if grpcLimitEnabled {
+				res, err = pushWithSimulatedGRPCHandler(ctx, i, req)
+			} else {
+				res, err = i.Push(ctx, req)
+			}
+
+			assert.EqualError(t, err, newUnavailableError(services.Stopping).Error())
+			assert.Nil(t, res)
+
+			// Check if the TSDB has been created
+			assert.Nil(t, i.getTSDB(userID))
+
+			// Wait until terminated.
+			require.NoError(t, i.AwaitTerminated(context.Background()))
+		})
+	}
 }
 
 func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
@@ -6411,67 +6423,87 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Create a mocked ingester
-			cfg := defaultIngesterTestConfig(t)
-			cfg.InstanceLimitsFn = func() *InstanceLimits {
-				return &testData.limits
-			}
+			for _, grpcLimiterEnabled := range []bool{false, true} {
+				t.Run(fmt.Sprintf("with gRPC limiter: %t", grpcLimiterEnabled), func(t *testing.T) {
 
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
-
-			// Iterate through users in sorted order (by username).
-			uids := []string{}
-			totalPushes := 0
-			for uid, requests := range testData.reqs {
-				uids = append(uids, uid)
-				totalPushes += len(requests)
-			}
-			slices.Sort(uids)
-
-			pushIdx := 0
-			for _, uid := range uids {
-				ctx := user.InjectOrgID(context.Background(), uid)
-
-				for _, req := range testData.reqs[uid] {
-					pushIdx++
-					_, err := i.Push(ctx, req)
-
-					if pushIdx < totalPushes {
-						require.NoError(t, err)
-					} else {
-						// Last push may expect error.
-						if testData.expectedErr != nil {
-							assert.ErrorIs(t, err, testData.expectedErr)
-							var optional middleware.OptionalLogging
-							assert.ErrorAs(t, err, &optional)
-							s, ok := grpcutil.ErrorToStatus(err)
-							require.True(t, ok, "expected to be able to convert to gRPC status")
-							assert.Equal(t, codes.Unavailable, s.Code())
-						} else {
-							assert.NoError(t, err)
-						}
+					// Create a mocked ingester
+					cfg := defaultIngesterTestConfig(t)
+					cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimiterEnabled
+					cfg.InstanceLimitsFn = func() *InstanceLimits {
+						return &testData.limits
 					}
 
-					// imitate time ticking between each push
-					i.ingestionRate.Tick()
+					i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+					require.NoError(t, err)
+					require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+					defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-					rate := testutil.ToFloat64(i.metrics.ingestionRate)
-					require.NotZero(t, rate)
-				}
+					// Wait until the ingester is healthy
+					test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+						return i.lifecycler.HealthyInstancesCount()
+					})
+
+					// Iterate through users in sorted order (by username).
+					uids := []string{}
+					totalPushes := 0
+					for uid, requests := range testData.reqs {
+						uids = append(uids, uid)
+						totalPushes += len(requests)
+					}
+					slices.Sort(uids)
+
+					pushIdx := 0
+					for _, uid := range uids {
+						ctx := user.InjectOrgID(context.Background(), uid)
+
+						for _, origReq := range testData.reqs[uid] {
+							pushIdx++
+
+							// Clone the request so that it's safe to be sent multiple times.
+							reqData, marshalErr := origReq.Marshal()
+							require.NoError(t, marshalErr)
+							req := &mimirpb.WriteRequest{}
+							require.NoError(t, req.Unmarshal(reqData))
+
+							var err error
+
+							// If gRPC limiter is enabled we simulate the sequence of calls done by the gRPC handler.
+							if grpcLimiterEnabled {
+								_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
+							} else {
+								_, err = i.Push(ctx, req)
+							}
+
+							if pushIdx < totalPushes {
+								require.NoError(t, err)
+							} else {
+								// Last push may expect error.
+								if testData.expectedErr != nil {
+									assert.ErrorIs(t, err, testData.expectedErr)
+									var optional middleware.OptionalLogging
+									assert.ErrorAs(t, err, &optional)
+									s, ok := grpcutil.ErrorToStatus(err)
+									require.True(t, ok, "expected to be able to convert to gRPC status")
+									assert.Equal(t, codes.Unavailable, s.Code())
+								} else {
+									assert.NoError(t, err)
+								}
+							}
+
+							// imitate time ticking between each push
+							i.ingestionRate.Tick()
+
+							rate := testutil.ToFloat64(i.metrics.ingestionRate)
+							require.NotZero(t, rate)
+						}
+					}
+				})
 			}
 		})
 	}
 }
 
-func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
+func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsingGrpcMethodLimiterDisabled(t *testing.T) {
 	tests := map[string]struct {
 		limits      InstanceLimits
 		reqs        map[string][]*mimirpb.WriteRequest
@@ -6558,6 +6590,7 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
+			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = false
 			cfg.InstanceLimitsFn = func() *InstanceLimits {
 				return &testData.limits
 			}
@@ -9904,4 +9937,16 @@ func (c *mockContext) Err() error {
 
 func (c *mockContext) Value(key any) interface{} {
 	return c.ctx.Value(key)
+}
+
+func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	err := i.StartPushRequest(int64(req.Size()))
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := i.Push(ctx, req)
+	i.FinishPushRequest(int64(req.Size()))
+
+	return res, err
 }
