@@ -211,6 +211,10 @@ type Options struct {
 	// EnableSharding enables query sharding support in TSDB.
 	EnableSharding bool
 
+	// Timely compaction allows head compaction to happen when min block range can no longer be appended,
+	// without requiring 1.5x the chunk range worth of data in the head.
+	TimelyCompaction bool
+
 	// HeadPostingsForMatchersCacheTTL is the TTL of the postings for matchers cache in the Head.
 	// If it's 0, the cache will only deduplicate in-flight requests, deleting the results once the first request has finished.
 	HeadPostingsForMatchersCacheTTL time.Duration
@@ -939,6 +943,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.EnableSharding = opts.EnableSharding
+	headOpts.TimelyCompaction = opts.TimelyCompaction
 	headOpts.PostingsForMatchersCacheTTL = opts.HeadPostingsForMatchersCacheTTL
 	headOpts.PostingsForMatchersCacheMaxItems = opts.HeadPostingsForMatchersCacheMaxItems
 	headOpts.PostingsForMatchersCacheMaxBytes = opts.HeadPostingsForMatchersCacheMaxBytes

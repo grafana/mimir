@@ -106,6 +106,7 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
 - Ingester client
   - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
     - `-ingester.client.circuit-breaker.enabled`

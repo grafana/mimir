@@ -197,6 +197,10 @@ type HeadOptions struct {
 	// EnableSharding enables ShardedPostings() support in the Head.
 	EnableSharding bool
 
+	// Timely compaction allows head compaction to happen when min block range can no longer be appended,
+	// without requiring 1.5x the chunk range worth of data in the head.
+	TimelyCompaction bool
+
 	PostingsForMatchersCacheTTL      time.Duration
 	PostingsForMatchersCacheMaxItems int
 	PostingsForMatchersCacheMaxBytes int64
@@ -1653,9 +1657,14 @@ func (h *Head) MaxOOOTime() int64 {
 }
 
 // compactable returns whether the head has a compactable range.
-// The head has a compactable range when the head time range is 1.5 times the chunk range.
+// When the TimelyCompaction option is enabled, the head is compactable when the min block end is .5 times the chunk range in the past.
+// Else the head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
 func (h *Head) compactable() bool {
+	if h.opts.TimelyCompaction {
+		minBlockEnd := rangeForTimestamp(h.MinTime(), h.chunkRange.Load())
+		return minBlockEnd < h.appendableMinValidTime()
+	}
 	return h.MaxTime()-h.MinTime() > h.chunkRange.Load()/2*3
 }
 
