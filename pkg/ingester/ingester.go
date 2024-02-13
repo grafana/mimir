@@ -322,6 +322,7 @@ type Ingester struct {
 
 	// The following is used by ingest storage (when enabled).
 	ingestReader              *ingest.PartitionReader
+	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 }
 
@@ -438,7 +439,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
 
-		partitionID, err := ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
 		if err != nil {
 			return nil, errors.Wrap(err, "calculating ingester partition ID")
 		}
@@ -452,7 +453,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}
 
 		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
-			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(partitionID, cfg.IngesterRing.InstanceID),
+			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
 			PartitionRingName,
 			PartitionRingKey,
 			partitionRingKV,
@@ -3363,6 +3364,8 @@ func (i *Ingester) unsetPrepareShutdown() {
 //   - DELETE
 //     Sets partition back to ACTIVE state.
 func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+	logger := log.With(i.logger, "partition", i.ingestPartitionID)
+
 	// Don't allow callers to change the shutdown configuration while we're in the middle
 	// of starting or shutting down.
 	if i.State() != services.Running {
@@ -3383,26 +3386,26 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 		// for a short period, we simply don't allow this case.
 		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 		if err != nil {
-			level.Error(i.logger).Log("msg", "failed to check partition state in the ring", "err", err)
+			level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 
 		if state == ring.PartitionPending {
-			level.Warn(i.logger).Log("msg", "received a request to prepare partition for shutdown, but the request can't be satisfied because the partition is in PENDING state")
+			level.Warn(logger).Log("msg", "received a request to prepare partition for shutdown, but the request can't be satisfied because the partition is in PENDING state")
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
 
 		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionInactive); err != nil {
-			level.Error(i.logger).Log("msg", "failed to change partition state to inactive", "err", err)
+			level.Error(logger).Log("msg", "failed to change partition state to inactive", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 	case http.MethodDelete:
 		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionActive); err != nil {
-			level.Error(i.logger).Log("msg", "failed to change partition state to active", "err", err)
+			level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -3410,7 +3413,7 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 
 	state, stateTimestamp, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
 	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to check partition state in the ring", "err", err)
+		level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
