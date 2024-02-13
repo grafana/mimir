@@ -27,7 +27,12 @@ func GetOrCreatePartitionRingDesc(in any) *PartitionRingDesc {
 		return NewPartitionRingDesc()
 	}
 
-	return in.(*PartitionRingDesc)
+	desc := in.(*PartitionRingDesc)
+	if desc == nil {
+		return NewPartitionRingDesc()
+	}
+
+	return desc
 }
 
 func NewPartitionRingDesc() *PartitionRingDesc {
@@ -69,6 +74,12 @@ func (m *PartitionRingDesc) ownersByPartition() map[int32][]string {
 	for id, o := range m.Owners {
 		out[o.OwnedPartition] = append(out[o.OwnedPartition], id)
 	}
+
+	// Sort owners to have predictable tests.
+	for id := range out {
+		slices.Sort(out[id])
+	}
+
 	return out
 }
 
@@ -176,19 +187,55 @@ func (m *PartitionRingDesc) AddOrUpdateOwner(id string, state OwnerState, ownedP
 	}
 
 	updated.UpdatedTimestamp = now.Unix()
-	m.Owners[id] = updated
+
+	if m.Owners == nil {
+		m.Owners = map[string]OwnerDesc{id: updated}
+	} else {
+		m.Owners[id] = updated
+	}
+
 	return true
 }
 
-// RemoveOwner removes a partition owner.
-func (m *PartitionRingDesc) RemoveOwner(id string) {
+// RemoveOwner removes a partition owner. Returns true if the ring has been changed.
+func (m *PartitionRingDesc) RemoveOwner(id string) bool {
+	if _, ok := m.Owners[id]; !ok {
+		return false
+	}
+
 	delete(m.Owners, id)
+	return true
 }
 
 // HasOwner returns whether a owner exists.
 func (m *PartitionRingDesc) HasOwner(id string) bool {
 	_, ok := m.Owners[id]
 	return ok
+}
+
+// PartitionOwnersCount returns the number of owners for a given partition.
+func (m *PartitionRingDesc) PartitionOwnersCount(partitionID int32) int {
+	count := 0
+	for _, o := range m.Owners {
+		if o.OwnedPartition == partitionID {
+			count++
+		}
+	}
+	return count
+}
+
+// PartitionOwnersCountUpdatedBefore returns the number of owners for a given partition,
+// including only owners which have been updated the last time before the input timestamp.
+func (m *PartitionRingDesc) PartitionOwnersCountUpdatedBefore(partitionID int32, before time.Time) int {
+	count := 0
+	beforeSeconds := before.Unix()
+
+	for _, o := range m.Owners {
+		if o.OwnedPartition == partitionID && o.GetUpdatedTimestamp() < beforeSeconds {
+			count++
+		}
+	}
+	return count
 }
 
 // Merge implements memberlist.Mergeable.
@@ -361,6 +408,14 @@ func (m *PartitionDesc) IsActive() bool {
 
 func (m *PartitionDesc) IsInactive() bool {
 	return m.GetState() == PartitionInactive
+}
+
+func (m *PartitionDesc) IsInactiveSince(since time.Time) bool {
+	return m.IsInactive() && m.GetStateTimestamp() < since.Unix()
+}
+
+func (m *PartitionDesc) GetStateTime() time.Time {
+	return time.Unix(m.GetStateTimestamp(), 0)
 }
 
 func (m *PartitionDesc) Clone() PartitionDesc {

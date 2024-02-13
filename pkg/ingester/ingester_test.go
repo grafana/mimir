@@ -5129,7 +5129,7 @@ func TestIngester_flushing(t *testing.T) {
 		setupIngester func(cfg *Config)
 		action        func(t *testing.T, i *Ingester, reg *prometheus.Registry)
 	}{
-		"ingesterShutdown": {
+		"should flush blocks on shutdown when enabled through the configuration": {
 			setupIngester: func(cfg *Config) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = true
 				cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown = true
@@ -5164,7 +5164,7 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
-		"prepareShutdownHandler": {
+		"should flush blocks on shutdown when enabled through the prepare shutdown API endpoint": {
 			setupIngester: func(cfg *Config) {
 				cfg.IngesterRing.UnregisterOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
@@ -5238,7 +5238,7 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
-		"shutdownHandler": {
+		"should flush blocks when the shutdown API endpoint is called": {
 			setupIngester: func(cfg *Config) {
 				cfg.IngesterRing.UnregisterOnShutdown = false
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
@@ -5272,7 +5272,7 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
-		"flushHandler": {
+		"should flush blocks for all tenants when the flush API endpoint is called without tenants list": {
 			setupIngester: func(cfg *Config) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 			},
@@ -5305,7 +5305,7 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
-		"flushHandlerWithListOfTenants": {
+		"should flush blocks for requested tenants when the flush API endpoint is called with tenants list": {
 			setupIngester: func(cfg *Config) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 			},
@@ -5361,7 +5361,7 @@ func TestIngester_flushing(t *testing.T) {
 			},
 		},
 
-		"flushMultipleBlocksWithDataSpanning3Days": {
+		"should flush blocks spanning multiple days with flush API endpoint is called": {
 			setupIngester: func(cfg *Config) {
 				cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown = false
 			},

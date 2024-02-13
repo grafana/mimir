@@ -280,6 +280,7 @@ type Ingester interface {
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
 	PrepareShutdownHandler(http.ResponseWriter, *http.Request)
+	PreparePartitionDownscaleHandler(http.ResponseWriter, *http.Request)
 	PushWithCleanup(context.Context, *mimirpb.WriteRequest, func()) error
 	UserRegistryHandler(http.ResponseWriter, *http.Request)
 	TenantsHandler(http.ResponseWriter, *http.Request)
@@ -297,6 +298,7 @@ func (a *API) RegisterIngester(i Ingester) {
 
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/prepare-shutdown", http.HandlerFunc(i.PrepareShutdownHandler), false, true, "GET", "POST", "DELETE")
+	a.RegisterRoute("/ingester/prepare-partition-downscale", http.HandlerFunc(i.PreparePartitionDownscaleHandler), false, true, "GET", "POST", "DELETE")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/tsdb_metrics", http.HandlerFunc(i.UserRegistryHandler), true, true, "GET")
 
@@ -344,12 +346,20 @@ func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHan
 	}
 }
 
-// RegisterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterRing(r http.Handler) {
+// RegisterIngesterRing registers the ring UI page associated with the ingesters ring.
+func (a *API) RegisterIngesterRing(r http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ingester/ring"},
 	})
 	a.RegisterRoute("/ingester/ring", r, false, true, "GET", "POST")
+}
+
+// RegisterIngesterPartitionRing registers the ring UI page associated with the ingester partitions ring.
+func (a *API) RegisterIngesterPartitionRing(r http.Handler) {
+	a.indexPage.AddLinks(defaultWeight, "Ingester", []IndexPageLink{
+		{Desc: "Partition ring status", Path: "/ingester/partition-ring"},
+	})
+	a.RegisterRoute("/ingester/partition-ring", r, false, true, "GET", "POST")
 }
 
 // RegisterStoreGateway registers the ring UI page associated with the store-gateway.
