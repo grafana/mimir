@@ -25,6 +25,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -87,6 +88,10 @@ const (
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
+	// PartitionRingKey is the key under which we store the partitions ring used by the "ingest storage".
+	PartitionRingKey  = "ingester-partitions"
+	PartitionRingName = "ingester-partitions"
+
 	// Jitter applied to the idle timeout to prevent compaction in all ingesters concurrently.
 	compactionIdleTimeoutJitter = 0.25
 
@@ -147,7 +152,8 @@ type requestWithUsersAndCallback struct {
 
 // Config for an Ingester.
 type Config struct {
-	IngesterRing RingConfig `yaml:"ring"`
+	IngesterRing          RingConfig          `yaml:"ring"`
+	IngesterPartitionRing PartitionRingConfig `yaml:"partition_ring" category:"experimental" doc:"hidden"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period" category:"advanced"`
@@ -189,6 +195,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.IngesterRing.RegisterFlags(f, logger)
+	cfg.IngesterPartitionRing.RegisterFlags(f)
 	cfg.DefaultLimits.RegisterFlags(f)
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
 
@@ -313,7 +320,10 @@ type Ingester struct {
 
 	errorSamplers ingesterErrSamplers
 
-	ingestReader *ingest.PartitionReader
+	// The following is used by ingest storage (when enabled).
+	ingestReader              *ingest.PartitionReader
+	ingestPartitionID         int32
+	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -418,14 +428,37 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if ingestCfg := cfg.IngestStorageConfig; ingestCfg.Enabled {
 		kafkaCfg := ingestCfg.KafkaConfig
 
-		partitionID, err := ingest.IngesterPartition(cfg.IngesterRing.InstanceID)
+		//nolint:staticcheck
+		legacyPartitionID, err := ingest.IngesterZonalPartition(cfg.IngesterRing.InstanceID)
 		if err != nil {
-			return nil, errors.Wrap(err, "calculating ingest storage partition ID")
+			return nil, errors.Wrap(err, "calculating ingester legacy partition ID")
 		}
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, partitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
+
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, legacyPartitionID, i, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
+
+		i.ingestPartitionID, err = ingest.IngesterPartitionID(cfg.IngesterRing.InstanceID)
+		if err != nil {
+			return nil, errors.Wrap(err, "calculating ingester partition ID")
+		}
+
+		partitionRingKV := cfg.IngesterPartitionRing.kvMock
+		if partitionRingKV == nil {
+			partitionRingKV, err = kv.NewClient(cfg.IngesterRing.KVStore, ring.GetPartitionRingCodec(), kv.RegistererWithKVName(registerer, PartitionRingName+"-lifecycler"), logger)
+			if err != nil {
+				return nil, errors.Wrap(err, "creating KV store for ingester partition ring")
+			}
+		}
+
+		i.ingestPartitionLifecycler = ring.NewPartitionInstanceLifecycler(
+			i.cfg.IngesterPartitionRing.ToLifecyclerConfig(i.ingestPartitionID, cfg.IngesterRing.InstanceID),
+			PartitionRingName,
+			PartitionRingKey,
+			partitionRingKV,
+			logger,
+			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	}
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
@@ -470,6 +503,16 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
 		}
 	}()
+
+	// First of all we have to check if the shutdown marker is set. This needs to be done
+	// as first thing because, if found, it may change the behaviour of the ingester startup.
+	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
+		return errors.Wrap(err, "failed to check ingester shutdown marker")
+	} else if exists {
+		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
+		i.setPrepareShutdown()
+	}
+
 	if err := i.openExistingTSDB(ctx); err != nil {
 		// Try to rollback and close opened TSDBs before halting the ingester.
 		i.closeAllTSDB()
@@ -542,15 +585,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.ingestReader)
 	}
 
-	shutdownMarkerPath := shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)
-	shutdownMarkerFound, err := shutdownmarker.Exists(shutdownMarkerPath)
-	if err != nil {
-		return errors.Wrap(err, "failed to check ingester shutdown marker")
-	}
-
-	if shutdownMarkerFound {
-		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownMarkerPath)
-		i.setPrepareShutdown()
+	if i.ingestPartitionLifecycler != nil {
+		servs = append(servs, i.ingestPartitionLifecycler)
 	}
 
 	i.subservices, err = services.NewManager(servs...)
@@ -3265,6 +3301,13 @@ func (i *Ingester) PrepareShutdownHandler(w http.ResponseWriter, r *http.Request
 
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
+		// Reverting the prepared shutdown is currently not supported by the ingest storage.
+		if i.cfg.IngestStorageConfig.Enabled {
+			level.Error(i.logger).Log("msg", "the ingest storage doesn't support reverting the prepared shutdown")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
 		if err := shutdownmarker.Remove(shutdownMarkerPath); err != nil {
 			level.Error(i.logger).Log("msg", "unable to remove prepare-shutdown marker file", "path", shutdownMarkerPath, "err", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -3285,12 +3328,106 @@ func (i *Ingester) setPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(true)
 	i.lifecycler.SetFlushOnShutdown(true)
 	i.metrics.shutdownMarker.Set(1)
+
+	if i.ingestPartitionLifecycler != nil {
+		// When the prepare shutdown endpoint is called there are two changes in the partitions ring behavior:
+		//
+		// 1. If setPrepareShutdown() is called at startup, because of the shutdown marker found on disk,
+		//    the ingester shouldn't create the partition if doesn't exist, because we expect the ingester will
+		//    be scaled down shortly after.
+		// 2. When the ingester will shutdown we'll have to remove the ingester from the partition owners,
+		//    because we expect the ingester to be scaled down.
+		i.ingestPartitionLifecycler.SetCreatePartitionOnStartup(false)
+		i.ingestPartitionLifecycler.SetRemoveOwnerOnShutdown(true)
+	}
 }
 
 func (i *Ingester) unsetPrepareShutdown() {
 	i.lifecycler.SetUnregisterOnShutdown(i.cfg.IngesterRing.UnregisterOnShutdown)
 	i.lifecycler.SetFlushOnShutdown(i.cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown)
 	i.metrics.shutdownMarker.Set(0)
+}
+
+// PreparePartitionDownscaleHandler prepares the ingester's partition downscaling. The partition owned by the
+// ingester will switch to INACTIVE state (read-only).
+//
+// Following methods are supported:
+//
+//   - GET
+//     Returns timestamp when partition was switched to INACTIVE state, or 0, if partition is not in INACTIVE state.
+//
+//   - POST
+//     Switches the partition to INACTIVE state (if not yet), and returns the timestamp when the switch to
+//     INACTIVE state happened.
+//
+//   - DELETE
+//     Sets partition back to ACTIVE state.
+func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+	logger := log.With(i.logger, "partition", i.ingestPartitionID)
+
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	if !i.cfg.IngestStorageConfig.Enabled {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		// It's not allowed to prepare the downscale while in PENDING state. Why? Because if the downscale
+		// will be later cancelled, we don't know if it was requested in PENDING or ACTIVE state, so we
+		// don't know to which state reverting back. Given a partition is expected to stay in PENDING state
+		// for a short period, we simply don't allow this case.
+		state, _, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
+		if err != nil {
+			level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if state == ring.PartitionPending {
+			level.Warn(logger).Log("msg", "received a request to prepare partition for shutdown, but the request can't be satisfied because the partition is in PENDING state")
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+
+		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionInactive); err != nil {
+			level.Error(logger).Log("msg", "failed to change partition state to inactive", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	case http.MethodDelete:
+		// We don't switch it back to PENDING state if there are not enough owners because we want to guarantee consistency
+		// in the read path. If the partition is within the lookback period we need to guarantee that partition will be queried.
+		// Moving back to PENDING will cause us loosing consistency, because PENDING partitions are not queried by design.
+		// We could move back to PENDING if there are not enough owners and the partition moved to INACTIVE more than
+		// "lookback period" ago, but since we delete inactive partitions with no owners that moved to inactive since longer
+		// than "lookback period" ago, it looks to be an edge case not worth to address.
+		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionActive); err != nil {
+			level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	state, stateTimestamp, err := i.ingestPartitionLifecycler.GetPartitionState(r.Context())
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to check partition state in the ring", "err", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if state == ring.PartitionInactive {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": stateTimestamp.Unix()})
+	} else {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": 0})
+	}
 }
 
 // ShutdownHandler triggers the following set of operations in order:
