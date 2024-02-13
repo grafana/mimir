@@ -586,7 +586,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	if i.ingestPartitionLifecycler != nil {
-		// TODO unit test: do not create partition if there's a shutdown marker
 		servs = append(servs, i.ingestPartitionLifecycler)
 	}
 

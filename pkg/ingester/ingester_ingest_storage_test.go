@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"sync"
 	"testing"
@@ -33,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -312,6 +314,42 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 			return slices.Equal(watcher.PartitionRing().PendingPartitionIDs(), []int32{0})
 		}, time.Second, 10*time.Millisecond)
 	})
+}
+
+func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) {
+	ctx := context.Background()
+
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+
+	cfg := defaultIngesterTestConfig(t)
+	ingester, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+
+	// Create the shutdown marker.
+	require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
+	require.NoError(t, shutdownmarker.Create(shutdownmarker.GetPath(cfg.BlocksStorageConfig.TSDB.Dir)))
+
+	// Start ingester.
+	require.NoError(t, err)
+	require.NoError(t, ingester.StartAsync(ctx))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(ctx, ingester)
+	})
+
+	// Start a watcher used to assert on the partitions ring.
+	watcher := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, cfg.IngesterPartitionRing.kvMock, log.NewNopLogger(), nil)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, watcher))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, watcher))
+	})
+
+	// No matter how long we wait, we expect the ingester service to hung in the starting state
+	// given it's not allowed to create the partition and the partition doesn't exist in the ring.
+	time.Sleep(10 * cfg.IngesterPartitionRing.lifecyclerPollingInterval)
+
+	assert.Equal(t, services.Starting, ingester.State())
+	assert.Empty(t, watcher.PartitionRing().PartitionIDs())
+	assert.Empty(t, watcher.PartitionRing().PartitionOwnerIDs(ingester.ingestPartitionID))
 }
 
 func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster) {
