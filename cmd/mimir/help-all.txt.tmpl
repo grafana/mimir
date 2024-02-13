@@ -1167,6 +1167,8 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant push request rate limit in requests per second. 0 to disable.
   -distributor.retry-after-header.base-seconds int
     	[experimental] Base duration in seconds for calculating the Retry-After header in responses to 429/5xx errors. (default 3)
+  -distributor.retry-after-header.circuit-breaker-awareness-enabled
+    	[experimental] When enabled, calculates the Retry-After delay taking into account circuit breaker's remaining delay. In this case the Retry-After delay must be greater or equal to the circuit breaker's remaining delay, if that value doesn't exceed the maximum allowed retry duration calculated as base-seconds * 2^max-backoff-exponent.
   -distributor.retry-after-header.enabled
     	[experimental] Enabled controls inclusion of the Retry-After header in the response: true includes it for client retry guidance, false omits it.
   -distributor.retry-after-header.max-backoff-exponent int

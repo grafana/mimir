@@ -763,6 +763,9 @@ retry_after_header:
   # CLI flag: -distributor.retry-after-header.max-backoff-exponent
   [max_backoff_exponent: <int> | default = 5]
 
+  # (experimental)
+  [circuit_breaker_awareness_enabled: <boolean> | default = ]
+
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
   # Prometheus HA replicas gracefully (requires labels).
