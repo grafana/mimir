@@ -8781,6 +8781,17 @@
               "fieldFlag": "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage",
               "fieldType": "int",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "timely_head_compaction_enabled",
+              "required": false,
+              "desc": "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.timely-head-compaction-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

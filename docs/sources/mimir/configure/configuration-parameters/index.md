@@ -3930,6 +3930,12 @@ tsdb:
   # percentage (0-100).
   # CLI flag: -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage
   [early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
+  # (experimental) Allows head compaction to happen when the min block range can
+  # no longer be appended, without requiring 1.5x the chunk range worth of data
+  # in the head.
+  # CLI flag: -blocks-storage.tsdb.timely-head-compaction-enabled
+  [timely_head_compaction_enabled: <boolean> | default = false]
 ```
 
 ### compactor
