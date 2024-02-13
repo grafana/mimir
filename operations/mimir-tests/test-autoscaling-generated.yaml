@@ -843,7 +843,7 @@ spec:
           limits:
             memory: 1200Mi
           requests:
-            cpu: "2"
+            cpu: 2500m
             memory: 600Mi
         volumeMounts:
         - mountPath: /etc/mimir
@@ -2134,7 +2134,7 @@ spec:
           )[15m:]
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "1500"
+      threshold: "1875"
     name: query_frontend_cpu_hpa_default
     type: prometheus
   - metadata:
