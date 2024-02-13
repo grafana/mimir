@@ -70,7 +70,7 @@ type PartitionInstanceLifecycler struct {
 	// Whether the partitions should be created on startup if it doesn't exist yet.
 	createPartitionOnStartup *atomic.Bool
 
-	// Whether the lifecycler should remove the partition owner on shutdown.
+	// Whether the lifecycler should remove the partition owner (identified by instance ID) on shutdown.
 	removeOwnerOnShutdown *atomic.Bool
 
 	// Metrics.
@@ -152,7 +152,7 @@ func (l *PartitionInstanceLifecycler) GetPartitionState(ctx context.Context) (Pa
 // This function returns ErrPartitionDoesNotExist if the partition doesn't exist,
 // and ErrPartitionStateChangeNotAllowed if the state change is not allowed.
 func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, toState PartitionState) error {
-	return l.run(func() error {
+	return l.runOnLifecyclerLoop(func() error {
 		err := l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
 			partition, exists := ring.Partitions[l.cfg.PartitionID]
 			if !exists {
@@ -164,7 +164,7 @@ func (l *PartitionInstanceLifecycler) ChangePartitionState(ctx context.Context, 
 			}
 
 			if !isPartitionStateChangeAllowed(partition.State, toState) {
-				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "from %s to %s", partition.State.String(), toState.String())
+				return false, errors.Wrapf(ErrPartitionStateChangeNotAllowed, "change partition state from %s to %s", partition.State.CleanName(), toState.CleanName())
 			}
 
 			return ring.UpdatePartitionState(l.cfg.PartitionID, toState, time.Now()), nil
@@ -200,16 +200,13 @@ func (l *PartitionInstanceLifecycler) running(ctx context.Context) error {
 			f()
 
 		case <-ctx.Done():
-			level.Info(l.logger).Log("msg", "partition ring lifecycler is shutting down", "ring", l.ringName)
 			return nil
 		}
 	}
 }
 
-func (l *PartitionInstanceLifecycler) stopping(runningError error) error {
-	if runningError != nil {
-		return nil
-	}
+func (l *PartitionInstanceLifecycler) stopping(_ error) error {
+	level.Info(l.logger).Log("msg", "partition ring lifecycler is shutting down", "ring", l.ringName)
 
 	// Remove the instance from partition owners, if configured to do so.
 	if l.RemoveOwnerOnShutdown() {
@@ -227,8 +224,8 @@ func (l *PartitionInstanceLifecycler) stopping(runningError error) error {
 	return nil
 }
 
-// run a function within the lifecycler loop.
-func (l *PartitionInstanceLifecycler) run(fn func() error) error {
+// runOnLifecyclerLoop runs fn within the lifecycler loop.
+func (l *PartitionInstanceLifecycler) runOnLifecyclerLoop(fn func() error) error {
 	sc := l.ServiceContext()
 	if sc == nil {
 		return errors.New("lifecycler not running")
@@ -312,11 +309,11 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 		}
 
 		if ring.HasPartition(l.cfg.PartitionID) {
-			level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
+			level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID)
 			return true, nil
 		}
 
-		level.Info(l.logger).Log("msg", "partition found in the ring", "partition", l.cfg.PartitionID)
+		level.Info(l.logger).Log("msg", "partition not found in the ring", "partition", l.cfg.PartitionID)
 		return false, nil
 	}
 
@@ -394,7 +391,7 @@ func (l *PartitionInstanceLifecycler) reconcileOtherPartitions(ctx context.Conte
 				// A partition is safe to be removed only if it's inactive since longer than the wait period
 				// and it has no owners registered.
 				if partition.IsInactiveSince(deleteBefore) && ring.PartitionOwnersCount(partitionID) == 0 {
-					level.Info(l.logger).Log("msg", "removing inactive partition from ring", "partition", partitionID, "state", partition.State.CleanName(), "state_timestamp", partition.GetStateTime().String())
+					level.Info(l.logger).Log("msg", "removing inactive partition with no owners from ring", "partition", partitionID, "state", partition.State.CleanName(), "state_timestamp", partition.GetStateTime().String())
 					ring.RemovePartition(partitionID)
 					changed = true
 				}
