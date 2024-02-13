@@ -3404,6 +3404,12 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 		}
 
 	case http.MethodDelete:
+		// We don't switch it back to PENDING state if there are not enough owners because we want to guarantee consistency
+		// in the read path. If the partition is within the lookback period we need to guarantee that partition will be queried.
+		// Moving back to PENDING will cause us loosing consistency, because PENDING partitions are not queried by design.
+		// We could move back to PENDING if there are not enough owners and the partition moved to INACTIVE more than
+		// "lookback period" ago, but since we delete inactive partitions with no owners that moved to inactive since longer
+		// than "lookback period" ago, it looks to be an edge case not worth to address.
 		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionActive); err != nil {
 			level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
