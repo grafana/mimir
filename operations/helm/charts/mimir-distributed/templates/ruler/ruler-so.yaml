@@ -4,7 +4,7 @@ kind: ScaledObject
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler") }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler") | nindent 4 }}
   annotations:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
@@ -24,7 +24,7 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      metricName: ruler_cpu_hpa_default
+      query: max_over_time(sum(sum by (pod) (rate(container_cpu_usage_seconds_total{container="ruler",namespace="{{ .Release.Namespace }}"}[5m])) and max by (pod) (up{container="ruler",namespace="{{ .Release.Namespace }}"}) > 0)[15m:]) * 1000
       query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler",namespace="{{ .Release.Namespace }}"}[5m]))[15m:]) * 1000
       serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
       {{- $cpu_request := dig "requests" "cpu" nil .Values.ruler.resources }}
@@ -34,7 +34,7 @@ spec:
       {{- end }}
     type: prometheus
   - metadata:
-      metricName: ruler_memory_hpa_default
+      query: max_over_time(sum((sum by (pod) (container_memory_working_set_bytes{container="ruler",namespace="{{ .Release.Namespace }}"}) and max by (pod) (up{container="ruler",namespace="{{ .Release.Namespace }}"}) > 0) or vector(0))[15m:]) + sum(sum by (pod) (max_over_time(kube_pod_container_resource_requests{container="ruler",namespace="{{ .Release.Namespace }}", resource="memory"}[15m])) and max by (pod) (changes(kube_pod_container_status_restarts_total{container="ruler",namespace="{{ .Release.Namespace }}"}[15m]) > 0) and max by (pod) (kube_pod_container_status_last_terminated_reason{container="ruler",namespace="{{ .Release.Namespace }}", reason="OOMKilled"}) or vector(0))
       query: max_over_time(sum(container_memory_working_set_bytes{container="ruler",namespace="{{ .Release.Namespace }}"})[15m:])
       serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
       {{- $mem_request := dig "requests" "memory" nil .Values.ruler.resources }}

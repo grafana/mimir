@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: keda-autoscaling-values
     app.kubernetes.io/component: querier
-    app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -22,16 +21,16 @@ spec:
           - periodSeconds: 120
             type: Percent
             value: 10
-          scaleUp:
-            policies:
-            - periodSeconds: 120
-              type: Percent
-              value: 50
-            - periodSeconds: 120
-              type: Pods
-              value: 15
-            stabilizationWindowSeconds: 60
           stabilizationWindowSeconds: 600
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 60
   maxReplicaCount: 10
   minReplicaCount: 2
   pollingInterval: 10
@@ -41,7 +40,6 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      metricName: cortex_querier_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.5"}[1m]))
       serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "6"
@@ -49,7 +47,6 @@ spec:
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
-      metricName: cortex_querier_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="citestns"}[1m]))
       serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "6"

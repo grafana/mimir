@@ -739,20 +739,26 @@ distributor:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
-    targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 100
+    targetMemoryUtilizationPercentage: 100
     customHeaders:
       {}
       # X-Scope-OrgID: ""
     behavior:
       scaleDown:
         policies:
-          - periodSeconds: 60
+          - periodSeconds: 600
             type: Percent
             value: 10
 
@@ -1132,13 +1138,19 @@ ruler:
   enabled: true
   replicas: 1
 
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
-    targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 100
+    targetMemoryUtilizationPercentage: 100
     customHeaders:
       {}
       # X-Scope-OrgID: ""
@@ -1226,6 +1238,12 @@ ruler:
 querier:
   replicas: 2
 
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
     minReplicaCount: 1
@@ -1242,15 +1260,15 @@ querier:
             type: Percent
             value: 10
         stabilizationWindowSeconds: 600
-        scaleUp:
-          policies:
-            - periodSeconds: 120
-              type: Percent
-              value: 50
-            - periodSeconds: 120
-              type: Pods
-              value: 15
-          stabilizationWindowSeconds: 60
+      scaleUp:
+        policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+        stabilizationWindowSeconds: 60
 
   service:
     annotations: {}
@@ -1331,13 +1349,19 @@ query_frontend:
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
+  # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
+  # KEDA already installed in the Kubernetes cluster. The metrics for scaling are read
+  # from the the metamonitoring setup (metamonitoring.grafanaAgent.metrics.remote).
+  # Basic auth and extra HTTP headers from metamonitoring are ignored, please use customHeaders.
+  # The remote URL is used even if metamonitoring is disabled.
+  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
   kedaAutoscaling:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
     pollingInterval: 10
-    targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 100
     customHeaders:
       {}
       # X-Scope-OrgID: ""
