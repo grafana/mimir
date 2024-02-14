@@ -119,13 +119,13 @@ func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.R
 		return 0, nil, nil, errors.Wrap(err, "executing backend request")
 	}
 
-	fmt.Println("sent to", req.URL.String(), "status", res.StatusCode)
 	// Read the entire response body.
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return 0, nil, nil, errors.Wrap(err, "reading backend response")
 	}
+	fmt.Println("sent to", req.URL.String(), "status", res.StatusCode, "body", string(body))
 
 	return res.StatusCode, body, res, nil
 }
