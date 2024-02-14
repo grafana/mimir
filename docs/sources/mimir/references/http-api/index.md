@@ -1231,7 +1231,7 @@ Requires [authentication](#authentication).
 GET /compactor/tenants
 ```
 
-Displays a web page with the list of tenants with blocks in the storage configured for compactor.
+Displays a web page with the list of tenants that have blocks in the storage configured for the compactor.
 
 ### Compactor tenant planned jobs
 
