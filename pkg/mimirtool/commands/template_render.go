@@ -12,7 +12,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/prometheus/alertmanager/template"
 
-	MimirAlertManager "github.com/grafana/mimir/pkg/alertmanager"
+	mimiram "github.com/grafana/mimir/pkg/alertmanager"
 )
 
 var defaultData = template.Data{
