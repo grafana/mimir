@@ -2530,7 +2530,8 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			replicationSet, err := ds[0].GetIngesters(ctx)
+			//nolint:staticcheck
+			replicationSet, err := ds[0].getIngesterReplicationSetForQuery(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 
@@ -3567,13 +3568,14 @@ type prepConfig struct {
 	// ingesterStateByZone supersedes numIngesters, happyIngesters, and ingesterZones
 	ingesterStateByZone map[string]ingesterZoneState
 
-	// ingesterDataPerZone:
+	// ingesterDataByZone:
 	//   map[zone-a][0] -> ingester-zone-a-0 write request
 	//   map[zone-a][1] -> ingester-zone-a-1 write request
-	// Each zone in ingesterDataPerZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
+	// Each zone in ingesterDataByZone can be shorter than the actual number of ingesters for the zone, but it cannot be longer.
 	// If a request is nil, sending a request to the ingester is skipped.
-	ingesterDataPerZone map[string][]*mimirpb.WriteRequest
-	// ingesterDataTenantID is the tenant under which ingesterDataPerZone is pushed
+	ingesterDataByZone map[string][]*mimirpb.WriteRequest
+
+	// ingesterDataTenantID is the tenant under which ingesterDataByZone is pushed
 	ingesterDataTenantID string
 
 	queryDelay       time.Duration
@@ -3649,7 +3651,7 @@ func (c prepConfig) validate(t testing.TB) {
 			if len(state.ringStates) > 0 {
 				require.Len(t, state.ringStates, ingestersInZone, "ringStates cannot be longer than the number of ingesters in the zone")
 			}
-			require.LessOrEqual(t, len(c.ingesterDataPerZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
+			require.LessOrEqual(t, len(c.ingesterDataByZone[zone]), ingestersInZone, "ingesterDataPerZone cannot be longer than the number of ingesters in the zone")
 		}
 	}
 }
@@ -3921,8 +3923,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		})
 	}
 
-	if len(cfg.ingesterDataPerZone) != 0 {
-		populateIngestersData(t, ingesters, cfg.ingesterDataPerZone, cfg.ingesterDataTenantID)
+	if len(cfg.ingesterDataByZone) != 0 {
+		populateIngestersData(t, ingesters, cfg.ingesterDataByZone, cfg.ingesterDataTenantID)
 	}
 
 	return distributors, ingesters, distributorRegistries, kafkaCluster
@@ -5996,7 +5998,7 @@ func TestSendMessageMetadata(t *testing.T) {
 	require.Equal(t, []string{strconv.Itoa(req.Size())}, mock.md[grpcutil.MetadataMessageSize])
 }
 
-func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
+func TestQueryIngestersRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
 		instances []ring.InstanceDesc
 		verify    func(t *testing.T, sortedZones []string)
@@ -6102,10 +6104,6 @@ func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
 		},
 	}
 
-	d := &Distributor{
-		cfg: Config{},
-	}
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			replicationSet := ring.ReplicationSet{
@@ -6113,9 +6111,70 @@ func TestQueryQuorumConfig_ZoneSorting(t *testing.T) {
 				ZoneAwarenessEnabled: true,
 			}
 
-			cfg := d.queryQuorumConfig(context.Background(), replicationSet)
-			sorted := cfg.ZoneSorter(uniqueZones(testCase.instances))
+			sorted := queryIngestersRingZoneSorter(replicationSet)(uniqueZones(testCase.instances))
+			testCase.verify(t, sorted)
+		})
+	}
+}
 
+func TestQueryIngesterPartitionsRingZoneSorter(t *testing.T) {
+	testCases := map[string]struct {
+		zones         []string
+		preferredZone string
+		verify        func(t *testing.T, sortedZones []string)
+	}{
+		"no zones": {
+			zones: []string{},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Empty(t, sortedZones)
+			},
+		},
+		"one zone, without preferred zone": {
+			zones: []string{"zone-a"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"one zone, with preferred zone": {
+			zones:         []string{"zone-a"},
+			preferredZone: "zone-a",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-a"}, sortedZones)
+			},
+		},
+		"two zones, without preferred zone": {
+			zones: []string{"zone-a", "zone-b"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b"}, sortedZones)
+			},
+		},
+		"two zones, with preferred zone": {
+			zones:         []string{"zone-a", "zone-b"},
+			preferredZone: "zone-b",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Equal(t, []string{"zone-b", "zone-a"}, sortedZones)
+			},
+		},
+		"many zones, without preferred zone": {
+			zones: []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c", "zone-d"}, sortedZones)
+			},
+		},
+		"many zones, with preferred zone": {
+			zones:         []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			preferredZone: "zone-b",
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Len(t, sortedZones, 4)
+				require.Equal(t, "zone-b", sortedZones[0])
+				require.ElementsMatch(t, []string{"zone-a", "zone-c", "zone-d"}, sortedZones[1:])
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			sorted := queryIngesterPartitionsRingZoneSorter(testCase.preferredZone)(testCase.zones)
 			testCase.verify(t, sorted)
 		})
 	}

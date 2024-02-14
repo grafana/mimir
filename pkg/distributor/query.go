@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
@@ -53,7 +54,8 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		}
 
 		// We ask for all ingesters without passing matchers because exemplar queries take in an array of label matchers.
-		replicationSet, err := d.GetIngesters(ctx)
+		//nolint:staticcheck
+		replicationSet, err := d.getIngesterReplicationSetForQuery(ctx)
 		if err != nil {
 			return err
 		}
@@ -84,12 +86,12 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 		}
 
-		replicationSet, err := d.GetIngesters(ctx)
+		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
 			return err
 		}
 
-		result, err = d.queryIngesterStream(ctx, replicationSet, req, queryMetrics)
+		result, err = d.queryIngesterStream(ctx, replicationSets, req, queryMetrics)
 		if err != nil {
 			return err
 		}
@@ -107,8 +109,11 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 	return result, err
 }
 
-// GetIngesters returns a replication set including all ingesters.
-func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, error) {
+// getIngesterReplicationSetForQuery returns a ring.ReplicationSet, containing ingester instances,
+// that must be queried for a read operation. This function does NOT support the ingest storage partitions.
+//
+// Deprecated: use getIngesterReplicationSetsForQuery() instead.
+func (d *Distributor) getIngesterReplicationSetForQuery(ctx context.Context) (ring.ReplicationSet, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return ring.ReplicationSet{}, err
@@ -124,6 +129,48 @@ func (d *Distributor) GetIngesters(ctx context.Context) (ring.ReplicationSet, er
 	}
 
 	return d.ingestersRing.GetReplicationSetForOperation(readNoExtend)
+}
+
+// getIngesterReplicationSetForQuery returns a list of ring.ReplicationSet, containing ingester instances,
+// that must be queried for a read operation.
+//
+// If multiple ring.ReplicationSe are returned, each must be queried separately, and results merged.
+// getIngesterReplicationSetForQuery returns exactly one replication set if ingest storage is disabled.
+func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([]ring.ReplicationSet, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if d.cfg.IngestStorageConfig.Enabled {
+		shardSize := d.limits.IngestionPartitionsTenantShardSize(userID)
+		r := d.partitionsRing
+
+		// If tenant uses shuffle sharding, we should only query partitions which are part of the tenant's subring.
+		if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
+			r, err = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return r.GetReplicationSetsForOperation(readNoExtend)
+	} else {
+		shardSize := d.limits.IngestionTenantShardSize(userID)
+		r := d.ingestersRing
+
+		// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
+		if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
+			r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+		}
+
+		replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
+		if err != nil {
+			return nil, err
+		}
+
+		return []ring.ReplicationSet{replicationSet}, nil
+	}
 }
 
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
@@ -203,7 +250,7 @@ type ingesterQueryResult struct {
 }
 
 // queryIngesterStream queries the ingesters using the gRPC streaming API.
-func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets []ring.ReplicationSet, req *ingester_client.QueryRequest, queryMetrics *stats.QueryMetrics) (ingester_client.CombinedQueryStreamResponse, error) {
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
@@ -335,10 +382,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 	}
 
-	quorumConfig := d.queryQuorumConfig(ctx, replicationSet)
+	quorumConfig := d.queryQuorumConfigForReplicationSets(ctx, replicationSets)
 	quorumConfig.IsTerminalError = validation.IsLimitError
 
-	results, err := ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
+	results, err := concurrency.ForEachJobMergeResults[ring.ReplicationSet, ingesterQueryResult](ctx, replicationSets, 0, func(ctx context.Context, replicationSet ring.ReplicationSet) ([]ingesterQueryResult, error) {
+		return ring.DoUntilQuorumWithoutSuccessfulContextCancellation(ctx, replicationSet, quorumConfig, queryIngester, cleanup)
+	})
 	if err != nil {
 		return ingester_client.CombinedQueryStreamResponse{}, err
 	}
@@ -400,7 +449,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	resp := ingester_client.CombinedQueryStreamResponse{
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
-		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSet)),
+		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -419,10 +468,23 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 }
 
 // estimatedIngestersPerSeries estimates the number of ingesters that will have chunks for each streaming series.
-func (d *Distributor) estimatedIngestersPerSeries(replicationSet ring.ReplicationSet) int {
+func (d *Distributor) estimatedIngestersPerSeries(replicationSets []ring.ReplicationSet) int {
+	if d.cfg.IngestStorageConfig.Enabled {
+		// When the ingest storage is enabled, quorum is reached as soon as 1 series is queried
+		// from 1 ingester.
+		return 1
+	}
+
+	// When ingest storage is disabled we expect only 1 replication set. We check it anyway to
+	// avoid any issue in the future.
+	if len(replicationSets) != 1 {
+		return d.ingestersRing.ReplicationFactor()
+	}
+
+	replicationSet := replicationSets[0]
+
 	// Under normal circumstances, a quorum of ingesters will have chunks for each series, so here
 	// we return the number of ingesters required for quorum.
-
 	if replicationSet.MaxUnavailableZones > 0 {
 		// Zone-aware: quorum is replication factor less allowable unavailable zones.
 		return d.ingestersRing.ReplicationFactor() - replicationSet.MaxUnavailableZones
