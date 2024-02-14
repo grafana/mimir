@@ -160,19 +160,9 @@ mimirtool alertmanager delete
 
 #### Migrate Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
 
-Starting with Alertmanager v0.27.0, Alertmanager has a new parser for matchers to support UTF-8
-characters in Alertmanager, and this parser has a number of backwards incompatible changes. While
-most matchers will be forward-compatible, some will not. Alertmanager is operating a transition
-period where it supports both UTF-8 and classic matchers, and your configuration will continue
-to work in Mimir until your Mimir installation enables UTF-8 strict mode. All Mimir installations
-should enable UTF-8 strict mode before the end of the transition period, so we recommend you use
-the migrate-utf8 command to prepare your Alertmanager configuration for this change.
-
-The migrate-utf8 command automatically translates any matchers that are incompatible with the UTF-8
-parser into equivalent matchers that are compatible by enforcing double quoting on the right hand side
-of the matcher. This does not change their behavior, rather UTF-8 matchers require double quoting where
-whitespace and reserved characters are present. However, it's much easier to enforce double quoting
-on all matchers instead of just the few that are incompatible.
+The migrate-utf8 command translates any matchers that are incompatible with the UTF-8 parser into
+equivalent matchers that are compatible by enforcing double quoting on the right hand side
+of the matcher. The translation does not change their behavior.
 
 The command takes as input an existing configuration and template files, and prints as output
 the migrated configuration and template files:
@@ -182,7 +172,7 @@ mimirtool alertmanager migrate-utf8 <config_file> [template_files...]
 ```
 
 You can also output the migrated configuration and template files to a folder which can be
-reviewed before being loaded back into the Alertmanager at a later time. It is recommended to output
+reviewed before being loaded back into the Alertmanager at a later time. We recommended you output
 the migrated files to a different folder than the original files so you always have the original files
 as a backup. For example, the following command outputs the migrated configuration and template files
 to a folder called `migrated`:
@@ -192,20 +182,23 @@ mimirtool alertmanager migrate-utf8 <config_file> [template_files...] --output-d
 ```
 
 Within the output dir, the configuration file is named `config.yaml` and the template files ends in
-`.tpl`, where each template is written out to its own file. Note that using the `--output-dir` flag
-only writes the output to files and no longer print the config to the console.
+`.tpl`, where each template is written out to its own file.
 
-Once your configuration has been migrated, verify it using the verify command and the
+{{< admonition type="note" >}}
+When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
+{{< /admonition >}}
+
+Once you have migrated your configuration, verify it using the verify command and the
 `--utf8-strict-mode` flag:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-You should see a warning `UTF-8 mode enabled` to let you know that UTF-8 strict mode was enabled
-when validating your configuration.
+The command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
+UTF-8 strict mode to validate your configuration.
 
-If the command exits without error, and you are satisfied with the changes made to the migrated
+If the command exits without error, and you're satisfied with the changes made to the migrated
 configuration and template files, reload it using the `load` command.
 
 #### Validate Alertmanager configuration
