@@ -176,6 +176,8 @@
 
 ### Query-tee
 
+* [BUGFIX] Fix issue where `Host` HTTP header was not being correctly changed for the proxy targets. #7386
+
 ### Documentation
 
 * [CHANGE] No longer mark OTLP distributor endpoint as experimental. #7348
