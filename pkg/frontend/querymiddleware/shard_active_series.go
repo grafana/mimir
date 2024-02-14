@@ -320,12 +320,20 @@ func (s *shardActiveSeriesMiddleware) mergeResponses(ctx context.Context, respon
 			}
 
 			for it.ReadArray() {
-				item := labelBuilderPool.Get().(*labels.Builder)
-				it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
-					item.Set(s, iterator.ReadString())
-					return true
-				})
-				items <- item
+				select {
+				case <-ctx.Done():
+					if cause := ctx.Err(); cause != nil {
+						return fmt.Errorf("aborted streaming because context was cancelled: %w", cause)
+					}
+					return ctx.Err()
+				default:
+					item := labelBuilderPool.Get().(*labels.Builder)
+					it.ReadMapCB(func(iterator *jsoniter.Iterator, s string) bool {
+						item.Set(s, iterator.ReadString())
+						return true
+					})
+					items <- item
+				}
 			}
 
 			return it.Error
