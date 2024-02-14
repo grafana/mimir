@@ -341,7 +341,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce to queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
-	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding a shard a tenant across all partitions.")
+	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
