@@ -7,10 +7,8 @@ package querytee
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -38,25 +36,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		endpoint:  endpoint,
 		timeout:   timeout,
 		preferred: preferred,
-		client: &http.Client{
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return errors.New("the query-tee proxy does not follow redirects")
-			},
-			Transport: &http.Transport{
-				//Proxy: http.ProxyFromEnvironment,
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: skipTLSVerify,
-				},
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  true,
-			},
-		},
+		client:    http.DefaultClient,
 	}
 }
 
