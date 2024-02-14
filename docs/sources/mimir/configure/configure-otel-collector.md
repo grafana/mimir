@@ -61,6 +61,9 @@ service:
 ```
 
 ## OTLP
+{{% admonition type="note" %}} 
+If you are on Grafana Cloud, please use the OpenTelemetry Protocol (OTLP), and you can find more information [here] (https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+{{% /admonition %}}
 
 Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, you use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
 
