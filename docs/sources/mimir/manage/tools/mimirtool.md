@@ -175,7 +175,7 @@ whitespace and reserved characters are present. However, it's much easier to enf
 on all matchers instead of just the few that are incompatible.
 
 The command takes as input an existing configuration and template files, and prints as output
-the prepared configuration file and template files:
+the prepared configuration and template files:
 
 ```bash
 mimirtool alertmanager prepare <config_file> [template_files...]
@@ -202,11 +202,11 @@ Once your configuration has been prepared, verify it using the verify command an
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-You should see a warning "UTF-8 mode enabled" to let you know that UTF-8 strict mode was enabled
+You should see a warning `UTF-8 mode enabled` to let you know that UTF-8 strict mode was enabled
 when validating your configuration.
 
 If the command exits without error, and you are satisfied with the changes made to the prepared
-configuration and template files, re-upload it using the `load` command.
+configuration and template files, reload it using the `load` command.
 
 #### Validate Alertmanager configuration
 
