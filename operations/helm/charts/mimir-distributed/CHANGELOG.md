@@ -52,6 +52,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Gateway: make Ingress/Route host templateable. #7218
 * [BUGFIX] Metamonitoring: update dashboards to drop unsupported `step` parameter in targets. #7157
 * [ENHANCEMENT] Make the PSP template configurable via `rbac.podSecurityPolicy`. #7190
+* [ENHANCEMENT] Add possibility to configure `memberlist` config via helm values. #7379
 
 ## 5.2.1
 

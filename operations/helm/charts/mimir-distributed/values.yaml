@@ -80,6 +80,11 @@ serviceAccount:
 # -- Configuration is loaded from the secret called 'externalConfigSecretName'. If 'useExternalConfig' is true, then the configuration is not generated, just consumed.
 useExternalConfig: false
 
+# -- Memberlist configuration. Please refer to https://grafana.com/docs/mimir/latest/references/configuration-parameters/#memberlist
+memberlist:
+  abort_if_cluster_join_fails: false
+  compression_enabled: false
+
 # -- Defines what kind of object stores the configuration, a ConfigMap or a Secret.
 # In order to move sensitive information (such as credentials) from the ConfigMap/Secret to a more secure location (e.g. vault), it is possible to use [environment variables in the configuration](https://grafana.com/docs/mimir/latest/reference-configuration-parameters/#use-environment-variables-in-the-configuration).
 # Such environment variables can be then stored in a separate Secret and injected via the global.extraEnvFrom value. For details about environment injection from a Secret please see [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/#use-case-as-container-environment-variables).
@@ -331,8 +336,9 @@ mimir:
       max_cache_freshness: 10m
 
     memberlist:
-      abort_if_cluster_join_fails: false
-      compression_enabled: false
+    {{- with .Values.memberlist }}
+      {{- toYaml . | nindent 2 }}
+    {{- end }}
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
