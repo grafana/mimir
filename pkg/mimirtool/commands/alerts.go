@@ -241,7 +241,6 @@ func (a *AlertmanagerCommand) prepareConfig(_ *kingpin.ParseContext) error {
 	if err != nil {
 		return fmt.Errorf("failed to prepare cfg: %w", err)
 	}
-
 	if a.OutputDir == "" {
 		p := printer.New(a.DisableColor)
 		return p.PrintAlertmanagerConfig(cfg, templates)
