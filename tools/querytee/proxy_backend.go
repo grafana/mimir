@@ -125,7 +125,7 @@ func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.R
 	if err != nil {
 		return 0, nil, nil, errors.Wrap(err, "reading backend response")
 	}
-	fmt.Println("sent to", req.URL.String(), "status", res.StatusCode, "body", string(body), "response headers", fmt.Sprint(res.Header))
+	fmt.Println("sent to", req.URL.String(), "status", res.StatusCode, "body", string(body), "response headers", fmt.Sprint(res.Header), "request headers", fmt.Sprint(req.Header))
 
 	return res.StatusCode, body, res, nil
 }
