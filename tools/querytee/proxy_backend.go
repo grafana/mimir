@@ -8,6 +8,7 @@ package querytee
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -112,11 +113,13 @@ func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.R
 	defer cancel()
 
 	// Execute the request.
+
 	res, err := b.client.Do(req.WithContext(ctx))
 	if err != nil {
 		return 0, nil, nil, errors.Wrap(err, "executing backend request")
 	}
 
+	fmt.Println("sent to", req.URL.String(), "status", res.StatusCode)
 	// Read the entire response body.
 	defer res.Body.Close()
 	body, err := io.ReadAll(res.Body)
