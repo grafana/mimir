@@ -28,7 +28,7 @@ spec:
   triggers:
   - metadata:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
-      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
+      serverAddress: {{ if not .Values.querier.kedaAutoscaling.prometheusAddress }}{{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}{{- else }}{{ .Values.querier.kedaAutoscaling.prometheusAddress | quote }}{{- end }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.querier.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.querier.kedaAutoscaling.customHeaders)) | quote }}
@@ -37,7 +37,7 @@ spec:
     type: prometheus
   - metadata:
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}"}[1m]))
-      serverAddress: {{ include "mimir.metaMonitoring.metrics.remoteReadUrl" (dict "ctx" $) }}
+      serverAddress: {{ if not .Values.querier.kedaAutoscaling.prometheusAddress }}{{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}{{- else }}{{ .Values.querier.kedaAutoscaling.prometheusAddress | quote }}{{- end }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.querier.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.querier.kedaAutoscaling.customHeaders)) | quote }}

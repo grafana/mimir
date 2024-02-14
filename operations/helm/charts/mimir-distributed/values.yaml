@@ -472,19 +472,19 @@ rbac:
     hostPID: false
     readOnlyRootFilesystem: true
     runAsUser:
-      rule: 'MustRunAsNonRoot'
+      rule: "MustRunAsNonRoot"
     seLinux:
-      rule: 'RunAsAny'
+      rule: "RunAsAny"
     supplementalGroups:
-      rule: 'MustRunAs'
+      rule: "MustRunAs"
       ranges:
-      - min: 1
-        max: 65535
+        - min: 1
+          max: 65535
     fsGroup:
-      rule: 'MustRunAs'
+      rule: "MustRunAs"
       ranges:
-      - min: 1
-        max: 65535
+        - min: 1
+          max: 65535
     additionalVolumes: []
   forcePSPOnKubernetes124: false
   # -- For GKE/EKS/AKS use 'type: psp'. For OpenShift use 'type: scc'
@@ -504,6 +504,14 @@ rbac:
     runAsUser: 10001
     seccompProfile:
       type: RuntimeDefault
+
+# -- KEDA Autoscaling configuration
+# Can be overridden by individual components configuration
+kedaAutoscaling:
+  # If empty, the helm chart uses the metamonitoring URL
+  prometheusAddress: "" 
+  customHeaders: {}
+  pollingInterval: 10
 
 alertmanager:
   enabled: true
@@ -768,9 +776,11 @@ distributor:
     enabled: false
     minReplicaCount: 1
     maxReplicaCount: 10
-    pollingInterval: 10
+    # pollingInterval: 10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
+    # -- if empty global setting will be used
+    prometheusAddress: ""
     customHeaders:
       {}
       # X-Scope-OrgID: ""
@@ -1171,6 +1181,8 @@ ruler:
     pollingInterval: 10
     targetCPUUtilizationPercentage: 100
     targetMemoryUtilizationPercentage: 100
+    # -- if empty global setting will be used
+    prometheusAddress: ""
     customHeaders:
       {}
       # X-Scope-OrgID: ""
@@ -1281,6 +1293,8 @@ querier:
     maxReplicaCount: 10
     pollingInterval: 10
     querySchedulerInflightRequestsThreshold: 12
+    # -- if empty global setting will be used
+    prometheusAddress: ""
     customHeaders:
       {}
       # X-Scope-OrgID: ""
@@ -1393,6 +1407,8 @@ query_frontend:
     pollingInterval: 10
     targetCPUUtilizationPercentage: 75
     targetMemoryUtilizationPercentage: 100
+    # -- if empty global setting will be used
+    prometheusAddress: ""
     customHeaders:
       {}
       # X-Scope-OrgID: ""
@@ -2857,7 +2873,7 @@ gateway:
     # -- Hosts configuration for the Ingress
     hosts:
       # -- Passed through the `tpl` function to allow templating.
-      - host: '{{ .Release.Name }}.mimir.example.com'
+      - host: "{{ .Release.Name }}.mimir.example.com"
         paths:
           - path: /
             # -- pathType (e.g. ImplementationSpecific, Prefix, .. etc.) might also be required by some Ingress Controllers
@@ -2867,7 +2883,7 @@ gateway:
       - secretName: mimir-tls
         # --  Hosts included in the tls certificate. Passed through the `tpl` function to allow templating.
         hosts:
-          - '{{ .Release.Name }}.mimir.example.com'
+          - "{{ .Release.Name }}.mimir.example.com"
 
   # -- OpenShift Route configuration
   route:
@@ -2875,7 +2891,7 @@ gateway:
     # -- Annotations for the Route
     annotations: {}
     # -- Passed through the `tpl` function to allow templating.
-    host: '{{ .Release.Name }}.mimir.example.com'
+    host: "{{ .Release.Name }}.mimir.example.com"
 
     tls:
       # -- More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
