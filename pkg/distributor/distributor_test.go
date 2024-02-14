@@ -3593,7 +3593,7 @@ type prepConfig struct {
 	circuitBreakerOpen bool
 
 	// Ingest storage specific configuration.
-	ingestStorageEnabled    bool  // Whether ingest storage is enabled.
+	ingestStorageEnabled    bool
 	ingestStoragePartitions int32 // Number of partitions.
 }
 
