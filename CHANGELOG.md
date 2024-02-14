@@ -166,6 +166,7 @@
 
 ### Mimirtool
 
+* [FEATURE] Add command `prepare` to prepare Alertmanager configurations for Alertmanager versions 0.27.0 and later. #7383
 * [ENHANCEMENT] Add `--extra-headers` option to `mimirtool rules` command to add extra headers to requests for auth. #7141
 * [ENHANCEMENT] Analyze Prometheus: set tenant header. #6737
 * [ENHANCEMENT] Add argument `--output-dir` to `mimirtool alertmanager get` where the config and templates will be written to and can be loaded via `mimirtool alertmanager load` #6760
