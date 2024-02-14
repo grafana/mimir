@@ -21,9 +21,9 @@ type shadowCfg struct {
 	TimeIntervals     []yaml.MapSlice      `yaml:"time_intervals,omitempty" json:"time_intervals,omitempty"`
 }
 
-// prepareCfg double quotes all matchers in a configuration file. It uses the fact that MarshalYAML
+// migrateCfg double quotes all matchers in a configuration file. It uses the fact that MarshalYAML
 // for labels.Matchers double quotes matchers, even if the original is unquoted.
-func prepareCfg(cfg string) (string, error) {
+func migrateCfg(cfg string) (string, error) {
 	tmp := shadowCfg{}
 	if err := yaml.Unmarshal([]byte(cfg), &tmp); err != nil {
 		return "", fmt.Errorf("failed to load config from YAML: %w", err)

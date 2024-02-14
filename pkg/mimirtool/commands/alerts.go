@@ -94,7 +94,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	}
 
-	prepareCmd := alertCmd.Command("prepare", "Prepare the Alertmanager tenant configuration for UTF-8.").Action(a.prepareConfig)
+	prepareCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
 	prepareCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	prepareCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 	prepareCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
@@ -232,14 +232,14 @@ func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) prepareConfig(_ *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
 	cfg, templates, err := a.readAlertManagerConfig()
 	if err != nil {
 		return err
 	}
-	cfg, err = prepareCfg(cfg)
+	cfg, err = migrateCfg(cfg)
 	if err != nil {
-		return fmt.Errorf("failed to prepare cfg: %w", err)
+		return fmt.Errorf("failed to migrate cfg: %w", err)
 	}
 	if a.OutputDir == "" {
 		p := printer.New(a.DisableColor)

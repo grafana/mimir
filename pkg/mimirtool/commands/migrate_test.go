@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPrepareCfg(t *testing.T) {
+func TestMigrateCfg(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -205,7 +205,7 @@ time_intervals:
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actual, err := prepareCfg(test.input)
+			actual, err := migrateCfg(test.input)
 			if test.expectedErr != "" {
 				require.Equal(t, err, test.expectedErr)
 				require.Nil(t, actual)
