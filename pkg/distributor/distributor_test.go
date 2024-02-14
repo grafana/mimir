@@ -3747,8 +3747,8 @@ func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc 
 func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.PartitionRingDesc {
 	desc := ring.NewPartitionRingDesc()
 
-	// When we add partitions we simulate the case they were switched to ACTIVE older
-	// than the shuffle sharding lookback period, so that we don't query all partitions
+	// When we add partitions we simulate the case they were switched to ACTIVE before
+	// the shuffle sharding lookback period, so that we don't extend partitions
 	// when shuffle sharding is in use.
 	timeBeforeShuffleShardingLookbackPeriod := time.Now().Add(-2 * time.Hour)
 
